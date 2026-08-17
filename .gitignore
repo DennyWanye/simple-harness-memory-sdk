@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 测试
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 数据库 / 数据
+*.db
+*.db-shm
+*.db-wal
+data/
+
+# 模型权重（BGE-M3 等，体积大）
+models/
+*.bin
+*.safetensors
+*.pt
+
+# 密钥 / 凭证
+.env
+*.env.local
+LOCAL-DEV-CREDENTIALS.md
+secrets/
