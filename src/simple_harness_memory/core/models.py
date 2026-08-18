@@ -111,3 +111,19 @@ class Hit:
     session_id: Optional[str] = None
     role: Optional[str] = None
     created_at: Optional[float] = None
+
+
+# 单值 key：同一 subject 下同一 key 只允许一个 active 值，新值 supersede 旧值。
+SINGLE_VALUED_KEYS: frozenset[str] = frozenset({
+    "name", "occupation", "location", "language", "timezone",
+    "birthday", "email", "phone", "pet_name",
+})
+
+
+@dataclass
+class FactConflict:
+    """同一 subject/key 下出现多个互斥 active 值的冲突。"""
+    subject: str
+    key: str
+    values: list[str]
+    fact_ids: list[int]

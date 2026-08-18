@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from simple_harness_memory.world.port import TemporalContext
 
@@ -36,7 +36,7 @@ def _get_time_of_day(hour: int) -> str:
 def build_temporal_context(tz_offset_hours: float = 8.0) -> TemporalContext:
     """构建当前时间上下文（默认 UTC+8）。"""
     now_ts = time.time()
-    tz = timezone.utc  # 暂用 UTC，后续可按用户 profile.timezone 调整
+    tz = timezone(timedelta(hours=tz_offset_hours))
     dt = datetime.fromtimestamp(now_ts, tz=tz)
 
     return TemporalContext(

@@ -1,153 +1,109 @@
-"""MemoryManager — 统一入口，组合所有子系统。
-
-Phase 1 默认使用 MockMemoryBackend，Phase 1+ 切换到 SQLiteMemoryBackend。
-"""
-
+"""MemoryManager — 统一入口，组合后端与世界对象。"""
 from __future__ import annotations
 
-import os
 from typing import Optional
 
 from simple_harness_memory.core.models import Fact, Hit, Message
 from simple_harness_memory.core.port import MemoryBackend
 from simple_harness_memory.core.twin import DigitalTwin
-from simple_harness_memory.world.port import (
-    KnowledgeGap,
-    TemporalContext,
-    Weather,
-    WorldEvent,
-    WorldModelPort,
-)
+from simple_harness_memory.world.port import WorldModelPort
 
 
 class _NullWorldModel(WorldModelPort):
-    """空世界对象实现，Phase 4 前的占位符。"""
-
-    async def get_temporal_context(self) -> TemporalContext:
+    async def get_temporal_context(self):
         from simple_harness_memory.world.temporal import build_temporal_context
         return build_temporal_context()
 
-    async def get_recent_events(self, days: int = 3) -> list[WorldEvent]:
+    async def get_recent_events(self, days=3):
         return []
 
-    async def get_weather(self, location: str) -> Optional[Weather]:
+    async def get_weather(self, location):
         return None
 
-    async def check_knowledge_boundary(self, query: str) -> Optional[KnowledgeGap]:
+    async def check_knowledge_boundary(self, query):
         return None
 
-    async def get_personalized_news(
-        self,
-        interests: list[str],
-        categories: list[str] | None = None,
-    ) -> list[WorldEvent]:
+    async def get_personalized_news(self, interests, categories=None):
         return []
 
 
 class MemoryManager:
-    """记忆系统统一管理器。
-
-    用法：
-        memory = await MemoryManager.build(db_path="./memory.db")
-        msg_id = await memory.append_message("session-1", "user", "hello")
-        hits = await memory.recall("用户说了什么？")
-        twin = await memory.get_digital_twin()
-        ctx = await memory.world.get_temporal_context()
-    """
-
-    def __init__(
-        self,
-        backend: MemoryBackend,
-        world: WorldModelPort,
-    ) -> None:
+    def __init__(self, backend: MemoryBackend, world: WorldModelPort) -> None:
         self._backend = backend
         self.world = world
 
     @classmethod
-    async def build(
-        cls,
-        db_path: Optional[str] = None,
-        *,
-        enable_facts: bool = False,
-        enable_world_model: bool = False,
-        backend: Optional[MemoryBackend] = None,
-    ) -> "MemoryManager":
-        """构建 MemoryManager。
-
-        Args:
-            db_path:           SQLite 数据库路径（None 使用 Mock 后端）
-            enable_facts:      Phase 2+ 启用 Facts 自动提取
-            enable_world_model:Phase 4+ 启用世界对象
-            backend:           直接传入后端实例（覆盖 db_path）
-        """
+    async def build(cls, db_path=None, *, enable_facts=False, enable_world_model=False, backend=None, embedder=None, fact_extractor=None, reranker=None, summarizer=None, world=None):
         if backend is None:
+            kwargs = dict(embedder=embedder, fact_extractor=fact_extractor, reranker=reranker, summarizer=summarizer, auto_extract_facts=enable_facts)
             if db_path is not None:
                 from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
-                backend = SQLiteMemoryBackend(db_path)
+                backend = SQLiteMemoryBackend(db_path, **kwargs)
             else:
                 from simple_harness_memory.backends.mock import MockMemoryBackend
-                backend = MockMemoryBackend()
-
+                backend = MockMemoryBackend(**kwargs)
         await backend.initialize()
 
-        world: WorldModelPort = _NullWorldModel()
-        # Phase 4: 真实世界对象将在此注入
+        if world is not None:
+            world_model = world
+        elif enable_world_model:
+            from simple_harness_memory.world.model import WorldModel
+            world_model = WorldModel()
+        else:
+            world_model = _NullWorldModel()
 
-        return cls(backend=backend, world=world)
+        return cls(backend=backend, world=world_model)
 
-    # ── 代理到后端 ────────────────────────────────────
+    async def append_message(self, session_id, role, content, *, salience=0.0, decay_rate=0.02):
+        return await self._backend.append_message(session_id, role, content, salience=salience, decay_rate=decay_rate)
 
-    async def append_message(
-        self,
-        session_id: str,
-        role: str,
-        content: str,
-        *,
-        salience: float = 0.0,
-        decay_rate: float = 0.02,
-    ) -> int:
-        return await self._backend.append_message(
-            session_id, role, content,
-            salience=salience,
-            decay_rate=decay_rate,
-        )
-
-    async def get_recent_messages(self, session_id: str, limit: int = 20) -> list[Message]:
+    async def get_recent_messages(self, session_id, limit=20):
         return await self._backend.get_recent_messages(session_id, limit)
 
-    async def recall(
-        self,
-        query: str,
-        session_id: Optional[str] = None,
-        limit: int = 10,
-    ) -> list[Hit]:
-        return await self._backend.recall(query, session_id, limit)
+    async def get_message(self, message_id):
+        return await self._backend.get_message(message_id)
 
-    async def get_facts(
-        self,
-        subject: str = "user",
-        category: Optional[str] = None,
-        active_only: bool = True,
-    ) -> list[Fact]:
+    async def extract_facts(self, message_id, content, role):
+        return await self._backend.extract_facts(message_id, content, role)
+
+    async def get_facts(self, subject="user", category=None, active_only=True):
         return await self._backend.get_facts(subject, category, active_only)
 
-    async def get_digital_twin(self, subject: str = "user") -> DigitalTwin:
+    async def forget_fact(self, fact_id, reason=""):
+        return await self._backend.forget_fact(fact_id, reason)
+
+    async def recall(self, query, session_id=None, limit=10):
+        return await self._backend.recall(query, session_id, limit)
+
+    async def vector_search(self, query, limit=20):
+        return await self._backend.vector_search(query, limit)
+
+    async def get_digital_twin(self, subject="user"):
         return await self._backend.get_digital_twin(subject)
 
-    async def update_digital_twin(self, twin: DigitalTwin) -> None:
+    async def update_digital_twin(self, twin):
         await self._backend.update_digital_twin(twin)
 
-    async def suggest_questions(self, subject: str = "user") -> list[str]:
+    async def suggest_questions(self, subject="user"):
         return await self._backend.suggest_questions(subject)
 
-    async def daily_decay(self) -> dict[str, int]:
+    async def detect_inconsistencies(self, subject="user"):
+        return await self._backend.detect_inconsistencies(subject)
+
+    async def daily_decay(self):
         return await self._backend.daily_decay()
 
-    async def close(self) -> None:
+    async def summarize_old_sessions(self, older_than_days=7, max_sessions=5):
+        return await self._backend.summarize_old_sessions(older_than_days, max_sessions)
+
+    async def record_workspace_action(self, session_id, action_type, payload):
+        await self._backend.record_workspace_action(session_id, action_type, payload)
+
+    async def close(self):
         await self._backend.close()
 
-    async def __aenter__(self) -> "MemoryManager":
+    async def __aenter__(self):
         return self
 
-    async def __aexit__(self, *_: object) -> None:
+    async def __aexit__(self, *exc):
         await self.close()

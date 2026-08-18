@@ -9,7 +9,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from simple_harness_memory.core.models import Fact, Hit, Message
+from simple_harness_memory.core.models import Fact, FactConflict, Hit, Message
 from simple_harness_memory.core.twin import DigitalTwin
 
 
@@ -79,6 +79,10 @@ class MemoryBackend(ABC):
     @abstractmethod
     async def suggest_questions(self, subject: str = "user") -> list[str]:
         """根据孪生体空白字段，生成主动补全问题。"""
+
+    @abstractmethod
+    async def detect_inconsistencies(self, subject: str = "user") -> list[FactConflict]:
+        """检测同一 subject 下的矛盾 / 冲突事实。"""
 
     # ── 混合召回 ─────────────────────────────────────
 

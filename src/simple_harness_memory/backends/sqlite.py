@@ -1,336 +1,216 @@
-"""SQLite 后端 — Phase 1 本地持久化实现。
-
-依赖：aiosqlite>=0.19
-"""
-
+"""SQLite 后端 — 本地持久化实现。"""
 from __future__ import annotations
 
+import dataclasses
 import json
 import time
 from typing import Optional
 
 import aiosqlite
 
-from simple_harness_memory.core.models import Fact, Hit, Message
-from simple_harness_memory.core.port import MemoryBackend
-from simple_harness_memory.core.twin import DigitalTwin
-from simple_harness_memory.features.rrf import RankedItem, fuse
+from simple_harness_memory.backends.base import BaseMemoryBackend
+from simple_harness_memory.core.models import Fact, Message
+from simple_harness_memory.core.twin import (
+    DigitalTwin, Entity, Goal, Preference, PreferenceMap, RelationshipGraph,
+    Skill, SkillMap, UserProfile,
+)
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS messages (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id  TEXT    NOT NULL,
-    role        TEXT    NOT NULL,
-    content     TEXT    NOT NULL,
-    created_at  REAL    NOT NULL,
-    salience    REAL    NOT NULL DEFAULT 0.0,
-    decay_rate  REAL    NOT NULL DEFAULT 0.02,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    salience REAL NOT NULL DEFAULT 0.0,
+    decay_rate REAL NOT NULL DEFAULT 0.02,
     last_recalled REAL,
-    embedding   BLOB,
-    is_summary  INTEGER NOT NULL DEFAULT 0,
-    summary_of  TEXT
+    embedding BLOB,
+    is_summary INTEGER NOT NULL DEFAULT 0,
+    summary_of TEXT
 );
-
 CREATE TABLE IF NOT EXISTS facts (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    subject         TEXT    NOT NULL,
-    key             TEXT    NOT NULL,
-    value           TEXT    NOT NULL,
-    category        TEXT    NOT NULL,
-    confidence      REAL    NOT NULL DEFAULT 1.0,
-    evidence        TEXT    NOT NULL DEFAULT '',
-    source_msg_id   INTEGER NOT NULL DEFAULT 0,
-    created_at      REAL    NOT NULL,
-    decay_rate      REAL    NOT NULL DEFAULT 0.01,
-    pinned          INTEGER NOT NULL DEFAULT 0,
-    last_decay_at   REAL,
-    superseded_by   INTEGER,
-    forgotten_at    REAL
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    category TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 1.0,
+    evidence TEXT NOT NULL DEFAULT '',
+    source_msg_id INTEGER NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL,
+    decay_rate REAL NOT NULL DEFAULT 0.01,
+    pinned INTEGER NOT NULL DEFAULT 0,
+    last_decay_at REAL,
+    superseded_by INTEGER,
+    forgotten_at REAL
 );
-
 CREATE TABLE IF NOT EXISTS digital_twins (
-    subject     TEXT PRIMARY KEY,
-    data_json   TEXT NOT NULL,
-    updated_at  REAL NOT NULL
+    subject TEXT PRIMARY KEY,
+    data_json TEXT NOT NULL,
+    updated_at REAL NOT NULL
 );
-
 CREATE TABLE IF NOT EXISTS workspace_actions (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id  TEXT NOT NULL,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
     action_type TEXT NOT NULL,
     payload_json TEXT NOT NULL,
-    created_at  REAL NOT NULL
+    created_at REAL NOT NULL
 );
-
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_facts_subject ON facts(subject, category);
 """
 
 
-class SQLiteMemoryBackend(MemoryBackend):
-    """SQLite 本地持久化后端（Phase 1）。"""
-
-    def __init__(self, db_path: str) -> None:
+class SQLiteMemoryBackend(BaseMemoryBackend):
+    def __init__(self, db_path: str, *, embedder=None, fact_extractor=None, reranker=None, summarizer=None, auto_extract_facts=False):
+        super().__init__(embedder=embedder, fact_extractor=fact_extractor, reranker=reranker, summarizer=summarizer, auto_extract_facts=auto_extract_facts)
         self._db_path = db_path
         self._db: Optional[aiosqlite.Connection] = None
 
-    async def initialize(self) -> None:
+    async def initialize(self):
         self._db = await aiosqlite.connect(self._db_path)
         self._db.row_factory = aiosqlite.Row
         await self._db.executescript(_DDL)
         await self._db.commit()
 
-    async def close(self) -> None:
+    async def close(self):
         if self._db:
             await self._db.close()
             self._db = None
 
     @property
-    def _conn(self) -> aiosqlite.Connection:
+    def _conn(self):
         if self._db is None:
             raise RuntimeError("SQLiteMemoryBackend not initialized — call initialize() first")
         return self._db
 
-    # ── L2 ──────────────────────────────────────────
-
-    async def append_message(
-        self,
-        session_id: str,
-        role: str,
-        content: str,
-        *,
-        salience: float = 0.0,
-        decay_rate: float = 0.02,
-    ) -> int:
-        cursor = await self._conn.execute(
-            "INSERT INTO messages (session_id, role, content, created_at, salience, decay_rate) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (session_id, role, content, time.time(), salience, decay_rate),
+    async def _append_message_impl(self, session_id, role, content, embedding, salience, decay_rate, created_at, is_summary, summary_of):
+        cur = await self._conn.execute(
+            "INSERT INTO messages (session_id, role, content, created_at, salience, decay_rate, embedding, is_summary, summary_of) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (session_id, role, content, created_at, salience, decay_rate, embedding, int(is_summary), summary_of),
         )
         await self._conn.commit()
-        return cursor.lastrowid  # type: ignore[return-value]
+        return cur.lastrowid
 
-    async def get_recent_messages(self, session_id: str, limit: int = 20) -> list[Message]:
-        async with self._conn.execute(
-            "SELECT * FROM messages WHERE session_id = ? ORDER BY created_at DESC LIMIT ?",
-            (session_id, limit),
-        ) as cur:
-            rows = await cur.fetchall()
-        return [self._row_to_message(r) for r in reversed(rows)]
-
-    async def get_message(self, message_id: int) -> Optional[Message]:
-        async with self._conn.execute(
-            "SELECT * FROM messages WHERE id = ?", (message_id,)
-        ) as cur:
+    async def _get_message_impl(self, message_id):
+        async with self._conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)) as cur:
             row = await cur.fetchone()
         return self._row_to_message(row) if row else None
 
-    # ── L3 ──────────────────────────────────────────
+    async def _get_recent_messages_impl(self, session_id, limit):
+        async with self._conn.execute("SELECT * FROM messages WHERE session_id = ? ORDER BY created_at DESC LIMIT ?", (session_id, limit)) as cur:
+            rows = await cur.fetchall()
+        return [self._row_to_message(r) for r in reversed(rows)]
 
-    async def extract_facts(self, message_id: int, content: str, role: str) -> list[Fact]:
-        # Phase 2 实现 LLM 提取，Phase 1 返回空列表
-        return []
+    async def _messages_all(self):
+        async with self._conn.execute("SELECT * FROM messages ORDER BY id") as cur:
+            rows = await cur.fetchall()
+        return [self._row_to_message(r) for r in rows]
 
-    async def get_facts(
-        self,
-        subject: str = "user",
-        category: Optional[str] = None,
-        active_only: bool = True,
-    ) -> list[Fact]:
-        sql = "SELECT * FROM facts WHERE subject = ?"
-        params: list = [subject]
-        if category:
-            sql += " AND category = ?"
-            params.append(category)
-        if active_only:
-            sql += " AND superseded_by IS NULL AND forgotten_at IS NULL"
-        async with self._conn.execute(sql, params) as cur:
+    async def _facts_all(self):
+        async with self._conn.execute("SELECT * FROM facts") as cur:
             rows = await cur.fetchall()
         return [self._row_to_fact(r) for r in rows]
 
-    async def forget_fact(self, fact_id: int, reason: str = "") -> bool:
-        cursor = await self._conn.execute(
-            "UPDATE facts SET forgotten_at = ? WHERE id = ?",
-            (time.time(), fact_id),
+    async def _insert_fact(self, fact):
+        cur = await self._conn.execute(
+            "INSERT INTO facts (subject, key, value, category, confidence, evidence, source_msg_id, created_at, decay_rate, pinned) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (fact.subject, fact.key, fact.value, fact.category, fact.confidence, fact.evidence, fact.source_msg_id, fact.created_at, fact.decay_rate, int(fact.pinned)),
         )
         await self._conn.commit()
-        return cursor.rowcount > 0
+        return cur.lastrowid
 
-    # ── Digital Twin ─────────────────────────────────
+    async def _supersede_fact(self, fact_id, superseded_by):
+        await self._conn.execute("UPDATE facts SET superseded_by = ? WHERE id = ?", (superseded_by, fact_id))
+        await self._conn.commit()
 
-    async def get_digital_twin(self, subject: str = "user") -> DigitalTwin:
-        async with self._conn.execute(
-            "SELECT data_json FROM digital_twins WHERE subject = ?", (subject,)
-        ) as cur:
+    async def _forget_fact_by_id(self, fact_id, forgotten_at):
+        cur = await self._conn.execute("UPDATE facts SET forgotten_at = ? WHERE id = ?", (forgotten_at, fact_id))
+        await self._conn.commit()
+        return cur.rowcount > 0
+
+    async def _update_message_salience(self, message_id, salience, last_recalled):
+        await self._conn.execute("UPDATE messages SET salience = ?, last_recalled = COALESCE(?, last_recalled) WHERE id = ?", (salience, last_recalled, message_id))
+        await self._conn.commit()
+
+    async def _set_fact_decay(self, fact_id, *, forgotten_at=None, last_decay_at=None):
+        updates = []
+        params = []
+        if forgotten_at is not None:
+            updates.append("forgotten_at = ?")
+            params.append(forgotten_at)
+        if last_decay_at is not None:
+            updates.append("last_decay_at = ?")
+            params.append(last_decay_at)
+        if updates:
+            params.append(fact_id)
+            await self._conn.execute(f"UPDATE facts SET {', '.join(updates)} WHERE id = ?", params)
+            await self._conn.commit()
+
+    async def _load_twin(self, subject):
+        async with self._conn.execute("SELECT data_json FROM digital_twins WHERE subject = ?", (subject,)) as cur:
             row = await cur.fetchone()
-        if row is None:
-            return DigitalTwin(subject=subject)
-        return self._deserialize_twin(subject, row["data_json"])
+        return self._deserialize_twin(subject, row["data_json"]) if row else DigitalTwin(subject=subject)
 
-    async def update_digital_twin(self, twin: DigitalTwin) -> None:
-        twin.last_updated = time.time()
-        twin.recalculate_completeness()
+    async def _save_twin(self, twin):
         await self._conn.execute(
-            "INSERT INTO digital_twins (subject, data_json, updated_at) VALUES (?, ?, ?) "
-            "ON CONFLICT(subject) DO UPDATE SET data_json=excluded.data_json, updated_at=excluded.updated_at",
-            (twin.subject, self._serialize_twin(twin), time.time()),
+            "INSERT INTO digital_twins (subject, data_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(subject) DO UPDATE SET data_json=excluded.data_json, updated_at=excluded.updated_at",
+            (twin.subject, json.dumps(dataclasses.asdict(twin), ensure_ascii=False), time.time()),
         )
         await self._conn.commit()
 
-    async def suggest_questions(self, subject: str = "user") -> list[str]:
-        twin = await self.get_digital_twin(subject)
-        q_map = {
-            "name": "你叫什么名字？",
-            "occupation": "你是做什么工作的？",
-            "location": "你在哪个城市？",
-            "language": "你常用的语言是什么？",
-        }
-        return [q_map[f] for f in twin.missing_profile_fields() if f in q_map]
-
-    # ── 混合召回 ─────────────────────────────────────
-
-    async def recall(
-        self,
-        query: str,
-        session_id: Optional[str] = None,
-        limit: int = 10,
-    ) -> list[Hit]:
-        # Phase 1: FTS 关键词召回；Phase 2 接入向量 + RRF
-        return await self._fts_search(query, session_id, limit)
-
-    async def vector_search(self, query: str, limit: int = 20) -> list[Hit]:
-        # Phase 2 实现 BGE-M3；Phase 1 降级为 FTS
-        return await self._fts_search(query, None, limit)
-
-    async def _fts_search(
-        self,
-        query: str,
-        session_id: Optional[str],
-        limit: int,
-    ) -> list[Hit]:
-        q = f"%{query.lower()}%"
-        sql = "SELECT * FROM messages WHERE lower(content) LIKE ? "
-        params: list = [q]
-        if session_id:
-            sql += "AND session_id = ? "
-            params.append(session_id)
-        sql += "ORDER BY created_at DESC LIMIT ?"
-        params.append(limit * 2)
-        async with self._conn.execute(sql, params) as cur:
-            rows = await cur.fetchall()
-        ranked = [
-            RankedItem(
-                message_id=r["id"],
-                text=r["content"],
-                rank=i + 1,
-                source="fts",
-                recency=1.0 / (i + 1),
-                salience=r["salience"],
-                session_id=r["session_id"],
-                role=r["role"],
-                created_at=r["created_at"],
-            )
-            for i, r in enumerate(rows)
-        ]
-        fused = fuse([ranked], limit=limit)
-        return [
-            Hit(
-                message_id=f["message_id"],
-                text=f["text"],
-                score=f["score"],
-                source=f["source"],
-                recency=f["recency"],
-                salience=f["salience"],
-                session_id=f["session_id"],
-                role=f["role"],
-                created_at=f["created_at"],
-            )
-            for f in fused
-        ]
-
-    # ── 认知维护 ─────────────────────────────────────
-
-    async def daily_decay(self) -> dict[str, int]:
-        # Phase 3 实现完整衰减；Phase 1 返回 0
-        return {"decayed": 0, "forgotten": 0}
-
-    async def summarize_old_sessions(
-        self,
-        older_than_days: int = 7,
-        max_sessions: int = 5,
-    ) -> dict[str, int]:
-        return {"summarized_sessions": 0}
-
-    async def record_workspace_action(
-        self,
-        session_id: str,
-        action_type: str,
-        payload: dict,
-    ) -> None:
+    async def _record_workspace_impl(self, session_id, action_type, payload):
         await self._conn.execute(
-            "INSERT INTO workspace_actions (session_id, action_type, payload_json, created_at) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO workspace_actions (session_id, action_type, payload_json, created_at) VALUES (?, ?, ?, ?)",
             (session_id, action_type, json.dumps(payload, ensure_ascii=False), time.time()),
         )
         await self._conn.commit()
 
-    # ── 序列化辅助 ────────────────────────────────────
-
     @staticmethod
-    def _row_to_message(row: aiosqlite.Row) -> Message:
+    def _row_to_message(row):
         return Message(
-            id=row["id"],
-            session_id=row["session_id"],
-            role=row["role"],
-            content=row["content"],
-            created_at=row["created_at"],
-            salience=row["salience"],
-            decay_rate=row["decay_rate"],
-            last_recalled=row["last_recalled"],
-            embedding=row["embedding"],
-            is_summary=bool(row["is_summary"]),
-            summary_of=row["summary_of"],
+            id=row["id"], session_id=row["session_id"], role=row["role"], content=row["content"],
+            created_at=row["created_at"], salience=row["salience"], decay_rate=row["decay_rate"],
+            last_recalled=row["last_recalled"], embedding=row["embedding"],
+            is_summary=bool(row["is_summary"]), summary_of=row["summary_of"],
         )
 
     @staticmethod
-    def _row_to_fact(row: aiosqlite.Row) -> Fact:
-        f = Fact(
-            id=row["id"],
-            subject=row["subject"],
-            key=row["key"],
-            value=row["value"],
-            category=row["category"],
-            confidence=row["confidence"],
-            evidence=row["evidence"],
-            source_msg_id=row["source_msg_id"],
-            created_at=row["created_at"],
-            pinned=bool(row["pinned"]),
-            last_decay_at=row["last_decay_at"],
-            superseded_by=row["superseded_by"],
-            forgotten_at=row["forgotten_at"],
+    def _row_to_fact(row):
+        return Fact(
+            id=row["id"], subject=row["subject"], key=row["key"], value=row["value"],
+            category=row["category"], confidence=row["confidence"], evidence=row["evidence"],
+            source_msg_id=row["source_msg_id"], created_at=row["created_at"],
+            pinned=bool(row["pinned"]), last_decay_at=row["last_decay_at"],
+            superseded_by=row["superseded_by"], forgotten_at=row["forgotten_at"],
         )
-        return f
 
     @staticmethod
-    def _serialize_twin(twin: DigitalTwin) -> str:
-        import dataclasses
-        return json.dumps(dataclasses.asdict(twin), ensure_ascii=False)
-
-    @staticmethod
-    def _deserialize_twin(subject: str, data_json: str) -> DigitalTwin:
-        # Phase 1 简化：反序列化失败时返回空孪生体
+    def _deserialize_twin(subject, data_json):
         try:
-            data = json.loads(data_json)
-            twin = DigitalTwin(subject=subject)
-            p = data.get("profile", {})
-            from simple_harness_memory.core.twin import (
-                Goal, PreferenceMap, RelationshipGraph, SkillMap, UserProfile
-            )
-            twin.profile = UserProfile(**{k: v for k, v in p.items() if k != "extra"})
-            twin.profile.extra = p.get("extra", {})
-            twin.completeness = data.get("completeness", 0.0)
-            twin.confidence = data.get("confidence", 0.0)
-            twin.last_updated = data.get("last_updated")
-            return twin
+            d = json.loads(data_json)
         except Exception:
             return DigitalTwin(subject=subject)
+        twin = DigitalTwin(subject=d.get("subject", subject))
+        p = d.get("profile") or {}
+        twin.profile = UserProfile(name=p.get("name"), occupation=p.get("occupation"), location=p.get("location"), language=p.get("language"), timezone=p.get("timezone"), extra=p.get("extra") or {})
+        sm = (d.get("skills") or {}).get("skills") or {}
+        twin.skills = SkillMap(skills={})
+        for name, sk in sm.items():
+            twin.skills.skills[name] = Skill(name=sk.get("name", name), level=sk.get("level", 0.5), evidence_count=sk.get("evidence_count", 0), last_updated=sk.get("last_updated"))
+        pm = (d.get("preferences") or {}).get("preferences") or {}
+        twin.preferences = PreferenceMap(preferences={})
+        for key, pr in pm.items():
+            twin.preferences.preferences[key] = Preference(key=pr.get("key", key), value=pr.get("value", ""), strength=pr.get("strength", 0.5), evidence_count=pr.get("evidence_count", 0))
+        rg = (d.get("relationships") or {}).get("entities") or {}
+        twin.relationships = RelationshipGraph(entities={})
+        for name, e in rg.items():
+            twin.relationships.entities[name] = Entity(name=e.get("name", name), entity_type=e.get("entity_type", "object"), relation=e.get("relation", ""), attributes=e.get("attributes") or {}, confidence=e.get("confidence", 0.5), last_mentioned=e.get("last_mentioned"))
+        twin.goals = []
+        for g in d.get("goals") or []:
+            twin.goals.append(Goal(goal_id=g.get("goal_id", ""), description=g.get("description", ""), deadline=g.get("deadline"), status=g.get("status", "active"), priority=g.get("priority", 0.5), created_at=g.get("created_at")))
+        twin.completeness = d.get("completeness", 0.0)
+        twin.confidence = d.get("confidence", 0.0)
+        twin.last_updated = d.get("last_updated")
+        return twin

@@ -12,9 +12,14 @@ from simple_harness_memory.cognitive.session_affinity import (
     cross_session_weight,
     temporal_affinity,
 )
+from simple_harness_memory.cognitive.twin_builder import (
+    build_twin_from_facts,
+    detect_fact_conflicts,
+)
 
 __all__ = [
     "retention", "should_forget", "decay_salience", "bump_salience", "days_since",
     "FORGET_THRESHOLD", "SALIENCE_RECALL_DELTA",
     "cross_session_weight", "temporal_affinity",
+    "build_twin_from_facts", "detect_fact_conflicts",
 ]

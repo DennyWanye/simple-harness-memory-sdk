@@ -1,0 +1,22 @@
+{
+  "profile": "standard",
+  "acceptance_ids": ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-7", "AC-8"],
+  "protected_assets": [
+    {"id": "ASSET-1", "description": "本地记忆数据库（messages/facts/digital_twins/workspace_actions）"},
+    {"id": "ASSET-2", "description": "数字孪生体与结构化 facts 的用户隐私内容"}
+  ],
+  "trusted_assumptions": [
+    {"id": "TRUST-1", "description": "开发者账户与本地文件系统可信"},
+    {"id": "TRUST-2", "description": "无远程多租户，数据仅本地单机"}
+  ],
+  "in_scope_failures": [
+    {"id": "FAIL-1", "description": "可选依赖（torch/httpx/openai）缺失导致能力降级"},
+    {"id": "FAIL-2", "description": "错误输入或未初始化后端导致异常"}
+  ],
+  "in_scope_adversaries": [],
+  "out_of_scope_conditions": [
+    {"id": "OOS-1", "description": "网络中间人与恶意模型输出注入"},
+    {"id": "OOS-2", "description": "云端后端与跨设备同步的多租户安全"}
+  ],
+  "maximum_acceptable_impact": "本地单机记忆数据损坏或丢失，无跨用户/生产外泄面"
+}
