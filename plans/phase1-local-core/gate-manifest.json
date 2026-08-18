@@ -1,0 +1,23 @@
+{
+  "repo_root": "/Users/denny/projects/simple-harness-memory-sdk",
+  "run_id": "phase1-local-core",
+  "source_request_text": "开发 simple-harness-memory-sdk 本地记忆核心与世界对象（首个 release unit，无云、无 torch）",
+  "acceptance_file": "acceptance.md",
+  "scenarios": [
+    {"scenario_id": "AC-1", "required": true},
+    {"scenario_id": "AC-2", "required": true},
+    {"scenario_id": "AC-3", "required": true},
+    {"scenario_id": "AC-4", "required": true},
+    {"scenario_id": "AC-5", "required": true},
+    {"scenario_id": "AC-6", "required": true},
+    {"scenario_id": "AC-7", "required": true},
+    {"scenario_id": "AC-8", "required": true}
+  ],
+  "applicability": {
+    "input_sensitive": {"value": false, "rationale": "本地库，规则事实提取与哈希向量均确定性可测，输出不随自然语言输入语义波动", "decided_by": "agent"},
+    "llm_payload_driven": {"value": false, "rationale": "无 LLM 生成结构化载荷驱动端侧状态机或卡片渲染", "decided_by": "agent"},
+    "stateful_init": {"value": false, "rationale": "仅本地 SQLite 文件，无异步注册服务、远程配置或登录态依赖", "decided_by": "agent"}
+  },
+  "release_unit": {"must_ac": 8, "tasks": 9, "subsystems": 1},
+  "thresholds": {}
+}

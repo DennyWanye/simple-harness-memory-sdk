@@ -1,0 +1,11 @@
+{
+  "run_id": "phase1-local-core",
+  "acceptance_file": "acceptance.md",
+  "assurance_contract": "assurance-contract.json",
+  "plan_file": "plans/phase1-local-core/plan.md",
+  "commit": "5e80416",
+  "test_command": "python -m pytest tests -q",
+  "test_result": "47 passed",
+  "required_scenarios": ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-7", "AC-8"],
+  "release_unit": {"must_ac": 8, "tasks": 9, "subsystems": 1}
+}

@@ -1,0 +1,21 @@
+{
+  "verdict": "PASS",
+  "engine": "gpt-5",
+  "scope": "simple-harness-memory-sdk 首个 release unit：本地记忆核心 + 世界对象（无云、无 torch）",
+  "method": "逐条 AC 对照测试文件与 pytest 结果，核对 8 条必须 AC 均有自动化断言覆盖",
+  "ac_coverage": {
+    "AC-1": "契约与模型：import 全绿，Fact 按 category 差异化 decay_rate 由 event/profile 衰减测试间接覆盖",
+    "AC-2": "Mock 后端：test_mock_backend 覆盖 append/get_recent/get_message/会话隔离",
+    "AC-3": "SQLite 后端：test_sqlite_backend 覆盖 close→reopen 持久化与孪生体持久化",
+    "AC-4": "Facts 提取：test_facts 覆盖 pet_name/prefers 规则提取，SQLite 集成覆盖 supersede 写入",
+    "AC-5": "RRF 召回：test_rrf + test_mock_backend + test_sqlite_backend 覆盖命中/无命中/召回路径",
+    "AC-6": "遗忘衰减：test_sqlite_decay 覆盖 event 超期 forgotten，test_cognitive 覆盖 retention/pinned/profile",
+    "AC-7": "数字孪生体：test_twin_builder 覆盖 profile/skills/relationships 构建与冲突检测",
+    "AC-8": "世界对象与装配：test_world + test_manager 覆盖 temporal/knowledge/events/weather 降级与端到端"
+  },
+  "findings": [
+    {"id": "F-1", "severity": "minor", "text": "AC-5 的 salience 召回提升在实现中执行，但未单独断言；建议后续 slice 补一条显式断言"},
+    {"id": "F-2", "severity": "minor", "text": "AC-1 的 FACT_DECAY_DEFAULTS 表未直接断言，仅通过 event/profile 衰减间接覆盖"}
+  ],
+  "conclusion": "8 条必须 AC 均有 pytest 覆盖，47 passed，无阻塞缺口；本 release unit 为确定性本地库，无 UI 真人矩阵适用。"
+}

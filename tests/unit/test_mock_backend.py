@@ -119,3 +119,30 @@ async def test_fact_active_and_forget(backend: MockMemoryBackend) -> None:
     assert ok
     active_after = await backend.get_facts("user", active_only=True)
     assert not any(f.key == "pet_name" for f in active_after)
+
+
+def test_fact_decay_defaults_by_category() -> None:
+    """AC-1 / F-2：Fact 按 category 得到差异化 decay_rate。"""
+    assert FACT_DECAY_DEFAULTS["profile"] == 0.0
+    assert FACT_DECAY_DEFAULTS["event"] == 0.05
+    assert FACT_DECAY_DEFAULTS["constraint"] == 0.001
+    profile = Fact(
+        id=None, subject="user", key="name", value="张三", category="profile",
+        confidence=0.9, evidence="", source_msg_id=1, created_at=0.0,
+    )
+    event = Fact(
+        id=None, subject="user", key="event", value="昨天去了北京", category="event",
+        confidence=0.6, evidence="", source_msg_id=1, created_at=0.0,
+    )
+    assert profile.decay_rate == 0.0
+    assert event.decay_rate == 0.05
+
+
+@pytest.mark.asyncio
+async def test_recall_bumps_salience(backend: MockMemoryBackend) -> None:
+    """AC-5 / F-1：召回后命中消息 salience 提升 0.05。"""
+    msg_id = await backend.append_message("s1", "user", "我养了一只猫")
+    await backend.recall("猫")
+    msg = await backend.get_message(msg_id)
+    assert msg is not None
+    assert msg.salience == pytest.approx(0.05)

@@ -1,0 +1,40 @@
+{
+  "acceptance_sha256": "4e83db9ca50048d623e276f61db5437870a436983bf6268cb344b6ad41f75979",
+  "auditor_input_sha256": "aa5510f1ec8cc1d4cc9b821eca28ee245c1af4812ff78acb5fc82d13fd505afe",
+  "auditor_output_sha256": "fcb6bd5da7dcbcddcdcb90d2a82b91e4c620a2ead1628ca670d63a078ef85718",
+  "content_basis": "worktree-content-excluding-declared-scope",
+  "content_digest": "f4701e76f6111a7c9b444285692e5a5a0fe1995a143c65ec5d2392edcbb117ab",
+  "dirty_patch_sha256": "0b5f10cf37d63ae9f9f3bfee9bd40932931ef1b1132c61765223ee738de87c14",
+  "evidence_manifest_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "exclusion_scope": [
+    "plans/phase1-local-core/verification/run-1"
+  ],
+  "finalized_at": "2026-08-18T17:02:13+0800",
+  "fixture_only": false,
+  "head": "5e80416db723221f369d4349df8aa76b6e680084",
+  "ledger_sha256": "90f5a81f88723e9155682f664eacb6c1ee2b17b570824a62a35ccbbd1acca3f5",
+  "receipt_version": 1,
+  "retired": false,
+  "run_id": "phase1-local-core",
+  "scenario_statuses": {
+    "AC-1": "PASS",
+    "AC-2": "PASS",
+    "AC-3": "PASS",
+    "AC-4": "PASS",
+    "AC-5": "PASS",
+    "AC-6": "PASS",
+    "AC-7": "PASS",
+    "AC-8": "PASS"
+  },
+  "schema_version": "1.4.0",
+  "state": "SHIPPABLE",
+  "superseded_by": null,
+  "testcase_lock_sha256": "346ea8380be046be9259fd396e107dfc1690e2fc483cf94017c08df8acf9be7d",
+  "tested_code_head": "5e80416db723221f369d4349df8aa76b6e680084",
+  "timing_summary": {
+    "declared_ms": 0,
+    "entries": 0,
+    "measured_ms": 0
+  },
+  "validator_version": "1.4.0"
+}
