@@ -3,6 +3,7 @@ from simple_harness_memory.embedders import (
     cosine_similarity,
     decode_vector,
     encode_vector,
+    get_embedder,
 )
 
 
@@ -26,3 +27,25 @@ def test_cosine_related_higher_than_unrelated():
 def test_vector_roundtrip():
     v = [0.1, 0.2, 0.3]
     assert decode_vector(encode_vector(v)) == v
+
+
+def test_get_embedder_hash():
+    assert isinstance(get_embedder("hash"), HashEmbedder)
+    assert isinstance(get_embedder("mock"), HashEmbedder)
+
+
+def test_get_embedder_auto_falls_back_to_hash():
+    # torch/sentence-transformers 未装 → auto 回退到 hash。
+    assert isinstance(get_embedder("auto"), HashEmbedder)
+
+
+def test_get_embedder_bge_raises_without_dependency():
+    import pytest
+    with pytest.raises(ImportError):
+        get_embedder("bge")
+
+
+def test_get_embedder_unknown_kind():
+    import pytest
+    with pytest.raises(ValueError):
+        get_embedder("nope")

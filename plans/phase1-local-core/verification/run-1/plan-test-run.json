@@ -21,17 +21,17 @@
     }
   },
   "auditor": {
-    "audited_at": "2026-08-18T17:02:13+0800",
+    "audited_at": "2026-08-18T17:28:36+0800",
     "engine": "gpt-5",
-    "facts_digest": "5b753b1b5e7901406f1bb26fc48dc854b85ab138e49558931f1a728cb6912931",
+    "facts_digest": "64cf704a51a72044321ca72bd3188d789f4d88fcd15ea77b3f94bf3bd6e28bfb",
     "input_path": "auditor-input.json",
-    "input_sha256": "aa5510f1ec8cc1d4cc9b821eca28ee245c1af4812ff78acb5fc82d13fd505afe",
+    "input_sha256": "3c8f4706cd4b2586079eb348490d254c128354531164d2990b92b954da66f393",
     "output_path": "auditor-output.json",
-    "output_sha256": "fcb6bd5da7dcbcddcdcb90d2a82b91e4c620a2ead1628ca670d63a078ef85718",
+    "output_sha256": "d1b3efb9f5ed65f8cd357d9eee096cc22ba68ee3a6d8738c5f455f1c9903f9af",
     "verdict": "PASS"
   },
   "baseline": {
-    "content_digest": "31ee2149273f905bb94fdd266ae673f01edb37cadffe5d2fd727d162d750c45b",
+    "content_digest": "9dbddc2bf31d6f64984423ab2edcf23a07cb331e146d0f8044af78c1fb3cb5a7",
     "content_entries": [
       [
         ".gitignore",
@@ -231,7 +231,7 @@
       ],
       [
         "tests/unit/test_mock_backend.py",
-        "-:4c054f9ce070890ad48518b1eea41297a90eac44abeb53bcda45f42a11a311ee"
+        "-:e613aa8542bc3e652023088999802deb89aa63063d979b3ed54e7e0bc7908819"
       ],
       [
         "tests/unit/test_rrf.py",
@@ -246,24 +246,36 @@
         "-:0dff02a49b0b382d0bfc6ad94e50d877213560645a44c6ef325334fa01ca7d31"
       ]
     ],
-    "dirty_patch_sha256": "0b5f10cf37d63ae9f9f3bfee9bd40932931ef1b1132c61765223ee738de87c14",
-    "exclusion_count": 1,
+    "dirty_patch_sha256": "2ac7686fcdf18b407f2d30a22673e83079ebd62679000c62f47af2b63a530861",
+    "exclusion_count": 4,
     "exclusion_scope": [
       "plans/phase1-local-core/verification/run-1"
     ],
     "exclusions": [
       [
+        "plans/phase1-local-core/verification/run-1/auditor-input.json",
+        "declared-scope:plans/phase1-local-core/verification/run-1"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/auditor-output.json",
+        "declared-scope:plans/phase1-local-core/verification/run-1"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/gate-receipt.json",
+        "declared-scope:plans/phase1-local-core/verification/run-1"
+      ],
+      [
         "plans/phase1-local-core/verification/run-1/plan-test-run.json",
         "declared-scope:plans/phase1-local-core/verification/run-1"
       ]
     ],
-    "head": "5e80416db723221f369d4349df8aa76b6e680084",
-    "recorded_at": "2026-08-18T16:52:50+0800"
+    "head": "403c4c56c5007d7084a2772642f9987f3cb3cfba",
+    "recorded_at": "2026-08-18T17:28:36+0800"
   },
   "behavior_changes": [],
   "behavior_contract": {},
   "challenge_loops": [],
-  "created_at": "2026-08-18T16:52:50+0800",
+  "created_at": "2026-08-18T17:28:36+0800",
   "declared_statuses": [],
   "delivery": {},
   "doc_only_globs": null,
@@ -276,76 +288,76 @@
   "external_run_dir": false,
   "fixture_only": false,
   "integrity": {
-    "chain": "c3830e9660ddbc85586088a6eb5b456233a2e2b714d8d9ba41b8107213c79e4f",
-    "genesis": "0a95a82f1a448157deba8e19117d4e22f1e69a39dd7dad285309f7182ddeda0f",
+    "chain": "d4f16d47997a000ed9711d7d4aa5cef2eb3a909c7b012f02f28ef8f6e4969718",
+    "genesis": "485fc30aa4e38038c834e72d8f54ffb0cd3b11f7a28e70df98c61c60a2ab48d4",
     "log": [
       {
-        "at": "2026-08-18T16:52:50+0800",
-        "chain": "5808b868ee28f67ca43dc381b9f90edf84078af5205defffaa064a687a3fa664",
-        "facts_digest": "9737c0f1472258d264011c6b5477142768fac5a92f4012fac0ccc21a895c56c6",
+        "at": "2026-08-18T17:28:36+0800",
+        "chain": "5b5be5d1ab3b79177d14e7a42d4bd6d0bf008902ea731473f980b8e962450e6b",
+        "facts_digest": "52945e60dee99d070ab16f0309d2579025ab73c0741f9efc5d74d62e79d63770",
         "op": "init",
         "seq": 1
       },
       {
-        "at": "2026-08-18T16:52:50+0800",
-        "chain": "eecfc71f9e9a8d8b612bd9caddfbe88135fb8ee2aca0ebb70a1a01d90537329a",
-        "facts_digest": "83e01be454516f372d8624a7a188e422330ec3f39c3b6945a41bfbec484cf2e4",
+        "at": "2026-08-18T17:28:36+0800",
+        "chain": "08a4ac84b20d320cf7c6da822519d25b582a9466744d21f2bbed4b78553c07f4",
+        "facts_digest": "e4d6ac23d104b251e9d7094f209be4f53067a9ce4be350611073898bbb405c98",
         "op": "record-run",
         "seq": 2
       },
       {
-        "at": "2026-08-18T16:52:50+0800",
-        "chain": "41e2f35333d96837053d508e87f3f9b73d050d87ab43c825b4e6651314fb4fee",
-        "facts_digest": "24f019e2ab0dd3ca1fa7bc0633ab639e369bba46acb53c21a49a3658367f6e85",
+        "at": "2026-08-18T17:28:36+0800",
+        "chain": "e1fee3a49256acabd0897b0da79cb451e728e63355c27fde5539739d05b931e9",
+        "facts_digest": "60d8fbf4ec6cc8c80f3088030d332ea4c4c08d5ecd6734eea6456551a05df4c6",
         "op": "record-run",
         "seq": 3
       },
       {
-        "at": "2026-08-18T16:52:50+0800",
-        "chain": "f0f7eccff4e820b6ddc8e8346e492771e2d4dbd9c8008c48128d0de8f846221a",
-        "facts_digest": "e88c60323982d238354a5a3e95408e087ff42d608ee2716468e06fae4059ccad",
+        "at": "2026-08-18T17:28:36+0800",
+        "chain": "c14835847ca986f387c995bbeb4275d6b9c1c32019ffa35fc622ffdcee29c95a",
+        "facts_digest": "f8067f6fb061a8ca4d059aea9d40cb10cdd05d748bc5a74e569fed0e6dd2b350",
         "op": "record-run",
         "seq": 4
       },
       {
-        "at": "2026-08-18T16:52:50+0800",
-        "chain": "2fcd592178aff984f3becd1bf603d7ab97f2fa56a9b35050fed97892609053bf",
-        "facts_digest": "898eb5513469bd45451318905df6c0954fe0f4bf9746620b35c4aa675e6a4d40",
+        "at": "2026-08-18T17:28:36+0800",
+        "chain": "3483f86d7b742049b8e75cab1d138eb1f932bfd7dc03310326a8ce6baa638c2d",
+        "facts_digest": "445b58b8f48229ca9bc2bc22f6fb46560fd6b283db5267228ee3f91f02dd4b85",
         "op": "record-run",
         "seq": 5
       },
       {
-        "at": "2026-08-18T16:52:50+0800",
-        "chain": "0e682593821f86774b734b24d858f813a55f8466e36712ef6dda1e00fb159875",
-        "facts_digest": "cf0235c2bde37059084fca84650675e8447b3ce704ff36b0b0be7f2da9124d6f",
+        "at": "2026-08-18T17:28:36+0800",
+        "chain": "d959537ec9b7ee2315b81a8adb8f3c5da0219c7b763e25c6654952129b330927",
+        "facts_digest": "f0a70d35f24242f7b0444229368e6db8c40bead89d0ce8d93d995cd6cfca9312",
         "op": "record-run",
         "seq": 6
       },
       {
-        "at": "2026-08-18T16:52:51+0800",
-        "chain": "2916592df46355f66a31031e6851d56ec42aa15f65246078bc943b37044ce13b",
-        "facts_digest": "69d2e530aff2d809c164b2f4e5c21957eead4eead06db14fc1ce4d7a2670ca2e",
+        "at": "2026-08-18T17:28:36+0800",
+        "chain": "9d060ebcfee7ccf2dc60404603e8088e9ab679fc28568e816c947203cae51430",
+        "facts_digest": "cfe1548edd8022b706c15872aaa94fd0754d6ada02e6c07e59c753937f754a3d",
         "op": "record-run",
         "seq": 7
       },
       {
-        "at": "2026-08-18T16:52:51+0800",
-        "chain": "cb7a4739a1418f5779c081e68bcbef9b666a61bb41ddc7af7f3f94d8cabc818b",
-        "facts_digest": "0d220b8946ec07494d798b8fa9ad443069a2b005ec009e7fb05ef5c3c5259e52",
+        "at": "2026-08-18T17:28:36+0800",
+        "chain": "f64e91484db1226f2d3126488e349be19af9d7ad293ed9505bdc927bebc2e89a",
+        "facts_digest": "cf2627406090f8a1c72cb3f63a81c791d758d8f4ad3e73cd954e3e9945034d41",
         "op": "record-run",
         "seq": 8
       },
       {
-        "at": "2026-08-18T16:52:51+0800",
-        "chain": "e5037bc5ce9c03d69b7ba3671dfa54a2520845b114a71fe05e025e9edefc3715",
-        "facts_digest": "d65bf064c259377c4a8d8870ed79b1bb032fdfd363806be0fe938111b22122c4",
+        "at": "2026-08-18T17:28:36+0800",
+        "chain": "e18f33cca5fbb334a7bf31f3b067e4ec9a73b2bef874e1395b18d8109f971be5",
+        "facts_digest": "8b316d13acbe8386594041c78a09552df78844246ff9efe0b98b6f0820b304e4",
         "op": "record-run",
         "seq": 9
       },
       {
-        "at": "2026-08-18T17:02:13+0800",
-        "chain": "c3830e9660ddbc85586088a6eb5b456233a2e2b714d8d9ba41b8107213c79e4f",
-        "facts_digest": "0b1f8ea8feff308adc9776673ffa7f3d5d3dbe117c328089609fbba258c706db",
+        "at": "2026-08-18T17:28:36+0800",
+        "chain": "d4f16d47997a000ed9711d7d4aa5cef2eb3a909c7b012f02f28ef8f6e4969718",
+        "facts_digest": "2c68c9139b4d4e20cb52c5c1c18cd7758b5872f16432cd91d3e023f5b6d87f75",
         "op": "audit",
         "seq": 10
       }
@@ -366,7 +378,7 @@
       "driver": "ai",
       "kind": "root",
       "lane": "fresh",
-      "recorded_at": "2026-08-18T16:52:50+0800",
+      "recorded_at": "2026-08-18T17:28:36+0800",
       "result": "pass",
       "scenario_id": "AC-1"
     },
@@ -375,7 +387,7 @@
       "driver": "ai",
       "kind": "root",
       "lane": "fresh",
-      "recorded_at": "2026-08-18T16:52:50+0800",
+      "recorded_at": "2026-08-18T17:28:36+0800",
       "result": "pass",
       "scenario_id": "AC-2"
     },
@@ -384,7 +396,7 @@
       "driver": "ai",
       "kind": "root",
       "lane": "fresh",
-      "recorded_at": "2026-08-18T16:52:50+0800",
+      "recorded_at": "2026-08-18T17:28:36+0800",
       "result": "pass",
       "scenario_id": "AC-3"
     },
@@ -393,7 +405,7 @@
       "driver": "ai",
       "kind": "root",
       "lane": "fresh",
-      "recorded_at": "2026-08-18T16:52:50+0800",
+      "recorded_at": "2026-08-18T17:28:36+0800",
       "result": "pass",
       "scenario_id": "AC-4"
     },
@@ -402,7 +414,7 @@
       "driver": "ai",
       "kind": "root",
       "lane": "fresh",
-      "recorded_at": "2026-08-18T16:52:50+0800",
+      "recorded_at": "2026-08-18T17:28:36+0800",
       "result": "pass",
       "scenario_id": "AC-5"
     },
@@ -411,7 +423,7 @@
       "driver": "ai",
       "kind": "root",
       "lane": "fresh",
-      "recorded_at": "2026-08-18T16:52:51+0800",
+      "recorded_at": "2026-08-18T17:28:36+0800",
       "result": "pass",
       "scenario_id": "AC-6"
     },
@@ -420,7 +432,7 @@
       "driver": "ai",
       "kind": "root",
       "lane": "fresh",
-      "recorded_at": "2026-08-18T16:52:51+0800",
+      "recorded_at": "2026-08-18T17:28:36+0800",
       "result": "pass",
       "scenario_id": "AC-7"
     },
@@ -429,13 +441,13 @@
       "driver": "ai",
       "kind": "root",
       "lane": "fresh",
-      "recorded_at": "2026-08-18T16:52:51+0800",
+      "recorded_at": "2026-08-18T17:28:36+0800",
       "result": "pass",
       "scenario_id": "AC-8"
     }
   ],
   "runtime_attestation": {
-    "content_digest": "31ee2149273f905bb94fdd266ae673f01edb37cadffe5d2fd727d162d750c45b",
+    "content_digest": "9dbddc2bf31d6f64984423ab2edcf23a07cb331e146d0f8044af78c1fb3cb5a7",
     "content_entries": [
       [
         ".gitignore",
@@ -635,7 +647,7 @@
       ],
       [
         "tests/unit/test_mock_backend.py",
-        "-:4c054f9ce070890ad48518b1eea41297a90eac44abeb53bcda45f42a11a311ee"
+        "-:e613aa8542bc3e652023088999802deb89aa63063d979b3ed54e7e0bc7908819"
       ],
       [
         "tests/unit/test_rrf.py",
@@ -650,19 +662,31 @@
         "-:0dff02a49b0b382d0bfc6ad94e50d877213560645a44c6ef325334fa01ca7d31"
       ]
     ],
-    "dirty_patch_sha256": "0b5f10cf37d63ae9f9f3bfee9bd40932931ef1b1132c61765223ee738de87c14",
-    "exclusion_count": 1,
+    "dirty_patch_sha256": "2ac7686fcdf18b407f2d30a22673e83079ebd62679000c62f47af2b63a530861",
+    "exclusion_count": 4,
     "exclusion_scope": [
       "plans/phase1-local-core/verification/run-1"
     ],
     "exclusions": [
       [
+        "plans/phase1-local-core/verification/run-1/auditor-input.json",
+        "declared-scope:plans/phase1-local-core/verification/run-1"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/auditor-output.json",
+        "declared-scope:plans/phase1-local-core/verification/run-1"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/gate-receipt.json",
+        "declared-scope:plans/phase1-local-core/verification/run-1"
+      ],
+      [
         "plans/phase1-local-core/verification/run-1/plan-test-run.json",
         "declared-scope:plans/phase1-local-core/verification/run-1"
       ]
     ],
-    "head": "5e80416db723221f369d4349df8aa76b6e680084",
-    "recorded_at": "2026-08-18T16:52:50+0800"
+    "head": "403c4c56c5007d7084a2772642f9987f3cb3cfba",
+    "recorded_at": "2026-08-18T17:28:36+0800"
   },
   "scenarios": [
     {

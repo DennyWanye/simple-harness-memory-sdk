@@ -19,3 +19,11 @@ async def test_manager_sqlite_with_facts(tmp_path):
     await m.append_message("s1", "user", "我养了一只叫Max的狗，很喜欢吃披萨")
     assert any(f.key == "pet_name" for f in await m.get_facts())
     await m.close()
+
+
+@pytest.mark.asyncio
+async def test_manager_embedder_kind():
+    m = await MemoryManager.build(embedder="hash")
+    await m.append_message("s1", "user", "我养了一只猫")
+    assert len(await m.recall("猫")) >= 1
+    await m.close()

@@ -14,8 +14,8 @@
     "AC-8": "世界对象与装配：test_world + test_manager 覆盖 temporal/knowledge/events/weather 降级与端到端"
   },
   "findings": [
-    {"id": "F-1", "severity": "minor", "text": "AC-5 的 salience 召回提升在实现中执行，但未单独断言；建议后续 slice 补一条显式断言"},
-    {"id": "F-2", "severity": "minor", "text": "AC-1 的 FACT_DECAY_DEFAULTS 表未直接断言，仅通过 event/profile 衰减间接覆盖"}
+    {"id": "F-1", "severity": "minor", "status": "resolved", "text": "已新增 test_recall_bumps_salience 显式断言 AC-5 salience 提升"},
+    {"id": "F-2", "severity": "minor", "status": "resolved", "text": "已新增 test_fact_decay_defaults_by_category 显式断言 AC-1 差异化衰减表"}
   ],
-  "conclusion": "8 条必须 AC 均有 pytest 覆盖，47 passed，无阻塞缺口；本 release unit 为确定性本地库，无 UI 真人矩阵适用。"
+  "conclusion": "8 条必须 AC 均有 pytest 覆盖，49 passed，两条 minor finding 已闭环；本 release unit 为确定性本地库，无 UI 真人矩阵适用。"
 }

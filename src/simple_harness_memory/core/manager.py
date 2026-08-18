@@ -34,6 +34,9 @@ class MemoryManager:
 
     @classmethod
     async def build(cls, db_path=None, *, enable_facts=False, enable_world_model=False, backend=None, embedder=None, fact_extractor=None, reranker=None, summarizer=None, world=None):
+        if isinstance(embedder, str):
+            from simple_harness_memory.embedders.factory import get_embedder
+            embedder = get_embedder(embedder)
         if backend is None:
             kwargs = dict(embedder=embedder, fact_extractor=fact_extractor, reranker=reranker, summarizer=summarizer, auto_extract_facts=enable_facts)
             if db_path is not None:

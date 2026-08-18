@@ -1,0 +1,18 @@
+{
+  "repo_root": "/Users/denny/projects/simple-harness-memory-sdk",
+  "run_id": "phase2-embeddings",
+  "source_request_text": "slice 2：接入 BGE 向量化工厂与 MemoryManager 接线（可选依赖优雅回退）",
+  "acceptance_file": "acceptance.md",
+  "scenarios": [
+    {"scenario_id": "AC-9", "required": true},
+    {"scenario_id": "AC-10", "required": true},
+    {"scenario_id": "AC-11", "required": true}
+  ],
+  "applicability": {
+    "input_sensitive": {"value": false, "rationale": "确定性工厂选择与回退逻辑，不随自然语言输入语义波动", "decided_by": "agent"},
+    "llm_payload_driven": {"value": false, "rationale": "无 LLM 生成结构化载荷驱动端侧状态机或卡片渲染", "decided_by": "agent"},
+    "stateful_init": {"value": false, "rationale": "无异步注册服务、远程配置或登录态依赖", "decided_by": "agent"}
+  },
+  "release_unit": {"must_ac": 3, "tasks": 3, "subsystems": 1},
+  "thresholds": {}
+}

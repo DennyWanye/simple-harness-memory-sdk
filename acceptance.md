@@ -36,3 +36,10 @@
 - 8 条"必须" AC 全部有自动化断言通过
 - 无回归（pytest 全绿）
 - 文档与 ARCHITECTURE 同步
+
+## Slice 2 追加验收条款（[embeddings] BGE 接入）
+| ID | 功能点 | 验收条件（可验证） | 优先级 |
+|----|--------|-------------------|--------|
+| AC-9 | Embedder 工厂 | `get_embedder("hash")`/`("mock")` 返回 `HashEmbedder`；`get_embedder("auto")` 缺 torch 时回退 `HashEmbedder` | 必须 |
+| AC-10 | 依赖降级 | `get_embedder("bge")` 缺 sentence-transformers 时抛清晰 `ImportError`；未知 kind 抛 `ValueError` | 必须 |
+| AC-11 | Manager 接线 | `MemoryManager.build(embedder="hash" 或 Embedder 实例)` 正确注入并可正常召回 | 必须 |
