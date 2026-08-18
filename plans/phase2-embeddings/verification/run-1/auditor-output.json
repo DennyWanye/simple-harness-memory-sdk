@@ -8,6 +8,8 @@
     "AC-10": "test_get_embedder_bge_raises_without_dependency + test_get_embedder_unknown_kind",
     "AC-11": "test_manager_embedder_kind"
   },
-  "findings": [],
-  "conclusion": "3 条必须 AC 均有 pytest 覆盖，54 passed，无阻塞缺口；真实 BGE 模型权重需安装 [embeddings] extra 后另行验证。"
+  "findings": [
+    {"id": "E-1", "severity": "info", "text": "真实 BGE-M3 语义 smoke 已跑：cos(query, related)=0.72 > cos(query, unrelated)=0.42，dim=1024"}
+  ],
+  "conclusion": "3 条必须 AC 均有 pytest 覆盖；默认 53 passed + 3 skipped，RUN_SEMANTIC_SMOKE=1 的 BGE-M3 语义 smoke 通过。"
 }

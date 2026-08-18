@@ -21,17 +21,17 @@
     }
   },
   "auditor": {
-    "audited_at": "2026-08-18T17:30:45+0800",
+    "audited_at": "2026-08-18T17:52:53+0800",
     "engine": "gpt-5",
-    "facts_digest": "c4ceb819459b1912063a39738a7ac55c3f3f3d9f2994c9b60e47cd4b408ab6f5",
+    "facts_digest": "d26c6374478214a6d6a097e8aae59215f9f45583e6d87891e2f0b8b2d99ee70b",
     "input_path": "auditor-input.json",
-    "input_sha256": "f55f96e611027ce28db5d2af8e2eb9945952c130a68072b8162662941b36f567",
+    "input_sha256": "b01b4f2c832e89da0f1d1cd9a7af494bb6166f62b3bfd055fce1c2689b217d49",
     "output_path": "auditor-output.json",
-    "output_sha256": "b383e322c7882ab3dc169284b89817c52dcfa0d89378c972520b135c51c2c5ed",
+    "output_sha256": "c4422152fda941ef010fe9a23b708feb75f9982ec66cab6fa47ef27210d07798",
     "verdict": "PASS"
   },
   "baseline": {
-    "content_digest": "d2e13b1b580ff231a15be3257fdfbaddc6dc360a0805c3f83ba2b54e4a1c9a3e",
+    "content_digest": "e5a1e1b356eb1427fe90ceadd13aa321e618e7aed849ccc54dd42dee4ff9b5be",
     "content_entries": [
       [
         ".gitignore",
@@ -163,7 +163,7 @@
       ],
       [
         "src/simple_harness_memory/embedders/bge.py",
-        "-:370a0962a5c129793bb354873872025a97893b277ed8a8d1d46e0114f9e20fe1"
+        "-:6877f7f0a2effe1d9b3ce6bc86140c5f1532d6084ef6ed883bbcb192b5a0ef96"
       ],
       [
         "src/simple_harness_memory/embedders/factory.py",
@@ -251,7 +251,7 @@
       ],
       [
         "tests/unit/test_embedders.py",
-        "-:106f62a7d1532a7009404f7e60b9f4795acd10afd0667744595c9747a41cecc3"
+        "-:e8f9f4473eebf65c25acd1d01b05974e431edf205b10b496ca9a66b7ca241c69"
       ],
       [
         "tests/unit/test_facts.py",
@@ -275,18 +275,35 @@
       ]
     ],
     "dirty_patch_sha256": "93b385ee4bbcd5ca864442fe71c09c04c291cd0069cb7e9010c2efa0a9a9ccec",
-    "exclusion_count": 0,
+    "exclusion_count": 4,
     "exclusion_scope": [
       "plans/phase2-embeddings/verification/run-1"
     ],
-    "exclusions": [],
-    "head": "5ecbf50dd3581cb4ec49845cc96f1b8b6fee5995",
-    "recorded_at": "2026-08-18T17:30:32+0800"
+    "exclusions": [
+      [
+        "plans/phase2-embeddings/verification/run-1/auditor-input.json",
+        "declared-scope:plans/phase2-embeddings/verification/run-1"
+      ],
+      [
+        "plans/phase2-embeddings/verification/run-1/auditor-output.json",
+        "declared-scope:plans/phase2-embeddings/verification/run-1"
+      ],
+      [
+        "plans/phase2-embeddings/verification/run-1/gate-receipt.json",
+        "declared-scope:plans/phase2-embeddings/verification/run-1"
+      ],
+      [
+        "plans/phase2-embeddings/verification/run-1/plan-test-run.json",
+        "declared-scope:plans/phase2-embeddings/verification/run-1"
+      ]
+    ],
+    "head": "3e178a89698056dba5b011fbb24b4e6200561e7c",
+    "recorded_at": "2026-08-18T17:52:53+0800"
   },
   "behavior_changes": [],
   "behavior_contract": {},
   "challenge_loops": [],
-  "created_at": "2026-08-18T17:30:32+0800",
+  "created_at": "2026-08-18T17:52:53+0800",
   "declared_statuses": [],
   "delivery": {},
   "doc_only_globs": null,
@@ -299,41 +316,41 @@
   "external_run_dir": false,
   "fixture_only": false,
   "integrity": {
-    "chain": "62253eb50be1b06c4121dfa9c272d366e81c1899531a01ce268f40e0f6873ef8",
-    "genesis": "abe156dae23a92f8aa9111667f137359f754e18c3cd0e5cf05f48694ff35785c",
+    "chain": "b67058318f38f23282e606d16b259210831143d216053b30c4f0e219083eb4b3",
+    "genesis": "200319210f71b57ddd85670a1d01bb42632e4cf50a493c7cde15c889b62bb5cc",
     "log": [
       {
-        "at": "2026-08-18T17:30:32+0800",
-        "chain": "b0d09d419c0697afbd3cf5a04020c2c214d0ca09812f2a0cbdc6d1068800cb43",
-        "facts_digest": "ebfa0b9488bcf72784152318d55230755e4be5abe7fe0855b7a9ee349794a93b",
+        "at": "2026-08-18T17:52:53+0800",
+        "chain": "4fffaa1f7f24e6db646268babd82e812a457bf5d72803e00570f2bb4a06dd5aa",
+        "facts_digest": "79d4b5429e41e66d313a74604acda7ba78b2348fe567ff056a1e90e173f0cc7c",
         "op": "init",
         "seq": 1
       },
       {
-        "at": "2026-08-18T17:30:44+0800",
-        "chain": "2f12657114dd15cd0a2a6bf4e83d0e57030c27ac53b3013368811ce73f0a0e63",
-        "facts_digest": "2335b8e4974edcd782dff0a582434700348640120ea5b2fe7619619f7159057c",
+        "at": "2026-08-18T17:52:53+0800",
+        "chain": "d33117e966f73ab46e54dc56519617e5503959f8a903d456c91850c4fdef96a6",
+        "facts_digest": "e17a4b7fb9898926b658fccd6876ac7d3d5dc30b9c864715e54a0996afd58d18",
         "op": "record-run",
         "seq": 2
       },
       {
-        "at": "2026-08-18T17:30:44+0800",
-        "chain": "ed0259d368095f736e17e3cf5ab27329353ffe0edf78f6343f37613fdd5690c8",
-        "facts_digest": "1378a08f3b241fc2a704b217efbbcc37566b86aa4a7cd8980c52c64d0b5e9a6e",
+        "at": "2026-08-18T17:52:53+0800",
+        "chain": "e30b90d5b3db24af3ed3a63d4316be75c2beae746fabce80c7a4d66bda8baf50",
+        "facts_digest": "1bfc10c6de52c1de0fa43373c42b0f2d2c3be7ce9c79680d4133ae6200af8d2e",
         "op": "record-run",
         "seq": 3
       },
       {
-        "at": "2026-08-18T17:30:44+0800",
-        "chain": "acbbf3c2562252f8705d01385de5f2a70010b5f4b0a3eba67439948b63b176f2",
-        "facts_digest": "b691eb2b015fda93dc030113aa49fb2fd9ae63e5f88b65f33297e3e27d545b55",
+        "at": "2026-08-18T17:52:53+0800",
+        "chain": "649eb5e513e17b4f072df40789a462d1083dfc558c51339fcc1bacfb1d8be174",
+        "facts_digest": "030189a1707d4f2718d51313b41f49f00af6e6d32859abcc6b1e49ce088a6456",
         "op": "record-run",
         "seq": 4
       },
       {
-        "at": "2026-08-18T17:30:45+0800",
-        "chain": "62253eb50be1b06c4121dfa9c272d366e81c1899531a01ce268f40e0f6873ef8",
-        "facts_digest": "91eb29ea8308a77f9ae0c2c2a42cae33db2cae9e437cc9f08d4c6ecf7464e588",
+        "at": "2026-08-18T17:52:53+0800",
+        "chain": "b67058318f38f23282e606d16b259210831143d216053b30c4f0e219083eb4b3",
+        "facts_digest": "a6cd6293749274742cc7e64ff73bcb5afea17963204b9784b9b4f1bef90b3286",
         "op": "audit",
         "seq": 5
       }
@@ -354,7 +371,7 @@
       "driver": "ai",
       "kind": "root",
       "lane": "fresh",
-      "recorded_at": "2026-08-18T17:30:44+0800",
+      "recorded_at": "2026-08-18T17:52:53+0800",
       "result": "pass",
       "scenario_id": "AC-9"
     },
@@ -363,7 +380,7 @@
       "driver": "ai",
       "kind": "root",
       "lane": "fresh",
-      "recorded_at": "2026-08-18T17:30:44+0800",
+      "recorded_at": "2026-08-18T17:52:53+0800",
       "result": "pass",
       "scenario_id": "AC-10"
     },
@@ -372,13 +389,13 @@
       "driver": "ai",
       "kind": "root",
       "lane": "fresh",
-      "recorded_at": "2026-08-18T17:30:44+0800",
+      "recorded_at": "2026-08-18T17:52:53+0800",
       "result": "pass",
       "scenario_id": "AC-11"
     }
   ],
   "runtime_attestation": {
-    "content_digest": "d2e13b1b580ff231a15be3257fdfbaddc6dc360a0805c3f83ba2b54e4a1c9a3e",
+    "content_digest": "e5a1e1b356eb1427fe90ceadd13aa321e618e7aed849ccc54dd42dee4ff9b5be",
     "content_entries": [
       [
         ".gitignore",
@@ -510,7 +527,7 @@
       ],
       [
         "src/simple_harness_memory/embedders/bge.py",
-        "-:370a0962a5c129793bb354873872025a97893b277ed8a8d1d46e0114f9e20fe1"
+        "-:6877f7f0a2effe1d9b3ce6bc86140c5f1532d6084ef6ed883bbcb192b5a0ef96"
       ],
       [
         "src/simple_harness_memory/embedders/factory.py",
@@ -598,7 +615,7 @@
       ],
       [
         "tests/unit/test_embedders.py",
-        "-:106f62a7d1532a7009404f7e60b9f4795acd10afd0667744595c9747a41cecc3"
+        "-:e8f9f4473eebf65c25acd1d01b05974e431edf205b10b496ca9a66b7ca241c69"
       ],
       [
         "tests/unit/test_facts.py",
@@ -622,13 +639,30 @@
       ]
     ],
     "dirty_patch_sha256": "93b385ee4bbcd5ca864442fe71c09c04c291cd0069cb7e9010c2efa0a9a9ccec",
-    "exclusion_count": 0,
+    "exclusion_count": 4,
     "exclusion_scope": [
       "plans/phase2-embeddings/verification/run-1"
     ],
-    "exclusions": [],
-    "head": "5ecbf50dd3581cb4ec49845cc96f1b8b6fee5995",
-    "recorded_at": "2026-08-18T17:30:32+0800"
+    "exclusions": [
+      [
+        "plans/phase2-embeddings/verification/run-1/auditor-input.json",
+        "declared-scope:plans/phase2-embeddings/verification/run-1"
+      ],
+      [
+        "plans/phase2-embeddings/verification/run-1/auditor-output.json",
+        "declared-scope:plans/phase2-embeddings/verification/run-1"
+      ],
+      [
+        "plans/phase2-embeddings/verification/run-1/gate-receipt.json",
+        "declared-scope:plans/phase2-embeddings/verification/run-1"
+      ],
+      [
+        "plans/phase2-embeddings/verification/run-1/plan-test-run.json",
+        "declared-scope:plans/phase2-embeddings/verification/run-1"
+      ]
+    ],
+    "head": "3e178a89698056dba5b011fbb24b4e6200561e7c",
+    "recorded_at": "2026-08-18T17:52:53+0800"
   },
   "scenarios": [
     {

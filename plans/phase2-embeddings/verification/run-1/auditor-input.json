@@ -2,8 +2,8 @@
   "run_id": "phase2-embeddings",
   "acceptance_file": "acceptance.md",
   "plan_file": "plans/phase2-embeddings/plan.md",
-  "commit": "5ecbf50",
+  "commit": "3e178a8",
   "test_command": "python -m pytest tests -q",
-  "test_result": "54 passed",
+  "test_result": "53 passed, 3 skipped; RUN_SEMANTIC_SMOKE=1 -> 1 passed",
   "required_scenarios": ["AC-9", "AC-10", "AC-11"]
 }

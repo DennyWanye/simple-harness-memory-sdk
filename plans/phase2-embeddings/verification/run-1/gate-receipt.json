@@ -1,18 +1,18 @@
 {
   "acceptance_sha256": "8a6c63c446202587c172cbb1718108f0fbbc95b75600f3e45a80a607fbac6359",
-  "auditor_input_sha256": "f55f96e611027ce28db5d2af8e2eb9945952c130a68072b8162662941b36f567",
-  "auditor_output_sha256": "b383e322c7882ab3dc169284b89817c52dcfa0d89378c972520b135c51c2c5ed",
+  "auditor_input_sha256": "b01b4f2c832e89da0f1d1cd9a7af494bb6166f62b3bfd055fce1c2689b217d49",
+  "auditor_output_sha256": "c4422152fda941ef010fe9a23b708feb75f9982ec66cab6fa47ef27210d07798",
   "content_basis": "worktree-content-excluding-declared-scope",
-  "content_digest": "f87d4a3f9cf7336ac1ccb71b827e664695659971591ac4865c75bb2fae584155",
+  "content_digest": "65eb74599ba4e69fcb59dbc15493ac0d61335c74343b782354e23fb4ead18993",
   "dirty_patch_sha256": "93b385ee4bbcd5ca864442fe71c09c04c291cd0069cb7e9010c2efa0a9a9ccec",
   "evidence_manifest_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
   "exclusion_scope": [
     "plans/phase2-embeddings/verification/run-1"
   ],
-  "finalized_at": "2026-08-18T17:30:45+0800",
+  "finalized_at": "2026-08-18T17:52:53+0800",
   "fixture_only": false,
-  "head": "5ecbf50dd3581cb4ec49845cc96f1b8b6fee5995",
-  "ledger_sha256": "13d6330666ca220320938a7d7df9147c224926d67a8c018c5bcf707e118c38e4",
+  "head": "3e178a89698056dba5b011fbb24b4e6200561e7c",
+  "ledger_sha256": "3adb58523051a2af9069779e822e96879b75dd64404a786066a03b1c57c27232",
   "receipt_version": 1,
   "retired": false,
   "run_id": "phase2-embeddings",
@@ -25,7 +25,7 @@
   "state": "SHIPPABLE",
   "superseded_by": null,
   "testcase_lock_sha256": "346ea8380be046be9259fd396e107dfc1690e2fc483cf94017c08df8acf9be7d",
-  "tested_code_head": "5ecbf50dd3581cb4ec49845cc96f1b8b6fee5995",
+  "tested_code_head": "3e178a89698056dba5b011fbb24b4e6200561e7c",
   "timing_summary": {
     "declared_ms": 0,
     "entries": 0,
