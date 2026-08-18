@@ -4,7 +4,7 @@
 
 **基于认知科学三层模型 + 数字孪生体 + 世界对象，使用 RRF 混合召回。**
 
-架构设计详见：[00-ARCHITECTURE.md](../simple_harness/plans/2026-08-17-memory-sdk/00-ARCHITECTURE.md)
+架构设计详见：[docs/architecture.md](docs/architecture.md)
 
 ---
 
