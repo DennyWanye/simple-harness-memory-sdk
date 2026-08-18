@@ -3,10 +3,14 @@ from __future__ import annotations
 
 from typing import Optional
 
+import structlog
+
 from simple_harness_memory.core.models import Fact, Hit, Message
 from simple_harness_memory.core.port import MemoryBackend
 from simple_harness_memory.core.twin import DigitalTwin
 from simple_harness_memory.world.port import WorldModelPort
+
+logger = structlog.get_logger("simple_harness_memory.core.manager")
 
 
 class _NullWorldModel(WorldModelPort):
@@ -55,6 +59,12 @@ class MemoryManager:
         else:
             world_model = _NullWorldModel()
 
+        logger.info(
+            "memory.manager_built",
+            backend_type=type(backend).__name__,
+            enable_facts=enable_facts,
+            enable_world_model=enable_world_model,
+        )
         return cls(backend=backend, world=world_model)
 
     async def append_message(self, session_id, role, content, *, salience=0.0, decay_rate=0.02):
@@ -104,6 +114,7 @@ class MemoryManager:
 
     async def close(self):
         await self._backend.close()
+        logger.info("memory.manager_closed", backend_type=type(self._backend).__name__)
 
     async def __aenter__(self):
         return self

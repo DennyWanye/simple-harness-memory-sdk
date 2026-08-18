@@ -6,6 +6,8 @@ import time
 from abc import abstractmethod
 from typing import Optional
 
+import structlog
+
 from simple_harness_memory.cognitive.decay import bump_salience, decay_salience, should_forget
 from simple_harness_memory.cognitive.twin_builder import build_twin_from_facts, detect_fact_conflicts
 from simple_harness_memory.core.models import SINGLE_VALUED_KEYS, Fact, FactConflict, Hit, Message
@@ -17,6 +19,9 @@ from simple_harness_memory.features.facts import FactExtractor, RuleBasedFactExt
 from simple_harness_memory.features.reranker import IdentityReranker, Reranker
 from simple_harness_memory.features.retriever import Retriever
 from simple_harness_memory.features.summarizer import RuleBasedSummarizer, Summarizer
+
+
+logger = structlog.get_logger("simple_harness_memory.backends.base")
 
 
 class BaseMemoryBackend(MemoryBackend):
@@ -68,12 +73,31 @@ class BaseMemoryBackend(MemoryBackend):
     async def _record_workspace_impl(self, session_id, action_type, payload) -> None: ...
 
     async def append_message(self, session_id, role, content, *, salience=0.0, decay_rate=0.02):
-        now = time.time()
-        embedding = encode_vector(self._embedder.embed(content))
-        msg_id = await self._append_message_impl(session_id, role, content, embedding, salience, decay_rate, now, False, None)
-        if self._auto_extract_facts and role == "user":
-            await self.extract_facts(msg_id, content, role)
-        return msg_id
+        try:
+            now = time.time()
+            embedding = encode_vector(self._embedder.embed(content))
+            msg_id = await self._append_message_impl(
+                session_id, role, content, embedding, salience, decay_rate, now, False, None
+            )
+            if self._auto_extract_facts and role == "user":
+                await self.extract_facts(msg_id, content, role)
+            logger.info(
+                "memory.append_message",
+                session_id=session_id,
+                role=role,
+                content_len=len(content),
+                message_id=msg_id,
+                auto_extract_facts=self._auto_extract_facts,
+            )
+            return msg_id
+        except Exception:
+            logger.exception(
+                "memory.append_message_failed",
+                session_id=session_id,
+                role=role,
+                content_len=len(content),
+            )
+            raise
 
     async def get_recent_messages(self, session_id, limit=20):
         return await self._get_recent_messages_impl(session_id, limit)
@@ -82,18 +106,46 @@ class BaseMemoryBackend(MemoryBackend):
         return await self._get_message_impl(message_id)
 
     async def extract_facts(self, message_id, content, role):
-        facts = await self._fact_extractor.extract(content, role=role, message_id=message_id, created_at=time.time())
-        stored = []
-        for fact in facts:
-            fact.source_msg_id = message_id
-            new_id = await self._insert_fact(fact)
-            fact.id = new_id
-            stored.append(fact)
-            if fact.key in SINGLE_VALUED_KEYS:
-                for old in await self._facts_all():
-                    if old.subject == fact.subject and old.key == fact.key and old.is_active and old.id != new_id:
-                        await self._supersede_fact(old.id, new_id)
-        return stored
+        try:
+            facts = await self._fact_extractor.extract(
+                content, role=role, message_id=message_id, created_at=time.time()
+            )
+            stored = []
+            for fact in facts:
+                fact.source_msg_id = message_id
+                new_id = await self._insert_fact(fact)
+                fact.id = new_id
+                stored.append(fact)
+                if fact.key in SINGLE_VALUED_KEYS:
+                    for old in await self._facts_all():
+                        if (
+                            old.subject == fact.subject
+                            and old.key == fact.key
+                            and old.is_active
+                            and old.id != new_id
+                        ):
+                            await self._supersede_fact(old.id, new_id)
+                            logger.info(
+                                "memory.fact_superseded",
+                                subject=fact.subject,
+                                key=fact.key,
+                                old_id=old.id,
+                                new_id=new_id,
+                            )
+            logger.info(
+                "memory.extract_facts",
+                message_id=message_id,
+                role=role,
+                fact_count=len(stored),
+                facts=[
+                    {"key": f.key, "value": f.value, "category": f.category}
+                    for f in stored
+                ],
+            )
+            return stored
+        except Exception:
+            logger.exception("memory.extract_facts_failed", message_id=message_id, role=role)
+            raise
 
     async def get_facts(self, subject="user", category=None, active_only=True):
         facts = [f for f in await self._facts_all() if f.subject == subject]
@@ -109,7 +161,14 @@ class BaseMemoryBackend(MemoryBackend):
     async def get_digital_twin(self, subject="user"):
         base = await self._load_twin(subject)
         facts = await self._facts_all()
-        return build_twin_from_facts(facts, base, subject)
+        twin = build_twin_from_facts(facts, base, subject)
+        logger.debug(
+            "memory.digital_twin_built",
+            subject=subject,
+            fact_count=len(facts),
+            entity_count=len(getattr(getattr(twin, "relationships", None), "entities", {})),
+        )
+        return twin
 
     async def update_digital_twin(self, twin):
         twin.last_updated = time.time()
@@ -126,63 +185,95 @@ class BaseMemoryBackend(MemoryBackend):
         return detect_fact_conflicts([f for f in facts if f.subject == subject])
 
     async def recall(self, query, session_id=None, limit=10):
-        messages = await self._messages_all()
-        facts = await self._facts_all()
-        twin = await self.get_digital_twin("user")
-        hits = self._retriever.recall(query, messages=messages, facts=facts, twin=twin, session_id=session_id, limit=limit)
-        now = time.time()
-        for hit in hits:
-            bumped = bump_salience(hit.salience)
-            await self._update_message_salience(hit.message_id, bumped, now)
-            hit.salience = bumped
-        return hits
+        try:
+            messages = await self._messages_all()
+            facts = await self._facts_all()
+            twin = await self.get_digital_twin("user")
+            hits = self._retriever.recall(
+                query, messages=messages, facts=facts, twin=twin, session_id=session_id, limit=limit
+            )
+            now = time.time()
+            for hit in hits:
+                bumped = bump_salience(hit.salience)
+                await self._update_message_salience(hit.message_id, bumped, now)
+                hit.salience = bumped
+            logger.info(
+                "memory.recall",
+                query=query,
+                session_id=session_id,
+                limit=limit,
+                hit_count=len(hits),
+                message_count=len(messages),
+                fact_count=len(facts),
+            )
+            return hits
+        except Exception:
+            logger.exception("memory.recall_failed", query=query, session_id=session_id, limit=limit)
+            raise
 
     async def vector_search(self, query, limit=20):
         messages = await self._messages_all()
         return self._retriever.vector_search(query, messages=messages, limit=limit)
 
     async def daily_decay(self):
-        now = time.time()
-        decayed = 0
-        forgotten = 0
-        for m in await self._messages_all():
-            ref = m.last_recalled or m.created_at
-            days = (now - ref) / 86400.0
-            new_salience = decay_salience(m.salience, m.decay_rate, days)
-            if abs(new_salience - m.salience) > 1e-9:
-                await self._update_message_salience(m.id, new_salience, None)
-                decayed += 1
-        for f in await self._facts_all():
-            if not f.is_active or f.pinned:
-                continue
-            ref = f.last_decay_at or f.created_at
-            days = (now - ref) / 86400.0
-            if should_forget(f.decay_rate, days):
-                await self._set_fact_decay(f.id, forgotten_at=now)
-                forgotten += 1
-            else:
-                await self._set_fact_decay(f.id, last_decay_at=now)
-                decayed += 1
-        return {"decayed": decayed, "forgotten": forgotten}
+        try:
+            now = time.time()
+            decayed = 0
+            forgotten = 0
+            for m in await self._messages_all():
+                ref = m.last_recalled or m.created_at
+                days = (now - ref) / 86400.0
+                new_salience = decay_salience(m.salience, m.decay_rate, days)
+                if abs(new_salience - m.salience) > 1e-9:
+                    await self._update_message_salience(m.id, new_salience, None)
+                    decayed += 1
+            for f in await self._facts_all():
+                if not f.is_active or f.pinned:
+                    continue
+                ref = f.last_decay_at or f.created_at
+                days = (now - ref) / 86400.0
+                if should_forget(f.decay_rate, days):
+                    await self._set_fact_decay(f.id, forgotten_at=now)
+                    forgotten += 1
+                else:
+                    await self._set_fact_decay(f.id, last_decay_at=now)
+                    decayed += 1
+            logger.info("memory.daily_decay", decayed=decayed, forgotten=forgotten)
+            return {"decayed": decayed, "forgotten": forgotten}
+        except Exception:
+            logger.exception("memory.daily_decay_failed")
+            raise
 
     async def summarize_old_sessions(self, older_than_days=7, max_sessions=5):
-        now = time.time()
-        cutoff = now - older_than_days * 86400.0
-        by_session: dict[str, list[Message]] = {}
-        for m in await self._messages_all():
-            if m.is_summary or m.created_at >= cutoff:
-                continue
-            by_session.setdefault(m.session_id, []).append(m)
-        ordered = sorted(by_session, key=lambda s: min(m.created_at for m in by_session[s]))
-        count = 0
-        for session_id in ordered[:max_sessions]:
-            msgs = sorted(by_session[session_id], key=lambda m: m.created_at)
-            summary = await self._summarizer.summarize(msgs)
-            if not summary:
-                continue
-            await self._append_message_impl(session_id, "system", summary, None, 0.0, 0.02, now, True, json.dumps([m.id for m in msgs]))
-            count += 1
-        return {"summarized_sessions": count}
+        try:
+            now = time.time()
+            cutoff = now - older_than_days * 86400.0
+            by_session: dict[str, list[Message]] = {}
+            for m in await self._messages_all():
+                if m.is_summary or m.created_at >= cutoff:
+                    continue
+                by_session.setdefault(m.session_id, []).append(m)
+            ordered = sorted(by_session, key=lambda s: min(m.created_at for m in by_session[s]))
+            count = 0
+            for session_id in ordered[:max_sessions]:
+                msgs = sorted(by_session[session_id], key=lambda m: m.created_at)
+                summary = await self._summarizer.summarize(msgs)
+                if not summary:
+                    continue
+                await self._append_message_impl(
+                    session_id, "system", summary, None, 0.0, 0.02, now, True,
+                    json.dumps([m.id for m in msgs]),
+                )
+                count += 1
+            logger.info(
+                "memory.summarize_sessions",
+                candidate_sessions=len(ordered),
+                summarized_sessions=count,
+            )
+            return {"summarized_sessions": count}
+        except Exception:
+            logger.exception("memory.summarize_sessions_failed")
+            raise
 
     async def record_workspace_action(self, session_id, action_type, payload):
         await self._record_workspace_impl(session_id, action_type, payload)

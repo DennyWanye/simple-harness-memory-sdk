@@ -7,6 +7,7 @@ import time
 from typing import Optional
 
 import aiosqlite
+import structlog
 
 from simple_harness_memory.backends.base import BaseMemoryBackend
 from simple_harness_memory.core.models import Fact, Message
@@ -14,6 +15,8 @@ from simple_harness_memory.core.twin import (
     DigitalTwin, Entity, Goal, Preference, PreferenceMap, RelationshipGraph,
     Skill, SkillMap, UserProfile,
 )
+
+logger = structlog.get_logger("simple_harness_memory.backends.sqlite")
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS messages (
@@ -69,15 +72,21 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         self._db: Optional[aiosqlite.Connection] = None
 
     async def initialize(self):
-        self._db = await aiosqlite.connect(self._db_path)
-        self._db.row_factory = aiosqlite.Row
-        await self._db.executescript(_DDL)
-        await self._db.commit()
+        try:
+            self._db = await aiosqlite.connect(self._db_path)
+            self._db.row_factory = aiosqlite.Row
+            await self._db.executescript(_DDL)
+            await self._db.commit()
+            logger.info("memory.backend_initialized", db_path=self._db_path)
+        except Exception:
+            logger.exception("memory.backend_initialize_failed", db_path=self._db_path)
+            raise
 
     async def close(self):
         if self._db:
             await self._db.close()
             self._db = None
+            logger.info("memory.backend_closed", db_path=self._db_path)
 
     @property
     def _conn(self):
