@@ -1,0 +1,657 @@
+{
+  "acceptance": {
+    "path": "acceptance.md",
+    "sha256": "8a6c63c446202587c172cbb1718108f0fbbc95b75600f3e45a80a607fbac6359"
+  },
+  "applicability": {
+    "input_sensitive": {
+      "decided_by": "agent",
+      "rationale": "确定性工厂选择与回退逻辑，不随自然语言输入语义波动",
+      "value": false
+    },
+    "llm_payload_driven": {
+      "decided_by": "agent",
+      "rationale": "无 LLM 生成结构化载荷驱动端侧状态机或卡片渲染",
+      "value": false
+    },
+    "stateful_init": {
+      "decided_by": "agent",
+      "rationale": "无异步注册服务、远程配置或登录态依赖",
+      "value": false
+    }
+  },
+  "auditor": {
+    "audited_at": "2026-08-18T17:30:45+0800",
+    "engine": "gpt-5",
+    "facts_digest": "c4ceb819459b1912063a39738a7ac55c3f3f3d9f2994c9b60e47cd4b408ab6f5",
+    "input_path": "auditor-input.json",
+    "input_sha256": "f55f96e611027ce28db5d2af8e2eb9945952c130a68072b8162662941b36f567",
+    "output_path": "auditor-output.json",
+    "output_sha256": "b383e322c7882ab3dc169284b89817c52dcfa0d89378c972520b135c51c2c5ed",
+    "verdict": "PASS"
+  },
+  "baseline": {
+    "content_digest": "d2e13b1b580ff231a15be3257fdfbaddc6dc360a0805c3f83ba2b54e4a1c9a3e",
+    "content_entries": [
+      [
+        ".gitignore",
+        "-:5b4703acd13fc7593c738977f741aa41099611d02b1006a189e230ebb81dc6a4"
+      ],
+      [
+        "ARCHITECTURE/ARCHITECTURE.md",
+        "-:fa8822542764823d42076ffec41f466cf11805d037af6f4f6ccc69e212ea0b50"
+      ],
+      [
+        "ARCHITECTURE/index.md",
+        "-:727df0ef377c490a4a1b3002738c86efee314220d6c8a7af1b0669580508145c"
+      ],
+      [
+        "README.md",
+        "-:fb032ee4a994b87699c9fcb7a9df0ce2d9919f8a49a37bee39d655afe34a7223"
+      ],
+      [
+        "acceptance.md",
+        "-:8a6c63c446202587c172cbb1718108f0fbbc95b75600f3e45a80a607fbac6359"
+      ],
+      [
+        "assurance-contract.json",
+        "-:7ad44b0740e18e45df44afa40d5ff4f18fde6348038227d89b85c24cb19531ff"
+      ],
+      [
+        "plans/phase1-local-core/gate-manifest.json",
+        "-:b7a5e28a648c62fafec25982e46005f8aa8abd84a723ba71f752f6927834d3af"
+      ],
+      [
+        "plans/phase1-local-core/plan.md",
+        "-:c9c11685c99a464181f21e80039b3b470717b3acce37c784cf93d2e53064e913"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/auditor-input.json",
+        "-:3c8f4706cd4b2586079eb348490d254c128354531164d2990b92b954da66f393"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/auditor-output.json",
+        "-:d1b3efb9f5ed65f8cd357d9eee096cc22ba68ee3a6d8738c5f455f1c9903f9af"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/gate-receipt.json",
+        "-:3799930bb101345d046d2e3ed105bb1db02dd33e7afbb34a970a4b02e552ae27"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/plan-test-run.json",
+        "-:3f182d278006eb80c154cc958406ff8d82e84218d3aa9b573e484689f87b3e2b"
+      ],
+      [
+        "plans/phase2-embeddings/gate-manifest.json",
+        "-:4e60719678d5fb8642c475dd4d626a86eee8dc038e431d7d29bd2b5f402b3c49"
+      ],
+      [
+        "plans/phase2-embeddings/plan.md",
+        "-:94217ead11e300de26ace12504dba11a172ed6b58d01375f678eb869906b1422"
+      ],
+      [
+        "pyproject.toml",
+        "-:264d164eec442f95495f5199a6c9534b171085f61214111785d73786312d1a6e"
+      ],
+      [
+        "src/simple_harness_memory/__init__.py",
+        "-:71f4d0e8f845b321c5fc63f3202dafae8e539aef331a03eb724f2ea03193c99c"
+      ],
+      [
+        "src/simple_harness_memory/backends/__init__.py",
+        "-:534d2c327327800948b84ac0a531b1c64a1f7850d11dae087020ed2a6922da2b"
+      ],
+      [
+        "src/simple_harness_memory/backends/base.py",
+        "-:f0b9bd82d2f4c587e9f973e1289b439c45be80520c00d2b6ecfa8fcc7ad7e92e"
+      ],
+      [
+        "src/simple_harness_memory/backends/mock.py",
+        "-:2297f3fc5e41068c54455d9c53ff4eb937739ca8c9d8f3f4aa48291f1b953199"
+      ],
+      [
+        "src/simple_harness_memory/backends/sqlite.py",
+        "-:dd3cbd7419ca31b8ac42fe473a67d2cfc9bd76184dc59271dd830cb9f1b0c59c"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/__init__.py",
+        "-:5a2fb3679bcecd582448e00faee2578474fd63fb26b4c8b798267b6a4b75b3cb"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/decay.py",
+        "-:d4716e82ba6e410f469ac0cb5e550ced22b1ac25390a406337903ae650c9a57d"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/salience.py",
+        "-:2187777db716f7506bb02a1e0d83ec70e5abaea4d69b681a402917df18e5d174"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/session_affinity.py",
+        "-:615c70cb29fe9d0faaa7b3ab2e60ba4f84f7ebe0e18b4b8ea92d0b32ae5dcfb4"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/twin_builder.py",
+        "-:6424eed6d65f738fb9e02ec0336fdcf8f43559367b1bd6ebed8d05dabe4905b3"
+      ],
+      [
+        "src/simple_harness_memory/core/__init__.py",
+        "-:b4327a64434ee3064a361f1b46de8af652f2e2c5882cf5976c1a39ad3fb4d70d"
+      ],
+      [
+        "src/simple_harness_memory/core/manager.py",
+        "-:883dc1f929157e18f5bb5f394833623e520542effad96c5b4a3f18bbea4fb06c"
+      ],
+      [
+        "src/simple_harness_memory/core/models.py",
+        "-:4781e8419a5fa237ffda734509eb5d65ac4dc0f611c77ed9028e797e604eb387"
+      ],
+      [
+        "src/simple_harness_memory/core/port.py",
+        "-:ac8086fa100eeff39d1d98ea4ccc1d13ce4a1bc0fa905dfcf9f9b66aacd680ea"
+      ],
+      [
+        "src/simple_harness_memory/core/twin.py",
+        "-:a16062f86b0ca8a55204b7acae643efad33ae43ef4ced54f0a290e6ae654c535"
+      ],
+      [
+        "src/simple_harness_memory/embedders/__init__.py",
+        "-:4a8c7f14a69cac1fcffdc8bc43835dceb06dfe9ba949704babd8d902e1e80bf2"
+      ],
+      [
+        "src/simple_harness_memory/embedders/base.py",
+        "-:4ed9a3e263e6ee8e9fbfd4dd162da89bd64680beb4be5de82b2f83cc5d7b1b50"
+      ],
+      [
+        "src/simple_harness_memory/embedders/bge.py",
+        "-:370a0962a5c129793bb354873872025a97893b277ed8a8d1d46e0114f9e20fe1"
+      ],
+      [
+        "src/simple_harness_memory/embedders/factory.py",
+        "-:b64a7bdb2639854d31fc76984087f58211d9a9873cf712431c91ca30dd1e866b"
+      ],
+      [
+        "src/simple_harness_memory/embedders/mock.py",
+        "-:2516de48221e5ddf0120be7a23d195c4c3a5cac238c9504f23694e2f8c44f913"
+      ],
+      [
+        "src/simple_harness_memory/features/__init__.py",
+        "-:88d254a8180b64bf7eab5ad5b0a5bc1d764eb7b670a0d0b186ac86e92fa7270e"
+      ],
+      [
+        "src/simple_harness_memory/features/facts.py",
+        "-:87ca654fbf98a0067e426d7f2e892b036f98f6cc17027a04b1fd1f55c058386c"
+      ],
+      [
+        "src/simple_harness_memory/features/reranker.py",
+        "-:5e53b94b1aa45f26c3f05a7f2472465feadf376e28d05169375036ab51972234"
+      ],
+      [
+        "src/simple_harness_memory/features/retriever.py",
+        "-:68e214e5742a71c6b2bfe148f6e8cd42da848a5c14dfc363cea03e6816987d9f"
+      ],
+      [
+        "src/simple_harness_memory/features/rrf.py",
+        "-:3160251a841e01c99b134bbaec9a6ca9d9725236ee145fb33c7b6340feecd976"
+      ],
+      [
+        "src/simple_harness_memory/features/summarizer.py",
+        "-:6fb84cafe7986fe6dda154eedce94dfc2dfc96993eb4241708c1a1f75a1c8b4e"
+      ],
+      [
+        "src/simple_harness_memory/world/__init__.py",
+        "-:ae1a807528e67ca4a2ef37f3fed84075eb9a8b94dab09ee728833a99c8760b71"
+      ],
+      [
+        "src/simple_harness_memory/world/events.py",
+        "-:17c01dc444f1a6992b147d0fe0549814751f33602a9eaa8bdf50f5729c9520b6"
+      ],
+      [
+        "src/simple_harness_memory/world/geography.py",
+        "-:b4eb3f6fc756897fd889d65a939dcb14d548df302c6bb032cf84b0b0107aa4c6"
+      ],
+      [
+        "src/simple_harness_memory/world/knowledge.py",
+        "-:48111363d1838d6010567a773d0c1a0389c938131a12cf65f47c7e768402b16e"
+      ],
+      [
+        "src/simple_harness_memory/world/model.py",
+        "-:79050e66ba160850d7854532414ec7b4b5fdde35672ea82960909154127e920a"
+      ],
+      [
+        "src/simple_harness_memory/world/port.py",
+        "-:2bad06d98cb850a4ef73fe77443eb48d38a5e3d5516afee818d961813bf7df84"
+      ],
+      [
+        "src/simple_harness_memory/world/temporal.py",
+        "-:9fd63ab5aac13351295ee4786fa99ae4cdfde48024ddf262017bf02a22e1eb17"
+      ],
+      [
+        "tests/__init__.py",
+        "-:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      [
+        "tests/integration/__init__.py",
+        "-:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      [
+        "tests/integration/test_manager.py",
+        "-:36cfcb6812c65abd9f35e42be54613c3fa3162f0e96085bc48964fefa3a92469"
+      ],
+      [
+        "tests/integration/test_sqlite_backend.py",
+        "-:6269df83f5768baabd83997c3e332313b93313f82fe5bfdf01da7b1c847acc34"
+      ],
+      [
+        "tests/unit/__init__.py",
+        "-:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      [
+        "tests/unit/test_cognitive.py",
+        "-:c447e923a258f1c835d17b215c4d9ae8d827994400eb4ee5f37b5146b8c3a0c2"
+      ],
+      [
+        "tests/unit/test_embedders.py",
+        "-:106f62a7d1532a7009404f7e60b9f4795acd10afd0667744595c9747a41cecc3"
+      ],
+      [
+        "tests/unit/test_facts.py",
+        "-:537c30790324a0f19ff1250cc9c19478bf8cb01361d963d5dd72dfb88d805244"
+      ],
+      [
+        "tests/unit/test_mock_backend.py",
+        "-:e613aa8542bc3e652023088999802deb89aa63063d979b3ed54e7e0bc7908819"
+      ],
+      [
+        "tests/unit/test_rrf.py",
+        "-:20632ffc90eb2125d0e72c72c5fa40bc7ffaeb304220723a6dc61c69235966c6"
+      ],
+      [
+        "tests/unit/test_twin_builder.py",
+        "-:8a16e5e4cc2441cf6434e84f172dfa7504eb5184b0eed725ee9f06b954dcea8a"
+      ],
+      [
+        "tests/unit/test_world.py",
+        "-:0dff02a49b0b382d0bfc6ad94e50d877213560645a44c6ef325334fa01ca7d31"
+      ]
+    ],
+    "dirty_patch_sha256": "93b385ee4bbcd5ca864442fe71c09c04c291cd0069cb7e9010c2efa0a9a9ccec",
+    "exclusion_count": 0,
+    "exclusion_scope": [
+      "plans/phase2-embeddings/verification/run-1"
+    ],
+    "exclusions": [],
+    "head": "5ecbf50dd3581cb4ec49845cc96f1b8b6fee5995",
+    "recorded_at": "2026-08-18T17:30:32+0800"
+  },
+  "behavior_changes": [],
+  "behavior_contract": {},
+  "challenge_loops": [],
+  "created_at": "2026-08-18T17:30:32+0800",
+  "declared_statuses": [],
+  "delivery": {},
+  "doc_only_globs": null,
+  "events": [],
+  "evidence": [],
+  "exclusion_scope": [
+    "plans/phase2-embeddings/verification/run-1"
+  ],
+  "executor_engine": null,
+  "external_run_dir": false,
+  "fixture_only": false,
+  "integrity": {
+    "chain": "62253eb50be1b06c4121dfa9c272d366e81c1899531a01ce268f40e0f6873ef8",
+    "genesis": "abe156dae23a92f8aa9111667f137359f754e18c3cd0e5cf05f48694ff35785c",
+    "log": [
+      {
+        "at": "2026-08-18T17:30:32+0800",
+        "chain": "b0d09d419c0697afbd3cf5a04020c2c214d0ca09812f2a0cbdc6d1068800cb43",
+        "facts_digest": "ebfa0b9488bcf72784152318d55230755e4be5abe7fe0855b7a9ee349794a93b",
+        "op": "init",
+        "seq": 1
+      },
+      {
+        "at": "2026-08-18T17:30:44+0800",
+        "chain": "2f12657114dd15cd0a2a6bf4e83d0e57030c27ac53b3013368811ce73f0a0e63",
+        "facts_digest": "2335b8e4974edcd782dff0a582434700348640120ea5b2fe7619619f7159057c",
+        "op": "record-run",
+        "seq": 2
+      },
+      {
+        "at": "2026-08-18T17:30:44+0800",
+        "chain": "ed0259d368095f736e17e3cf5ab27329353ffe0edf78f6343f37613fdd5690c8",
+        "facts_digest": "1378a08f3b241fc2a704b217efbbcc37566b86aa4a7cd8980c52c64d0b5e9a6e",
+        "op": "record-run",
+        "seq": 3
+      },
+      {
+        "at": "2026-08-18T17:30:44+0800",
+        "chain": "acbbf3c2562252f8705d01385de5f2a70010b5f4b0a3eba67439948b63b176f2",
+        "facts_digest": "b691eb2b015fda93dc030113aa49fb2fd9ae63e5f88b65f33297e3e27d545b55",
+        "op": "record-run",
+        "seq": 4
+      },
+      {
+        "at": "2026-08-18T17:30:45+0800",
+        "chain": "62253eb50be1b06c4121dfa9c272d366e81c1899531a01ce268f40e0f6873ef8",
+        "facts_digest": "91eb29ea8308a77f9ae0c2c2a42cae33db2cae9e437cc9f08d4c6ecf7464e588",
+        "op": "audit",
+        "seq": 5
+      }
+    ]
+  },
+  "related_run_dirs": [],
+  "release_unit": {
+    "must_ac": 3,
+    "subsystems": 1,
+    "tasks": 3
+  },
+  "repo_root": "/Users/denny/projects/simple-harness-memory-sdk",
+  "revision": 5,
+  "run_id": "phase2-embeddings",
+  "runs": [
+    {
+      "command": "python -m pytest tests -q",
+      "driver": "ai",
+      "kind": "root",
+      "lane": "fresh",
+      "recorded_at": "2026-08-18T17:30:44+0800",
+      "result": "pass",
+      "scenario_id": "AC-9"
+    },
+    {
+      "command": "python -m pytest tests -q",
+      "driver": "ai",
+      "kind": "root",
+      "lane": "fresh",
+      "recorded_at": "2026-08-18T17:30:44+0800",
+      "result": "pass",
+      "scenario_id": "AC-10"
+    },
+    {
+      "command": "python -m pytest tests -q",
+      "driver": "ai",
+      "kind": "root",
+      "lane": "fresh",
+      "recorded_at": "2026-08-18T17:30:44+0800",
+      "result": "pass",
+      "scenario_id": "AC-11"
+    }
+  ],
+  "runtime_attestation": {
+    "content_digest": "d2e13b1b580ff231a15be3257fdfbaddc6dc360a0805c3f83ba2b54e4a1c9a3e",
+    "content_entries": [
+      [
+        ".gitignore",
+        "-:5b4703acd13fc7593c738977f741aa41099611d02b1006a189e230ebb81dc6a4"
+      ],
+      [
+        "ARCHITECTURE/ARCHITECTURE.md",
+        "-:fa8822542764823d42076ffec41f466cf11805d037af6f4f6ccc69e212ea0b50"
+      ],
+      [
+        "ARCHITECTURE/index.md",
+        "-:727df0ef377c490a4a1b3002738c86efee314220d6c8a7af1b0669580508145c"
+      ],
+      [
+        "README.md",
+        "-:fb032ee4a994b87699c9fcb7a9df0ce2d9919f8a49a37bee39d655afe34a7223"
+      ],
+      [
+        "acceptance.md",
+        "-:8a6c63c446202587c172cbb1718108f0fbbc95b75600f3e45a80a607fbac6359"
+      ],
+      [
+        "assurance-contract.json",
+        "-:7ad44b0740e18e45df44afa40d5ff4f18fde6348038227d89b85c24cb19531ff"
+      ],
+      [
+        "plans/phase1-local-core/gate-manifest.json",
+        "-:b7a5e28a648c62fafec25982e46005f8aa8abd84a723ba71f752f6927834d3af"
+      ],
+      [
+        "plans/phase1-local-core/plan.md",
+        "-:c9c11685c99a464181f21e80039b3b470717b3acce37c784cf93d2e53064e913"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/auditor-input.json",
+        "-:3c8f4706cd4b2586079eb348490d254c128354531164d2990b92b954da66f393"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/auditor-output.json",
+        "-:d1b3efb9f5ed65f8cd357d9eee096cc22ba68ee3a6d8738c5f455f1c9903f9af"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/gate-receipt.json",
+        "-:3799930bb101345d046d2e3ed105bb1db02dd33e7afbb34a970a4b02e552ae27"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/plan-test-run.json",
+        "-:3f182d278006eb80c154cc958406ff8d82e84218d3aa9b573e484689f87b3e2b"
+      ],
+      [
+        "plans/phase2-embeddings/gate-manifest.json",
+        "-:4e60719678d5fb8642c475dd4d626a86eee8dc038e431d7d29bd2b5f402b3c49"
+      ],
+      [
+        "plans/phase2-embeddings/plan.md",
+        "-:94217ead11e300de26ace12504dba11a172ed6b58d01375f678eb869906b1422"
+      ],
+      [
+        "pyproject.toml",
+        "-:264d164eec442f95495f5199a6c9534b171085f61214111785d73786312d1a6e"
+      ],
+      [
+        "src/simple_harness_memory/__init__.py",
+        "-:71f4d0e8f845b321c5fc63f3202dafae8e539aef331a03eb724f2ea03193c99c"
+      ],
+      [
+        "src/simple_harness_memory/backends/__init__.py",
+        "-:534d2c327327800948b84ac0a531b1c64a1f7850d11dae087020ed2a6922da2b"
+      ],
+      [
+        "src/simple_harness_memory/backends/base.py",
+        "-:f0b9bd82d2f4c587e9f973e1289b439c45be80520c00d2b6ecfa8fcc7ad7e92e"
+      ],
+      [
+        "src/simple_harness_memory/backends/mock.py",
+        "-:2297f3fc5e41068c54455d9c53ff4eb937739ca8c9d8f3f4aa48291f1b953199"
+      ],
+      [
+        "src/simple_harness_memory/backends/sqlite.py",
+        "-:dd3cbd7419ca31b8ac42fe473a67d2cfc9bd76184dc59271dd830cb9f1b0c59c"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/__init__.py",
+        "-:5a2fb3679bcecd582448e00faee2578474fd63fb26b4c8b798267b6a4b75b3cb"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/decay.py",
+        "-:d4716e82ba6e410f469ac0cb5e550ced22b1ac25390a406337903ae650c9a57d"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/salience.py",
+        "-:2187777db716f7506bb02a1e0d83ec70e5abaea4d69b681a402917df18e5d174"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/session_affinity.py",
+        "-:615c70cb29fe9d0faaa7b3ab2e60ba4f84f7ebe0e18b4b8ea92d0b32ae5dcfb4"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/twin_builder.py",
+        "-:6424eed6d65f738fb9e02ec0336fdcf8f43559367b1bd6ebed8d05dabe4905b3"
+      ],
+      [
+        "src/simple_harness_memory/core/__init__.py",
+        "-:b4327a64434ee3064a361f1b46de8af652f2e2c5882cf5976c1a39ad3fb4d70d"
+      ],
+      [
+        "src/simple_harness_memory/core/manager.py",
+        "-:883dc1f929157e18f5bb5f394833623e520542effad96c5b4a3f18bbea4fb06c"
+      ],
+      [
+        "src/simple_harness_memory/core/models.py",
+        "-:4781e8419a5fa237ffda734509eb5d65ac4dc0f611c77ed9028e797e604eb387"
+      ],
+      [
+        "src/simple_harness_memory/core/port.py",
+        "-:ac8086fa100eeff39d1d98ea4ccc1d13ce4a1bc0fa905dfcf9f9b66aacd680ea"
+      ],
+      [
+        "src/simple_harness_memory/core/twin.py",
+        "-:a16062f86b0ca8a55204b7acae643efad33ae43ef4ced54f0a290e6ae654c535"
+      ],
+      [
+        "src/simple_harness_memory/embedders/__init__.py",
+        "-:4a8c7f14a69cac1fcffdc8bc43835dceb06dfe9ba949704babd8d902e1e80bf2"
+      ],
+      [
+        "src/simple_harness_memory/embedders/base.py",
+        "-:4ed9a3e263e6ee8e9fbfd4dd162da89bd64680beb4be5de82b2f83cc5d7b1b50"
+      ],
+      [
+        "src/simple_harness_memory/embedders/bge.py",
+        "-:370a0962a5c129793bb354873872025a97893b277ed8a8d1d46e0114f9e20fe1"
+      ],
+      [
+        "src/simple_harness_memory/embedders/factory.py",
+        "-:b64a7bdb2639854d31fc76984087f58211d9a9873cf712431c91ca30dd1e866b"
+      ],
+      [
+        "src/simple_harness_memory/embedders/mock.py",
+        "-:2516de48221e5ddf0120be7a23d195c4c3a5cac238c9504f23694e2f8c44f913"
+      ],
+      [
+        "src/simple_harness_memory/features/__init__.py",
+        "-:88d254a8180b64bf7eab5ad5b0a5bc1d764eb7b670a0d0b186ac86e92fa7270e"
+      ],
+      [
+        "src/simple_harness_memory/features/facts.py",
+        "-:87ca654fbf98a0067e426d7f2e892b036f98f6cc17027a04b1fd1f55c058386c"
+      ],
+      [
+        "src/simple_harness_memory/features/reranker.py",
+        "-:5e53b94b1aa45f26c3f05a7f2472465feadf376e28d05169375036ab51972234"
+      ],
+      [
+        "src/simple_harness_memory/features/retriever.py",
+        "-:68e214e5742a71c6b2bfe148f6e8cd42da848a5c14dfc363cea03e6816987d9f"
+      ],
+      [
+        "src/simple_harness_memory/features/rrf.py",
+        "-:3160251a841e01c99b134bbaec9a6ca9d9725236ee145fb33c7b6340feecd976"
+      ],
+      [
+        "src/simple_harness_memory/features/summarizer.py",
+        "-:6fb84cafe7986fe6dda154eedce94dfc2dfc96993eb4241708c1a1f75a1c8b4e"
+      ],
+      [
+        "src/simple_harness_memory/world/__init__.py",
+        "-:ae1a807528e67ca4a2ef37f3fed84075eb9a8b94dab09ee728833a99c8760b71"
+      ],
+      [
+        "src/simple_harness_memory/world/events.py",
+        "-:17c01dc444f1a6992b147d0fe0549814751f33602a9eaa8bdf50f5729c9520b6"
+      ],
+      [
+        "src/simple_harness_memory/world/geography.py",
+        "-:b4eb3f6fc756897fd889d65a939dcb14d548df302c6bb032cf84b0b0107aa4c6"
+      ],
+      [
+        "src/simple_harness_memory/world/knowledge.py",
+        "-:48111363d1838d6010567a773d0c1a0389c938131a12cf65f47c7e768402b16e"
+      ],
+      [
+        "src/simple_harness_memory/world/model.py",
+        "-:79050e66ba160850d7854532414ec7b4b5fdde35672ea82960909154127e920a"
+      ],
+      [
+        "src/simple_harness_memory/world/port.py",
+        "-:2bad06d98cb850a4ef73fe77443eb48d38a5e3d5516afee818d961813bf7df84"
+      ],
+      [
+        "src/simple_harness_memory/world/temporal.py",
+        "-:9fd63ab5aac13351295ee4786fa99ae4cdfde48024ddf262017bf02a22e1eb17"
+      ],
+      [
+        "tests/__init__.py",
+        "-:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      [
+        "tests/integration/__init__.py",
+        "-:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      [
+        "tests/integration/test_manager.py",
+        "-:36cfcb6812c65abd9f35e42be54613c3fa3162f0e96085bc48964fefa3a92469"
+      ],
+      [
+        "tests/integration/test_sqlite_backend.py",
+        "-:6269df83f5768baabd83997c3e332313b93313f82fe5bfdf01da7b1c847acc34"
+      ],
+      [
+        "tests/unit/__init__.py",
+        "-:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      [
+        "tests/unit/test_cognitive.py",
+        "-:c447e923a258f1c835d17b215c4d9ae8d827994400eb4ee5f37b5146b8c3a0c2"
+      ],
+      [
+        "tests/unit/test_embedders.py",
+        "-:106f62a7d1532a7009404f7e60b9f4795acd10afd0667744595c9747a41cecc3"
+      ],
+      [
+        "tests/unit/test_facts.py",
+        "-:537c30790324a0f19ff1250cc9c19478bf8cb01361d963d5dd72dfb88d805244"
+      ],
+      [
+        "tests/unit/test_mock_backend.py",
+        "-:e613aa8542bc3e652023088999802deb89aa63063d979b3ed54e7e0bc7908819"
+      ],
+      [
+        "tests/unit/test_rrf.py",
+        "-:20632ffc90eb2125d0e72c72c5fa40bc7ffaeb304220723a6dc61c69235966c6"
+      ],
+      [
+        "tests/unit/test_twin_builder.py",
+        "-:8a16e5e4cc2441cf6434e84f172dfa7504eb5184b0eed725ee9f06b954dcea8a"
+      ],
+      [
+        "tests/unit/test_world.py",
+        "-:0dff02a49b0b382d0bfc6ad94e50d877213560645a44c6ef325334fa01ca7d31"
+      ]
+    ],
+    "dirty_patch_sha256": "93b385ee4bbcd5ca864442fe71c09c04c291cd0069cb7e9010c2efa0a9a9ccec",
+    "exclusion_count": 0,
+    "exclusion_scope": [
+      "plans/phase2-embeddings/verification/run-1"
+    ],
+    "exclusions": [],
+    "head": "5ecbf50dd3581cb4ec49845cc96f1b8b6fee5995",
+    "recorded_at": "2026-08-18T17:30:32+0800"
+  },
+  "scenarios": [
+    {
+      "required": true,
+      "scenario_id": "AC-9"
+    },
+    {
+      "required": true,
+      "scenario_id": "AC-10"
+    },
+    {
+      "required": true,
+      "scenario_id": "AC-11"
+    }
+  ],
+  "schema_version": "1.4.0",
+  "source_request": {
+    "inline": true,
+    "sha256": "1d528b3374c22f03d2170a3252a8c647ce5b035b6cd7ce64e246541bd24068df"
+  },
+  "testcase_lock": {
+    "files": [],
+    "locked_at": null
+  },
+  "thresholds": {}
+}

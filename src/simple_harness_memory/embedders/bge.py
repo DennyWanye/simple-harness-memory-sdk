@@ -18,6 +18,8 @@ class BGEM3Embedder(Embedder):
 
     @property
     def dim(self) -> int:
+        if hasattr(self._model, "get_embedding_dimension"):
+            return int(self._model.get_embedding_dimension())
         return int(self._model.get_sentence_embedding_dimension())
 
     def embed(self, text: str) -> list[float]:

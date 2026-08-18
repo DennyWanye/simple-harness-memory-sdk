@@ -1,0 +1,9 @@
+{
+  "run_id": "phase2-embeddings",
+  "acceptance_file": "acceptance.md",
+  "plan_file": "plans/phase2-embeddings/plan.md",
+  "commit": "5ecbf50",
+  "test_command": "python -m pytest tests -q",
+  "test_result": "54 passed",
+  "required_scenarios": ["AC-9", "AC-10", "AC-11"]
+}
