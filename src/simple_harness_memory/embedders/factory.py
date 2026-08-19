@@ -22,12 +22,12 @@ def get_embedder(kind: str = "auto", *, dim: int = 256) -> Embedder:
         return HashEmbedder(dim=dim)
     if kind == "bge":
         from simple_harness_memory.embedders.bge import BGEM3Embedder
-        logger.info("memory.embedder_selected", kind="bge")
+        logger.info("memory.embedder_selected", kind="bge", dim=1024)
         return BGEM3Embedder()
     if kind == "auto":
         try:
             from simple_harness_memory.embedders.bge import BGEM3Embedder
-            logger.info("memory.embedder_selected", kind="bge")
+            logger.info("memory.embedder_selected", kind="bge", dim=1024)
             return BGEM3Embedder()
         except ImportError as exc:
             logger.warning(

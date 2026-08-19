@@ -43,6 +43,10 @@ def test_recall_keeps_logging() -> None:
     assert _function_uses_logger(_SRC / "features/retriever.py", "recall")
 
 
+def test_embedder_selection_keeps_logging() -> None:
+    assert _function_uses_logger(_SRC / "embedders/factory.py", "get_embedder")
+
+
 def test_recall_query_is_truncated() -> None:
     src = (_SRC / "features/retriever.py").read_text(encoding="utf-8")
     # the user query must stay truncated at 80 chars, never emitted in full
