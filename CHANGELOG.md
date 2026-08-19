@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Observability
+
+- Added `memory.recall` / `memory.recall_empty` structured events (query truncated to
+  80 chars, hit count, per-source contribution) to the hybrid retriever.
+
 ### Documentation
 - README quickstart restructured so the basic example runs under a plain `pip install -e .`
   (append + recall + facts); world model and BGE-M3 embedding moved to an "optional capabilities"

@@ -4,6 +4,8 @@ from __future__ import annotations
 import time
 from typing import Optional
 
+import structlog
+
 from simple_harness_memory.cognitive.session_affinity import (
     cross_session_weight,
     temporal_affinity,
@@ -17,6 +19,8 @@ from simple_harness_memory.embedders.base import (
 )
 from simple_harness_memory.features.reranker import IdentityReranker, Reranker
 from simple_harness_memory.features.rrf import RankedItem, fuse
+
+logger = structlog.get_logger("simple_harness_memory.features.retriever")
 
 
 class Retriever:
@@ -41,6 +45,18 @@ class Retriever:
         hits = [self._to_hit(f) for f in fused]
         hits = self._apply_session_affinity(hits, session_id, facts)
         hits = self._reranker.rerank(query, hits)
+        if hits:
+            logger.info(
+                "memory.recall",
+                query=query[:80],
+                hits=len(hits),
+                vec=len(vec_items),
+                fts=len(fts_items),
+                facts=len(facts_items),
+                entity=len(entity_items),
+            )
+        else:
+            logger.info("memory.recall_empty", query=query[:80])
         return hits[:limit]
 
     def vector_search(self, query, *, messages, limit=20):
