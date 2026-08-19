@@ -27,7 +27,7 @@ logger = structlog.get_logger("simple_harness_memory.backends.base")
 
 
 class BaseMemoryBackend(MemoryBackend):
-    def __init__(self, *, embedder=None, fact_extractor=None, reranker=None, summarizer=None, auto_extract_facts=False, max_content_chars=100_000, max_db_bytes=None):
+    def __init__(self, *, embedder=None, fact_extractor=None, reranker=None, summarizer=None, auto_extract_facts=False, max_content_chars=100_000, max_fact_value_chars=10_000, max_payload_bytes=1_000_000, max_db_bytes=None):
         self._embedder = embedder or HashEmbedder()
         self._fact_extractor = fact_extractor or RuleBasedFactExtractor()
         self._reranker = reranker or IdentityReranker()
@@ -35,6 +35,8 @@ class BaseMemoryBackend(MemoryBackend):
         self._retriever = Retriever(self._embedder, self._reranker)
         self._auto_extract_facts = auto_extract_facts
         self._max_content_chars = max_content_chars
+        self._max_fact_value_chars = max_fact_value_chars
+        self._max_payload_bytes = max_payload_bytes
         self._max_db_bytes = max_db_bytes
 
     async def _commit(self) -> None:
@@ -151,12 +153,17 @@ class BaseMemoryBackend(MemoryBackend):
 
     async def extract_facts(self, message_id, content, role):
         try:
+            await self._check_db_size()
             facts = await self._fact_extractor.extract(
                 content, role=role, message_id=message_id, created_at=time.time()
             )
             stored = []
             for fact in facts:
                 fact.source_msg_id = message_id
+                if len(fact.value) > self._max_fact_value_chars or len(fact.evidence) > self._max_fact_value_chars:
+                    raise MemoryLimitError(
+                        f"fact value/evidence exceeds max_fact_value_chars={self._max_fact_value_chars}"
+                    )
                 new_id = await self._insert_fact(fact)
                 fact.id = new_id
                 stored.append(fact)
@@ -213,6 +220,7 @@ class BaseMemoryBackend(MemoryBackend):
         return twin
 
     async def update_digital_twin(self, twin):
+        await self._check_db_size()
         twin.last_updated = time.time()
         twin.recalculate_completeness()
         await self._save_twin(twin)
@@ -326,6 +334,9 @@ class BaseMemoryBackend(MemoryBackend):
             raise
 
     async def record_workspace_action(self, session_id, action_type, payload):
+        await self._check_db_size()
+        if len(json.dumps(payload, ensure_ascii=False)) > self._max_payload_bytes:
+            raise MemoryLimitError(f"payload exceeds max_payload_bytes={self._max_payload_bytes}")
         await self._record_workspace_impl(session_id, action_type, payload)
         await self._commit()
 

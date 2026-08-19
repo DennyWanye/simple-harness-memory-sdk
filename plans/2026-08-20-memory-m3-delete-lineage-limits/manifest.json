@@ -1,0 +1,31 @@
+{
+  "run_id": "m3-delete-lineage-limits",
+  "source_request_text": "完成 memory-sdk 0.2.0 第三部分 M3：级联删除、embedding lineage + reindex、资源上限",
+  "acceptance_file": "acceptance.md",
+  "baseline": {
+    "head": "7de526bdffa4ce8315b9d9bdbd2a74c6ada56321",
+    "dirty_patch_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "scenarios": [
+    {"scenario_id": "full-suite", "required": true, "ui": false}
+  ],
+  "executor_engine": "claude-fable-5",
+  "auditor_engine": "opus-4.8",
+  "applicability": {
+    "input_sensitive": {
+      "value": false,
+      "decided_by": "agent",
+      "rationale": "库持久化语义修正，验证走确定性单测 + 临时 SQLite"
+    },
+    "llm_payload_driven": {
+      "value": false,
+      "decided_by": "agent",
+      "rationale": "无 LLM 结构化载荷驱动端侧状态机路径"
+    },
+    "stateful_init": {
+      "value": false,
+      "decided_by": "agent",
+      "rationale": "无异步注册服务/登录态依赖，无冷启动场景"
+    }
+  }
+}

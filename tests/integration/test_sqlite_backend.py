@@ -254,3 +254,53 @@ async def test_db_size_limit_raises(tmp_path):
     with pytest.raises(MemoryLimitError):
         await b.append_message("s1", "user", "hello")
     await b.close()
+
+
+@pytest.mark.asyncio
+async def test_fact_value_limit_raises(tmp_path):
+    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"), auto_extract_facts=True, max_fact_value_chars=2)
+    await b.initialize()
+    with pytest.raises(MemoryLimitError):
+        await b.append_message("s1", "user", "我养了一只叫Max的狗")
+    await b.close()
+
+
+@pytest.mark.asyncio
+async def test_payload_limit_raises(tmp_path):
+    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"), max_payload_bytes=10)
+    await b.initialize()
+    with pytest.raises(MemoryLimitError):
+        await b.record_workspace_action("s1", "write", {"content": "x" * 100})
+    await b.close()
+
+
+@pytest.mark.asyncio
+async def test_delete_session_rebuilds_twin(tmp_path):
+    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"), auto_extract_facts=True)
+    await b.initialize()
+    await b.append_message("s1", "user", "我养了一只叫Max的狗")
+    twin = await b.get_digital_twin()
+    assert "Max" in twin.relationships.entities
+    await b.delete_session("s1")
+    twin2 = await b.get_digital_twin()
+    assert "Max" not in twin2.relationships.entities
+    await b.close()
+
+
+@pytest.mark.asyncio
+async def test_delete_old_sessions(tmp_path):
+    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"))
+    await b.initialize()
+    await b.append_message("old", "user", "old msg")
+    await b._conn.execute(
+        "UPDATE messages SET created_at = ? WHERE session_id = 'old'",
+        (time.time() - 100 * 86400,),
+    )
+    await b._conn.commit()
+    await b.append_message("recent", "user", "recent msg")
+    deleted = await b.delete_old_sessions(older_than_days=30)
+    assert deleted >= 1
+    msgs = await b._messages_all()
+    assert all(m.session_id != "old" for m in msgs)
+    assert any(m.session_id == "recent" for m in msgs)
+    await b.close()

@@ -100,8 +100,8 @@ MIGRATIONS: list[tuple[int, int, str]] = [
 
 
 class SQLiteMemoryBackend(BaseMemoryBackend):
-    def __init__(self, db_path: str, *, embedder=None, fact_extractor=None, reranker=None, summarizer=None, auto_extract_facts=False, max_content_chars=100_000, max_db_bytes=None):
-        super().__init__(embedder=embedder, fact_extractor=fact_extractor, reranker=reranker, summarizer=summarizer, auto_extract_facts=auto_extract_facts, max_content_chars=max_content_chars, max_db_bytes=max_db_bytes)
+    def __init__(self, db_path: str, *, embedder=None, fact_extractor=None, reranker=None, summarizer=None, auto_extract_facts=False, max_content_chars=100_000, max_fact_value_chars=10_000, max_payload_bytes=1_000_000, max_db_bytes=None):
+        super().__init__(embedder=embedder, fact_extractor=fact_extractor, reranker=reranker, summarizer=summarizer, auto_extract_facts=auto_extract_facts, max_content_chars=max_content_chars, max_fact_value_chars=max_fact_value_chars, max_payload_bytes=max_payload_bytes, max_db_bytes=max_db_bytes)
         self._db_path = db_path
         self._db: Optional[aiosqlite.Connection] = None
         self._tx_depth = 0
