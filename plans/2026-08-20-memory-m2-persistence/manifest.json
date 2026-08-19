@@ -1,0 +1,31 @@
+{
+  "run_id": "m2-persistence",
+  "source_request_text": "完成 memory-sdk 0.2.0 第二部分 M2：schema version/migration/checksum、append 原子事务、source_event_id 幂等键",
+  "acceptance_file": "acceptance.md",
+  "baseline": {
+    "head": "7f7532784fa784362f9974b2c06b73f9475ad838",
+    "dirty_patch_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "scenarios": [
+    {"scenario_id": "full-suite", "required": true, "ui": false}
+  ],
+  "executor_engine": "claude-fable-5",
+  "auditor_engine": "opus-4.8",
+  "applicability": {
+    "input_sensitive": {
+      "value": false,
+      "decided_by": "agent",
+      "rationale": "库持久化语义修正，验证走确定性单测 + 临时 SQLite"
+    },
+    "llm_payload_driven": {
+      "value": false,
+      "decided_by": "agent",
+      "rationale": "无 LLM 结构化载荷驱动端侧状态机路径"
+    },
+    "stateful_init": {
+      "value": false,
+      "decided_by": "agent",
+      "rationale": "无异步注册服务/登录态依赖，无冷启动场景"
+    }
+  }
+}
