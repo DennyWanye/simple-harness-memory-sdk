@@ -43,3 +43,6 @@ models/
 *.env.local
 LOCAL-DEV-CREDENTIALS.md
 secrets/
+
+# plan-test gate ledger
+plans/*/verification/
