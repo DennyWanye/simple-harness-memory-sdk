@@ -15,7 +15,7 @@ def get_embedder(kind: str = "auto", *, dim: int = 256) -> Embedder:
     kind:
       "hash" / "mock" — 确定性哈希伪向量（无重依赖）。
       "bge"           — BGE-M3 语义向量（缺依赖时抛 ImportError）。
-      "auto"          — 优先 BGE，缺依赖时回退 HashEmbedder。
+      "auto"          — 恒返回 HashEmbedder（不加载 BGE-M3）。
     """
     if kind in ("hash", "mock"):
         logger.info("memory.embedder_selected", kind="hash", dim=dim)

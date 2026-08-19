@@ -1,0 +1,168 @@
+{
+  "acceptance": {
+    "path": "acceptance.md",
+    "sha256": "de0512efed495ea99727572ca5b263d9f59a87f7c9c33cbffde14d17d327e63c"
+  },
+  "applicability": {
+    "input_sensitive": {
+      "decided_by": "agent",
+      "rationale": "库 API 语义修正，验证走确定性单测 + 临时 SQLite，非 LLM 语义功能",
+      "value": false
+    },
+    "llm_payload_driven": {
+      "decided_by": "agent",
+      "rationale": "无 LLM 结构化载荷驱动端侧状态机路径",
+      "value": false
+    },
+    "stateful_init": {
+      "decided_by": "agent",
+      "rationale": "无异步注册服务/登录态依赖，无冷启动场景",
+      "value": false
+    }
+  },
+  "auditor_engine": "opus-4.8",
+  "baseline": {
+    "content_digest": "4a90657a4322df49e34dc81f71023eb653ee9ca98979ffae06958b05deb8ed81",
+    "content_entries": [
+      [
+        "acceptance.md",
+        "-:de0512efed495ea99727572ca5b263d9f59a87f7c9c33cbffde14d17d327e63c"
+      ],
+      [
+        "assurance-contract.json",
+        "-:d57053626179fae88995b112046de6508ee4813a12531eae4907762ec9e1219a"
+      ],
+      [
+        "manifest.json",
+        "-:1081d5367990dbb2696ff55b710a09dc3d878dcf57d298f8bda2a348ebfb3625"
+      ],
+      [
+        "plan.md",
+        "-:4e86f9f14a3d17f46d3493d8ea13fcf513fadd2798cb42f79cb0b929f2546582"
+      ]
+    ],
+    "dirty_patch_sha256": "bab60847541115f8da356ace75f2869e75b3209fc65202e20b96b98c02956775",
+    "exclusion_count": 0,
+    "exclusion_scope": [
+      "verification/run-1"
+    ],
+    "exclusions": [],
+    "head": "ff0dde7a920e12d7845f6731a74900e033fa6429",
+    "recorded_at": "2026-08-20T01:14:39+0800"
+  },
+  "behavior_changes": [],
+  "behavior_contract": {},
+  "challenge_loops": [],
+  "challenger_engine": null,
+  "created_at": "2026-08-20T01:14:39+0800",
+  "declared_statuses": [],
+  "delivery": {},
+  "doc_only_globs": null,
+  "events": [],
+  "evidence": [
+    {
+      "attached_at": "2026-08-20T01:14:39+0800",
+      "evidence_id": "ev-b97ac825fdf3",
+      "file_mtime": "2026-08-19T17:14:39Z",
+      "kind": "primary",
+      "path": "artifacts/pytest.log",
+      "scenario_id": "full-suite",
+      "sha256": "b97ac825fdf3e8ff9f0b1921def9c6860d46cf0623c3ffc84479e68628badd1d"
+    }
+  ],
+  "exclusion_scope": [
+    "verification/run-1"
+  ],
+  "executor_engine": "claude-fable-5",
+  "external_run_dir": false,
+  "fixture_only": false,
+  "integrity": {
+    "chain": "3655ff048516e0b840a06db283bee1ef6fd3e82715cd83c1bc4da86997f8eccd",
+    "genesis": "1f73514169362a613cf3d244ab5f87d299716db6d18a197b106690b87adc14b6",
+    "log": [
+      {
+        "at": "2026-08-20T01:14:39+0800",
+        "chain": "9758f6c5e77f9dafe7c8c6d814c0295c52971b2f7be1853ae54c18a8b7c8cba5",
+        "facts_digest": "031b197f7bfffdc410bdf042d66188696cd796c7f24e3c9591c9839d2b3eaef6",
+        "op": "init",
+        "seq": 1
+      },
+      {
+        "at": "2026-08-20T01:14:39+0800",
+        "chain": "79d3fc91eb84e91629a28fe567694c7d6d238225f550b6ee5c5ffe6672c5317b",
+        "facts_digest": "5c59635d2143ac6627345ca64577cc7eeefc4b5aef91ee215daebc10bb9dca2b",
+        "op": "record-run",
+        "seq": 2
+      },
+      {
+        "at": "2026-08-20T01:14:39+0800",
+        "chain": "3655ff048516e0b840a06db283bee1ef6fd3e82715cd83c1bc4da86997f8eccd",
+        "facts_digest": "8395819a9046cb411c966918e3f94b11c28db22e99da446906eb16665fd2cd85",
+        "op": "attach-evidence",
+        "seq": 3
+      }
+    ]
+  },
+  "related_run_dirs": [],
+  "release_unit": {},
+  "repo_root": "/Users/denny/projects/simple-harness-memory-sdk/plans/2026-08-20-memory-m1-recall-privacy",
+  "revision": 3,
+  "run_id": "m1-recall-privacy",
+  "runs": [
+    {
+      "command": "uv run --frozen --extra dev pytest -q",
+      "driver": "ai",
+      "kind": "root",
+      "lane": "fresh",
+      "recorded_at": "2026-08-20T01:14:39+0800",
+      "result": "pass",
+      "scenario_id": "full-suite"
+    }
+  ],
+  "runtime_attestation": {
+    "content_digest": "4a90657a4322df49e34dc81f71023eb653ee9ca98979ffae06958b05deb8ed81",
+    "content_entries": [
+      [
+        "acceptance.md",
+        "-:de0512efed495ea99727572ca5b263d9f59a87f7c9c33cbffde14d17d327e63c"
+      ],
+      [
+        "assurance-contract.json",
+        "-:d57053626179fae88995b112046de6508ee4813a12531eae4907762ec9e1219a"
+      ],
+      [
+        "manifest.json",
+        "-:1081d5367990dbb2696ff55b710a09dc3d878dcf57d298f8bda2a348ebfb3625"
+      ],
+      [
+        "plan.md",
+        "-:4e86f9f14a3d17f46d3493d8ea13fcf513fadd2798cb42f79cb0b929f2546582"
+      ]
+    ],
+    "dirty_patch_sha256": "bab60847541115f8da356ace75f2869e75b3209fc65202e20b96b98c02956775",
+    "exclusion_count": 0,
+    "exclusion_scope": [
+      "verification/run-1"
+    ],
+    "exclusions": [],
+    "head": "ff0dde7a920e12d7845f6731a74900e033fa6429",
+    "recorded_at": "2026-08-20T01:14:39+0800"
+  },
+  "scenarios": [
+    {
+      "required": true,
+      "scenario_id": "full-suite",
+      "ui": false
+    }
+  ],
+  "schema_version": "1.4.0",
+  "source_request": {
+    "inline": true,
+    "sha256": "8542064c950e90de4543b4974afa9473b1cf552dc4a2d61c38dcbe9b1ac696aa"
+  },
+  "testcase_lock": {
+    "files": [],
+    "locked_at": null
+  },
+  "thresholds": {}
+}
