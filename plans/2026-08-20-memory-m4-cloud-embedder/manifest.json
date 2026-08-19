@@ -3,7 +3,7 @@
   "source_request_text": "完成 memory-sdk 0.2.0 第四部分 M4：云端 embedding adapter（CloudEmbedder + OpenAICompatibleClient + 凭证安全 + factory 集成）",
   "acceptance_file": "acceptance.md",
   "baseline": {
-    "head": "8c73d27f3067d48028162e70e8cd36d6680b4fe5",
+    "head": "18a9c506663d4f3e1e4e24a9763514e5b0fcabfb",
     "dirty_patch_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "scenarios": [
