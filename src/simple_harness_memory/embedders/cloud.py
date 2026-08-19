@@ -82,6 +82,9 @@ class CloudEmbedder(Embedder):
                 return await asyncio.wait_for(
                     self._client.embed(texts), timeout=self._timeout
                 )
+            except EmbeddingError:
+                # 确定性错误（如维度不符）不重试，保留具体消息
+                raise
             except Exception as exc:  # noqa: BLE001 - network boundary, retry then fail-closed
                 last_exc = exc
                 if attempt < self._retries:

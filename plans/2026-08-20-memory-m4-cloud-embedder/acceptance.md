@@ -37,7 +37,7 @@
 
 ## 适用性声明（APPLICABILITY_DECLARATION）
 
-- `input_sensitive=true`：**向量化会把用户记忆内容原文外发到云端 provider**（隐私敏感）。测试用 mock client / httpx.MockTransport，不真发真实用户数据。
+- `input_sensitive=false`：embedding 是确定性映射（同文本同向量），非"输出质量随输入语义变化"的 LLM 语义功能。**隐私敏感（记忆内容外发云端 + api_key）由 assurance contract 的 ASSET-1/ADV-1 覆盖**，测试用 mock client / httpx.MockTransport，不真发真实用户数据。
 - `llm_payload_driven=false`：无 LLM 输出驱动端侧状态机。
 - `stateful_init=false`：无异步注册服务/登录态依赖。
 
