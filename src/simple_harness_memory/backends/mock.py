@@ -18,7 +18,7 @@ class MockMemoryBackend(BaseMemoryBackend):
         self._next_msg_id = 1
         self._next_fact_id = 1
 
-    async def _append_message_impl(self, session_id, role, content, embedding, salience, decay_rate, created_at, is_summary, summary_of):
+    async def _append_message_impl(self, session_id, role, content, embedding, salience, decay_rate, created_at, is_summary, summary_of, source_event_id):
         msg_id = self._next_msg_id
         self._next_msg_id += 1
         self._messages.append(Message(id=msg_id, session_id=session_id, role=role, content=content, created_at=created_at, salience=salience, decay_rate=decay_rate, embedding=embedding, is_summary=is_summary, summary_of=summary_of))

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import time
 from abc import abstractmethod
+from contextlib import asynccontextmanager
 from typing import Optional
 
 import structlog
@@ -33,8 +34,17 @@ class BaseMemoryBackend(MemoryBackend):
         self._retriever = Retriever(self._embedder, self._reranker)
         self._auto_extract_facts = auto_extract_facts
 
+    async def _commit(self) -> None:
+        """Commit pending writes (no-op for in-memory backends)."""
+        return None
+
+    @asynccontextmanager
+    async def _transaction(self):
+        """Transaction context (no-op for in-memory backends)."""
+        yield
+
     @abstractmethod
-    async def _append_message_impl(self, session_id, role, content, embedding, salience, decay_rate, created_at, is_summary, summary_of) -> int: ...
+    async def _append_message_impl(self, session_id, role, content, embedding, salience, decay_rate, created_at, is_summary, summary_of, source_event_id) -> int: ...
 
     @abstractmethod
     async def _get_message_impl(self, message_id) -> Optional[Message]: ...
@@ -72,15 +82,16 @@ class BaseMemoryBackend(MemoryBackend):
     @abstractmethod
     async def _record_workspace_impl(self, session_id, action_type, payload) -> None: ...
 
-    async def append_message(self, session_id, role, content, *, salience=0.0, decay_rate=0.02):
+    async def append_message(self, session_id, role, content, *, salience=0.0, decay_rate=0.02, source_event_id=None):
         try:
             now = time.time()
             embedding = encode_vector(await self._embedder.embed(content))
-            msg_id = await self._append_message_impl(
-                session_id, role, content, embedding, salience, decay_rate, now, False, None
-            )
-            if self._auto_extract_facts and role == "user":
-                await self.extract_facts(msg_id, content, role)
+            async with self._transaction():
+                msg_id = await self._append_message_impl(
+                    session_id, role, content, embedding, salience, decay_rate, now, False, None, source_event_id
+                )
+                if self._auto_extract_facts and role == "user":
+                    await self.extract_facts(msg_id, content, role)
             logger.info(
                 "memory.append_message",
                 session_id=session_id,
@@ -137,6 +148,7 @@ class BaseMemoryBackend(MemoryBackend):
                 role=role,
                 fact_count=len(stored),
             )
+            await self._commit()
             return stored
         except Exception:
             logger.exception("memory.extract_facts_failed", message_id=message_id, role=role)
@@ -151,7 +163,9 @@ class BaseMemoryBackend(MemoryBackend):
         return facts
 
     async def forget_fact(self, fact_id, reason=""):
-        return await self._forget_fact_by_id(fact_id, time.time())
+        result = await self._forget_fact_by_id(fact_id, time.time())
+        await self._commit()
+        return result
 
     async def get_digital_twin(self, subject="user"):
         base = await self._load_twin(subject)
@@ -169,6 +183,7 @@ class BaseMemoryBackend(MemoryBackend):
         twin.last_updated = time.time()
         twin.recalculate_completeness()
         await self._save_twin(twin)
+        await self._commit()
 
     async def suggest_questions(self, subject="user"):
         twin = await self.get_digital_twin(subject)
@@ -208,6 +223,7 @@ class BaseMemoryBackend(MemoryBackend):
             bumped = bump_salience(hit.salience)
             await self._update_message_salience(hit.message_id, bumped, now)
             hit.salience = bumped
+        await self._commit()
         return hits
 
     async def vector_search(self, query, limit=20):
@@ -238,6 +254,7 @@ class BaseMemoryBackend(MemoryBackend):
                     await self._set_fact_decay(f.id, last_decay_at=now)
                     decayed += 1
             logger.info("memory.daily_decay", decayed=decayed, forgotten=forgotten)
+            await self._commit()
             return {"decayed": decayed, "forgotten": forgotten}
         except Exception:
             logger.exception("memory.daily_decay_failed")
@@ -261,7 +278,7 @@ class BaseMemoryBackend(MemoryBackend):
                     continue
                 await self._append_message_impl(
                     session_id, "system", summary, None, 0.0, 0.02, now, True,
-                    json.dumps([m.id for m in msgs]),
+                    json.dumps([m.id for m in msgs]), None,
                 )
                 count += 1
             logger.info(
@@ -269,6 +286,7 @@ class BaseMemoryBackend(MemoryBackend):
                 candidate_sessions=len(ordered),
                 summarized_sessions=count,
             )
+            await self._commit()
             return {"summarized_sessions": count}
         except Exception:
             logger.exception("memory.summarize_sessions_failed")
@@ -276,3 +294,4 @@ class BaseMemoryBackend(MemoryBackend):
 
     async def record_workspace_action(self, session_id, action_type, payload):
         await self._record_workspace_impl(session_id, action_type, payload)
+        await self._commit()

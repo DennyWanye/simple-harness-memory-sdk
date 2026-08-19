@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A corrupted `digital_twins` row now raises `MemoryCorruptionError` instead of silently
   returning an empty DigitalTwin.
 
+### Persistence
+- Added a schema version + migration mechanism (`schema_meta` table with `schema_version`
+  and `schema_checksum`). A fresh database is stamped version 1; a legacy 0.1.0 database
+  is migrated in place (adding `source_event_id`); a newer or checksum-mismatched schema
+  fails closed with `MemoryCorruptionError`.
+- `append_message` (including fact extraction/insert/supersede) is now atomic — a single
+  transaction rolls back the message and any partially-written facts on failure.
+- Added an optional `source_event_id` idempotency key on messages (partial unique index);
+  re-appending the same event returns the existing message id without a duplicate row.
+
 ### Privacy
 - Recall and fact-extraction logs no longer emit raw query text or fact key/value
   content; they log lengths/counts only.

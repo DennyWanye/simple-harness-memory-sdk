@@ -67,8 +67,8 @@ class MemoryManager:
         )
         return cls(backend=backend, world=world_model)
 
-    async def append_message(self, session_id, role, content, *, salience=0.0, decay_rate=0.02):
-        return await self._backend.append_message(session_id, role, content, salience=salience, decay_rate=decay_rate)
+    async def append_message(self, session_id, role, content, *, salience=0.0, decay_rate=0.02, source_event_id=None):
+        return await self._backend.append_message(session_id, role, content, salience=salience, decay_rate=decay_rate, source_event_id=source_event_id)
 
     async def get_recent_messages(self, session_id, limit=20):
         return await self._backend.get_recent_messages(session_id, limit)

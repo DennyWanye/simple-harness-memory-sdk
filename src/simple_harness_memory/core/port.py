@@ -27,6 +27,7 @@ class MemoryBackend(ABC):
         *,
         salience: float = 0.0,
         decay_rate: float = 0.02,
+        source_event_id: Optional[str] = None,
     ) -> int:
         """追加一条消息，返回 message_id。"""
 

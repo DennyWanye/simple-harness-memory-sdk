@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import time
+from contextlib import asynccontextmanager
 from typing import Optional
 
 import aiosqlite
@@ -31,7 +33,8 @@ CREATE TABLE IF NOT EXISTS messages (
     last_recalled REAL,
     embedding BLOB,
     is_summary INTEGER NOT NULL DEFAULT 0,
-    summary_of TEXT
+    summary_of TEXT,
+    source_event_id TEXT
 );
 CREATE TABLE IF NOT EXISTS facts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,7 +66,27 @@ CREATE TABLE IF NOT EXISTS workspace_actions (
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_facts_subject ON facts(subject, category);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_source_event ON messages(source_event_id) WHERE source_event_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS schema_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
+
+SCHEMA_VERSION = 1
+SCHEMA_CHECKSUM = hashlib.sha256(_DDL.encode("utf-8")).hexdigest()
+
+# 有序迁移：(from_version, to_version, migration_sql)。后续版本在此追加。
+MIGRATIONS: list[tuple[int, int, str]] = [
+    (
+        0,
+        1,
+        "CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);"
+        "ALTER TABLE messages ADD COLUMN source_event_id TEXT;"
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_source_event "
+        "ON messages(source_event_id) WHERE source_event_id IS NOT NULL;",
+    )
+]
 
 
 class SQLiteMemoryBackend(BaseMemoryBackend):
@@ -71,17 +94,98 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         super().__init__(embedder=embedder, fact_extractor=fact_extractor, reranker=reranker, summarizer=summarizer, auto_extract_facts=auto_extract_facts)
         self._db_path = db_path
         self._db: Optional[aiosqlite.Connection] = None
+        self._tx_depth = 0
 
     async def initialize(self):
         try:
-            self._db = await aiosqlite.connect(self._db_path)
+            self._db = await aiosqlite.connect(self._db_path, isolation_level=None)
             self._db.row_factory = aiosqlite.Row
-            await self._db.executescript(_DDL)
-            await self._db.commit()
+            await self._initialize_or_migrate()
             logger.info("memory.backend_initialized", db_path=self._db_path)
         except Exception:
             logger.exception("memory.backend_initialize_failed", db_path=self._db_path)
             raise
+
+    async def _initialize_or_migrate(self):
+        version = await self._read_schema_version()
+        if version is None:
+            if await self._table_exists("messages"):
+                # 老 0.1.0 库：有表但无 schema_meta → 跑 0→1 迁移（原子）
+                await self._run_migrations(0, SCHEMA_VERSION)
+            else:
+                # 全新库
+                await self._db.executescript(_DDL)
+                await self._write_schema_meta(SCHEMA_VERSION, SCHEMA_CHECKSUM)
+        elif version > SCHEMA_VERSION:
+            raise MemoryCorruptionError(
+                f"database schema version {version} is newer than supported {SCHEMA_VERSION}"
+            )
+        elif version < SCHEMA_VERSION:
+            await self._run_migrations(version, SCHEMA_VERSION)
+        elif await self._read_schema_checksum() != SCHEMA_CHECKSUM:
+            raise MemoryCorruptionError("database schema checksum mismatch")
+
+    async def _table_exists(self, name: str) -> bool:
+        async with self._conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+        ) as cur:
+            return await cur.fetchone() is not None
+
+    async def _read_schema_version(self):
+        if not await self._table_exists("schema_meta"):
+            return None
+        async with self._conn.execute(
+            "SELECT value FROM schema_meta WHERE key='schema_version'"
+        ) as cur:
+            row = await cur.fetchone()
+        return int(row[0]) if row else None
+
+    async def _read_schema_checksum(self):
+        async with self._conn.execute(
+            "SELECT value FROM schema_meta WHERE key='schema_checksum'"
+        ) as cur:
+            row = await cur.fetchone()
+        return row[0] if row else None
+
+    async def _write_schema_meta(self, version: int, checksum: str) -> None:
+        await self._conn.execute(
+            "INSERT INTO schema_meta (key, value) VALUES ('schema_version', ?), "
+            "('schema_checksum', ?)",
+            (str(version), checksum),
+        )
+
+    async def _run_migrations(self, from_version: int, to_version: int) -> None:
+        for fv, tv, sql in MIGRATIONS:
+            if fv < from_version or tv > to_version:
+                continue
+            await self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                for stmt in sql.split(";"):
+                    stmt = stmt.strip()
+                    if stmt:
+                        await self._conn.execute(stmt)
+                await self._write_schema_meta(tv, SCHEMA_CHECKSUM)
+                await self._conn.execute("COMMIT")
+            except Exception:
+                await self._conn.execute("ROLLBACK")
+                raise
+
+    async def _commit(self) -> None:
+        if self._tx_depth == 0:
+            await self._conn.commit()
+
+    @asynccontextmanager
+    async def _transaction(self):
+        self._tx_depth += 1
+        await self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+            await self._conn.execute("COMMIT")
+        except Exception:
+            await self._conn.execute("ROLLBACK")
+            raise
+        finally:
+            self._tx_depth -= 1
 
     async def close(self):
         if self._db:
@@ -95,12 +199,17 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             raise RuntimeError("SQLiteMemoryBackend not initialized — call initialize() first")
         return self._db
 
-    async def _append_message_impl(self, session_id, role, content, embedding, salience, decay_rate, created_at, is_summary, summary_of):
+    async def _append_message_impl(self, session_id, role, content, embedding, salience, decay_rate, created_at, is_summary, summary_of, source_event_id):
         cur = await self._conn.execute(
-            "INSERT INTO messages (session_id, role, content, created_at, salience, decay_rate, embedding, is_summary, summary_of) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (session_id, role, content, created_at, salience, decay_rate, embedding, int(is_summary), summary_of),
+            "INSERT OR IGNORE INTO messages (session_id, role, content, created_at, salience, decay_rate, embedding, is_summary, summary_of, source_event_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (session_id, role, content, created_at, salience, decay_rate, embedding, int(is_summary), summary_of, source_event_id),
         )
-        await self._conn.commit()
+        if cur.rowcount == 0 and source_event_id is not None:
+            async with self._conn.execute(
+                "SELECT id FROM messages WHERE source_event_id = ?", (source_event_id,)
+            ) as cur2:
+                row = await cur2.fetchone()
+            return row["id"]
         return cur.lastrowid
 
     async def _get_message_impl(self, message_id):
@@ -128,21 +237,17 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             "INSERT INTO facts (subject, key, value, category, confidence, evidence, source_msg_id, created_at, decay_rate, pinned) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (fact.subject, fact.key, fact.value, fact.category, fact.confidence, fact.evidence, fact.source_msg_id, fact.created_at, fact.decay_rate, int(fact.pinned)),
         )
-        await self._conn.commit()
         return cur.lastrowid
 
     async def _supersede_fact(self, fact_id, superseded_by):
         await self._conn.execute("UPDATE facts SET superseded_by = ? WHERE id = ?", (superseded_by, fact_id))
-        await self._conn.commit()
 
     async def _forget_fact_by_id(self, fact_id, forgotten_at):
         cur = await self._conn.execute("UPDATE facts SET forgotten_at = ? WHERE id = ?", (forgotten_at, fact_id))
-        await self._conn.commit()
         return cur.rowcount > 0
 
     async def _update_message_salience(self, message_id, salience, last_recalled):
         await self._conn.execute("UPDATE messages SET salience = ?, last_recalled = COALESCE(?, last_recalled) WHERE id = ?", (salience, last_recalled, message_id))
-        await self._conn.commit()
 
     async def _set_fact_decay(self, fact_id, *, forgotten_at=None, last_decay_at=None):
         updates = []
@@ -156,7 +261,6 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         if updates:
             params.append(fact_id)
             await self._conn.execute(f"UPDATE facts SET {', '.join(updates)} WHERE id = ?", params)
-            await self._conn.commit()
 
     async def _load_twin(self, subject):
         async with self._conn.execute("SELECT data_json FROM digital_twins WHERE subject = ?", (subject,)) as cur:
@@ -168,14 +272,12 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             "INSERT INTO digital_twins (subject, data_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(subject) DO UPDATE SET data_json=excluded.data_json, updated_at=excluded.updated_at",
             (twin.subject, json.dumps(dataclasses.asdict(twin), ensure_ascii=False), time.time()),
         )
-        await self._conn.commit()
 
     async def _record_workspace_impl(self, session_id, action_type, payload):
         await self._conn.execute(
             "INSERT INTO workspace_actions (session_id, action_type, payload_json, created_at) VALUES (?, ?, ?, ?)",
             (session_id, action_type, json.dumps(payload, ensure_ascii=False), time.time()),
         )
-        await self._conn.commit()
 
     @staticmethod
     def _row_to_message(row):

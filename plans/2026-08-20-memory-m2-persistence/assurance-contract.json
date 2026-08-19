@@ -1,0 +1,27 @@
+{
+  "profile": "standard",
+  "acceptance_ids": ["M2-AC-1", "M2-AC-2", "M2-AC-3"],
+  "protected_assets": [
+    {"id": "ASSET-1", "description": "既有用户记忆数据（0.1.0 数据库不得因版本化而丢数据）"},
+    {"id": "ASSET-2", "description": "写入原子性（不得产生部分写入的中间态）"},
+    {"id": "ASSET-3", "description": "幂等性（重放同一事件不得产生重复数据）"}
+  ],
+  "trusted_assumptions": [
+    {"id": "TRUST-1", "description": "调用方在需要幂等时提供非空 source_event_id"},
+    {"id": "TRUST-2", "description": "本机可构建 wheel + 建干净 venv"}
+  ],
+  "in_scope_failures": [
+    {"id": "FAIL-1", "description": "未来 schema 被静默打开（fail-closed 未达成）"},
+    {"id": "FAIL-2", "description": "append 中途失败留下部分写入（原子性未达成）"},
+    {"id": "FAIL-3", "description": "同 source_event_id 重复插入（幂等未达成）"},
+    {"id": "FAIL-4", "description": "版本化破坏 0.1.0 数据库迁移或丢数据"},
+    {"id": "FAIL-5", "description": "事务化破坏既有 append/recall/facts 写路径"}
+  ],
+  "in_scope_adversaries": [],
+  "out_of_scope_conditions": [
+    {"id": "OOS-1", "description": "级联删除 / embedding lineage / 资源上限 / retention（M3）"},
+    {"id": "OOS-2", "description": "云端 embedding provider（M4）"},
+    {"id": "OOS-3", "description": "宿主 re-vendor（C1）"}
+  ],
+  "maximum_acceptable_impact": "写入失败需人工排查；不得造成部分写入、重复写入或数据丢失"
+}
