@@ -36,6 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   message and swaps the active embedder/retriever.
 - Added size limits (`max_content_chars` / `max_db_bytes`) raising `MemoryLimitError`.
 
+### Cloud embedding
+- Added `CloudEmbedder` (async, batched, LRU-cached, retry-with-backoff, fail-closed)
+  and `OpenAICompatibleClient` (httpx `/embeddings`, dimension-validated). Cloud
+  embedding has no silent offline fallback — network failure raises `EmbeddingError`,
+  so callers choose an explicit degradation (e.g. `HashEmbedder`).
+- `get_embedder("cloud", base_url=..., api_key=..., model=..., dim=...)` wires the
+  cloud embedder; `api_key` never appears in repr/log/exception.
+
 ### Privacy
 - Recall and fact-extraction logs no longer emit raw query text or fact key/value
   content; they log lengths/counts only.

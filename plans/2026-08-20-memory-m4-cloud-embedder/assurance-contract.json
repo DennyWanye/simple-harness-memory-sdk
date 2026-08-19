@@ -1,0 +1,26 @@
+{
+  "profile": "standard",
+  "acceptance_ids": ["M4-AC-1", "M4-AC-2", "M4-AC-3", "M4-AC-4", "M4-AC-5"],
+  "protected_assets": [
+    {"id": "ASSET-1", "description": "云端 API 凭证（api_key 不得泄露到日志/repr/异常/持久化）"},
+    {"id": "ASSET-2", "description": "召回质量（云端向量维度须与 lineage 一致，离线降级不得静默丢语义）"}
+  ],
+  "trusted_assumptions": [
+    {"id": "TRUST-1", "description": "调用方提供有效的 base_url/api_key/model，并接受用户记忆内容外发到该 provider"},
+    {"id": "TRUST-2", "description": "本机可构建 wheel + 建干净 venv"}
+  ],
+  "in_scope_failures": [
+    {"id": "FAIL-1", "description": "api_key 泄露到日志/repr/异常"},
+    {"id": "FAIL-2", "description": "网络失败导致召回崩溃而非离线降级"},
+    {"id": "FAIL-3", "description": "云端向量维度与声明 dim 不一致（lineage 漂移）"},
+    {"id": "FAIL-4", "description": "缓存返回错误向量（同文本不同向量）"}
+  ],
+  "in_scope_adversaries": [
+    {"id": "ADV-1", "description": "日志/异常观测者试图提取 api_key（防凭证泄露）"}
+  ],
+  "out_of_scope_conditions": [
+    {"id": "OOS-1", "description": "本地 BGE-M3"},
+    {"id": "OOS-2", "description": "宿主 re-vendor（C1）"}
+  ],
+  "maximum_acceptable_impact": "召回失败需人工排查；不得泄露凭证、不得静默丢语义或崩溃"
+}

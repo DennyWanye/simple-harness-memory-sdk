@@ -13,3 +13,8 @@ class MemoryCorruptionError(RuntimeError):
 class MemoryLimitError(RuntimeError):
     """A write exceeded a configured size limit (content / fact / payload / DB)."""
 
+
+class EmbeddingError(RuntimeError):
+    """Embedding generation failed (network / timeout / dimension mismatch)."""
+
+
