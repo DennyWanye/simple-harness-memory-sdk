@@ -136,6 +136,22 @@ class MemoryBackend(ABC):
     ) -> None:
         """记录工作记忆动作（文件操作/工具调用等）。"""
 
+    @abstractmethod
+    async def delete_session(self, session_id: str) -> int:
+        """级联删除一个 session 的 messages/facts/workspace_actions 并重建 twin。"""
+
+    @abstractmethod
+    async def delete_all(self) -> None:
+        """清空全部记忆数据。"""
+
+    @abstractmethod
+    async def delete_old_sessions(self, older_than_days: float = 30.0) -> int:
+        """删除最后活跃早于阈值的 session 及级联数据。"""
+
+    @abstractmethod
+    async def reindex(self, embedder=None) -> int:
+        """用新 embedder 重新 embedding 全部 messages 并更新 lineage。"""
+
     # ── 生命周期 ─────────────────────────────────────
 
     async def initialize(self) -> None:

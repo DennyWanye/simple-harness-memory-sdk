@@ -34,6 +34,11 @@ class Message:
     # 向量化（延迟填充）
     embedding: Optional[bytes] = None  # BGE-M3 向量，BLOB
 
+    # embedding lineage（embedder 元数据，用于 reindex / 维度一致性）
+    embedder_kind: Optional[str] = None
+    embedding_dim: Optional[int] = None
+    embedding_format_version: Optional[int] = None
+
     # 压缩元数据
     is_summary: bool = False            # 是否为压缩后的 summary
     summary_of: Optional[str] = None    # summary 覆盖的源消息 ID（JSON list）

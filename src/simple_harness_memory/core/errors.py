@@ -8,3 +8,8 @@ class MemoryCorruptionError(RuntimeError):
     Raised instead of silently returning an empty object, so callers can
     report or isolate corruption rather than treating it as "no data".
     """
+
+
+class MemoryLimitError(RuntimeError):
+    """A write exceeded a configured size limit (content / fact / payload / DB)."""
+

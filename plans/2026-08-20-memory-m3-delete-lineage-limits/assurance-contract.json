@@ -1,0 +1,26 @@
+{
+  "profile": "standard",
+  "acceptance_ids": ["M3-AC-1", "M3-AC-2", "M3-AC-3"],
+  "protected_assets": [
+    {"id": "ASSET-1", "description": "用户数据完整性（删除不得误删其他 session 数据、reindex 不得丢 embedding）"},
+    {"id": "ASSET-2", "description": "隐私（删除必须级联清掉派生数据，不留残留）"},
+    {"id": "ASSET-3", "description": "资源边界（超限不得静默丢弃或 OOM）"}
+  ],
+  "trusted_assumptions": [
+    {"id": "TRUST-1", "description": "调用方按需显式调用 delete/reindex"},
+    {"id": "TRUST-2", "description": "本机可构建 wheel + 建干净 venv"}
+  ],
+  "in_scope_failures": [
+    {"id": "FAIL-1", "description": "删除不级联（facts/evidence 残留）"},
+    {"id": "FAIL-2", "description": "删除误删其他 session 数据"},
+    {"id": "FAIL-3", "description": "lineage 未记录或 reindex 后不一致"},
+    {"id": "FAIL-4", "description": "删除/lineage 破坏既有 append/recall/facts 路径"},
+    {"id": "FAIL-5", "description": "超限内容静默丢弃或导致崩溃"}
+  ],
+  "in_scope_adversaries": [],
+  "out_of_scope_conditions": [
+    {"id": "OOS-1", "description": "云端 embedding provider（M4）"},
+    {"id": "OOS-2", "description": "宿主 re-vendor（C1）"}
+  ],
+  "maximum_acceptable_impact": "删除/reindex 需人工核对；不得误删、丢数据或超限崩溃"
+}

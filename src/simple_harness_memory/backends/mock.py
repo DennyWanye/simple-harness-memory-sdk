@@ -18,10 +18,10 @@ class MockMemoryBackend(BaseMemoryBackend):
         self._next_msg_id = 1
         self._next_fact_id = 1
 
-    async def _append_message_impl(self, session_id, role, content, embedding, salience, decay_rate, created_at, is_summary, summary_of, source_event_id):
+    async def _append_message_impl(self, session_id, role, content, embedding, salience, decay_rate, created_at, is_summary, summary_of, source_event_id, embedder_kind, embedding_dim, embedding_format_version):
         msg_id = self._next_msg_id
         self._next_msg_id += 1
-        self._messages.append(Message(id=msg_id, session_id=session_id, role=role, content=content, created_at=created_at, salience=salience, decay_rate=decay_rate, embedding=embedding, is_summary=is_summary, summary_of=summary_of))
+        self._messages.append(Message(id=msg_id, session_id=session_id, role=role, content=content, created_at=created_at, salience=salience, decay_rate=decay_rate, embedding=embedding, is_summary=is_summary, summary_of=summary_of, embedder_kind=embedder_kind, embedding_dim=embedding_dim, embedding_format_version=embedding_format_version))
         return msg_id
 
     async def _get_message_impl(self, message_id):
@@ -81,6 +81,47 @@ class MockMemoryBackend(BaseMemoryBackend):
 
     async def _record_workspace_impl(self, session_id, action_type, payload):
         self._workspace_actions.append((session_id, action_type, payload, time.time()))
+
+    async def _delete_messages_by_ids_impl(self, ids):
+        id_set = set(ids)
+        self._messages = [m for m in self._messages if m.id not in id_set]
+
+    async def _delete_facts_by_ids_impl(self, ids):
+        id_set = set(ids)
+        self._facts = [f for f in self._facts if f.id not in id_set]
+
+    async def _delete_workspace_by_session_impl(self, session_id):
+        self._workspace_actions = [
+            w for w in self._workspace_actions if w[0] != session_id
+        ]
+
+    async def _clear_all_impl(self):
+        self._messages = []
+        self._facts = []
+        self._twins = {}
+        self._workspace_actions = []
+
+    async def _clear_dangling_supersede_impl(self, deleted_fact_ids):
+        deleted = set(deleted_fact_ids)
+        changed = True
+        while changed:
+            changed = False
+            for f in self._facts:
+                if f.superseded_by in deleted:
+                    successor = next(
+                        (x for x in self._facts if x.id == f.superseded_by), None
+                    )
+                    f.superseded_by = successor.superseded_by if successor else None
+                    changed = True
+
+    async def _update_embedding_impl(self, message_id, embedding, embedder_kind, embedding_dim, embedding_format_version):
+        for m in self._messages:
+            if m.id == message_id:
+                m.embedding = embedding
+                m.embedder_kind = embedder_kind
+                m.embedding_dim = embedding_dim
+                m.embedding_format_version = embedding_format_version
+                return
 
     def _add_fact(self, fact):
         fact_id = self._next_fact_id

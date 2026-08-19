@@ -2,9 +2,10 @@ import time
 
 import pytest
 
-from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
-from simple_harness_memory.core.errors import MemoryCorruptionError
+from simple_harness_memory.backends.sqlite import SCHEMA_VERSION, SQLiteMemoryBackend
+from simple_harness_memory.core.errors import MemoryCorruptionError, MemoryLimitError
 from simple_harness_memory.core.models import Fact
+from simple_harness_memory.embedders.mock import HashEmbedder
 
 
 @pytest.mark.asyncio
@@ -99,7 +100,7 @@ async def test_schema_version_recorded_and_future_rejected(tmp_path):
         "SELECT value FROM schema_meta WHERE key='schema_version'"
     ) as cur:
         row = await cur.fetchone()
-    assert row is not None and int(row[0]) == 1
+    assert row is not None and int(row[0]) == SCHEMA_VERSION
     await b._conn.execute("UPDATE schema_meta SET value='999' WHERE key='schema_version'")
     await b._conn.commit()
     await b.close()
@@ -191,4 +192,65 @@ async def test_source_event_id_idempotent(tmp_path):
     assert id1 == id2
     msgs = await b.get_recent_messages("s1")
     assert len(msgs) == 1
+    await b.close()
+
+
+@pytest.mark.asyncio
+async def test_delete_session_cascades(tmp_path):
+    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"), auto_extract_facts=True)
+    await b.initialize()
+    await b.append_message("s1", "user", "我养了一只叫Max的狗")
+    await b.append_message("s2", "user", "今天天气很好")
+    await b.delete_session("s1")
+    msgs = await b._messages_all()
+    assert all(m.session_id != "s1" for m in msgs)
+    assert any(m.session_id == "s2" for m in msgs)
+    facts = await b._facts_all()
+    assert all(f.source_msg_id not in {m.id for m in msgs if m.session_id == "s1"} for f in facts)
+    await b.close()
+
+
+@pytest.mark.asyncio
+async def test_delete_all(tmp_path):
+    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"), auto_extract_facts=True)
+    await b.initialize()
+    await b.append_message("s1", "user", "hello")
+    await b.delete_all()
+    assert await b._messages_all() == []
+    assert await b._facts_all() == []
+    await b.close()
+
+
+@pytest.mark.asyncio
+async def test_lineage_recorded_and_reindex(tmp_path):
+    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"))
+    await b.initialize()
+    await b.append_message("s1", "user", "我养了一只猫")
+    msgs = await b._messages_all()
+    assert msgs[0].embedder_kind == "hash"
+    assert msgs[0].embedding_dim == 256
+    await b.reindex(HashEmbedder(dim=128))
+    msgs2 = await b._messages_all()
+    assert msgs2[0].embedding_dim == 128
+    assert msgs2[0].embedder_kind == "hash"
+    hits = await b.recall("猫")
+    assert hits
+    await b.close()
+
+
+@pytest.mark.asyncio
+async def test_content_limit_raises(tmp_path):
+    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"), max_content_chars=10)
+    await b.initialize()
+    with pytest.raises(MemoryLimitError):
+        await b.append_message("s1", "user", "x" * 11)
+    await b.close()
+
+
+@pytest.mark.asyncio
+async def test_db_size_limit_raises(tmp_path):
+    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"), max_db_bytes=1)
+    await b.initialize()
+    with pytest.raises(MemoryLimitError):
+        await b.append_message("s1", "user", "hello")
     await b.close()

@@ -11,10 +11,11 @@ import structlog
 
 from simple_harness_memory.cognitive.decay import bump_salience, decay_salience, should_forget
 from simple_harness_memory.cognitive.twin_builder import build_twin_from_facts, detect_fact_conflicts
+from simple_harness_memory.core.errors import MemoryLimitError
 from simple_harness_memory.core.models import SINGLE_VALUED_KEYS, Fact, FactConflict, Hit, Message
 from simple_harness_memory.core.port import MemoryBackend
 from simple_harness_memory.core.twin import DigitalTwin
-from simple_harness_memory.embedders.base import Embedder, encode_vector
+from simple_harness_memory.embedders.base import EMBEDDING_FORMAT_VERSION, Embedder, encode_vector
 from simple_harness_memory.embedders.mock import HashEmbedder
 from simple_harness_memory.features.facts import FactExtractor, RuleBasedFactExtractor
 from simple_harness_memory.features.reranker import IdentityReranker, Reranker
@@ -26,13 +27,15 @@ logger = structlog.get_logger("simple_harness_memory.backends.base")
 
 
 class BaseMemoryBackend(MemoryBackend):
-    def __init__(self, *, embedder=None, fact_extractor=None, reranker=None, summarizer=None, auto_extract_facts=False):
+    def __init__(self, *, embedder=None, fact_extractor=None, reranker=None, summarizer=None, auto_extract_facts=False, max_content_chars=100_000, max_db_bytes=None):
         self._embedder = embedder or HashEmbedder()
         self._fact_extractor = fact_extractor or RuleBasedFactExtractor()
         self._reranker = reranker or IdentityReranker()
         self._summarizer = summarizer or RuleBasedSummarizer()
         self._retriever = Retriever(self._embedder, self._reranker)
         self._auto_extract_facts = auto_extract_facts
+        self._max_content_chars = max_content_chars
+        self._max_db_bytes = max_db_bytes
 
     async def _commit(self) -> None:
         """Commit pending writes (no-op for in-memory backends)."""
@@ -43,8 +46,17 @@ class BaseMemoryBackend(MemoryBackend):
         """Transaction context (no-op for in-memory backends)."""
         yield
 
+    def _check_content(self, content: str) -> None:
+        if len(content) > self._max_content_chars:
+            raise MemoryLimitError(
+                f"content length {len(content)} exceeds max_content_chars={self._max_content_chars}"
+            )
+
+    async def _check_db_size(self) -> None:
+        return None
+
     @abstractmethod
-    async def _append_message_impl(self, session_id, role, content, embedding, salience, decay_rate, created_at, is_summary, summary_of, source_event_id) -> int: ...
+    async def _append_message_impl(self, session_id, role, content, embedding, salience, decay_rate, created_at, is_summary, summary_of, source_event_id, embedder_kind, embedding_dim, embedding_format_version) -> int: ...
 
     @abstractmethod
     async def _get_message_impl(self, message_id) -> Optional[Message]: ...
@@ -82,13 +94,34 @@ class BaseMemoryBackend(MemoryBackend):
     @abstractmethod
     async def _record_workspace_impl(self, session_id, action_type, payload) -> None: ...
 
+    @abstractmethod
+    async def _delete_messages_by_ids_impl(self, ids) -> None: ...
+
+    @abstractmethod
+    async def _delete_facts_by_ids_impl(self, ids) -> None: ...
+
+    @abstractmethod
+    async def _delete_workspace_by_session_impl(self, session_id) -> None: ...
+
+    @abstractmethod
+    async def _clear_all_impl(self) -> None: ...
+
+    @abstractmethod
+    async def _clear_dangling_supersede_impl(self, deleted_fact_ids) -> None: ...
+
+    @abstractmethod
+    async def _update_embedding_impl(self, message_id, embedding, embedder_kind, embedding_dim, embedding_format_version) -> None: ...
+
     async def append_message(self, session_id, role, content, *, salience=0.0, decay_rate=0.02, source_event_id=None):
         try:
+            self._check_content(content)
+            await self._check_db_size()
             now = time.time()
             embedding = encode_vector(await self._embedder.embed(content))
             async with self._transaction():
                 msg_id = await self._append_message_impl(
-                    session_id, role, content, embedding, salience, decay_rate, now, False, None, source_event_id
+                    session_id, role, content, embedding, salience, decay_rate, now, False, None, source_event_id,
+                    self._embedder.kind, self._embedder.dim, EMBEDDING_FORMAT_VERSION,
                 )
                 if self._auto_extract_facts and role == "user":
                     await self.extract_facts(msg_id, content, role)
@@ -278,7 +311,7 @@ class BaseMemoryBackend(MemoryBackend):
                     continue
                 await self._append_message_impl(
                     session_id, "system", summary, None, 0.0, 0.02, now, True,
-                    json.dumps([m.id for m in msgs]), None,
+                    json.dumps([m.id for m in msgs]), None, None, None, None,
                 )
                 count += 1
             logger.info(
@@ -295,3 +328,55 @@ class BaseMemoryBackend(MemoryBackend):
     async def record_workspace_action(self, session_id, action_type, payload):
         await self._record_workspace_impl(session_id, action_type, payload)
         await self._commit()
+
+    async def delete_session(self, session_id: str) -> int:
+        messages = [m for m in await self._messages_all() if m.session_id == session_id]
+        message_ids = [m.id for m in messages if m.id is not None]
+        facts = [f for f in await self._facts_all() if f.source_msg_id in message_ids]
+        fact_ids = [f.id for f in facts if f.id is not None]
+        # 先 re-point dangling supersede（后继 fact 仍在表里），再物理删除
+        await self._clear_dangling_supersede_impl(fact_ids)
+        await self._delete_messages_by_ids_impl(message_ids)
+        await self._delete_facts_by_ids_impl(fact_ids)
+        await self._delete_workspace_by_session_impl(session_id)
+        await self._commit()
+        await self._rebuild_twin()
+        return len(message_ids)
+
+    async def delete_all(self) -> None:
+        await self._clear_all_impl()
+        await self._commit()
+
+    async def delete_old_sessions(self, older_than_days: float = 30.0) -> int:
+        cutoff = time.time() - older_than_days * 86400.0
+        latest: dict[str, float] = {}
+        for m in await self._messages_all():
+            if m.created_at > latest.get(m.session_id, 0.0):
+                latest[m.session_id] = m.created_at
+        deleted = 0
+        for session_id, last in latest.items():
+            if last < cutoff:
+                deleted += await self.delete_session(session_id)
+        return deleted
+
+    async def _rebuild_twin(self, subject: str = "user") -> None:
+        active_facts = [f for f in await self._facts_all() if f.is_active]
+        twin = build_twin_from_facts(active_facts, base=None, subject=subject)
+        await self._save_twin(twin)
+        await self._commit()
+
+    async def reindex(self, embedder=None) -> int:
+        new_embedder = embedder or self._embedder
+        messages = await self._messages_all()
+        texts = [m.content for m in messages]
+        for i in range(0, len(messages), 100):
+            chunk = messages[i:i + 100]
+            vectors = await new_embedder.embed_batch(texts[i:i + 100])
+            for m, vec in zip(chunk, vectors):
+                await self._update_embedding_impl(
+                    m.id, encode_vector(vec), new_embedder.kind, new_embedder.dim, EMBEDDING_FORMAT_VERSION
+                )
+        await self._commit()
+        self._embedder = new_embedder
+        self._retriever = Retriever(new_embedder, self._reranker)
+        return len(messages)

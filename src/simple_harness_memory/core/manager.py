@@ -115,6 +115,18 @@ class MemoryManager:
     async def record_workspace_action(self, session_id, action_type, payload):
         await self._backend.record_workspace_action(session_id, action_type, payload)
 
+    async def delete_session(self, session_id):
+        return await self._backend.delete_session(session_id)
+
+    async def delete_all(self):
+        await self._backend.delete_all()
+
+    async def delete_old_sessions(self, older_than_days=30.0):
+        return await self._backend.delete_old_sessions(older_than_days)
+
+    async def reindex(self, embedder=None):
+        return await self._backend.reindex(embedder)
+
     async def close(self):
         await self._backend.close()
         logger.info("memory.manager_closed", backend_type=type(self._backend).__name__)

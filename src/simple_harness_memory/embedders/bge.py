@@ -17,6 +17,10 @@ class BGEM3Embedder(Embedder):
         self._model = SentenceTransformer(model_name, device=device)
 
     @property
+    def kind(self) -> str:
+        return "bge"
+
+    @property
     def dim(self) -> int:
         if hasattr(self._model, "get_embedding_dimension"):
             return int(self._model.get_embedding_dimension())

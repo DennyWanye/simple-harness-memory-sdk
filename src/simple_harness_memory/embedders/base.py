@@ -4,8 +4,14 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 
+EMBEDDING_FORMAT_VERSION = 1
+
 
 class Embedder(ABC):
+    @property
+    @abstractmethod
+    def kind(self) -> str: ...
+
     @property
     @abstractmethod
     def dim(self) -> int: ...

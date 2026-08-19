@@ -15,6 +15,10 @@ class HashEmbedder(Embedder):
         self._ngrams = tuple(ngrams)
 
     @property
+    def kind(self) -> str:
+        return "hash"
+
+    @property
     def dim(self) -> int:
         return self._dim
 

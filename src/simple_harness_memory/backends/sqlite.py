@@ -12,7 +12,7 @@ import aiosqlite
 import structlog
 
 from simple_harness_memory.backends.base import BaseMemoryBackend
-from simple_harness_memory.core.errors import MemoryCorruptionError
+from simple_harness_memory.core.errors import MemoryCorruptionError, MemoryLimitError
 from simple_harness_memory.core.models import Fact, Message
 from simple_harness_memory.core.twin import (
     DigitalTwin, Entity, Goal, Preference, PreferenceMap, RelationshipGraph,
@@ -34,7 +34,10 @@ CREATE TABLE IF NOT EXISTS messages (
     embedding BLOB,
     is_summary INTEGER NOT NULL DEFAULT 0,
     summary_of TEXT,
-    source_event_id TEXT
+    source_event_id TEXT,
+    embedder_kind TEXT,
+    embedding_dim INTEGER,
+    embedding_format_version INTEGER
 );
 CREATE TABLE IF NOT EXISTS facts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,7 +76,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 );
 """
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 SCHEMA_CHECKSUM = hashlib.sha256(_DDL.encode("utf-8")).hexdigest()
 
 # 有序迁移：(from_version, to_version, migration_sql)。后续版本在此追加。
@@ -85,13 +88,20 @@ MIGRATIONS: list[tuple[int, int, str]] = [
         "ALTER TABLE messages ADD COLUMN source_event_id TEXT;"
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_source_event "
         "ON messages(source_event_id) WHERE source_event_id IS NOT NULL;",
-    )
+    ),
+    (
+        1,
+        2,
+        "ALTER TABLE messages ADD COLUMN embedder_kind TEXT;"
+        "ALTER TABLE messages ADD COLUMN embedding_dim INTEGER;"
+        "ALTER TABLE messages ADD COLUMN embedding_format_version INTEGER;",
+    ),
 ]
 
 
 class SQLiteMemoryBackend(BaseMemoryBackend):
-    def __init__(self, db_path: str, *, embedder=None, fact_extractor=None, reranker=None, summarizer=None, auto_extract_facts=False):
-        super().__init__(embedder=embedder, fact_extractor=fact_extractor, reranker=reranker, summarizer=summarizer, auto_extract_facts=auto_extract_facts)
+    def __init__(self, db_path: str, *, embedder=None, fact_extractor=None, reranker=None, summarizer=None, auto_extract_facts=False, max_content_chars=100_000, max_db_bytes=None):
+        super().__init__(embedder=embedder, fact_extractor=fact_extractor, reranker=reranker, summarizer=summarizer, auto_extract_facts=auto_extract_facts, max_content_chars=max_content_chars, max_db_bytes=max_db_bytes)
         self._db_path = db_path
         self._db: Optional[aiosqlite.Connection] = None
         self._tx_depth = 0
@@ -149,7 +159,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
 
     async def _write_schema_meta(self, version: int, checksum: str) -> None:
         await self._conn.execute(
-            "INSERT INTO schema_meta (key, value) VALUES ('schema_version', ?), "
+            "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', ?), "
             "('schema_checksum', ?)",
             (str(version), checksum),
         )
@@ -199,10 +209,10 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             raise RuntimeError("SQLiteMemoryBackend not initialized — call initialize() first")
         return self._db
 
-    async def _append_message_impl(self, session_id, role, content, embedding, salience, decay_rate, created_at, is_summary, summary_of, source_event_id):
+    async def _append_message_impl(self, session_id, role, content, embedding, salience, decay_rate, created_at, is_summary, summary_of, source_event_id, embedder_kind, embedding_dim, embedding_format_version):
         cur = await self._conn.execute(
-            "INSERT OR IGNORE INTO messages (session_id, role, content, created_at, salience, decay_rate, embedding, is_summary, summary_of, source_event_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (session_id, role, content, created_at, salience, decay_rate, embedding, int(is_summary), summary_of, source_event_id),
+            "INSERT OR IGNORE INTO messages (session_id, role, content, created_at, salience, decay_rate, embedding, is_summary, summary_of, source_event_id, embedder_kind, embedding_dim, embedding_format_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (session_id, role, content, created_at, salience, decay_rate, embedding, int(is_summary), summary_of, source_event_id, embedder_kind, embedding_dim, embedding_format_version),
         )
         if cur.rowcount == 0 and source_event_id is not None:
             async with self._conn.execute(
@@ -279,6 +289,58 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             (session_id, action_type, json.dumps(payload, ensure_ascii=False), time.time()),
         )
 
+    async def _delete_messages_by_ids_impl(self, ids):
+        if not ids:
+            return
+        placeholders = ",".join("?" for _ in ids)
+        await self._conn.execute(
+            f"DELETE FROM messages WHERE id IN ({placeholders})", tuple(ids)
+        )
+
+    async def _delete_facts_by_ids_impl(self, ids):
+        if not ids:
+            return
+        placeholders = ",".join("?" for _ in ids)
+        await self._conn.execute(
+            f"DELETE FROM facts WHERE id IN ({placeholders})", tuple(ids)
+        )
+
+    async def _delete_workspace_by_session_impl(self, session_id):
+        await self._conn.execute(
+            "DELETE FROM workspace_actions WHERE session_id = ?", (session_id,)
+        )
+
+    async def _clear_all_impl(self):
+        for table in ("messages", "facts", "digital_twins", "workspace_actions"):
+            await self._conn.execute(f"DELETE FROM {table}")
+
+    async def _clear_dangling_supersede_impl(self, deleted_fact_ids):
+        if not deleted_fact_ids:
+            return
+        placeholders = ",".join("?" for _ in deleted_fact_ids)
+        while True:
+            cur = await self._conn.execute(
+                f"UPDATE facts SET superseded_by = (SELECT f2.superseded_by FROM facts f2 "
+                f"WHERE f2.id = facts.superseded_by) "
+                f"WHERE superseded_by IN ({placeholders}) AND superseded_by IS NOT NULL",
+                tuple(deleted_fact_ids),
+            )
+            if cur.rowcount == 0:
+                break
+
+    async def _update_embedding_impl(self, message_id, embedding, embedder_kind, embedding_dim, embedding_format_version):
+        await self._conn.execute(
+            "UPDATE messages SET embedding = ?, embedder_kind = ?, embedding_dim = ?, "
+            "embedding_format_version = ? WHERE id = ?",
+            (embedding, embedder_kind, embedding_dim, embedding_format_version, message_id),
+        )
+
+    async def _check_db_size(self):
+        import os
+
+        if self._max_db_bytes is not None and os.path.getsize(self._db_path) > self._max_db_bytes:
+            raise MemoryLimitError(f"database exceeds max_db_bytes={self._max_db_bytes}")
+
     @staticmethod
     def _row_to_message(row):
         return Message(
@@ -286,6 +348,8 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             created_at=row["created_at"], salience=row["salience"], decay_rate=row["decay_rate"],
             last_recalled=row["last_recalled"], embedding=row["embedding"],
             is_summary=bool(row["is_summary"]), summary_of=row["summary_of"],
+            embedder_kind=row["embedder_kind"], embedding_dim=row["embedding_dim"],
+            embedding_format_version=row["embedding_format_version"],
         )
 
     @staticmethod

@@ -27,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added an optional `source_event_id` idempotency key on messages (partial unique index);
   re-appending the same event returns the existing message id without a duplicate row.
 
+### Deletion & Limits
+- Added `delete_session` / `delete_all` / `delete_old_sessions` (cascade delete of
+  messages + source facts + workspace actions, with transitive dangling-supersede
+  re-pointing and a digital-twin rebuild).
+- Added embedding lineage columns (`embedder_kind` / `embedding_dim` /
+  `embedding_format_version`) plus a `reindex(embedder)` method that re-embeds every
+  message and swaps the active embedder/retriever.
+- Added size limits (`max_content_chars` / `max_db_bytes`) raising `MemoryLimitError`.
+
 ### Privacy
 - Recall and fact-extraction logs no longer emit raw query text or fact key/value
   content; they log lengths/counts only.
