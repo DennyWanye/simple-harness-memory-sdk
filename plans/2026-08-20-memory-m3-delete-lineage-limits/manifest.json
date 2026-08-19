@@ -3,7 +3,7 @@
   "source_request_text": "完成 memory-sdk 0.2.0 第三部分 M3：级联删除、embedding lineage + reindex、资源上限",
   "acceptance_file": "acceptance.md",
   "baseline": {
-    "head": "7de526bdffa4ce8315b9d9bdbd2a74c6ada56321",
+    "head": "e0921d3c31f050ffc12fc580c75e5170fd304494",
     "dirty_patch_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "scenarios": [
