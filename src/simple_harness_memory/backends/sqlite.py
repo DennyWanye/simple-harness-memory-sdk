@@ -10,6 +10,7 @@ import aiosqlite
 import structlog
 
 from simple_harness_memory.backends.base import BaseMemoryBackend
+from simple_harness_memory.core.errors import MemoryCorruptionError
 from simple_harness_memory.core.models import Fact, Message
 from simple_harness_memory.core.twin import (
     DigitalTwin, Entity, Goal, Preference, PreferenceMap, RelationshipGraph,
@@ -199,8 +200,10 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
     def _deserialize_twin(subject, data_json):
         try:
             d = json.loads(data_json)
-        except Exception:
-            return DigitalTwin(subject=subject)
+        except Exception as exc:
+            raise MemoryCorruptionError(
+                f"digital_twin for subject {subject!r} is corrupt"
+            ) from exc
         twin = DigitalTwin(subject=d.get("subject", subject))
         p = d.get("profile") or {}
         twin.profile = UserProfile(name=p.get("name"), occupation=p.get("occupation"), location=p.get("location"), language=p.get("language"), timezone=p.get("timezone"), extra=p.get("extra") or {})

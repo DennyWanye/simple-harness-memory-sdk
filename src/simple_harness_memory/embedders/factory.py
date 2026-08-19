@@ -25,16 +25,6 @@ def get_embedder(kind: str = "auto", *, dim: int = 256) -> Embedder:
         logger.info("memory.embedder_selected", kind="bge", dim=1024)
         return BGEM3Embedder()
     if kind == "auto":
-        try:
-            from simple_harness_memory.embedders.bge import BGEM3Embedder
-            logger.info("memory.embedder_selected", kind="bge", dim=1024)
-            return BGEM3Embedder()
-        except ImportError as exc:
-            logger.warning(
-                "memory.embedder_fallback_to_hash",
-                kind="auto",
-                reason=str(exc),
-                dim=dim,
-            )
-            return HashEmbedder(dim=dim)
+        logger.info("memory.embedder_selected", kind="hash", dim=dim)
+        return HashEmbedder(dim=dim)
     raise ValueError(f"unknown embedder kind: {kind!r}")

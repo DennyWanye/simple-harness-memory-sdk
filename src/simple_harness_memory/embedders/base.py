@@ -11,10 +11,10 @@ class Embedder(ABC):
     def dim(self) -> int: ...
 
     @abstractmethod
-    def embed(self, text: str) -> list[float]: ...
+    async def embed(self, text: str) -> list[float]: ...
 
-    def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        return [self.embed(t) for t in texts]
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        return [await self.embed(t) for t in texts]
 
 
 def encode_vector(vector: list[float]) -> bytes:

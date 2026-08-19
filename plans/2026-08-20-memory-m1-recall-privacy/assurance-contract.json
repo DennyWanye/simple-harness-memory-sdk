@@ -1,0 +1,29 @@
+{
+  "profile": "standard",
+  "acceptance_ids": ["M1-AC-1", "M1-AC-2", "M1-AC-3", "M1-AC-4", "M1-AC-5"],
+  "protected_assets": [
+    {"id": "ASSET-1", "description": "召回质量（命中/排序/session-affinity 语义不得因拆分或 async 化退化）"},
+    {"id": "ASSET-2", "description": "用户隐私（query / fact key/value / evidence 不得进入日志）"},
+    {"id": "ASSET-3", "description": "损坏数据不得被静默当作空画像（数据完整性）"}
+  ],
+  "trusted_assumptions": [
+    {"id": "TRUST-1", "description": "调用方愿意接受 recall() 副作用语义从写入变为只读（本 slice 是 0.2.0 破坏性变更，memory 无正式 release）"},
+    {"id": "TRUST-2", "description": "本机可构建 wheel + 建干净 venv"}
+  ],
+  "in_scope_failures": [
+    {"id": "FAIL-1", "description": "recall() 仍写入 salience/last_recalled（只读召回未达成）"},
+    {"id": "FAIL-2", "description": "recall 日志仍含 query 原文（隐私未达成）"},
+    {"id": "FAIL-3", "description": "twin 损坏仍静默返回空 DigitalTwin"},
+    {"id": "FAIL-4", "description": "auto 仍急切加载 BGE-M3"},
+    {"id": "FAIL-5", "description": "召回质量退化（拆分/async 化破坏命中或排序）"},
+    {"id": "FAIL-6", "description": "async 化破坏既有 recall/vector_search 调用链"}
+  ],
+  "in_scope_adversaries": [],
+  "out_of_scope_conditions": [
+    {"id": "OOS-1", "description": "schema version / migration / 事务 / 幂等（M2）"},
+    {"id": "OOS-2", "description": "级联删除 / embedding lineage / 资源上限（M3）"},
+    {"id": "OOS-3", "description": "云端 embedding provider 实现（M4，本 slice 只定 async 协议）"},
+    {"id": "OOS-4", "description": "宿主 re-vendor（C1）"}
+  ],
+  "maximum_acceptable_impact": "召回结果可人工核对；不得造成隐私泄露、数据损坏被静默掩盖或召回质量退化"
+}

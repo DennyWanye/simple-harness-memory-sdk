@@ -18,7 +18,7 @@ class HashEmbedder(Embedder):
     def dim(self) -> int:
         return self._dim
 
-    def embed(self, text: str) -> list[float]:
+    async def embed(self, text: str) -> list[float]:
         vec = [0.0] * self._dim
         norm = text.casefold()
         shingles: list[str] = []

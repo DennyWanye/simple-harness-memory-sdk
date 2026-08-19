@@ -22,10 +22,10 @@ class BGEM3Embedder(Embedder):
             return int(self._model.get_embedding_dimension())
         return int(self._model.get_sentence_embedding_dimension())
 
-    def embed(self, text: str) -> list[float]:
+    async def embed(self, text: str) -> list[float]:
         return self._model.encode(text, normalize_embeddings=True).tolist()
 
-    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
         return self._model.encode(texts, normalize_embeddings=True).tolist()

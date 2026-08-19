@@ -47,20 +47,22 @@ def test_embedder_selection_keeps_logging() -> None:
     assert _function_uses_logger(_SRC / "embedders/factory.py", "get_embedder")
 
 
-def test_recall_query_is_truncated() -> None:
+def test_recall_query_is_redacted() -> None:
     src = (_SRC / "features/retriever.py").read_text(encoding="utf-8")
-    # the user query must stay truncated at 80 chars, never emitted in full
-    assert "query=query[:80]" in src
+    # the user query must never be emitted, only its length
+    assert "query_len=len(query)" in src
+    assert "query=query[:80]" not in src
 
 
-def test_recall_emits_memory_recall(capsys) -> None:
+@pytest.mark.asyncio
+async def test_recall_emits_memory_recall(capsys) -> None:
     retriever = Retriever(HashEmbedder())
     msg = Message(
         id=1, session_id="s1", role="user",
         content="I have a dog named Max", created_at=0.0,
     )
     twin = DigitalTwin()
-    hits = retriever.recall(
+    hits = await retriever.recall(
         "dog", messages=[msg], facts=[], twin=twin, limit=5
     )
     assert hits  # "dog" is a substring of the message content (FTS hit)

@@ -3,6 +3,7 @@ import time
 import pytest
 
 from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
+from simple_harness_memory.core.errors import MemoryCorruptionError
 from simple_harness_memory.core.models import Fact
 
 
@@ -62,3 +63,28 @@ async def test_sqlite_twin_persists(tmp_path):
     twin2 = await b2.get_digital_twin()
     assert twin2.profile.name == "张三"
     await b2.close()
+
+
+@pytest.mark.asyncio
+async def test_sqlite_corrupt_twin_raises(tmp_path):
+    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"))
+    await b.initialize()
+    await b._conn.execute(
+        "INSERT INTO digital_twins (subject, data_json, updated_at) VALUES (?, ?, ?)",
+        ("user", "{corrupt", time.time()),
+    )
+    await b._conn.commit()
+    with pytest.raises(MemoryCorruptionError):
+        await b.get_digital_twin("user")
+    await b.close()
+
+
+@pytest.mark.asyncio
+async def test_extract_facts_does_not_log_key_value(tmp_path, capsys):
+    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"), auto_extract_facts=True)
+    await b.initialize()
+    await b.append_message("s1", "user", "我养了一只叫Max的狗")
+    captured = capsys.readouterr().out
+    assert "memory.extract_facts" in captured
+    assert "Max" not in captured
+    await b.close()

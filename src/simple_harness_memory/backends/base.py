@@ -75,7 +75,7 @@ class BaseMemoryBackend(MemoryBackend):
     async def append_message(self, session_id, role, content, *, salience=0.0, decay_rate=0.02):
         try:
             now = time.time()
-            embedding = encode_vector(self._embedder.embed(content))
+            embedding = encode_vector(await self._embedder.embed(content))
             msg_id = await self._append_message_impl(
                 session_id, role, content, embedding, salience, decay_rate, now, False, None
             )
@@ -128,7 +128,6 @@ class BaseMemoryBackend(MemoryBackend):
                             logger.info(
                                 "memory.fact_superseded",
                                 subject=fact.subject,
-                                key=fact.key,
                                 old_id=old.id,
                                 new_id=new_id,
                             )
@@ -137,10 +136,6 @@ class BaseMemoryBackend(MemoryBackend):
                 message_id=message_id,
                 role=role,
                 fact_count=len(stored),
-                facts=[
-                    {"key": f.key, "value": f.value, "category": f.category}
-                    for f in stored
-                ],
             )
             return stored
         except Exception:
@@ -189,17 +184,12 @@ class BaseMemoryBackend(MemoryBackend):
             messages = await self._messages_all()
             facts = await self._facts_all()
             twin = await self.get_digital_twin("user")
-            hits = self._retriever.recall(
+            hits = await self._retriever.recall(
                 query, messages=messages, facts=facts, twin=twin, session_id=session_id, limit=limit
             )
-            now = time.time()
-            for hit in hits:
-                bumped = bump_salience(hit.salience)
-                await self._update_message_salience(hit.message_id, bumped, now)
-                hit.salience = bumped
             logger.info(
                 "memory.recall",
-                query=query,
+                query_len=len(query),
                 session_id=session_id,
                 limit=limit,
                 hit_count=len(hits),
@@ -208,12 +198,21 @@ class BaseMemoryBackend(MemoryBackend):
             )
             return hits
         except Exception:
-            logger.exception("memory.recall_failed", query=query, session_id=session_id, limit=limit)
+            logger.exception("memory.recall_failed", query_len=len(query), session_id=session_id, limit=limit)
             raise
+
+    async def recall_and_reinforce(self, query, session_id=None, limit=10):
+        hits = await self.recall(query, session_id=session_id, limit=limit)
+        now = time.time()
+        for hit in hits:
+            bumped = bump_salience(hit.salience)
+            await self._update_message_salience(hit.message_id, bumped, now)
+            hit.salience = bumped
+        return hits
 
     async def vector_search(self, query, limit=20):
         messages = await self._messages_all()
-        return self._retriever.vector_search(query, messages=messages, limit=limit)
+        return await self._retriever.vector_search(query, messages=messages, limit=limit)
 
     async def daily_decay(self):
         try:

@@ -96,6 +96,15 @@ class MemoryBackend(ABC):
         """RRF 六路混合召回，返回融合排名后的结果。"""
 
     @abstractmethod
+    async def recall_and_reinforce(
+        self,
+        query: str,
+        session_id: Optional[str] = None,
+        limit: int = 10,
+    ) -> list[Hit]:
+        """RRF 召回并对命中项执行 salience reinforcement（写 last_recalled）。"""
+
+    @abstractmethod
     async def vector_search(
         self,
         query: str,

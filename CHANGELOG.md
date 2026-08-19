@@ -7,10 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `recall()` is now read-only: it no longer bumps salience or writes `last_recalled`.
+  Reinforcement is available via the explicit `recall_and_reinforce()` method.
+- `Embedder.embed()` / `embed_batch()` are now async (the whole retriever/recall chain
+  awaits them), preparing for a cloud embedder.
+- `get_embedder("auto")` no longer eagerly loads BGE-M3; it always returns the
+  deterministic `HashEmbedder`. BGE-M3 remains available via the explicit `"bge"` kind.
+- A corrupted `digital_twins` row now raises `MemoryCorruptionError` instead of silently
+  returning an empty DigitalTwin.
+
+### Privacy
+- Recall and fact-extraction logs no longer emit raw query text or fact key/value
+  content; they log lengths/counts only.
+
 ### Observability
 
-- Added `memory.recall` / `memory.recall_empty` structured events (query truncated to
-  80 chars, hit count, per-source contribution) to the hybrid retriever.
+- Added `memory.recall` / `memory.recall_empty` structured events (query length, hit
+  count, per-source contribution) to the hybrid retriever.
 
 ### Documentation
 - README quickstart restructured so the basic example runs under a plain `pip install -e .`

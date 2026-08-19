@@ -29,9 +29,9 @@ class Retriever:
         self._reranker = reranker or IdentityReranker()
         self._min_similarity = min_similarity
 
-    def recall(self, query, *, messages, facts, twin, session_id=None, limit=10):
+    async def recall(self, query, *, messages, facts, twin, session_id=None, limit=10):
         by_id = {m.id: m for m in messages if m.id is not None}
-        vec_items = self._vec(query, messages)
+        vec_items = await self._vec(query, messages)
         fts_items = self._fts(query, messages)
         facts_items = self._facts(query, facts, by_id)
         entity_items = self._entity(query, messages, twin)
@@ -48,7 +48,7 @@ class Retriever:
         if hits:
             logger.info(
                 "memory.recall",
-                query=query[:80],
+                query_len=len(query),
                 hits=len(hits),
                 vec=len(vec_items),
                 fts=len(fts_items),
@@ -56,15 +56,15 @@ class Retriever:
                 entity=len(entity_items),
             )
         else:
-            logger.info("memory.recall_empty", query=query[:80])
+            logger.info("memory.recall_empty", query_len=len(query))
         return hits[:limit]
 
-    def vector_search(self, query, *, messages, limit=20):
-        items = self._vec(query, messages)
+    async def vector_search(self, query, *, messages, limit=20):
+        items = await self._vec(query, messages)
         return [self._to_hit(f) for f in fuse([items], limit=limit)]
 
-    def _vec(self, query, messages):
-        qvec = self._embedder.embed(query)
+    async def _vec(self, query, messages):
+        qvec = await self._embedder.embed(query)
         items = []
         for m in messages:
             if m.embedding is None:

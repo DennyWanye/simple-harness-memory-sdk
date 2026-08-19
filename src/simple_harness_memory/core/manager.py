@@ -88,6 +88,9 @@ class MemoryManager:
     async def recall(self, query, session_id=None, limit=10):
         return await self._backend.recall(query, session_id, limit)
 
+    async def recall_and_reinforce(self, query, session_id=None, limit=10):
+        return await self._backend.recall_and_reinforce(query, session_id, limit)
+
     async def vector_search(self, query, limit=20):
         return await self._backend.vector_search(query, limit)
 

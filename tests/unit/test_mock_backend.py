@@ -139,10 +139,20 @@ def test_fact_decay_defaults_by_category() -> None:
 
 
 @pytest.mark.asyncio
-async def test_recall_bumps_salience(backend: MockMemoryBackend) -> None:
-    """AC-5 / F-1：召回后命中消息 salience 提升 0.05。"""
+async def test_recall_is_read_only(backend: MockMemoryBackend) -> None:
+    """M1-AC-1：recall 物理无写入，salience 不变。"""
     msg_id = await backend.append_message("s1", "user", "我养了一只猫")
     await backend.recall("猫")
+    msg = await backend.get_message(msg_id)
+    assert msg is not None
+    assert msg.salience == 0.0
+
+
+@pytest.mark.asyncio
+async def test_recall_and_reinforce_bumps_salience(backend: MockMemoryBackend) -> None:
+    """M1-AC-1：reinforcement 由 recall_and_reinforce 显式执行。"""
+    msg_id = await backend.append_message("s1", "user", "我养了一只猫")
+    await backend.recall_and_reinforce("猫")
     msg = await backend.get_message(msg_id)
     assert msg is not None
     assert msg.salience == pytest.approx(0.05)
