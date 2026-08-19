@@ -3,7 +3,7 @@
   "source_request_text": "完成 memory-sdk 0.2.0 第一部分 M1：只读召回拆分、隐私日志、fail-open twin 修正、async Embedder 协议、Hash 默认",
   "acceptance_file": "acceptance.md",
   "baseline": {
-    "head": "ff0dde7a920e12d7845f6731a74900e033fa6429",
+    "head": "3ab4b539b98459106991bf1dc3b1cb4bdccfbf86",
     "dirty_patch_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "scenarios": [
