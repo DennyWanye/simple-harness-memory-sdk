@@ -7,8 +7,10 @@ import hashlib
 import json
 import time
 from abc import abstractmethod
+from collections.abc import Callable, Coroutine
 from contextlib import asynccontextmanager
-from typing import Any, overload
+from functools import wraps
+from typing import Any, Concatenate, ParamSpec, TypeVar, overload
 
 import structlog
 
@@ -61,6 +63,24 @@ from simple_harness_memory.features.summarizer import RuleBasedSummarizer
 
 logger = structlog.get_logger("simple_harness_memory.backends.base")
 
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def _serialized_operation(
+    method: Callable[Concatenate[BaseMemoryBackend, _P], Coroutine[Any, Any, _R]],
+) -> Callable[Concatenate[BaseMemoryBackend, _P], Coroutine[Any, Any, _R]]:
+    """Serialize one public backend operation on backends that require it."""
+
+    @wraps(method)
+    async def wrapped(
+        self: BaseMemoryBackend, /, *args: _P.args, **kwargs: _P.kwargs
+    ) -> _R:
+        async with self._operation():
+            return await method(self, *args, **kwargs)
+
+    return wrapped
+
 
 class BaseMemoryBackend(MemoryBackend):
     def __init__(
@@ -111,7 +131,12 @@ class BaseMemoryBackend(MemoryBackend):
         return None
 
     @asynccontextmanager
-    async def _transaction(self):
+    async def _operation(self):
+        yield
+
+    @asynccontextmanager
+    async def _transaction(self, *, deadline: float | None = None):
+        del deadline
         yield
 
     async def _check_db_size(self) -> None:
@@ -284,7 +309,7 @@ class BaseMemoryBackend(MemoryBackend):
         self,
         *,
         user_id: str,
-        released_before: float,
+        expired_before: float,
         limit: int,
     ) -> int: ...
 
@@ -306,6 +331,7 @@ class BaseMemoryBackend(MemoryBackend):
             raise MemoryLimitError("content exceeds max_content_chars")
         return canonical
 
+    @_serialized_operation
     async def append_message(
         self,
         session_id: str,
@@ -383,6 +409,7 @@ class BaseMemoryBackend(MemoryBackend):
         )
         return result
 
+    @_serialized_operation
     async def get_recent_messages(
         self,
         session_id: str,
@@ -400,10 +427,12 @@ class BaseMemoryBackend(MemoryBackend):
             )
         )
 
+    @_serialized_operation
     async def get_message(self, message_id: int, *, user_id: str) -> Message | None:
         user_id, _ = self._identity(user_id)
         return await self._get_message_impl(user_id, message_id)
 
+    @_serialized_operation
     async def extract_facts(
         self,
         message_id: int,
@@ -453,6 +482,7 @@ class BaseMemoryBackend(MemoryBackend):
         )
         return stored
 
+    @_serialized_operation
     async def get_facts(
         self,
         subject: str = "user",
@@ -471,12 +501,14 @@ class BaseMemoryBackend(MemoryBackend):
             active_only=active_only,
         )
 
+    @_serialized_operation
     async def forget_fact(self, fact_id: int, reason: str = "", *, user_id: str) -> bool:
         user_id, _ = self._identity(user_id)
         result = await self._forget_fact_by_id_impl(user_id, fact_id, time.time())
         await self._commit()
         return result
 
+    @_serialized_operation
     async def get_digital_twin(
         self,
         subject: str = "user",
@@ -493,6 +525,7 @@ class BaseMemoryBackend(MemoryBackend):
         )
         return build_twin_from_facts(facts, base, subject)
 
+    @_serialized_operation
     async def update_digital_twin(self, twin: DigitalTwin, *, user_id: str) -> None:
         user_id, _ = self._identity(user_id)
         await self._check_db_size()
@@ -501,6 +534,7 @@ class BaseMemoryBackend(MemoryBackend):
         await self._save_twin_impl(user_id, twin)
         await self._commit()
 
+    @_serialized_operation
     async def suggest_questions(
         self,
         subject: str = "user",
@@ -516,6 +550,7 @@ class BaseMemoryBackend(MemoryBackend):
         }
         return [q_map[field] for field in twin.missing_profile_fields() if field in q_map]
 
+    @_serialized_operation
     async def detect_inconsistencies(
         self,
         subject: str = "user",
@@ -554,6 +589,7 @@ class BaseMemoryBackend(MemoryBackend):
             truncated = True
         return hits[:limit], truncated
 
+    @_serialized_operation
     async def recall(
         self,
         query: str,
@@ -628,7 +664,9 @@ class BaseMemoryBackend(MemoryBackend):
             or timeout_seconds <= 0
         ):
             raise MemoryValidationError("timeout_seconds must be positive")
-        timeout_seconds = min(timeout_seconds, self._bounds.recall_timeout_seconds)
+        timeout_seconds = float(
+            min(timeout_seconds, self._bounds.recall_timeout_seconds)
+        )
         expected_query_hash = canonical_recall_query_hash(
             user_id=user_id,
             session_id=session_id,
@@ -642,49 +680,75 @@ class BaseMemoryBackend(MemoryBackend):
         ):
             raise MemoryIdempotencyConflict()
         query_hash = expected_query_hash
-        async with self._transaction():
-            existing = await self._get_recall_snapshot_impl(user_id, context_query_id)
-            if existing is not None:
-                saved_user, saved_session, saved_query_hash, payload_json, result_hash = existing
-                if (saved_user, saved_session, saved_query_hash) != (
-                    user_id,
-                    session_id,
-                    query_hash,
-                ):
-                    raise MemoryIdempotencyConflict()
-                return self._decode_recall_result(
-                    context_query_id=context_query_id,
-                    query_hash=query_hash,
-                    payload_json=payload_json,
-                    result_hash=result_hash,
-                    replayed=True,
-                )
-            await self._ensure_session_impl(user_id, session_id)
-            try:
-                async with asyncio.timeout(timeout_seconds):
-                    hits, truncated = await self._compute_recall(
-                        query,
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_seconds
+        commit_reserve = min(0.01, timeout_seconds * 0.25)
+        compute_deadline = deadline - commit_reserve
+        try:
+            async with asyncio.timeout_at(deadline):
+                async with self._transaction(deadline=deadline):
+                    existing = await self._get_recall_snapshot_impl(
+                        user_id, context_query_id
+                    )
+                    if existing is not None:
+                        (
+                            saved_user,
+                            saved_session,
+                            saved_query_hash,
+                            payload_json,
+                            result_hash,
+                        ) = existing
+                        if (saved_user, saved_session, saved_query_hash) != (
+                            user_id,
+                            session_id,
+                            query_hash,
+                        ):
+                            raise MemoryIdempotencyConflict()
+                        return self._decode_recall_result(
+                            context_query_id=context_query_id,
+                            query_hash=query_hash,
+                            payload_json=payload_json,
+                            result_hash=result_hash,
+                            replayed=True,
+                        )
+                    await self._ensure_session_impl(user_id, session_id)
+                    hits: list[Hit] = []
+                    if loop.time() >= compute_deadline:
+                        status = RecallStatus.TIMEOUT
+                    else:
+                        try:
+                            async with asyncio.timeout_at(compute_deadline):
+                                hits, truncated = await self._compute_recall(
+                                    query,
+                                    user_id=user_id,
+                                    session_id=session_id,
+                                    limit=effective_results,
+                                )
+                            status = (
+                                RecallStatus.TRUNCATED
+                                if truncated
+                                else RecallStatus.COMPLETE
+                            )
+                        except TimeoutError:
+                            hits = []
+                            status = RecallStatus.TIMEOUT
+                    hits, status, payload_json = self._fit_recall_payload(
+                        hits, status=status, max_bytes=effective_bytes
+                    )
+                    result_hash = hashlib.sha256(
+                        payload_json.encode("utf-8")
+                    ).hexdigest()
+                    await self._insert_recall_snapshot_impl(
+                        context_query_id=context_query_id,
                         user_id=user_id,
                         session_id=session_id,
-                        limit=effective_results,
+                        query_hash=query_hash,
+                        result_payload=payload_json,
+                        result_hash=result_hash,
+                        created_at=time.time(),
                     )
-                status = RecallStatus.TRUNCATED if truncated else RecallStatus.COMPLETE
-            except TimeoutError:
-                hits = []
-                status = RecallStatus.TIMEOUT
-            hits, status, payload_json = self._fit_recall_payload(
-                hits, status=status, max_bytes=effective_bytes
-            )
-            result_hash = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
-            await self._insert_recall_snapshot_impl(
-                context_query_id=context_query_id,
-                user_id=user_id,
-                session_id=session_id,
-                query_hash=query_hash,
-                result_payload=payload_json,
-                result_hash=result_hash,
-                created_at=time.time(),
-            )
+        except TimeoutError:
+            raise TimeoutError("memory recall deadline exceeded") from None
         logger.info(
             "memory.recall_bounded",
             user_id=user_id,
@@ -761,6 +825,7 @@ class BaseMemoryBackend(MemoryBackend):
             replayed=replayed,
         )
 
+    @_serialized_operation
     async def release_recall_result(
         self,
         *,
@@ -781,6 +846,7 @@ class BaseMemoryBackend(MemoryBackend):
             raise MemoryIdempotencyConflict()
         await self._commit()
 
+    @_serialized_operation
     async def cleanup_recall_results(
         self,
         *,
@@ -789,15 +855,17 @@ class BaseMemoryBackend(MemoryBackend):
         limit: int | None = None,
     ) -> int:
         user_id, _ = self._identity(user_id)
-        cutoff = (now or time.time()) - self._bounds.context_result_dedupe_seconds
+        current_time = time.time() if now is None else now
+        cutoff = current_time - self._bounds.context_result_dedupe_seconds
         deleted = await self._cleanup_recall_snapshots_impl(
             user_id=user_id,
-            released_before=cutoff,
+            expired_before=cutoff,
             limit=self._bounded_limit(limit or self._bounds.maintenance_batch_size),
         )
         await self._commit()
         return deleted
 
+    @_serialized_operation
     async def recall_and_reinforce(
         self,
         query: str,
@@ -815,6 +883,7 @@ class BaseMemoryBackend(MemoryBackend):
         await self._commit()
         return hits
 
+    @_serialized_operation
     async def vector_search(
         self,
         query: str,
@@ -832,6 +901,7 @@ class BaseMemoryBackend(MemoryBackend):
             limit=self._bounded_limit(limit),
         )
 
+    @_serialized_operation
     async def daily_decay(
         self,
         *,
@@ -872,6 +942,7 @@ class BaseMemoryBackend(MemoryBackend):
         await self._commit()
         return {"decayed": decayed, "forgotten": forgotten}
 
+    @_serialized_operation
     async def summarize_old_sessions(
         self,
         older_than_days: int = 7,
@@ -941,6 +1012,7 @@ class BaseMemoryBackend(MemoryBackend):
         await self._commit()
         return {"summarized_sessions": count}
 
+    @_serialized_operation
     async def record_workspace_action(
         self,
         session_id: str,
@@ -959,6 +1031,7 @@ class BaseMemoryBackend(MemoryBackend):
         await self._record_workspace_impl(user_id, session_id, action_type, payload)
         await self._commit()
 
+    @_serialized_operation
     async def delete_session(self, session_id: str, *, user_id: str) -> int:
         user_id, session_id = self._identity(user_id, session_id)
         assert session_id is not None
@@ -967,9 +1040,11 @@ class BaseMemoryBackend(MemoryBackend):
         await self._rebuild_twin(user_id=user_id)
         return deleted
 
+    @_serialized_operation
     async def delete_all(self) -> None:
         raise MemoryUnsupportedOperation()
 
+    @_serialized_operation
     async def delete_old_sessions(
         self,
         older_than_days: float = 30.0,
@@ -1004,6 +1079,7 @@ class BaseMemoryBackend(MemoryBackend):
         )
         await self._commit()
 
+    @_serialized_operation
     async def reindex(
         self,
         embedder=None,

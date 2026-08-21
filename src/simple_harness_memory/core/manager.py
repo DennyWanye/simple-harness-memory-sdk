@@ -147,14 +147,54 @@ class MemoryManager:
     async def recall(self, query, session_id=None, limit=10, *, user_id):
         return await self._backend.recall(query, session_id, limit, user_id=user_id)
 
-    async def recall_bounded(self, query, **kwargs):
-        return await self._backend.recall_bounded(query, **kwargs)
+    async def recall_bounded(
+        self,
+        query,
+        *,
+        user_id,
+        session_id,
+        context_query_id,
+        query_hash=None,
+        max_results=None,
+        max_bytes=None,
+        timeout_seconds=None,
+    ):
+        return await self._backend.recall_bounded(
+            query,
+            user_id=user_id,
+            session_id=session_id,
+            context_query_id=context_query_id,
+            query_hash=query_hash,
+            max_results=max_results,
+            max_bytes=max_bytes,
+            timeout_seconds=timeout_seconds,
+        )
 
-    async def release_recall_result(self, **kwargs):
-        return await self._backend.release_recall_result(**kwargs)
+    async def release_recall_result(
+        self,
+        *,
+        user_id,
+        context_query_id,
+        result_hash,
+    ):
+        return await self._backend.release_recall_result(
+            user_id=user_id,
+            context_query_id=context_query_id,
+            result_hash=result_hash,
+        )
 
-    async def cleanup_recall_results(self, **kwargs):
-        return await self._backend.cleanup_recall_results(**kwargs)
+    async def cleanup_recall_results(
+        self,
+        *,
+        user_id,
+        now=None,
+        limit=None,
+    ):
+        return await self._backend.cleanup_recall_results(
+            user_id=user_id,
+            now=now,
+            limit=limit,
+        )
 
     async def recall_and_reinforce(self, query, session_id=None, limit=10, *, user_id):
         return await self._backend.recall_and_reinforce(query, session_id, limit, user_id=user_id)

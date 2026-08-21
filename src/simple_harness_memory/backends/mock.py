@@ -375,17 +375,32 @@ class MockMemoryBackend(BaseMemoryBackend):
         return True
 
     async def _cleanup_recall_snapshots_impl(
-        self, *, user_id: str, released_before: float, limit: int
+        self, *, user_id: str, expired_before: float, limit: int
     ) -> int:
         candidates = sorted(
             (
                 (key, row)
                 for key, row in self._recall_snapshots.items()
                 if row["user_id"] == user_id
-                and row["state"] == "released"
-                and _as_float(row["released_at"]) <= released_before
+                and (
+                    (
+                        row["state"] == "released"
+                        and _as_float(row["released_at"]) <= expired_before
+                    )
+                    or (
+                        row["state"] == "retained"
+                        and _as_float(row["created_at"]) <= expired_before
+                    )
+                )
             ),
-            key=lambda item: (_as_float(item[1]["released_at"]), item[0]),
+            key=lambda item: (
+                _as_float(
+                    item[1]["released_at"]
+                    if item[1]["state"] == "released"
+                    else item[1]["created_at"]
+                ),
+                item[0],
+            ),
         )[:limit]
         for key, _ in candidates:
             del self._recall_snapshots[key]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import hashlib
 import json
@@ -9,7 +10,9 @@ import os
 import sqlite3
 import time
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from pathlib import Path
+from typing import Any
 
 import aiosqlite
 import structlog
@@ -165,6 +168,8 @@ CREATE INDEX idx_actions_user_session
     ON workspace_actions(user_id, session_id, created_at DESC);
 CREATE INDEX idx_recall_release
     ON recall_result_snapshots(user_id, state, released_at);
+CREATE INDEX idx_recall_created
+    ON recall_result_snapshots(user_id, state, created_at);
 CREATE TABLE schema_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -222,9 +227,22 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         self._db_path = str(db_path)
         self._secure_path: Path | None = None
         self._db: aiosqlite.Connection | None = None
-        self._tx_depth = 0
+        self._operation_lock = asyncio.Lock()
+        self._operation_owner: asyncio.Task[Any] | None = None
+        self._operation_depth = ContextVar[int](
+            f"memory_operation_depth_{id(self)}", default=0
+        )
+        self._transaction_owner: asyncio.Task[Any] | None = None
+        self._transaction_depth = ContextVar[int](
+            f"memory_transaction_depth_{id(self)}", default=0
+        )
+        self._default_busy_timeout_ms = 5000
 
     async def initialize(self) -> None:
+        async with self._operation():
+            await self._initialize_locked()
+
+    async def _initialize_locked(self) -> None:
         if self._db is not None:
             return
         digest = path_digest(self._db_path)
@@ -238,6 +256,9 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             if enabled is None or int(enabled[0]) != 1:
                 raise MemoryCorruptionError("foreign key enforcement unavailable")
             await self._db.execute("PRAGMA journal_mode = WAL")
+            await self._db.execute(
+                f"PRAGMA busy_timeout = {self._default_busy_timeout_ms}"
+            )
             await self._initialize_fresh_or_validate()
             await self._validate_integrity()
             verify_sqlite_path(self._secure_path)
@@ -322,6 +343,10 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             raise MemoryCorruptionError("database foreign key check failed")
 
     async def close(self) -> None:
+        async with self._operation():
+            await self._close_locked()
+
+    async def _close_locked(self) -> None:
         if self._db is None:
             return
         await self._db.close()
@@ -335,28 +360,80 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         return self._db
 
     async def _commit(self) -> None:
-        if self._tx_depth == 0:
+        if self._transaction_depth.get() == 0:
             await self._conn.commit()
 
     @asynccontextmanager
-    async def _transaction(self):
-        if self._tx_depth:
-            self._tx_depth += 1
+    async def _operation(self):
+        task = asyncio.current_task()
+        if task is None:
+            raise RuntimeError("memory operation requires an asyncio task")
+        if self._operation_owner is task:
+            token = self._operation_depth.set(self._operation_depth.get() + 1)
             try:
                 yield
             finally:
-                self._tx_depth -= 1
+                self._operation_depth.reset(token)
             return
-        self._tx_depth = 1
-        await self._conn.execute("BEGIN IMMEDIATE")
+        await self._operation_lock.acquire()
+        self._operation_owner = task
+        token = self._operation_depth.set(1)
         try:
             yield
-            await self._conn.execute("COMMIT")
-        except BaseException:
-            await self._conn.execute("ROLLBACK")
-            raise
         finally:
-            self._tx_depth = 0
+            self._operation_depth.reset(token)
+            self._operation_owner = None
+            self._operation_lock.release()
+
+    @asynccontextmanager
+    async def _transaction(self, *, deadline: float | None = None):
+        async with self._operation():
+            task = asyncio.current_task()
+            if task is None:
+                raise RuntimeError("memory transaction requires an asyncio task")
+            depth = self._transaction_depth.get()
+            if self._transaction_owner is task:
+                token = self._transaction_depth.set(depth + 1)
+                try:
+                    yield
+                finally:
+                    self._transaction_depth.reset(token)
+                return
+
+            token = self._transaction_depth.set(1)
+            self._transaction_owner = task
+            busy_timeout_changed = False
+            try:
+                if deadline is not None:
+                    remaining = deadline - asyncio.get_running_loop().time()
+                    busy_timeout_ms = int(remaining * 1000) - 1
+                    if busy_timeout_ms < 1:
+                        raise TimeoutError("memory transaction deadline exceeded")
+                    busy_timeout_ms = min(
+                        busy_timeout_ms, self._default_busy_timeout_ms
+                    )
+                    await self._conn.execute(
+                        f"PRAGMA busy_timeout = {busy_timeout_ms}"
+                    )
+                    busy_timeout_changed = True
+                await self._conn.execute("BEGIN IMMEDIATE")
+                try:
+                    yield
+                    await self._conn.commit()
+                except BaseException:
+                    await self._conn.rollback()
+                    raise
+            except aiosqlite.OperationalError as exc:
+                if deadline is not None and "locked" in str(exc).lower():
+                    raise TimeoutError("memory transaction deadline exceeded") from None
+                raise
+            finally:
+                self._transaction_owner = None
+                self._transaction_depth.reset(token)
+                if busy_timeout_changed and self._db is not None:
+                    await self._conn.execute(
+                        f"PRAGMA busy_timeout = {self._default_busy_timeout_ms}"
+                    )
 
     async def _ensure_session_impl(self, user_id: str, session_id: str) -> None:
         now = time.time()
@@ -780,15 +857,28 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         return cursor.rowcount > 0
 
     async def _cleanup_recall_snapshots_impl(
-        self, *, user_id: str, released_before: float, limit: int
+        self, *, user_id: str, expired_before: float, limit: int
     ) -> int:
         cursor = await self._conn.execute(
             "DELETE FROM recall_result_snapshots WHERE context_query_id IN ("
-            "SELECT context_query_id FROM recall_result_snapshots "
+            "SELECT context_query_id FROM ("
+            "SELECT context_query_id, released_at AS expired_at "
+            "FROM recall_result_snapshots "
             "WHERE user_id = ? AND state = 'released' AND released_at <= ? "
-            "ORDER BY released_at, context_query_id LIMIT ?"
+            "UNION ALL "
+            "SELECT context_query_id, created_at AS expired_at "
+            "FROM recall_result_snapshots "
+            "WHERE user_id = ? AND state = 'retained' AND created_at <= ?"
+            ") ORDER BY expired_at, context_query_id LIMIT ?"
             ") AND user_id = ?",
-            (user_id, released_before, limit, user_id),
+            (
+                user_id,
+                expired_before,
+                user_id,
+                expired_before,
+                limit,
+                user_id,
+            ),
         )
         return max(0, cursor.rowcount)
 

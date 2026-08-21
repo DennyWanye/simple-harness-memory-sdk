@@ -108,7 +108,7 @@ def test_ci_covers_full_matrix_clean_wheel_and_arm64() -> None:
     assert "PRAGMA foreign_key_check" in workflow
 
 
-def test_release_only_publishes_a_verified_frozen_actions_artifact() -> None:
+def test_release_only_verifies_for_the_task_10_single_publisher() -> None:
     workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     assert "workflow_dispatch:" in workflow
     assert "artifact_run_id:" in workflow
@@ -120,6 +120,12 @@ def test_release_only_publishes_a_verified_frozen_actions_artifact() -> None:
     assert "sha256sum --check SHA256SUMS" in workflow
     assert "source_commit=$EXPECTED_COMMIT" in workflow
     assert "requires_python=<3.14,>=3.11" in workflow
-    assert "softprops/action-gh-release@v2" in workflow
+    assert "contents: read" in workflow
+    assert "contents: write" not in workflow
+    assert "actions/upload-artifact@v4" in workflow
+    assert "Task 10 single publisher" in workflow
+    assert "softprops/action-gh-release" not in workflow
+    assert "release_tag:" not in workflow
+    assert "tag_name:" not in workflow
     assert "uv build" not in workflow
     assert "tags:" not in workflow
