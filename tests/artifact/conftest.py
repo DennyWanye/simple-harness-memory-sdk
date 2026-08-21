@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
-LOCAL_DIST = ROOT / ".local-test-evidence/2026-08-21-agent-runtime/M-WHEEL/dist"
-
 
 @pytest.fixture(scope="session")
 def artifact_dist() -> Path:
     configured = os.environ.get("MEMORY_SDK_ARTIFACT_DIST")
-    path = Path(configured).resolve() if configured else LOCAL_DIST
+    if configured is None:
+        pytest.skip("artifact tests require explicit MEMORY_SDK_ARTIFACT_DIST")
+    assert configured.strip(), "MEMORY_SDK_ARTIFACT_DIST must be non-empty"
+    path = Path(configured).resolve()
     assert path.is_dir(), f"artifact dist does not exist: {path}"
     return path
 

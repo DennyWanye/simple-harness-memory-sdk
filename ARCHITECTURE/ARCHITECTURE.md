@@ -74,13 +74,15 @@ src/simple_harness_memory/
 - CI authoritative artifact 才生成 canonical `BUILD_INFO.txt`/`SHA256SUMS`；本地 M-WHEEL dist 保持
   wheel/sdist 原 bytes。release workflow 仅手动接收指定 run/artifact ID、source commit 与 wheel SHA，
   验证后上传原 bytes，不由 tag 触发、不 rebuild。
+- artifact tests 仅在显式传入 `MEMORY_SDK_ARTIFACT_DIST` 时执行候选字节门；普通 full suite
+  稳定 skip 这三项候选制品测试，candidate job/M-WHEEL 始终显式传入且不可降级。
 
 ## 验证状态
 
 - M1：27 passed。
 - M2：30 passed（含 SQLite query-plan/user predicate+limit、跨 user maintenance）。
 - M3：Ruff 与 mypy 全绿。
-- M-ALL：119 passed、3 skipped；Ruff/mypy 全绿。
+- M-ALL（无候选制品 env）：116 passed、6 skipped；Python 3.11/3.12/3.13 与 Ruff/mypy 全绿。
 - latest M-WHEEL：5 passed（exact wheel clean consumer + candidate/release contract）。
-- Linux ARM64 job 已编码但尚待 GitHub Actions authoritative run；Xperia/consumer exact candidate 验收属于
-  后续 Task 6–10，不能由本地 macOS 结果代替。
+- Linux ARM64 candidate gate 已在 Actions run `32439769610` 验证通过；每次 promotion 仍须绑定 exact
+  replacement run。Xperia/consumer exact candidate 验收属于后续 Task 6–10，不能由本地 macOS 结果代替。

@@ -99,6 +99,8 @@ def test_ci_covers_full_matrix_clean_wheel_and_arm64() -> None:
     assert "Build candidate bytes once" in workflow
     assert "SOURCE_DATE_EPOCH" not in workflow
     assert "scripts/write_candidate_metadata.py" in workflow
+    assert "MEMORY_SDK_ARTIFACT_DIST: candidate-dist" in workflow
+    assert 'MEMORY_SDK_CI_CANDIDATE: "1"' in workflow
     assert "retention-days: 30" in workflow
     assert "ubuntu-24.04-arm" in workflow
     assert "test \"$(uname -m)\" = \"aarch64\"" in workflow
