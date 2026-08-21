@@ -40,8 +40,9 @@ src/simple_harness_memory/
 - 每次连接在事务外启用并 read-back `PRAGMA foreign_keys=ON`；初始化/打开后执行 integrity 与
   `foreign_key_check`。DB 路径必须 regular/no-symlink/current-owner，mode 创建及回读均为 `0600`。
 - message insert 与自动 fact extraction/supersede 位于同一个 `BEGIN IMMEDIATE`；任一失败整体 rollback。
-- SQLite 公开 API 使用 task-owned operation lock 串行化；transaction owner + task-local depth 仅允许
-  同 task nested，异 task（包括继承 ContextVar 的 child task）必须等待并独立 commit/rollback。
+- Base 公开 API 使用 task-owned operation lock 串行化，Mock/SQLite 对相同 query ID 的并发均稳定返回
+  首次结果 + replay；SQLite transaction owner + task-local depth 仅允许同 task nested，异 task（包括
+  继承 ContextVar 的 child task）必须等待并独立 commit/rollback。
 - `delete_all` 是 deprecated fail-closed compatibility surface，只抛 `runtime_delete_disabled` 且不 mutation；
   不提供 runtime `delete_user`/public clear API。
 
@@ -90,7 +91,7 @@ src/simple_harness_memory/
 - M1：27 passed。
 - M2：30 passed（含 SQLite query-plan/user predicate+limit、跨 user maintenance）。
 - M3：Ruff 与 mypy 全绿。
-- M-ALL（无候选制品 env）：126 passed、6 skipped；Python 3.11/3.12/3.13 与 Ruff/mypy 全绿。
+- M-ALL（无候选制品 env）：127 passed、6 skipped；Python 3.11/3.12/3.13 与 Ruff/mypy 全绿。
 - latest M-WHEEL：5 passed（exact wheel clean consumer + candidate/release contract）。
 - Linux ARM64 candidate gate 已在 Actions run `32439769610` 验证通过；每次 promotion 仍须绑定 exact
   replacement run。Xperia/consumer exact candidate 验收属于后续 Task 6–10，不能由本地 macOS 结果代替。

@@ -9,6 +9,7 @@ import time
 from abc import abstractmethod
 from collections.abc import Callable, Coroutine
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from functools import wraps
 from typing import Any, Concatenate, ParamSpec, TypeVar, overload
 
@@ -126,18 +127,42 @@ class BaseMemoryBackend(MemoryBackend):
         self._summarizer = summarizer or RuleBasedSummarizer()
         self._retriever = Retriever(self._embedder, self._reranker)
         self._auto_extract_facts = auto_extract_facts
+        self._operation_lock = asyncio.Lock()
+        self._operation_owner: asyncio.Task[Any] | None = None
+        self._operation_depth = ContextVar[int](
+            f"memory_operation_depth_{id(self)}", default=0
+        )
 
     async def _commit(self) -> None:
         return None
 
     @asynccontextmanager
     async def _operation(self):
-        yield
+        task = asyncio.current_task()
+        if task is None:
+            raise RuntimeError("memory operation requires an asyncio task")
+        if self._operation_owner is task:
+            token = self._operation_depth.set(self._operation_depth.get() + 1)
+            try:
+                yield
+            finally:
+                self._operation_depth.reset(token)
+            return
+        await self._operation_lock.acquire()
+        self._operation_owner = task
+        token = self._operation_depth.set(1)
+        try:
+            yield
+        finally:
+            self._operation_depth.reset(token)
+            self._operation_owner = None
+            self._operation_lock.release()
 
     @asynccontextmanager
     async def _transaction(self, *, deadline: float | None = None):
         del deadline
-        yield
+        async with self._operation():
+            yield
 
     async def _check_db_size(self) -> None:
         return None
@@ -682,7 +707,11 @@ class BaseMemoryBackend(MemoryBackend):
         query_hash = expected_query_hash
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_seconds
-        commit_reserve = min(0.01, timeout_seconds * 0.25)
+        # Very small budgets cannot safely spend a fraction of a millisecond in
+        # compute and still durably record the protocol-level timeout result.
+        # Reserve up to 10ms for the transaction write; the outer deadline still
+        # bounds lock acquisition and commit.
+        commit_reserve = min(0.01, timeout_seconds)
         compute_deadline = deadline - commit_reserve
         try:
             async with asyncio.timeout_at(deadline):

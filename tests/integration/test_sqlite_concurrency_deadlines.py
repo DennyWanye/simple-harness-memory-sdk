@@ -4,6 +4,7 @@ import time
 
 import pytest
 
+from simple_harness_memory.backends.mock import MockMemoryBackend
 from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
 from simple_harness_memory.core.conversation import (
     ConversationMemoryAdapter,
@@ -94,6 +95,42 @@ async def test_concurrent_same_and_conflicting_query_ids_are_serialized(tmp_path
     assert sum(not isinstance(value, BaseException) for value in different) == 1
     assert sum(isinstance(value, MemoryIdempotencyConflict) for value in different) == 1
     await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_mock_concurrent_same_query_id_replays_instead_of_conflicting(
+    monkeypatch,
+):
+    backend = MockMemoryBackend()
+    original_compute = backend._compute_recall
+    active = 0
+    max_active = 0
+
+    async def observed_compute(*args, **kwargs):
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        try:
+            await asyncio.sleep(0.01)
+            return await original_compute(*args, **kwargs)
+        finally:
+            active -= 1
+
+    monkeypatch.setattr(backend, "_compute_recall", observed_compute)
+
+    async def recall():
+        return await backend.recall_bounded(
+            "same",
+            user_id="user-1",
+            session_id="session-1",
+            context_query_id="same-id",
+            timeout_seconds=1.0,
+        )
+
+    results = await asyncio.gather(recall(), recall())
+    assert max_active == 1
+    assert {result.replayed for result in results} == {False, True}
+    assert results[0].result_hash == results[1].result_hash
 
 
 @pytest.mark.asyncio

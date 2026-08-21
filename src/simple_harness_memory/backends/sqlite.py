@@ -227,11 +227,6 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         self._db_path = str(db_path)
         self._secure_path: Path | None = None
         self._db: aiosqlite.Connection | None = None
-        self._operation_lock = asyncio.Lock()
-        self._operation_owner: asyncio.Task[Any] | None = None
-        self._operation_depth = ContextVar[int](
-            f"memory_operation_depth_{id(self)}", default=0
-        )
         self._transaction_owner: asyncio.Task[Any] | None = None
         self._transaction_depth = ContextVar[int](
             f"memory_transaction_depth_{id(self)}", default=0
@@ -362,28 +357,6 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
     async def _commit(self) -> None:
         if self._transaction_depth.get() == 0:
             await self._conn.commit()
-
-    @asynccontextmanager
-    async def _operation(self):
-        task = asyncio.current_task()
-        if task is None:
-            raise RuntimeError("memory operation requires an asyncio task")
-        if self._operation_owner is task:
-            token = self._operation_depth.set(self._operation_depth.get() + 1)
-            try:
-                yield
-            finally:
-                self._operation_depth.reset(token)
-            return
-        await self._operation_lock.acquire()
-        self._operation_owner = task
-        token = self._operation_depth.set(1)
-        try:
-            yield
-        finally:
-            self._operation_depth.reset(token)
-            self._operation_owner = None
-            self._operation_lock.release()
 
     @asynccontextmanager
     async def _transaction(self, *, deadline: float | None = None):
