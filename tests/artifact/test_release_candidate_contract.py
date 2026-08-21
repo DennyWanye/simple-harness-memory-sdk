@@ -97,6 +97,7 @@ def test_ci_covers_full_matrix_clean_wheel_and_arm64() -> None:
     assert "uv run --frozen --group dev ruff check src tests" in workflow
     assert "uv run --frozen --group dev mypy src/simple_harness_memory" in workflow
     assert "Build candidate bytes once" in workflow
+    assert "SOURCE_DATE_EPOCH" not in workflow
     assert "scripts/write_candidate_metadata.py" in workflow
     assert "retention-days: 30" in workflow
     assert "ubuntu-24.04-arm" in workflow

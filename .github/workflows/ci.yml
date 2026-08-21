@@ -40,8 +40,6 @@ jobs:
         with:
           version: "0.11.7"
       - name: Build candidate bytes once
-        env:
-          SOURCE_DATE_EPOCH: "0"
         run: uv build --out-dir candidate-dist
       - name: Record candidate identity and checksums
         run: >-
