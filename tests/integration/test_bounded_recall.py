@@ -113,9 +113,12 @@ async def test_consumer_query_identity_survives_stricter_backend_ceilings() -> N
         {"max_bytes": False},
         {"timeout_seconds": 0},
         {"timeout_seconds": False},
+        {"timeout_seconds": float("nan")},
+        {"timeout_seconds": float("inf")},
+        {"timeout_seconds": -float("inf")},
     ),
 )
-async def test_bounded_recall_rejects_zero_and_boolean_limits(kwargs) -> None:
+async def test_bounded_recall_rejects_invalid_limits(kwargs) -> None:
     backend = MockMemoryBackend()
     with pytest.raises(MemoryValidationError):
         await backend.recall_bounded(
@@ -134,7 +137,15 @@ async def test_bounded_recall_rejects_zero_and_boolean_limits(kwargs) -> None:
         {"recall_max_results": False},
         {"max_content_chars": 1.5},
         {"recall_timeout_seconds": False},
+        {"recall_timeout_seconds": float("nan")},
+        {"recall_timeout_seconds": float("inf")},
+        {"recall_timeout_seconds": -float("inf")},
         {"context_result_dedupe_seconds": False},
+        {"context_result_dedupe_seconds": 0},
+        {"context_result_dedupe_seconds": -1},
+        {"context_result_dedupe_seconds": float("nan")},
+        {"context_result_dedupe_seconds": float("inf")},
+        {"context_result_dedupe_seconds": -float("inf")},
     ),
 )
 def test_resource_bounds_reject_invalid_runtime_types(kwargs) -> None:

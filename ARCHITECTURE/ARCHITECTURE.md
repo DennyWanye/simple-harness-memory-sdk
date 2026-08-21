@@ -29,6 +29,8 @@ src/simple_harness_memory/
 - recall result 支持 `complete/truncated/timeout`、显式 count/UTF-8 byte bounds 与幂等 release。
   user-scoped bounded maintenance 会清理超过 dedupe horizon 的 released 与 retained/unreleased 结果，
   horizon 内记录均保留。
+- adapter `release()` 与 recall 使用相同 query-side 错误边界：conflict/timeout/permanent/transient 均映射
+  为稳定 `ConversationMemoryError` code，backend 异常正文不跨 SDK 泄漏。
 
 ### Fresh schema v3 与 ownership
 
@@ -50,6 +52,8 @@ src/simple_harness_memory/
 
 - `MemoryResourceBounds` 集中限制 content/fact/payload/DB、recall candidates/results/bytes/timeout、maintenance
   batch、summary batch 与 recall-result dedupe horizon。
+- query DTO、backend direct recall 和 resource bounds 的 timeout 必须 finite 且严格大于零；dedupe horizon
+  同样必须 finite 且严格大于零，拒绝 bool、NaN 与正负 infinity。
 - recall/vector/facts/twin/reinforce/decay/summarize/retention/reindex/workspace action 均为 user-scoped；
   decay/reindex/retention/snapshot cleanup 有界。
 - `MemoryManager` 的 bounded recall/release/cleanup facade 显式列出 user/session/query/hash/bounds/deadline
@@ -91,7 +95,7 @@ src/simple_harness_memory/
 - M1：27 passed。
 - M2：30 passed（含 SQLite query-plan/user predicate+limit、跨 user maintenance）。
 - M3：Ruff 与 mypy 全绿。
-- M-ALL（无候选制品 env）：127 passed、6 skipped；Python 3.11/3.12/3.13 与 Ruff/mypy 全绿。
+- M-ALL（无候选制品 env）：154 passed、6 skipped；Python 3.11/3.12/3.13 与 Ruff/mypy 全绿。
 - latest M-WHEEL：5 passed（exact wheel clean consumer + candidate/release contract）。
 - Linux ARM64 candidate gate 已在 Actions run `32439769610` 验证通过；每次 promotion 仍须绑定 exact
   replacement run。Xperia/consumer exact candidate 验收属于后续 Task 6–10，不能由本地 macOS 结果代替。

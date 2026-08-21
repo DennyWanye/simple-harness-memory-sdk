@@ -7,6 +7,7 @@ table scan.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 
@@ -51,15 +52,19 @@ class MemoryResourceBounds:
         if (
             isinstance(self.recall_timeout_seconds, bool)
             or not isinstance(self.recall_timeout_seconds, (int, float))
+            or not math.isfinite(float(self.recall_timeout_seconds))
             or self.recall_timeout_seconds <= 0
         ):
-            raise ValueError("recall_timeout_seconds must be positive")
+            raise ValueError("recall_timeout_seconds must be finite and positive")
         if (
             isinstance(self.context_result_dedupe_seconds, bool)
             or not isinstance(self.context_result_dedupe_seconds, (int, float))
-            or self.context_result_dedupe_seconds < 0
+            or not math.isfinite(float(self.context_result_dedupe_seconds))
+            or self.context_result_dedupe_seconds <= 0
         ):
-            raise ValueError("context_result_dedupe_seconds must not be negative")
+            raise ValueError(
+                "context_result_dedupe_seconds must be finite and positive"
+            )
 
 
 DEFAULT_BOUNDS = MemoryResourceBounds()

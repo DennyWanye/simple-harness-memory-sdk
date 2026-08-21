@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -171,9 +172,10 @@ class ConversationMemoryRecallQuery:
         if (
             isinstance(self.timeout_seconds, bool)
             or not isinstance(self.timeout_seconds, (int, float))
+            or not math.isfinite(float(self.timeout_seconds))
             or self.timeout_seconds <= 0
         ):
-            raise MemoryValidationError("timeout_seconds must be positive")
+            raise MemoryValidationError("timeout_seconds must be finite and positive")
         object.__setattr__(self, "query_text", canonical)
 
     @classmethod
@@ -402,11 +404,30 @@ class ConversationMemoryAdapter:
         context_query_id: str,
         result_hash: str,
     ) -> None:
-        await self._backend.release_recall_result(
-            user_id=user_id,
-            context_query_id=context_query_id,
-            result_hash=result_hash,
-        )
+        try:
+            await self._backend.release_recall_result(
+                user_id=user_id,
+                context_query_id=context_query_id,
+                result_hash=result_hash,
+            )
+        except MemoryIdempotencyConflict as exc:
+            raise ConversationMemoryError(
+                ConversationMemoryErrorCode.QUERY_CONFLICT
+            ) from exc
+        except TimeoutError as exc:
+            raise ConversationMemoryError(ConversationMemoryErrorCode.TIMEOUT) from exc
+        except (
+            MemoryCorruptionError,
+            MemoryLimitError,
+            MemoryOwnershipConflict,
+            MemoryValidationError,
+            ValueError,
+        ) as exc:
+            raise ConversationMemoryError(ConversationMemoryErrorCode.PERMANENT) from exc
+        except EmbeddingError as exc:
+            raise ConversationMemoryError(ConversationMemoryErrorCode.TRANSIENT) from exc
+        except Exception as exc:
+            raise ConversationMemoryError(ConversationMemoryErrorCode.TRANSIENT) from exc
 
     async def close(self) -> None:
         if self._closed:

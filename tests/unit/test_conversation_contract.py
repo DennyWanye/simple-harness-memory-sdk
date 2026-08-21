@@ -1,4 +1,5 @@
 import hashlib
+import inspect
 import json
 
 import pytest
@@ -18,6 +19,13 @@ from simple_harness_memory import (
 )
 from simple_harness_memory.backends.mock import MockMemoryBackend
 from simple_harness_memory.core.conversation import canonical_json
+from simple_harness_memory.core.errors import (
+    EmbeddingError,
+    MemoryCorruptionError,
+    MemoryLimitError,
+    MemoryOwnershipConflict,
+    MemoryValidationError,
+)
 
 
 def test_intent_hash_matches_frozen_harness_protocol() -> None:
@@ -61,6 +69,24 @@ def test_recall_query_hash_matches_frozen_harness_protocol() -> None:
     assert query.query_text == "Max"
 
 
+@pytest.mark.parametrize(
+    "timeout_seconds", (float("nan"), float("inf"), -float("inf"), True, 0, -1)
+)
+def test_recall_query_rejects_non_finite_or_non_positive_timeout(
+    timeout_seconds,
+) -> None:
+    with pytest.raises(MemoryValidationError, match="finite and positive"):
+        ConversationMemoryRecallQuery.create(
+            context_query_id="query-invalid-timeout",
+            user_id="u1",
+            session_id="s1",
+            query_text="Max",
+            max_items=10,
+            max_bytes=4096,
+            timeout_seconds=timeout_seconds,
+        )
+
+
 def test_result_types_validate_the_frozen_hash_and_status_contract() -> None:
     payload = {"items": [], "status": "complete"}
     encoded = canonical_json(payload).encode("utf-8")
@@ -91,6 +117,15 @@ def test_result_types_validate_the_frozen_hash_and_status_contract() -> None:
     )
     assert apply_result.status is ConversationMemoryApplyStatus.APPLIED
     assert ContextPreparationMode.SDK_PREPARED.value == "sdk_prepared"
+
+
+def test_adapter_release_matches_harness_query_port_signature() -> None:
+    parameters = inspect.signature(ConversationMemoryAdapter.release).parameters
+    assert list(parameters) == ["self", "user_id", "context_query_id", "result_hash"]
+    assert all(
+        parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
+        for name in ("user_id", "context_query_id", "result_hash")
+    )
 
 
 @pytest.mark.asyncio
@@ -162,6 +197,91 @@ async def test_adapter_redacts_unexpected_backend_failures() -> None:
     assert error.value.code is ConversationMemoryErrorCode.TRANSIENT
     assert str(error.value) == "memory_transient"
     assert "private-storage-detail" not in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_adapter_release_is_idempotent_and_maps_wrong_hash_to_query_conflict() -> None:
+    backend = MockMemoryBackend()
+    adapter = ConversationMemoryAdapter(backend, close_backend=False)
+    query = ConversationMemoryRecallQuery.create(
+        context_query_id="release-query",
+        user_id="u1",
+        session_id="s1",
+        query_text="release",
+        max_items=5,
+        max_bytes=4096,
+        timeout_seconds=1.0,
+    )
+    result = await adapter.recall_bounded(query)
+
+    await adapter.release(
+        user_id="u1",
+        context_query_id=query.context_query_id,
+        result_hash=result.result_hash,
+    )
+    await adapter.release(
+        user_id="u1",
+        context_query_id=query.context_query_id,
+        result_hash=result.result_hash,
+    )
+
+    with pytest.raises(ConversationMemoryError) as error:
+        await adapter.release(
+            user_id="u1",
+            context_query_id=query.context_query_id,
+            result_hash="0" * 64,
+        )
+    assert error.value.code is ConversationMemoryErrorCode.QUERY_CONFLICT
+    assert str(error.value) == "memory_query_conflict"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("backend_error", "expected_code"),
+    [
+        (TimeoutError("private-timeout-detail"), ConversationMemoryErrorCode.TIMEOUT),
+        (
+            MemoryValidationError("private-validation-detail"),
+            ConversationMemoryErrorCode.PERMANENT,
+        ),
+        (
+            MemoryOwnershipConflict("private-owner-detail"),
+            ConversationMemoryErrorCode.PERMANENT,
+        ),
+        (
+            MemoryCorruptionError("private-corruption-detail"),
+            ConversationMemoryErrorCode.PERMANENT,
+        ),
+        (
+            MemoryLimitError("private-limit-detail"),
+            ConversationMemoryErrorCode.PERMANENT,
+        ),
+        (ValueError("private-value-detail"), ConversationMemoryErrorCode.PERMANENT),
+        (
+            EmbeddingError("private-embedding-detail"),
+            ConversationMemoryErrorCode.TRANSIENT,
+        ),
+        (RuntimeError("private-storage-detail"), ConversationMemoryErrorCode.TRANSIENT),
+    ],
+)
+async def test_adapter_release_redacts_timeout_and_unknown_failures(
+    backend_error: Exception,
+    expected_code: ConversationMemoryErrorCode,
+) -> None:
+    class BrokenReleaseBackend:
+        async def release_recall_result(self, **kwargs):
+            raise backend_error
+
+    adapter = ConversationMemoryAdapter(BrokenReleaseBackend(), close_backend=False)
+    with pytest.raises(ConversationMemoryError) as error:
+        await adapter.release(
+            user_id="u1",
+            context_query_id="query-1",
+            result_hash="a" * 64,
+        )
+    assert error.value.code is expected_code
+    assert str(error.value) == expected_code.value
+    assert "private" not in str(error.value)
 
 
 def test_memory_package_never_imports_harness() -> None:

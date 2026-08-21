@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import time
 from abc import abstractmethod
 from collections.abc import Callable, Coroutine
@@ -686,9 +687,10 @@ class BaseMemoryBackend(MemoryBackend):
         elif (
             isinstance(timeout_seconds, bool)
             or not isinstance(timeout_seconds, (int, float))
+            or not math.isfinite(float(timeout_seconds))
             or timeout_seconds <= 0
         ):
-            raise MemoryValidationError("timeout_seconds must be positive")
+            raise MemoryValidationError("timeout_seconds must be finite and positive")
         timeout_seconds = float(
             min(timeout_seconds, self._bounds.recall_timeout_seconds)
         )
