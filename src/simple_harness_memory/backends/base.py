@@ -79,9 +79,17 @@ class BaseMemoryBackend(MemoryBackend):
     ) -> None:
         base = bounds or DEFAULT_BOUNDS
         self._bounds = MemoryResourceBounds(
-            max_content_chars=max_content_chars or base.max_content_chars,
-            max_fact_value_chars=max_fact_value_chars or base.max_fact_value_chars,
-            max_payload_bytes=max_payload_bytes or base.max_payload_bytes,
+            max_content_chars=(
+                base.max_content_chars if max_content_chars is None else max_content_chars
+            ),
+            max_fact_value_chars=(
+                base.max_fact_value_chars
+                if max_fact_value_chars is None
+                else max_fact_value_chars
+            ),
+            max_payload_bytes=(
+                base.max_payload_bytes if max_payload_bytes is None else max_payload_bytes
+            ),
             max_db_bytes=max_db_bytes if max_db_bytes is not None else base.max_db_bytes,
             recall_candidate_messages=base.recall_candidate_messages,
             recall_candidate_facts=base.recall_candidate_facts,
@@ -589,17 +597,43 @@ class BaseMemoryBackend(MemoryBackend):
         assert session_id is not None
         context_query_id = validate_identity(context_query_id, "context_query_id")
         query = canonicalize_memory_text(query)
-        max_results = self._bounded_limit(max_results or self._bounds.recall_max_results)
-        max_bytes = max_bytes or self._bounds.recall_max_bytes
-        if max_bytes < len(canonical_json({"items": [], "status": "truncated"}).encode("utf-8")):
+        requested_results = (
+            self._bounds.recall_max_results if max_results is None else max_results
+        )
+        if (
+            isinstance(requested_results, bool)
+            or not isinstance(requested_results, int)
+            or requested_results <= 0
+        ):
+            raise MemoryValidationError("max_results must be a positive integer")
+        requested_bytes = self._bounds.recall_max_bytes if max_bytes is None else max_bytes
+        if (
+            isinstance(requested_bytes, bool)
+            or not isinstance(requested_bytes, int)
+            or requested_bytes <= 0
+        ):
+            raise MemoryValidationError("max_bytes must be a positive integer")
+        effective_results = min(requested_results, self._bounds.recall_max_results)
+        effective_bytes = min(requested_bytes, self._bounds.recall_max_bytes)
+        if effective_bytes < len(
+            canonical_json({"items": [], "status": "truncated"}).encode("utf-8")
+        ):
             raise MemoryValidationError("max_bytes is too small for a recall result")
-        timeout_seconds = timeout_seconds or self._bounds.recall_timeout_seconds
+        if timeout_seconds is None:
+            timeout_seconds = self._bounds.recall_timeout_seconds
+        elif (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or timeout_seconds <= 0
+        ):
+            raise MemoryValidationError("timeout_seconds must be positive")
+        timeout_seconds = min(timeout_seconds, self._bounds.recall_timeout_seconds)
         expected_query_hash = canonical_recall_query_hash(
             user_id=user_id,
             session_id=session_id,
             query_text=query,
-            max_items=max_results,
-            max_bytes=max_bytes,
+            max_items=requested_results,
+            max_bytes=requested_bytes,
         )
         if (
             query_hash is not None
@@ -631,14 +665,14 @@ class BaseMemoryBackend(MemoryBackend):
                         query,
                         user_id=user_id,
                         session_id=session_id,
-                        limit=max_results,
+                        limit=effective_results,
                     )
                 status = RecallStatus.TRUNCATED if truncated else RecallStatus.COMPLETE
             except TimeoutError:
                 hits = []
                 status = RecallStatus.TIMEOUT
             hits, status, payload_json = self._fit_recall_payload(
-                hits, status=status, max_bytes=max_bytes
+                hits, status=status, max_bytes=effective_bytes
             )
             result_hash = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
             await self._insert_recall_snapshot_impl(

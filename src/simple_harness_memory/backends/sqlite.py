@@ -6,6 +6,7 @@ import dataclasses
 import hashlib
 import json
 import os
+import sqlite3
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -137,6 +138,26 @@ CREATE INDEX idx_messages_user_session_created
     ON messages(user_id, session_id, created_at DESC, id DESC);
 CREATE INDEX idx_facts_user_subject
     ON facts(user_id, subject, category, id);
+CREATE TRIGGER facts_superseded_owner_insert
+BEFORE INSERT ON facts
+WHEN NEW.superseded_by IS NOT NULL
+ AND NOT EXISTS (
+    SELECT 1 FROM facts
+    WHERE user_id = NEW.user_id AND id = NEW.superseded_by
+ )
+BEGIN
+    SELECT RAISE(ABORT, 'memory_ownership_conflict');
+END;
+CREATE TRIGGER facts_superseded_owner_update
+BEFORE UPDATE OF user_id, superseded_by ON facts
+WHEN NEW.superseded_by IS NOT NULL
+ AND NOT EXISTS (
+    SELECT 1 FROM facts
+    WHERE user_id = NEW.user_id AND id = NEW.superseded_by
+ )
+BEGIN
+    SELECT RAISE(ABORT, 'memory_ownership_conflict');
+END;
 CREATE INDEX idx_sessions_user_activity
     ON sessions(user_id, last_activity_at, session_id);
 CREATE INDEX idx_actions_user_session
@@ -151,6 +172,22 @@ CREATE TABLE schema_meta (
 
 SCHEMA_VERSION = 3
 SCHEMA_CHECKSUM = hashlib.sha256(_DDL.encode("utf-8")).hexdigest()
+
+
+def _ddl_statements(script: str) -> tuple[str, ...]:
+    """Split DDL without breaking trigger bodies at their inner semicolons."""
+
+    statements: list[str] = []
+    buffer: list[str] = []
+    for line in script.splitlines():
+        buffer.append(line)
+        candidate = "\n".join(buffer).strip()
+        if candidate and sqlite3.complete_statement(candidate):
+            statements.append(candidate)
+            buffer.clear()
+    if "".join(buffer).strip():
+        raise MemorySchemaIncompatible()
+    return tuple(statements)
 
 
 class SQLiteMemoryBackend(BaseMemoryBackend):
@@ -212,7 +249,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             if self._db is not None:
                 await self._db.close()
                 self._db = None
-            logger.exception(
+            logger.error(
                 "memory.backend_initialize_failed",
                 db_path_hash=digest,
                 stable_code="memory_backend_initialize_failed",
@@ -224,10 +261,8 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         if not tables:
             await self._conn.execute("BEGIN IMMEDIATE")
             try:
-                for statement in _DDL.split(";"):
-                    statement = statement.strip()
-                    if statement:
-                        await self._conn.execute(statement)
+                for statement in _ddl_statements(_DDL):
+                    await self._conn.execute(statement)
                 await self._write_schema_meta()
                 await self._conn.execute("COMMIT")
             except Exception:
@@ -517,8 +552,11 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
 
     async def _supersede_fact_impl(self, user_id: str, fact_id: int, superseded_by: int) -> None:
         await self._conn.execute(
-            "UPDATE facts SET superseded_by = ? WHERE user_id = ? AND id = ?",
-            (superseded_by, user_id, fact_id),
+            "UPDATE facts SET superseded_by = ? "
+            "WHERE user_id = ? AND id = ? "
+            "AND EXISTS (SELECT 1 FROM facts AS replacement "
+            "WHERE replacement.user_id = ? AND replacement.id = ?)",
+            (superseded_by, user_id, fact_id, user_id, superseded_by),
         )
 
     async def _forget_fact_by_id_impl(

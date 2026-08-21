@@ -5,6 +5,11 @@ import pytest
 from simple_harness_memory.backends.mock import MockMemoryBackend
 from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
 from simple_harness_memory.config import MemoryResourceBounds
+from simple_harness_memory.core.conversation import (
+    ConversationMemoryAdapter,
+    ConversationMemoryRecallQuery,
+)
+from simple_harness_memory.core.errors import MemoryValidationError
 from simple_harness_memory.core.models import RecallStatus
 
 
@@ -68,6 +73,73 @@ async def test_timeout_is_durable_stable_result(monkeypatch) -> None:
     )
     assert replay.replayed
     assert replay.result_hash == first.result_hash
+
+
+@pytest.mark.asyncio
+async def test_consumer_query_identity_survives_stricter_backend_ceilings() -> None:
+    backend = MockMemoryBackend(
+        bounds=MemoryResourceBounds(recall_max_results=1, recall_max_bytes=512)
+    )
+    for index in range(3):
+        await backend.append_message(
+            "s1",
+            "user",
+            f"shared {index}",
+            user_id="u1",
+            source_event_id=f"event-{index}",
+        )
+    query = ConversationMemoryRecallQuery.create(
+        context_query_id="query-ceiling",
+        user_id="u1",
+        session_id="s1",
+        query_text="shared",
+        max_items=10,
+        max_bytes=4096,
+        timeout_seconds=10.0,
+    )
+    result = await ConversationMemoryAdapter(backend, close_backend=False).recall_bounded(query)
+    assert result.query_hash == query.query_hash
+    assert result.item_count <= 1
+    assert result.byte_count <= 512
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "kwargs",
+    (
+        {"max_results": 0},
+        {"max_results": False},
+        {"max_bytes": 0},
+        {"max_bytes": False},
+        {"timeout_seconds": 0},
+        {"timeout_seconds": False},
+    ),
+)
+async def test_bounded_recall_rejects_zero_and_boolean_limits(kwargs) -> None:
+    backend = MockMemoryBackend()
+    with pytest.raises(MemoryValidationError):
+        await backend.recall_bounded(
+            "query",
+            user_id="u1",
+            session_id="s1",
+            context_query_id=f"query-invalid-{next(iter(kwargs))}",
+            **kwargs,
+        )
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    (
+        {"recall_max_results": 0},
+        {"recall_max_results": False},
+        {"max_content_chars": 1.5},
+        {"recall_timeout_seconds": False},
+        {"context_result_dedupe_seconds": False},
+    ),
+)
+def test_resource_bounds_reject_invalid_runtime_types(kwargs) -> None:
+    with pytest.raises(ValueError):
+        MemoryResourceBounds(**kwargs)
 
 
 def test_production_source_has_no_full_table_repository_api() -> None:

@@ -92,3 +92,17 @@ async def test_sqlite_logs_never_emit_path_or_memory_content(tmp_path, capsys) -
     output = capsys.readouterr().out
     assert canary not in output
     assert str(path) not in output
+
+
+@pytest.mark.asyncio
+async def test_sqlite_failure_log_does_not_emit_private_path(tmp_path, capsys) -> None:
+    from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
+
+    canary = "PRIVATE-PATH-CANARY-5f890d"
+    path = tmp_path / canary / "missing-parent.db"
+    with pytest.raises(Exception):
+        await SQLiteMemoryBackend(str(path)).initialize()
+    output = capsys.readouterr().out
+    assert canary not in output
+    assert str(path) not in output
+    assert "memory_backend_initialize_failed" in output

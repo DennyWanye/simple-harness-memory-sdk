@@ -46,7 +46,7 @@ def _assert_ci_metadata(dist: Path) -> None:
     assert info["package"] == "simple-harness-memory-sdk"
     assert info["version"] == "0.3.0"
     assert re.fullmatch(r"[0-9a-f]{40}", info["source_commit"])
-    assert info["requires_python"] == ">=3.11,<3.14"
+    assert info["requires_python"] == "<3.14,>=3.11"
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", info["build_utc"])
     wheels = sorted(dist.glob("*.whl"))
     sdists = sorted((*dist.glob("*.tar.gz"), *dist.glob("*.zip")))
@@ -116,7 +116,7 @@ def test_release_only_publishes_a_verified_frozen_actions_artifact() -> None:
     assert "run-id: ${{ inputs.artifact_run_id }}" in workflow
     assert "sha256sum --check SHA256SUMS" in workflow
     assert "source_commit=$EXPECTED_COMMIT" in workflow
-    assert "requires_python=>=3.11,<3.14" in workflow
+    assert "requires_python=<3.14,>=3.11" in workflow
     assert "softprops/action-gh-release@v2" in workflow
     assert "uv build" not in workflow
     assert "tags:" not in workflow

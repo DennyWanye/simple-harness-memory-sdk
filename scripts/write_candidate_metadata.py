@@ -57,7 +57,7 @@ def write_metadata(dist: Path, source_commit: str, build_utc: str) -> None:
         raise CandidateMetadataError("candidate-artifact-invalid")
     wheel = wheel_files[0]
     name, version, requires_python = _wheel_identity(wheel)
-    if (name, version) != (PACKAGE, VERSION) or requires_python != ">=3.11,<3.14":
+    if (name, version) != (PACKAGE, VERSION) or requires_python != "<3.14,>=3.11":
         raise CandidateMetadataError("candidate-wheel-identity-invalid")
     outputs = (dist / "SHA256SUMS", dist / "BUILD_INFO.txt")
     if any(path.exists() for path in outputs):

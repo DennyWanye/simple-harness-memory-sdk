@@ -1,9 +1,11 @@
 import sqlite3
+import time
 
 import pytest
 
 from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
 from simple_harness_memory.core.errors import MemoryOwnershipConflict
+from simple_harness_memory.core.models import Fact
 
 
 @pytest.mark.asyncio
@@ -42,5 +44,41 @@ async def test_user_scoped_reads_and_immutable_session_binding(tmp_path):
             "(user_id, session_id, role, content, created_at, "
             "source_event_id, payload_hash) "
             "VALUES ('orphan', 'none', 'user', 'x', 0, 'e', 'h')"
+        )
+    await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_fact_supersede_relation_cannot_cross_user(tmp_path):
+    backend = SQLiteMemoryBackend(str(tmp_path / "memory.db"))
+    await backend.initialize()
+    messages = {}
+    for user in ("user-a", "user-b"):
+        messages[user] = await backend.append_message(
+            f"session-{user}",
+            "user",
+            user,
+            user_id=user,
+            source_event_id=f"event-{user}",
+        )
+    facts = {}
+    for user in ("user-a", "user-b"):
+        fact = Fact(
+            id=None,
+            user_id=user,
+            subject="user",
+            key="name",
+            value=user,
+            category="profile",
+            confidence=1.0,
+            evidence=user,
+            source_msg_id=messages[user].message_id,
+            created_at=time.time(),
+        )
+        facts[user] = await backend._insert_fact_impl(user, fact)
+    with pytest.raises(sqlite3.IntegrityError, match="memory_ownership_conflict"):
+        await backend._conn.execute(
+            "UPDATE facts SET superseded_by = ? WHERE user_id = ? AND id = ?",
+            (facts["user-b"], "user-a", facts["user-a"]),
         )
     await backend.close()

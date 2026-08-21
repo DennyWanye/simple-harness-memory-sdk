@@ -1,6 +1,8 @@
 # simple-harness-memory-sdk
 
-认知记忆 SDK，为 Simple Harness 提供独立的记忆系统。
+认知记忆 SDK，为运行时 consumer 提供独立、product-neutral 的持久记忆系统。
+
+当前版本：**0.3.0**（Python 3.11–3.13）。
 
 **基于认知科学三层模型 + 数字孪生体 + 世界对象，使用 RRF 混合召回。**
 
@@ -41,22 +43,26 @@ from simple_harness_memory import MemoryManager
 
 
 async def main():
-    # 默认使用 HashEmbedder（确定性哈希伪向量），仅需基础安装
-    memory = await MemoryManager.build(enable_facts=True)
+    # SQLite fresh schema v3；默认 HashEmbedder 仅需基础安装。
+    memory = await MemoryManager.build("memory.db", enable_facts=True)
 
-    # 1. 追加消息（enable_facts=True 时自动提取 facts）
-    await memory.append_message(
+    # user_id 是稳定产品主体；source_event_id 是 consumer 生成的确定性幂等键。
+    applied = await memory.append_message(
         session_id="chat-001",
         role="user",
         content="我养了一只叫Max的狗，很喜欢吃披萨",
+        user_id="user-001",
+        source_event_id="product-memory/v1/message/123",
     )
+    assert applied.status.value == "applied"
 
-    # 2. 召回（关键词命中；语义召回见下方"可选能力"）
-    hits = await memory.recall(query="Max")
+    # 所有读写与维护入口都显式绑定 user_id。
+    hits = await memory.recall(
+        query="Max", session_id="chat-001", user_id="user-001"
+    )
     assert hits, "recall 应返回命中结果"
 
-    # 3. 查询自动提取的 facts
-    facts = await memory.get_facts()
+    facts = await memory.get_facts(user_id="user-001")
     assert facts, "应提取到 facts"
 
     print(f"OK: 召回 {len(hits)} 条，提取 {len(facts)} 条事实")
@@ -66,6 +72,20 @@ async def main():
 
 asyncio.run(main())
 ```
+
+同一个 `source_event_id` 与相同 canonical payload 重放返回
+`already_applied`；同 ID 不同 payload 稳定拒绝。`session_id` 首次绑定用户后不可改绑。
+对 Harness conversation ports，使用包根导出的 `ConversationMemoryAdapter`、
+`ConversationMemoryIntent` 与 `ConversationMemoryRecallQuery`；Memory SDK 不 import Harness 包。
+
+### 持久化边界
+
+- SQLite 只接受 fresh schema v3；旧 schema/version/checksum 一律 fail-fast，不做隐式迁移。
+- 数据库必须是当前用户拥有的 regular file，拒绝 symlink，并以 `0600` 创建和回读校验。
+- `recall_bounded()` 对确定性 `context_query_id` 保存 canonical 结果；commit 后重试不重新计算。
+- `delete_all()` 仅保留为 deprecated compatibility symbol，调用稳定抛出
+  `runtime_delete_disabled`，不会执行全库 mutation。开发 reset 应在 consumer 停服后删除其精确配置的
+  SQLite storage set（主文件及 sidecars），再创建 fresh v3 数据库。
 
 > **默认 HashEmbedder 前提说明**：未安装 `[embeddings]` extra 时，SDK 默认使用
 > `HashEmbedder`——一种确定性的哈希伪向量（字符 n-gram 哈希 + 符号累加，非语义

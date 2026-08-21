@@ -1,9 +1,7 @@
-<!-- last-calibrated: 8cabfe9 -->
+# ARCHITECTURE — simple-harness-memory-sdk（v0.3.0）
 
-# ARCHITECTURE — simple-harness-memory-sdk（v0.2.0 生产化）
-
-> 最后更新：2026-08-20
-> 来源：sdk-productionization program（M1-M4），4 个 slice 全部 finalize PASS（receipt `bf594aa2`/`eac81d14`/`dcef5d80`/`f7a3ee2b`）
+> 最后更新：2026-08-21
+> 来源：agent-runtime-sdk-integration Task 4–5；本地 M1/M2/M3、M-ALL 与 latest M-WHEEL 全绿
 
 ## 分层
 
@@ -17,7 +15,37 @@ src/simple_harness_memory/
 └── world/        # WorldModelPort + temporal/events/geography/knowledge
 ```
 
-## 生产事实（0.2.0）
+## 生产事实（0.3.0）
+
+### Product-neutral conversation boundary
+
+- `ConversationMemoryAdapter` 对齐冻结的 Harness structural ports，但 Memory 包不 import Harness。
+- sink intent 使用 `source_event_id/user_id/session_id/role/canonical memory_text` 计算 SHA-256；同 ID 同
+  hash 返回 `already_applied`，同 ID 异 hash 返回稳定 conflict。
+- `recall_bounded()` 使用 deterministic `context_query_id/query_hash`，在 memory transaction 内持久化
+  canonical payload/result hash；commit 后重放直接返回原 bytes，不重新 recall。
+- recall result 支持 `complete/truncated/timeout`、显式 count/UTF-8 byte bounds、幂等 release，以及仅清理
+  已 release 且超过 dedupe horizon 的 user-scoped bounded maintenance。
+
+### Fresh schema v3 与 ownership
+
+- v3 只有 fresh initialization：`users`、immutable owner `sessions`、messages source identity、facts 真实
+  source FK、session-owned actions、user-keyed twins、durable recall snapshots；旧版、缺 meta 或 checksum
+  漂移均 `MemorySchemaIncompatible`，不隐式迁移。
+- 每个公开 Memory read/write/maintenance path 显式接收 `user_id`；SQLite 先用 user predicate/index/limit
+  缩小集合，再进入 Python ranking。生产代码不再存在 `_messages_all/_facts_all`。
+- 每次连接在事务外启用并 read-back `PRAGMA foreign_keys=ON`；初始化/打开后执行 integrity 与
+  `foreign_key_check`。DB 路径必须 regular/no-symlink/current-owner，mode 创建及回读均为 `0600`。
+- message insert 与自动 fact extraction/supersede 位于同一个 `BEGIN IMMEDIATE`；任一失败整体 rollback。
+- `delete_all` 是 deprecated fail-closed compatibility surface，只抛 `runtime_delete_disabled` 且不 mutation；
+  不提供 runtime `delete_user`/public clear API。
+
+### Resource bounds 与维护
+
+- `MemoryResourceBounds` 集中限制 content/fact/payload/DB、recall candidates/results/bytes/timeout、maintenance
+  batch、summary batch 与 recall-result dedupe horizon。
+- recall/vector/facts/twin/reinforce/decay/summarize/retention/reindex/workspace action 均为 user-scoped；
+  decay/reindex/retention/snapshot cleanup 有界。
 
 ### 召回（M1）
 - `recall()` 物理只读（不写 salience/last_recalled）；reinforcement 显式走 `recall_and_reinforce()`。
@@ -25,18 +53,10 @@ src/simple_harness_memory/
 - `get_embedder("auto")` 恒返回 `HashEmbedder`（不急切加载 BGE-M3）。
 - 隐私日志：recall/fact 只记长度与计数，不记 query 原文 / fact key/value/evidence。
 
-### 持久化（M2）
-- `schema_meta` 表 + `SCHEMA_VERSION=2` + `SCHEMA_CHECKSUM`：全新建库、老 0.1.0 原地迁移、
-  future/checksum 漂移 fail-closed（`MemoryCorruptionError`）。
-- `append_message`（含 fact 提取/插入/supersede）单事务；失败回滚。
-- `source_event_id` 幂等键（部分唯一索引 + `INSERT OR IGNORE`）。
-- `_*_impl` 不独立 commit；base 层写方法经 `_commit()`/`_transaction()`（`_tx_depth` 深度计数）。
+### Lineage 与 session maintenance
 
-### 删除 / lineage / 上限（M3）
-- `delete_session`/`delete_all`/`delete_old_sessions` 级联 messages+facts+workspace_actions，
-  supersede 传递性 re-point（先 re-point 再物理删）、twin 重建（base=None）。
+- `delete_session`/user-scoped bounded `delete_old_sessions` 级联 messages+facts+workspace actions并重建 twin。
 - embedding lineage 列（embedder_kind/dim/format_version）+ `reindex(embedder)`（换掉 self._embedder/retriever）。
-- 资源上限：`max_content_chars`/`max_fact_value_chars`/`max_payload_bytes`/`max_db_bytes`（`MemoryLimitError`）。
 
 ### 云端 embedding（M4）
 - `CloudEmbedder`：async + 批量 + LRU 缓存 + 指数退避重试 + fail-closed（无静默降级）。
@@ -47,3 +67,18 @@ src/simple_harness_memory/
 - 核心依赖仅 `aiosqlite`/`pydantic`/`numpy`；torch/httpx/openai 均为可选 extra。
 - 向量化默认 `HashEmbedder`（确定性伪向量）；语义嵌入走 `BGEM3Embedder`（可选）；云端走 `CloudEmbedder`。
 - 版本单一来源：`[tool.hatch.version] path = "src/simple_harness_memory/__init__.py"`（动态，不漂移）。
+- `pyproject.toml`/`uv.lock` 固定 Ruff `0.16.3`、mypy `1.20.2`；CI matrix 覆盖 Python
+  3.11/3.12/3.13、clean exact wheel 与 Linux ARM64 core gate。
+- CI authoritative artifact 才生成 canonical `BUILD_INFO.txt`/`SHA256SUMS`；本地 M-WHEEL dist 保持
+  wheel/sdist 原 bytes。release workflow 仅手动接收指定 run/artifact ID、source commit 与 wheel SHA，
+  验证后上传原 bytes，不由 tag 触发、不 rebuild。
+
+## 验证状态
+
+- M1：27 passed。
+- M2：30 passed（含 SQLite query-plan/user predicate+limit、跨 user maintenance）。
+- M3：Ruff 与 mypy 全绿。
+- M-ALL：119 passed、3 skipped；Ruff/mypy 全绿。
+- latest M-WHEEL：5 passed（exact wheel clean consumer + candidate/release contract）。
+- Linux ARM64 job 已编码但尚待 GitHub Actions authoritative run；Xperia/consumer exact candidate 验收属于
+  后续 Task 6–10，不能由本地 macOS 结果代替。

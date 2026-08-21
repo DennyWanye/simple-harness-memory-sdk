@@ -40,13 +40,25 @@ class MemoryResourceBounds:
             "summary_messages_per_session": self.summary_messages_per_session,
         }
         for name, value in positive.items():
-            if value <= 0:
-                raise ValueError(f"{name} must be positive")
-        if self.max_db_bytes is not None and self.max_db_bytes <= 0:
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+        if self.max_db_bytes is not None and (
+            isinstance(self.max_db_bytes, bool)
+            or not isinstance(self.max_db_bytes, int)
+            or self.max_db_bytes <= 0
+        ):
             raise ValueError("max_db_bytes must be positive when set")
-        if self.recall_timeout_seconds <= 0:
+        if (
+            isinstance(self.recall_timeout_seconds, bool)
+            or not isinstance(self.recall_timeout_seconds, (int, float))
+            or self.recall_timeout_seconds <= 0
+        ):
             raise ValueError("recall_timeout_seconds must be positive")
-        if self.context_result_dedupe_seconds < 0:
+        if (
+            isinstance(self.context_result_dedupe_seconds, bool)
+            or not isinstance(self.context_result_dedupe_seconds, (int, float))
+            or self.context_result_dedupe_seconds < 0
+        ):
             raise ValueError("context_result_dedupe_seconds must not be negative")
 
 
