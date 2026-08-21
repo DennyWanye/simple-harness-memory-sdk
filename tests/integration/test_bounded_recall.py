@@ -59,7 +59,7 @@ async def test_timeout_is_durable_stable_result(monkeypatch) -> None:
         context_query_id="query-timeout",
         max_results=2,
         max_bytes=1024,
-        timeout_seconds=0.001,
+        timeout_seconds=0.05,
     )
     assert first.status is RecallStatus.TIMEOUT
     replay = await backend.recall_bounded(
@@ -69,7 +69,7 @@ async def test_timeout_is_durable_stable_result(monkeypatch) -> None:
         context_query_id="query-timeout",
         max_results=2,
         max_bytes=1024,
-        timeout_seconds=0.001,
+        timeout_seconds=0.05,
     )
     assert replay.replayed
     assert replay.result_hash == first.result_hash

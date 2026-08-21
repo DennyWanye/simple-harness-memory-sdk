@@ -707,11 +707,7 @@ class BaseMemoryBackend(MemoryBackend):
         query_hash = expected_query_hash
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_seconds
-        # Very small budgets cannot safely spend a fraction of a millisecond in
-        # compute and still durably record the protocol-level timeout result.
-        # Reserve up to 10ms for the transaction write; the outer deadline still
-        # bounds lock acquisition and commit.
-        commit_reserve = min(0.01, timeout_seconds)
+        commit_reserve = min(0.01, timeout_seconds * 0.25)
         compute_deadline = deadline - commit_reserve
         try:
             async with asyncio.timeout_at(deadline):
