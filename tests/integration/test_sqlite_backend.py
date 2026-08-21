@@ -1,306 +1,369 @@
+import sqlite3
 import time
 
 import pytest
 
-from simple_harness_memory.backends.sqlite import SCHEMA_VERSION, SQLiteMemoryBackend
-from simple_harness_memory.core.errors import MemoryCorruptionError, MemoryLimitError
-from simple_harness_memory.core.models import Fact
+from simple_harness_memory.backends.sqlite import (
+    SCHEMA_VERSION,
+    SQLiteMemoryBackend,
+)
+from simple_harness_memory.core.errors import (
+    MemoryCorruptionError,
+    MemoryLimitError,
+    MemorySchemaIncompatible,
+    MemoryUnsupportedOperation,
+)
+from simple_harness_memory.core.models import Fact, MemoryApplyStatus
 from simple_harness_memory.embedders.mock import HashEmbedder
+
+
+USER = "user-1"
+
+
+async def _append(backend, session_id, role, content, event):
+    return await backend.append_message(
+        session_id,
+        role,
+        content,
+        user_id=USER,
+        source_event_id=event,
+    )
 
 
 @pytest.mark.asyncio
 async def test_sqlite_persistence_roundtrip(tmp_path):
-    db = str(tmp_path / "mem.db")
-    b = SQLiteMemoryBackend(db)
-    await b.initialize()
-    await b.append_message("s1", "user", "hello")
-    await b.close()
-
-    b2 = SQLiteMemoryBackend(db)
-    await b2.initialize()
-    msgs = await b2.get_recent_messages("s1")
-    assert len(msgs) == 1
-    assert msgs[0].content == "hello"
-    await b2.close()
+    path = str(tmp_path / "mem.db")
+    backend = SQLiteMemoryBackend(path)
+    await backend.initialize()
+    await _append(backend, "s1", "user", "hello", "sqlite-1")
+    await backend.close()
+    reopened = SQLiteMemoryBackend(path)
+    await reopened.initialize()
+    messages = await reopened.get_recent_messages("s1", user_id=USER)
+    assert [message.content for message in messages] == ["hello"]
+    await reopened.close()
 
 
 @pytest.mark.asyncio
 async def test_sqlite_facts_and_recall(tmp_path):
-    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"), auto_extract_facts=True)
-    await b.initialize()
-    await b.append_message("s1", "user", "我养了一只叫Max的狗，很喜欢吃披萨")
-    facts = await b.get_facts()
-    assert any(f.key == "pet_name" and f.value == "Max" for f in facts)
-    hits = await b.recall("Max")
-    assert len(hits) >= 1
-    await b.close()
+    backend = SQLiteMemoryBackend(
+        str(tmp_path / "mem.db"), auto_extract_facts=True
+    )
+    await backend.initialize()
+    await _append(
+        backend,
+        "s1",
+        "user",
+        "我养了一只叫Max的狗，很喜欢吃披萨",
+        "sqlite-2",
+    )
+    facts = await backend.get_facts(user_id=USER)
+    assert any(fact.key == "pet_name" and fact.value == "Max" for fact in facts)
+    assert await backend.recall("Max", user_id=USER)
+    await backend.close()
 
 
 @pytest.mark.asyncio
 async def test_sqlite_decay_forgets_old_event(tmp_path):
-    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"))
-    await b.initialize()
+    backend = SQLiteMemoryBackend(str(tmp_path / "mem.db"))
+    await backend.initialize()
+    message = await _append(backend, "s1", "user", "old", "sqlite-3")
     fact = Fact(
-        id=None, subject="user", key="event", value="昨天去了北京", category="event",
-        confidence=0.6, evidence="", source_msg_id=1, created_at=time.time() - 100 * 86400,
+        id=None,
+        user_id=USER,
+        subject="user",
+        key="event",
+        value="昨天去了北京",
+        category="event",
+        confidence=0.6,
+        evidence="",
+        source_msg_id=message.message_id,
+        created_at=time.time() - 100 * 86400,
     )
-    await b._insert_fact(fact)
-    await b.daily_decay()
-    assert await b.get_facts(category="event", active_only=True) == []
-    await b.close()
+    await backend._insert_fact_impl(USER, fact)
+    await backend.daily_decay(user_id=USER)
+    assert (
+        await backend.get_facts(
+            category="event", active_only=True, user_id=USER
+        )
+        == []
+    )
+    await backend.close()
 
 
 @pytest.mark.asyncio
 async def test_sqlite_twin_persists(tmp_path):
-    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"))
-    await b.initialize()
-    twin = await b.get_digital_twin()
+    path = str(tmp_path / "mem.db")
+    backend = SQLiteMemoryBackend(path)
+    await backend.initialize()
+    twin = await backend.get_digital_twin(user_id=USER)
     twin.profile.name = "张三"
-    await b.update_digital_twin(twin)
-    await b.close()
-
-    b2 = SQLiteMemoryBackend(str(tmp_path / "mem.db"))
-    await b2.initialize()
-    twin2 = await b2.get_digital_twin()
-    assert twin2.profile.name == "张三"
-    await b2.close()
+    await backend.update_digital_twin(twin, user_id=USER)
+    await backend.close()
+    reopened = SQLiteMemoryBackend(path)
+    await reopened.initialize()
+    saved = await reopened.get_digital_twin(user_id=USER)
+    assert saved.profile.name == "张三"
+    await reopened.close()
 
 
 @pytest.mark.asyncio
 async def test_sqlite_corrupt_twin_raises(tmp_path):
-    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"))
-    await b.initialize()
-    await b._conn.execute(
-        "INSERT INTO digital_twins (subject, data_json, updated_at) VALUES (?, ?, ?)",
-        ("user", "{corrupt", time.time()),
+    backend = SQLiteMemoryBackend(str(tmp_path / "mem.db"))
+    await backend.initialize()
+    await backend._conn.execute(
+        "INSERT INTO users (user_id, created_at) VALUES (?, ?)",
+        (USER, time.time()),
     )
-    await b._conn.commit()
+    await backend._conn.execute(
+        "INSERT INTO digital_twins "
+        "(user_id, subject, data_json, updated_at) VALUES (?, ?, ?, ?)",
+        (USER, "user", "{corrupt", time.time()),
+    )
     with pytest.raises(MemoryCorruptionError):
-        await b.get_digital_twin("user")
-    await b.close()
+        await backend.get_digital_twin(user_id=USER)
+    await backend.close()
 
 
 @pytest.mark.asyncio
 async def test_extract_facts_does_not_log_key_value(tmp_path, capsys):
-    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"), auto_extract_facts=True)
-    await b.initialize()
-    await b.append_message("s1", "user", "我养了一只叫Max的狗")
+    backend = SQLiteMemoryBackend(
+        str(tmp_path / "mem.db"), auto_extract_facts=True
+    )
+    await backend.initialize()
+    await _append(
+        backend, "s1", "user", "我养了一只叫Max的狗", "sqlite-4"
+    )
     captured = capsys.readouterr().out
     assert "memory.extract_facts" in captured
     assert "Max" not in captured
-    await b.close()
+    await backend.close()
 
 
 @pytest.mark.asyncio
-async def test_schema_version_recorded_and_future_rejected(tmp_path):
+async def test_schema_version_recorded_and_drift_rejected(tmp_path):
     path = str(tmp_path / "mem.db")
-    b = SQLiteMemoryBackend(path)
-    await b.initialize()
-    async with b._conn.execute(
-        "SELECT value FROM schema_meta WHERE key='schema_version'"
-    ) as cur:
-        row = await cur.fetchone()
-    assert row is not None and int(row[0]) == SCHEMA_VERSION
-    await b._conn.execute("UPDATE schema_meta SET value='999' WHERE key='schema_version'")
-    await b._conn.commit()
-    await b.close()
-
-    future = SQLiteMemoryBackend(path)
-    with pytest.raises(MemoryCorruptionError):
-        await future.initialize()
+    backend = SQLiteMemoryBackend(path)
+    await backend.initialize()
+    async with backend._conn.execute(
+        "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+    ) as cursor:
+        row = await cursor.fetchone()
+    assert row is not None and int(row[0]) == SCHEMA_VERSION == 3
+    await backend._conn.execute(
+        "UPDATE schema_meta SET value = '999' WHERE key = 'schema_version'"
+    )
+    await backend.close()
+    with pytest.raises(MemorySchemaIncompatible):
+        await SQLiteMemoryBackend(path).initialize()
 
 
 @pytest.mark.asyncio
 async def test_schema_checksum_mismatch_rejected(tmp_path):
     path = str(tmp_path / "mem.db")
-    b = SQLiteMemoryBackend(path)
-    await b.initialize()
-    await b._conn.execute("UPDATE schema_meta SET value='tampered' WHERE key='schema_checksum'")
-    await b._conn.commit()
-    await b.close()
-
-    reopened = SQLiteMemoryBackend(path)
-    with pytest.raises(MemoryCorruptionError):
-        await reopened.initialize()
+    backend = SQLiteMemoryBackend(path)
+    await backend.initialize()
+    await backend._conn.execute(
+        "UPDATE schema_meta SET value = 'tampered' "
+        "WHERE key = 'schema_checksum'"
+    )
+    await backend.close()
+    with pytest.raises(MemorySchemaIncompatible):
+        await SQLiteMemoryBackend(path).initialize()
 
 
 @pytest.mark.asyncio
-async def test_legacy_010_db_migrates(tmp_path):
-    import sqlite3
-
+async def test_legacy_database_fails_fast_without_migration(tmp_path):
     path = str(tmp_path / "legacy.db")
-    conn = sqlite3.connect(path)
-    conn.execute(
-        "CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, "
-        "role TEXT NOT NULL, content TEXT NOT NULL, created_at REAL NOT NULL, "
-        "salience REAL NOT NULL DEFAULT 0.0, decay_rate REAL NOT NULL DEFAULT 0.02, "
-        "last_recalled REAL, embedding BLOB, is_summary INTEGER NOT NULL DEFAULT 0, summary_of TEXT)"
+    connection = sqlite3.connect(path)
+    connection.execute(
+        "CREATE TABLE messages "
+        "(id INTEGER PRIMARY KEY, session_id TEXT, content TEXT)"
     )
-    conn.execute(
-        "CREATE TABLE facts (id INTEGER PRIMARY KEY AUTOINCREMENT, subject TEXT NOT NULL, key TEXT NOT NULL, "
-        "value TEXT NOT NULL, category TEXT NOT NULL, confidence REAL NOT NULL DEFAULT 1.0, "
-        "evidence TEXT NOT NULL DEFAULT '', source_msg_id INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL, "
-        "decay_rate REAL NOT NULL DEFAULT 0.01, pinned INTEGER NOT NULL DEFAULT 0, last_decay_at REAL, "
-        "superseded_by INTEGER, forgotten_at REAL)"
+    connection.execute(
+        "INSERT INTO messages VALUES (1, 's1', 'legacy-canary')"
     )
-    conn.execute(
-        "CREATE TABLE digital_twins (subject TEXT PRIMARY KEY, data_json TEXT NOT NULL, updated_at REAL NOT NULL)"
-    )
-    conn.execute(
-        "CREATE TABLE workspace_actions (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, "
-        "action_type TEXT NOT NULL, payload_json TEXT NOT NULL, created_at REAL NOT NULL)"
-    )
-    conn.execute(
-        "INSERT INTO messages (session_id, role, content, created_at) VALUES ('s1', 'user', 'hello', 0.0)"
-    )
-    conn.commit()
-    conn.close()
-
-    b = SQLiteMemoryBackend(path)
-    await b.initialize()  # 0.1.0 → 迁移
-    msgs = await b.get_recent_messages("s1")
-    assert len(msgs) == 1 and msgs[0].content == "hello"
-    # source_event_id 列已加，幂等 append 可用
-    id1 = await b.append_message("s1", "user", "world", source_event_id="evt-1")
-    id2 = await b.append_message("s1", "user", "world", source_event_id="evt-1")
-    assert id1 == id2
-    await b.close()
+    connection.commit()
+    connection.close()
+    with pytest.raises(MemorySchemaIncompatible):
+        await SQLiteMemoryBackend(path).initialize()
+    connection = sqlite3.connect(path)
+    assert connection.execute(
+        "SELECT content FROM messages"
+    ).fetchone()[0] == "legacy-canary"
+    assert connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE name = 'schema_meta'"
+    ).fetchone() is None
+    connection.close()
 
 
 @pytest.mark.asyncio
 async def test_append_atomic_rollback(tmp_path, monkeypatch):
-    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"), auto_extract_facts=True)
-    await b.initialize()
+    backend = SQLiteMemoryBackend(
+        str(tmp_path / "mem.db"), auto_extract_facts=True
+    )
+    await backend.initialize()
 
-    async def fail_insert(fact):
+    async def fail_insert(user_id, fact):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(b, "_insert_fact", fail_insert)
+    monkeypatch.setattr(backend, "_insert_fact_impl", fail_insert)
     with pytest.raises(RuntimeError):
-        await b.append_message("s1", "user", "我养了一只猫")
-    msgs = await b.get_recent_messages("s1")
-    assert msgs == []
-    await b.close()
+        await _append(
+            backend, "s1", "user", "我养了一只猫", "sqlite-rollback"
+        )
+    assert await backend.get_recent_messages("s1", user_id=USER) == []
+    await backend.close()
 
 
 @pytest.mark.asyncio
 async def test_source_event_id_idempotent(tmp_path):
-    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"))
-    await b.initialize()
-    id1 = await b.append_message("s1", "user", "hello", source_event_id="evt-1")
-    id2 = await b.append_message("s1", "user", "hello", source_event_id="evt-1")
-    assert id1 == id2
-    msgs = await b.get_recent_messages("s1")
-    assert len(msgs) == 1
-    await b.close()
+    backend = SQLiteMemoryBackend(str(tmp_path / "mem.db"))
+    await backend.initialize()
+    first = await _append(
+        backend, "s1", "user", "hello", "sqlite-idempotent"
+    )
+    second = await _append(
+        backend, "s1", "user", "hello", "sqlite-idempotent"
+    )
+    assert first.message_id == second.message_id
+    assert first.status is MemoryApplyStatus.APPLIED
+    assert second.status is MemoryApplyStatus.ALREADY_APPLIED
+    assert len(
+        await backend.get_recent_messages("s1", user_id=USER)
+    ) == 1
+    await backend.close()
 
 
 @pytest.mark.asyncio
 async def test_delete_session_cascades(tmp_path):
-    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"), auto_extract_facts=True)
-    await b.initialize()
-    await b.append_message("s1", "user", "我养了一只叫Max的狗")
-    await b.append_message("s2", "user", "今天天气很好")
-    await b.delete_session("s1")
-    msgs = await b._messages_all()
-    assert all(m.session_id != "s1" for m in msgs)
-    assert any(m.session_id == "s2" for m in msgs)
-    facts = await b._facts_all()
-    assert all(f.source_msg_id not in {m.id for m in msgs if m.session_id == "s1"} for f in facts)
-    await b.close()
+    backend = SQLiteMemoryBackend(
+        str(tmp_path / "mem.db"), auto_extract_facts=True
+    )
+    await backend.initialize()
+    await _append(
+        backend, "s1", "user", "我养了一只叫Max的狗", "sqlite-5"
+    )
+    await _append(
+        backend, "s2", "user", "今天天气很好", "sqlite-6"
+    )
+    assert await backend.delete_session("s1", user_id=USER) == 1
+    assert await backend.get_recent_messages("s1", user_id=USER) == []
+    assert await backend.get_recent_messages("s2", user_id=USER)
+    assert all(
+        fact.value != "Max"
+        for fact in await backend.get_facts(user_id=USER)
+    )
+    await backend.close()
 
 
 @pytest.mark.asyncio
-async def test_delete_all(tmp_path):
-    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"), auto_extract_facts=True)
-    await b.initialize()
-    await b.append_message("s1", "user", "hello")
-    await b.delete_all()
-    assert await b._messages_all() == []
-    assert await b._facts_all() == []
-    await b.close()
+async def test_delete_all_is_fail_closed_and_non_mutating(tmp_path):
+    backend = SQLiteMemoryBackend(str(tmp_path / "mem.db"))
+    await backend.initialize()
+    await _append(backend, "s1", "user", "hello", "sqlite-7")
+    with pytest.raises(MemoryUnsupportedOperation) as error:
+        await backend.delete_all()
+    assert error.value.code == "runtime_delete_disabled"
+    assert await backend.get_recent_messages("s1", user_id=USER)
+    await backend.close()
 
 
 @pytest.mark.asyncio
 async def test_lineage_recorded_and_reindex(tmp_path):
-    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"))
-    await b.initialize()
-    await b.append_message("s1", "user", "我养了一只猫")
-    msgs = await b._messages_all()
-    assert msgs[0].embedder_kind == "hash"
-    assert msgs[0].embedding_dim == 256
-    await b.reindex(HashEmbedder(dim=128))
-    msgs2 = await b._messages_all()
-    assert msgs2[0].embedding_dim == 128
-    assert msgs2[0].embedder_kind == "hash"
-    hits = await b.recall("猫")
-    assert hits
-    await b.close()
+    backend = SQLiteMemoryBackend(str(tmp_path / "mem.db"))
+    await backend.initialize()
+    await _append(backend, "s1", "user", "我养了一只猫", "sqlite-8")
+    message = (
+        await backend.get_recent_messages("s1", user_id=USER)
+    )[0]
+    assert (message.embedder_kind, message.embedding_dim) == ("hash", 256)
+    assert await backend.reindex(
+        HashEmbedder(dim=128), user_id=USER
+    ) == 1
+    reindexed = (
+        await backend.get_recent_messages("s1", user_id=USER)
+    )[0]
+    assert (reindexed.embedder_kind, reindexed.embedding_dim) == ("hash", 128)
+    assert await backend.recall("猫", user_id=USER)
+    await backend.close()
 
 
 @pytest.mark.asyncio
-async def test_content_limit_raises(tmp_path):
-    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"), max_content_chars=10)
-    await b.initialize()
+async def test_resource_limits_raise(tmp_path):
+    content = SQLiteMemoryBackend(
+        str(tmp_path / "content.db"), max_content_chars=10
+    )
+    await content.initialize()
     with pytest.raises(MemoryLimitError):
-        await b.append_message("s1", "user", "x" * 11)
-    await b.close()
+        await _append(content, "s1", "user", "x" * 11, "limit-1")
+    await content.close()
 
-
-@pytest.mark.asyncio
-async def test_db_size_limit_raises(tmp_path):
-    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"), max_db_bytes=1)
-    await b.initialize()
+    db_size = SQLiteMemoryBackend(
+        str(tmp_path / "size.db"), max_db_bytes=1
+    )
+    await db_size.initialize()
     with pytest.raises(MemoryLimitError):
-        await b.append_message("s1", "user", "hello")
-    await b.close()
+        await _append(db_size, "s1", "user", "hello", "limit-2")
+    await db_size.close()
 
-
-@pytest.mark.asyncio
-async def test_fact_value_limit_raises(tmp_path):
-    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"), auto_extract_facts=True, max_fact_value_chars=2)
-    await b.initialize()
+    facts = SQLiteMemoryBackend(
+        str(tmp_path / "facts.db"),
+        auto_extract_facts=True,
+        max_fact_value_chars=2,
+    )
+    await facts.initialize()
     with pytest.raises(MemoryLimitError):
-        await b.append_message("s1", "user", "我养了一只叫Max的狗")
-    await b.close()
+        await _append(
+            facts, "s1", "user", "我养了一只叫Max的狗", "limit-3"
+        )
+    await facts.close()
 
-
-@pytest.mark.asyncio
-async def test_payload_limit_raises(tmp_path):
-    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"), max_payload_bytes=10)
-    await b.initialize()
+    actions = SQLiteMemoryBackend(
+        str(tmp_path / "actions.db"), max_payload_bytes=10
+    )
+    await actions.initialize()
     with pytest.raises(MemoryLimitError):
-        await b.record_workspace_action("s1", "write", {"content": "x" * 100})
-    await b.close()
+        await actions.record_workspace_action(
+            "s1", "write", {"content": "x" * 100}, user_id=USER
+        )
+    await actions.close()
 
 
 @pytest.mark.asyncio
 async def test_delete_session_rebuilds_twin(tmp_path):
-    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"), auto_extract_facts=True)
-    await b.initialize()
-    await b.append_message("s1", "user", "我养了一只叫Max的狗")
-    twin = await b.get_digital_twin()
-    assert "Max" in twin.relationships.entities
-    await b.delete_session("s1")
-    twin2 = await b.get_digital_twin()
-    assert "Max" not in twin2.relationships.entities
-    await b.close()
+    backend = SQLiteMemoryBackend(
+        str(tmp_path / "mem.db"), auto_extract_facts=True
+    )
+    await backend.initialize()
+    await _append(
+        backend, "s1", "user", "我养了一只叫Max的狗", "sqlite-9"
+    )
+    assert "Max" in (
+        await backend.get_digital_twin(user_id=USER)
+    ).relationships.entities
+    await backend.delete_session("s1", user_id=USER)
+    assert "Max" not in (
+        await backend.get_digital_twin(user_id=USER)
+    ).relationships.entities
+    await backend.close()
 
 
 @pytest.mark.asyncio
-async def test_delete_old_sessions(tmp_path):
-    b = SQLiteMemoryBackend(str(tmp_path / "mem.db"))
-    await b.initialize()
-    await b.append_message("old", "user", "old msg")
-    await b._conn.execute(
-        "UPDATE messages SET created_at = ? WHERE session_id = 'old'",
-        (time.time() - 100 * 86400,),
+async def test_delete_old_sessions_is_user_scoped_and_bounded(tmp_path):
+    backend = SQLiteMemoryBackend(str(tmp_path / "mem.db"))
+    await backend.initialize()
+    await _append(backend, "old", "user", "old msg", "sqlite-10")
+    await backend._conn.execute(
+        "UPDATE sessions SET last_activity_at = ? "
+        "WHERE user_id = ? AND session_id = 'old'",
+        (time.time() - 100 * 86400, USER),
     )
-    await b._conn.commit()
-    await b.append_message("recent", "user", "recent msg")
-    deleted = await b.delete_old_sessions(older_than_days=30)
-    assert deleted >= 1
-    msgs = await b._messages_all()
-    assert all(m.session_id != "old" for m in msgs)
-    assert any(m.session_id == "recent" for m in msgs)
-    await b.close()
+    await _append(backend, "recent", "user", "recent msg", "sqlite-11")
+    deleted = await backend.delete_old_sessions(
+        older_than_days=30, user_id=USER, limit=1
+    )
+    assert deleted == 1
+    assert await backend.get_recent_messages("old", user_id=USER) == []
+    assert await backend.get_recent_messages("recent", user_id=USER)
+    await backend.close()

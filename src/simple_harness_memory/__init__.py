@@ -10,7 +10,26 @@
 """
 
 from simple_harness_memory.core.manager import MemoryManager
-from simple_harness_memory.core.models import Fact, Hit, Message
+from simple_harness_memory.config import MemoryResourceBounds
+from simple_harness_memory.core.conversation import (
+    ConversationMemoryAdapter,
+    ConversationMemoryApplyResult,
+    ConversationMemoryApplyStatus,
+    ConversationMemoryError,
+    ConversationMemoryErrorCode,
+    ConversationMemoryIntent,
+    ConversationMemoryQueryStatus,
+    ConversationMemoryRecallQuery,
+    ConversationMemoryRecallResult,
+    ConversationMemoryRole,
+)
+from simple_harness_memory.core.models import (
+    BoundedRecallResult,
+    Fact,
+    Hit,
+    MemoryApplyResult,
+    Message,
+)
 from simple_harness_memory.core.port import MemoryBackend
 from simple_harness_memory.core.twin import DigitalTwin
 from simple_harness_memory.world.port import WorldModelPort
@@ -23,6 +42,19 @@ __all__ = [
     "Fact",
     "Hit",
     "DigitalTwin",
+    "MemoryApplyResult",
+    "BoundedRecallResult",
+    "MemoryResourceBounds",
+    "ConversationMemoryAdapter",
+    "ConversationMemoryIntent",
+    "ConversationMemoryRecallQuery",
+    "ConversationMemoryRecallResult",
+    "ConversationMemoryApplyResult",
+    "ConversationMemoryRole",
+    "ConversationMemoryQueryStatus",
+    "ConversationMemoryApplyStatus",
+    "ConversationMemoryError",
+    "ConversationMemoryErrorCode",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

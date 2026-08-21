@@ -13,7 +13,7 @@ class FactExtractor(ABC):
     @abstractmethod
     async def extract(
         self, content: str, *, role: str = "user", message_id: int = 0,
-        created_at: float | None = None, subject: str = "user",
+        created_at: float | None = None, subject: str = "user", user_id: str = "",
     ) -> list[Fact]: ...
 
 
@@ -31,7 +31,10 @@ class RuleBasedFactExtractor(FactExtractor):
         ("event", "event", re.compile(r"(?:昨天|今天|前天|上周|上个月|最近)(?:我)?(?:去了|到了|在)([^，。！？,、\s的]{1,20})"), 0.55, -1),
     )
 
-    async def extract(self, content, *, role="user", message_id=0, created_at=None, subject="user"):
+    async def extract(
+        self, content, *, role="user", message_id=0, created_at=None,
+        subject="user", user_id="",
+    ):
         if role != "user":
             return []
         ts = created_at if created_at is not None else time.time()
@@ -47,7 +50,7 @@ class RuleBasedFactExtractor(FactExtractor):
                     continue
                 seen.add(dedup)
                 facts.append(Fact(
-                    id=None, subject=subject, key=key, value=value, category=category,
+                    id=None, user_id=user_id, subject=subject, key=key, value=value, category=category,
                     confidence=confidence, evidence=content, source_msg_id=message_id, created_at=ts,
                 ))
         return facts
@@ -58,7 +61,10 @@ class LLMFactExtractor(FactExtractor):
         self._client = client
         self._model = model
 
-    async def extract(self, content, *, role="user", message_id=0, created_at=None, subject="user"):
+    async def extract(
+        self, content, *, role="user", message_id=0, created_at=None,
+        subject="user", user_id="",
+    ):
         if role != "user":
             return []
         import json as _json
@@ -80,7 +86,7 @@ class LLMFactExtractor(FactExtractor):
             if not key or not value:
                 continue
             facts.append(Fact(
-                id=None, subject=subject, key=key, value=value,
+                id=None, user_id=user_id, subject=subject, key=key, value=value,
                 category=str(item.get("category", "profile")).strip(),
                 confidence=max(0.0, min(1.0, float(item.get("confidence", 0.7)))),
                 evidence=content, source_msg_id=message_id, created_at=ts,

@@ -1,164 +1,145 @@
-"""MemoryBackend — 核心抽象接口（Port 模式）。
-
-所有后端实现（SQLite / Mock / Pinecone）都必须实现此接口。
-主应用仅依赖此 Port，不依赖具体后端。
-"""
+"""Product-neutral public ports for the memory SDK."""
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from simple_harness_memory.core.models import Fact, FactConflict, Hit, Message
+from simple_harness_memory.core.models import (
+    BoundedRecallResult,
+    Fact,
+    FactConflict,
+    Hit,
+    MemoryApplyResult,
+    Message,
+)
 from simple_harness_memory.core.twin import DigitalTwin
 
 
 class MemoryBackend(ABC):
-    """记忆后端抽象接口。"""
-
-    # ── L2: 情景记忆 ────────────────────────────────
+    """Memory backend contract with explicit, immutable user ownership."""
 
     @abstractmethod
     async def append_message(
-        self,
-        session_id: str,
-        role: str,
-        content: str,
-        *,
-        salience: float = 0.0,
-        decay_rate: float = 0.02,
-        source_event_id: Optional[str] = None,
-    ) -> int:
-        """追加一条消息，返回 message_id。"""
+        self, session_id: str, role: str, content: str, *, user_id: str,
+        source_event_id: str, payload_hash: str | None = None,
+        salience: float = 0.0, decay_rate: float = 0.02,
+    ) -> MemoryApplyResult: ...
 
     @abstractmethod
     async def get_recent_messages(
-        self,
-        session_id: str,
-        limit: int = 20,
-    ) -> list[Message]:
-        """获取最近 N 条消息（按时间倒序）。"""
+        self, session_id: str, limit: int = 20, *, user_id: str,
+    ) -> list[Message]: ...
 
     @abstractmethod
-    async def get_message(self, message_id: int) -> Optional[Message]:
-        """按 ID 获取单条消息。"""
-
-    # ── L3: 语义记忆 ────────────────────────────────
+    async def get_message(self, message_id: int, *, user_id: str) -> Optional[Message]: ...
 
     @abstractmethod
     async def extract_facts(
-        self,
-        message_id: int,
-        content: str,
-        role: str,
-    ) -> list[Fact]:
-        """从消息内容提取 Facts，自动写入存储，返回提取结果。"""
+        self, message_id: int, content: str, role: str, *, user_id: str,
+    ) -> list[Fact]: ...
 
     @abstractmethod
     async def get_facts(
-        self,
-        subject: str = "user",
-        category: Optional[str] = None,
-        active_only: bool = True,
-    ) -> list[Fact]:
-        """查询 Facts。active_only=True 排除已 superseded/forgotten。"""
+        self, subject: str = "user", category: Optional[str] = None,
+        active_only: bool = True, *, user_id: str, limit: int | None = None,
+    ) -> list[Fact]: ...
 
     @abstractmethod
-    async def forget_fact(self, fact_id: int, reason: str = "") -> bool:
-        """显式遗忘一个 Fact（设置 forgotten_at）。返回是否成功。"""
-
-    # ── 数字孪生体 ────────────────────────────────────
+    async def forget_fact(self, fact_id: int, reason: str = "", *, user_id: str) -> bool: ...
 
     @abstractmethod
-    async def get_digital_twin(self, subject: str = "user") -> DigitalTwin:
-        """获取或构建数字孪生体。"""
+    async def get_digital_twin(
+        self, subject: str = "user", *, user_id: str,
+    ) -> DigitalTwin: ...
 
     @abstractmethod
-    async def update_digital_twin(self, twin: DigitalTwin) -> None:
-        """持久化更新后的孪生体。"""
+    async def update_digital_twin(self, twin: DigitalTwin, *, user_id: str) -> None: ...
 
     @abstractmethod
-    async def suggest_questions(self, subject: str = "user") -> list[str]:
-        """根据孪生体空白字段，生成主动补全问题。"""
+    async def suggest_questions(
+        self, subject: str = "user", *, user_id: str,
+    ) -> list[str]: ...
 
     @abstractmethod
-    async def detect_inconsistencies(self, subject: str = "user") -> list[FactConflict]:
-        """检测同一 subject 下的矛盾 / 冲突事实。"""
-
-    # ── 混合召回 ─────────────────────────────────────
+    async def detect_inconsistencies(
+        self, subject: str = "user", *, user_id: str,
+    ) -> list[FactConflict]: ...
 
     @abstractmethod
     async def recall(
-        self,
-        query: str,
-        session_id: Optional[str] = None,
-        limit: int = 10,
-    ) -> list[Hit]:
-        """RRF 六路混合召回，返回融合排名后的结果。"""
+        self, query: str, session_id: Optional[str] = None, limit: int = 10,
+        *, user_id: str,
+    ) -> list[Hit]: ...
+
+    @abstractmethod
+    async def recall_bounded(
+        self, query: str, *, user_id: str, session_id: str,
+        context_query_id: str, query_hash: str | None = None,
+        max_results: int | None = None, max_bytes: int | None = None,
+        timeout_seconds: float | None = None,
+    ) -> BoundedRecallResult: ...
+
+    @abstractmethod
+    async def release_recall_result(
+        self, *, user_id: str, context_query_id: str, result_hash: str,
+    ) -> None: ...
+
+    @abstractmethod
+    async def cleanup_recall_results(
+        self, *, user_id: str, now: float | None = None, limit: int | None = None,
+    ) -> int: ...
 
     @abstractmethod
     async def recall_and_reinforce(
-        self,
-        query: str,
-        session_id: Optional[str] = None,
-        limit: int = 10,
-    ) -> list[Hit]:
-        """RRF 召回并对命中项执行 salience reinforcement（写 last_recalled）。"""
+        self, query: str, session_id: Optional[str] = None, limit: int = 10,
+        *, user_id: str,
+    ) -> list[Hit]: ...
 
     @abstractmethod
     async def vector_search(
-        self,
-        query: str,
-        limit: int = 20,
-    ) -> list[Hit]:
-        """纯向量语义搜索（不含 RRF 融合）。"""
-
-    # ── 认知维护 ─────────────────────────────────────
+        self, query: str, limit: int = 20, *, user_id: str,
+    ) -> list[Hit]: ...
 
     @abstractmethod
-    async def daily_decay(self) -> dict[str, int]:
-        """运行每日遗忘曲线衰减，返回统计 {decayed: N, forgotten: M}。"""
+    async def daily_decay(
+        self, *, user_id: str, limit: int | None = None,
+    ) -> dict[str, int]: ...
 
     @abstractmethod
     async def summarize_old_sessions(
-        self,
-        older_than_days: int = 7,
-        max_sessions: int = 5,
-    ) -> dict[str, int]:
-        """对旧会话消息进行记忆压缩，返回 {summarized_sessions: N}。"""
+        self, older_than_days: int = 7, max_sessions: int = 5,
+        *, user_id: str,
+    ) -> dict[str, int]: ...
 
     @abstractmethod
     async def record_workspace_action(
-        self,
-        session_id: str,
-        action_type: str,
-        payload: dict,
-    ) -> None:
-        """记录工作记忆动作（文件操作/工具调用等）。"""
+        self, session_id: str, action_type: str, payload: dict, *, user_id: str,
+    ) -> None: ...
 
     @abstractmethod
-    async def delete_session(self, session_id: str) -> int:
-        """级联删除一个 session 的 messages/facts/workspace_actions 并重建 twin。"""
+    async def delete_session(self, session_id: str, *, user_id: str) -> int: ...
 
     @abstractmethod
     async def delete_all(self) -> None:
-        """清空全部记忆数据。"""
+        """Deprecated compatibility surface; always fails closed."""
 
     @abstractmethod
-    async def delete_old_sessions(self, older_than_days: float = 30.0) -> int:
-        """删除最后活跃早于阈值的 session 及级联数据。"""
+    async def delete_old_sessions(
+        self, older_than_days: float = 30.0, *, user_id: str,
+        limit: int | None = None,
+    ) -> int: ...
 
     @abstractmethod
-    async def reindex(self, embedder=None) -> int:
-        """用新 embedder 重新 embedding 全部 messages 并更新 lineage。"""
-
-    # ── 生命周期 ─────────────────────────────────────
+    async def reindex(
+        self, embedder=None, *, user_id: str, limit: int | None = None,
+    ) -> int: ...
 
     async def initialize(self) -> None:
-        """初始化后端（建表、连接等）。子类可 override。"""
+        """Initialize the backend."""
 
     async def close(self) -> None:
-        """关闭连接、释放资源。子类可 override。"""
+        """Close the backend."""
 
     async def __aenter__(self) -> "MemoryBackend":
         await self.initialize()

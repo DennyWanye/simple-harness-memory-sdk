@@ -9,7 +9,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from enum import Enum
+from typing import Any, Optional
 
 
 # ─────────────────────────────────────────────
@@ -21,6 +22,7 @@ class Message:
     """单条对话消息，携带认知科学特性。"""
 
     id: Optional[int]
+    user_id: str                # 最高产品主体；不可由 session_id 推导
     session_id: str             # 会话隔离（不同任务互不干扰）
     role: str                   # "user" | "assistant" | "system" | "tool"
     content: str
@@ -38,6 +40,10 @@ class Message:
     embedder_kind: Optional[str] = None
     embedding_dim: Optional[int] = None
     embedding_format_version: Optional[int] = None
+
+    # durable source-event identity
+    source_event_id: Optional[str] = None
+    payload_hash: Optional[str] = None
 
     # 压缩元数据
     is_summary: bool = False            # 是否为压缩后的 summary
@@ -68,6 +74,7 @@ class Fact:
     """从对话中自动提取的结构化事实（语义记忆）。"""
 
     id: Optional[int]
+    user_id: str           # SQL 隔离主体
     subject: str            # 主体，如 "user"
     key: str                # 属性 key（英文 snake_case），如 "pet_name"
     value: str              # 值（保留原始语言），如 "Max"
@@ -132,3 +139,65 @@ class FactConflict:
     key: str
     values: list[str]
     fact_ids: list[int]
+
+
+class MemoryApplyStatus(str, Enum):
+    """Outcome of an idempotent message apply."""
+
+    APPLIED = "applied"
+    ALREADY_APPLIED = "already_applied"
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryApplyResult:
+    """Durable acknowledgement returned to a memory outbox consumer."""
+
+    message_id: int
+    source_event_id: str
+    payload_hash: str
+    status: MemoryApplyStatus
+
+
+class RecallStatus(str, Enum):
+    """Stable bounded-recall terminal states."""
+
+    COMPLETE = "complete"
+    TRUNCATED = "truncated"
+    TIMEOUT = "timeout"
+
+
+@dataclass(frozen=True, slots=True)
+class BoundedRecallResult:
+    """A canonical, optionally durable bounded recall result."""
+
+    hits: tuple[Hit, ...]
+    status: RecallStatus
+    result_hash: str
+    result_bytes: int
+    context_query_id: str | None = None
+    query_hash: str | None = None
+    replayed: bool = False
+
+    @property
+    def truncated(self) -> bool:
+        return self.status is not RecallStatus.COMPLETE
+
+    def as_payload(self) -> dict[str, Any]:
+        return {
+            "items": [
+                {
+                    "message_id": hit.message_id,
+                    "text": hit.text,
+                    "score": hit.score,
+                    "source": hit.source,
+                    "recency": hit.recency,
+                    "salience": hit.salience,
+                    "session_affinity": hit.session_affinity,
+                    "session_id": hit.session_id,
+                    "role": hit.role,
+                    "created_at": hit.created_at,
+                }
+                for hit in self.hits
+            ],
+            "status": self.status.value,
+        }
