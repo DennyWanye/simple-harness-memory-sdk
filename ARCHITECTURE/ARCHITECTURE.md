@@ -93,9 +93,10 @@ src/simple_harness_memory/
 ## 验证状态
 
 - M1：27 passed。
-- M2：30 passed（含 SQLite query-plan/user predicate+limit、跨 user maintenance）。
+- M2：41 passed（含 SQLite query-plan/user predicate+limit、跨 user maintenance）。
 - M3：Ruff 与 mypy 全绿。
 - M-ALL（无候选制品 env）：154 passed、6 skipped；Python 3.11/3.12/3.13 与 Ruff/mypy 全绿。
 - latest M-WHEEL：5 passed（exact wheel clean consumer + candidate/release contract）。
-- Linux ARM64 candidate gate 已在 Actions run `32439769610` 验证通过；每次 promotion 仍须绑定 exact
-  replacement run。Xperia/consumer exact candidate 验收属于后续 Task 6–10，不能由本地 macOS 结果代替。
+- frozen exact candidate、三版本 full suite 与 Linux ARM64 core gate 已在 Actions run `32443846753`
+  验证通过（artifact `9433370906`）；每次 promotion 仍须绑定 exact replacement run。Xperia/consumer
+  exact candidate 验收属于后续 Task 6–10，不能由本地 macOS 结果代替。
