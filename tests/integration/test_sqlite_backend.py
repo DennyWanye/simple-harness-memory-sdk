@@ -194,9 +194,14 @@ async def test_append_atomic_rollback(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_source_event_id_idempotent(tmp_path):
-    backend = SQLiteMemoryBackend(str(tmp_path / "mem.db"))
+    path = str(tmp_path / "mem.db")
+    backend = SQLiteMemoryBackend(path)
     await backend.initialize()
     first = await _append(backend, "s1", "user", "hello", "sqlite-idempotent")
+    await backend.close()
+
+    backend = SQLiteMemoryBackend(path)
+    await backend.initialize()
     second = await _append(backend, "s1", "user", "hello", "sqlite-idempotent")
     assert first.message_id == second.message_id
     assert first.status is MemoryApplyStatus.APPLIED
@@ -238,6 +243,7 @@ async def test_lineage_recorded_and_reindex(tmp_path):
     message = (await backend.get_recent_messages("s1", user_id=USER))[0]
     assert (message.embedder_kind, message.embedding_dim) == ("hash", 256)
     assert await backend.reindex(HashEmbedder(dim=128), user_id=USER) == 1
+    assert await backend.reindex(HashEmbedder(dim=128), user_id=USER) == 0
     reindexed = (await backend.get_recent_messages("s1", user_id=USER))[0]
     assert (reindexed.embedder_kind, reindexed.embedding_dim) == ("hash", 128)
     assert await backend.recall("猫", user_id=USER)

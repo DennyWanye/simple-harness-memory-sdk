@@ -46,6 +46,8 @@ src/simple_harness_memory/
   batch、summary batch 与 recall-result dedupe horizon。
 - recall/vector/facts/twin/reinforce/decay/summarize/retention/reindex/workspace action 均为 user-scoped；
   decay/reindex/retention/snapshot cleanup 有界。
+- message/fact decay 持久化本次衰减水位；同一逻辑时间的重试不重复衰减。summary 以确定性
+  source event 去重，reindex 仅选取 lineage mismatch，重试均不重复写入。
 
 ### 召回（M1）
 - `recall()` 物理只读（不写 salience/last_recalled）；reinforcement 显式走 `recall_and_reinforce()`。

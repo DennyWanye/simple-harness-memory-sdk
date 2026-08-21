@@ -215,12 +215,15 @@ class MockMemoryBackend(BaseMemoryBackend):
         message_id: int,
         salience: float,
         last_recalled: float | None,
+        last_decay_at: float | None = None,
     ) -> None:
         for message in self._messages:
             if message.user_id == user_id and message.id == message_id:
                 message.salience = salience
                 if last_recalled is not None:
                     message.last_recalled = last_recalled
+                if last_decay_at is not None:
+                    message.last_decay_at = last_decay_at
 
     async def _set_fact_decay_impl(
         self,

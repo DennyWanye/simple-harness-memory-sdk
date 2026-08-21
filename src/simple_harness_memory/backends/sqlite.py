@@ -70,6 +70,7 @@ CREATE TABLE messages (
     salience REAL NOT NULL DEFAULT 0.0,
     decay_rate REAL NOT NULL DEFAULT 0.02,
     last_recalled REAL,
+    last_decay_at REAL,
     embedding BLOB,
     is_summary INTEGER NOT NULL DEFAULT 0 CHECK (is_summary IN (0, 1)),
     summary_of TEXT,
@@ -574,12 +575,14 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         message_id: int,
         salience: float,
         last_recalled: float | None,
+        last_decay_at: float | None = None,
     ) -> None:
         await self._conn.execute(
             "UPDATE messages SET salience = ?, "
-            "last_recalled = COALESCE(?, last_recalled) "
+            "last_recalled = COALESCE(?, last_recalled), "
+            "last_decay_at = COALESCE(?, last_decay_at) "
             "WHERE user_id = ? AND id = ?",
-            (salience, last_recalled, user_id, message_id),
+            (salience, last_recalled, last_decay_at, user_id, message_id),
         )
 
     async def _set_fact_decay_impl(
@@ -809,6 +812,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             salience=row["salience"],
             decay_rate=row["decay_rate"],
             last_recalled=row["last_recalled"],
+            last_decay_at=row["last_decay_at"],
             embedding=row["embedding"],
             embedder_kind=row["embedder_kind"],
             embedding_dim=row["embedding_dim"],

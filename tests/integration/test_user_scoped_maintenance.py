@@ -7,9 +7,11 @@ from simple_harness_memory.embedders.mock import HashEmbedder
 
 
 @pytest.mark.asyncio
-async def test_maintenance_never_mutates_another_user(tmp_path):
+async def test_maintenance_never_mutates_another_user(tmp_path, monkeypatch):
     backend = SQLiteMemoryBackend(str(tmp_path / "memory.db"))
     await backend.initialize()
+    now = time.time()
+    monkeypatch.setattr("simple_harness_memory.backends.base.time.time", lambda: now)
     a = await backend.append_message(
         "a",
         "user",
@@ -28,13 +30,19 @@ async def test_maintenance_never_mutates_another_user(tmp_path):
     )
     await backend._conn.execute(
         "UPDATE messages SET created_at = ? WHERE user_id IN (?, ?)",
-        (time.time() - 100 * 86400, "user-a", "user-b"),
+        (now - 100 * 86400, "user-a", "user-b"),
     )
     await backend.daily_decay(user_id="user-a", limit=1)
     message_a = await backend.get_message(a.message_id, user_id="user-a")
     message_b = await backend.get_message(b.message_id, user_id="user-b")
     assert message_a is not None and message_a.salience < 1.0
     assert message_b is not None and message_b.salience == 1.0
+    first_decay = message_a.salience
+
+    # A retry at the same logical time observes the durable decay watermark.
+    await backend.daily_decay(user_id="user-a", limit=1)
+    message_a = await backend.get_message(a.message_id, user_id="user-a")
+    assert message_a is not None and message_a.salience == first_decay
 
     assert await backend.reindex(HashEmbedder(dim=64), user_id="user-a", limit=1) == 1
     message_a = await backend.get_message(a.message_id, user_id="user-a")
@@ -111,6 +119,9 @@ async def test_vector_reinforce_summary_and_actions_are_user_scoped(tmp_path):
     )
     result = await backend.summarize_old_sessions(user_id="user-a", max_sessions=1)
     assert result == {"summarized_sessions": 1}
+    assert await backend.summarize_old_sessions(
+        user_id="user-a", max_sessions=1
+    ) == {"summarized_sessions": 0}
     assert any(
         message.is_summary
         for message in await backend.get_recent_messages("session-a", user_id="user-a")
@@ -119,6 +130,10 @@ async def test_vector_reinforce_summary_and_actions_are_user_scoped(tmp_path):
         message.is_summary
         for message in await backend.get_recent_messages("session-b", user_id="user-b")
     )
+    assert sum(
+        message.is_summary
+        for message in await backend.get_recent_messages("session-a", user_id="user-a")
+    ) == 1
 
     await backend.record_workspace_action(
         "session-a", "write", {"path": "a"}, user_id="user-a"

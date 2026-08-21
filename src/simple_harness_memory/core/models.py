@@ -32,6 +32,7 @@ class Message:
     salience: float = 0.0  # 显著性（每次被召回 +0.05）
     decay_rate: float = 0.02  # 衰减率（Ebbinghaus 遗忘曲线）
     last_recalled: float | None = None  # 最后召回时间（Unix ts）
+    last_decay_at: float | None = None  # 最后成功衰减时间（Unix ts）
 
     # 向量化（延迟填充）
     embedding: bytes | None = None  # BGE-M3 向量，BLOB

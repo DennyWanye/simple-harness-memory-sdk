@@ -199,6 +199,7 @@ class BaseMemoryBackend(MemoryBackend):
         message_id: int,
         salience: float,
         last_recalled: float | None,
+        last_decay_at: float | None = None,
     ) -> None: ...
 
     @abstractmethod
@@ -845,11 +846,17 @@ class BaseMemoryBackend(MemoryBackend):
         messages = await self._query_messages_impl(user_id, limit=cap)
         facts = await self._query_facts_impl(user_id, limit=cap, active_only=True)
         for message in messages:
-            ref = message.last_recalled or message.created_at
+            ref = message.last_decay_at or message.last_recalled or message.created_at
             days = (now - ref) / 86400.0
             new_salience = decay_salience(message.salience, message.decay_rate, days)
             if abs(new_salience - message.salience) > 1e-9 and message.id is not None:
-                await self._update_message_salience_impl(user_id, message.id, new_salience, None)
+                await self._update_message_salience_impl(
+                    user_id,
+                    message.id,
+                    new_salience,
+                    None,
+                    last_decay_at=now,
+                )
                 decayed += 1
         for fact in facts:
             if fact.pinned or fact.id is None:
@@ -912,7 +919,7 @@ class BaseMemoryBackend(MemoryBackend):
                 role="assistant",
                 memory_text=summary,
             )
-            await self._append_message_impl(
+            result = await self._append_message_impl(
                 user_id=user_id,
                 session_id=session_id,
                 role="assistant",
@@ -929,7 +936,8 @@ class BaseMemoryBackend(MemoryBackend):
                 embedding_dim=None,
                 embedding_format_version=None,
             )
-            count += 1
+            if result.status is MemoryApplyStatus.APPLIED:
+                count += 1
         await self._commit()
         return {"summarized_sessions": count}
 
