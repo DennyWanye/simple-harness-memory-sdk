@@ -1,4 +1,4 @@
-"""Fresh-v3 SQLite backend with immutable user/session ownership."""
+"""Fresh-v4 SQLite backend with immutable principal/scope ownership."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import json
 import os
 import sqlite3
 import time
+import uuid
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from pathlib import Path
@@ -30,6 +31,11 @@ from simple_harness_memory.core.errors import (
     MemoryLimitError,
     MemoryOwnershipConflict,
     MemorySchemaIncompatible,
+)
+from simple_harness_memory.core.identity import (
+    MemoryPrincipal,
+    MemoryScope,
+    scope_predicate,
 )
 from simple_harness_memory.core.models import (
     Fact,
@@ -59,6 +65,9 @@ CREATE TABLE users (
 CREATE TABLE sessions (
     session_id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    deployment_id TEXT NOT NULL,
+    household_id TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
     created_at REAL NOT NULL,
     last_activity_at REAL NOT NULL,
     UNIQUE (user_id, session_id)
@@ -66,6 +75,11 @@ CREATE TABLE sessions (
 CREATE TABLE messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    household_id TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    scope_kind TEXT NOT NULL CHECK (scope_kind IN ('personal', 'family')),
+    scope_owner TEXT NOT NULL,
     session_id TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
     content TEXT NOT NULL,
@@ -89,6 +103,14 @@ CREATE TABLE messages (
 CREATE TABLE facts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    household_id TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    scope_kind TEXT NOT NULL CHECK (scope_kind IN ('personal', 'family')),
+    scope_owner TEXT NOT NULL,
+    deterministic_id TEXT UNIQUE,
+    extractor_lineage TEXT,
+    projection_of TEXT,
     subject TEXT NOT NULL,
     key TEXT NOT NULL,
     value TEXT NOT NULL,
@@ -126,6 +148,11 @@ CREATE TABLE workspace_actions (
 CREATE TABLE recall_result_snapshots (
     context_query_id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    household_id TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    scope_set_hash TEXT NOT NULL,
+    write_fence TEXT NOT NULL,
     session_id TEXT NOT NULL,
     query_hash TEXT NOT NULL,
     result_payload TEXT NOT NULL,
@@ -135,6 +162,67 @@ CREATE TABLE recall_result_snapshots (
     released_at REAL,
     FOREIGN KEY (user_id, session_id)
         REFERENCES sessions(user_id, session_id) ON DELETE CASCADE
+);
+CREATE TABLE erasure_epochs (
+    deployment_id TEXT NOT NULL,
+    household_id TEXT NOT NULL,
+    scope_kind TEXT NOT NULL CHECK (scope_kind IN ('personal', 'family')),
+    scope_owner TEXT NOT NULL,
+    epoch INTEGER NOT NULL DEFAULT 0,
+    erased_at REAL,
+    PRIMARY KEY (deployment_id, household_id, scope_kind, scope_owner)
+);
+CREATE TABLE turn_receipts (
+    turn_id TEXT PRIMARY KEY,
+    deployment_id TEXT NOT NULL,
+    household_id TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    scope_kind TEXT NOT NULL,
+    scope_owner TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('applied', 'rejected_erased')),
+    receipt_id TEXT NOT NULL UNIQUE,
+    created_at REAL NOT NULL
+);
+CREATE TABLE fact_jobs (
+    job_id TEXT PRIMARY KEY,
+    turn_id TEXT NOT NULL UNIQUE REFERENCES turn_receipts(turn_id),
+    deployment_id TEXT NOT NULL,
+    household_id TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    scope_kind TEXT NOT NULL,
+    scope_owner TEXT NOT NULL,
+    source_msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    payload TEXT,
+    payload_hash TEXT NOT NULL,
+    erasure_epoch INTEGER NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('pending', 'claimed', 'applied', 'dead_letter', 'erased')),
+    lease_until REAL,
+    lease_token TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at REAL NOT NULL,
+    extractor_lineage TEXT,
+    extraction_hash TEXT,
+    last_error_code TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE TABLE fact_tombstones (
+    deterministic_id TEXT PRIMARY KEY,
+    deployment_id TEXT NOT NULL,
+    household_id TEXT NOT NULL,
+    scope_kind TEXT NOT NULL,
+    scope_owner TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    erased_at REAL NOT NULL
+);
+CREATE TABLE suppression_receipts (
+    source_event_id TEXT PRIMARY KEY,
+    payload_hash TEXT NOT NULL,
+    decision TEXT NOT NULL CHECK (decision IN ('SUPPRESS_TERMINAL', 'DEFERRED_TURN')),
+    created_at REAL NOT NULL
 );
 CREATE INDEX idx_messages_user_created
     ON messages(user_id, created_at DESC, id DESC);
@@ -170,13 +258,19 @@ CREATE INDEX idx_recall_release
     ON recall_result_snapshots(user_id, state, released_at);
 CREATE INDEX idx_recall_created
     ON recall_result_snapshots(user_id, state, created_at);
+CREATE INDEX idx_messages_scope_created
+    ON messages(deployment_id, household_id, scope_kind, scope_owner, created_at DESC, id DESC);
+CREATE INDEX idx_facts_scope_active
+    ON facts(deployment_id, household_id, scope_kind, scope_owner, forgotten_at, id DESC);
+CREATE INDEX idx_fact_jobs_claim
+    ON fact_jobs(state, next_attempt_at, lease_until, created_at);
 CREATE TABLE schema_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
 """
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 SCHEMA_CHECKSUM = hashlib.sha256(_DDL.encode("utf-8")).hexdigest()
 
 
@@ -194,6 +288,17 @@ def _ddl_statements(script: str) -> tuple[str, ...]:
     if "".join(buffer).strip():
         raise MemorySchemaIncompatible()
     return tuple(statements)
+
+
+def create_fresh_v4_sync(connection: sqlite3.Connection) -> None:
+    """Create the authoritative v4 schema for the explicit offline migrator."""
+
+    for statement in _ddl_statements(_DDL):
+        connection.execute(statement)
+    connection.executemany(
+        "INSERT INTO schema_meta (key, value) VALUES (?, ?)",
+        (("schema_version", str(SCHEMA_VERSION)), ("schema_checksum", SCHEMA_CHECKSUM)),
+    )
 
 
 class SQLiteMemoryBackend(BaseMemoryBackend):
@@ -228,10 +333,11 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         self._secure_path: Path | None = None
         self._db: aiosqlite.Connection | None = None
         self._transaction_owner: asyncio.Task[Any] | None = None
-        self._transaction_depth = ContextVar[int](
-            f"memory_transaction_depth_{id(self)}", default=0
-        )
+        self._transaction_depth = ContextVar[int](f"memory_transaction_depth_{id(self)}", default=0)
         self._default_busy_timeout_ms = 5000
+        self._agent_fence_context = ContextVar[str | None](
+            f"memory_agent_fence_{id(self)}", default=None
+        )
 
     async def initialize(self) -> None:
         async with self._operation():
@@ -251,9 +357,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             if enabled is None or int(enabled[0]) != 1:
                 raise MemoryCorruptionError("foreign key enforcement unavailable")
             await self._db.execute("PRAGMA journal_mode = WAL")
-            await self._db.execute(
-                f"PRAGMA busy_timeout = {self._default_busy_timeout_ms}"
-            )
+            await self._db.execute(f"PRAGMA busy_timeout = {self._default_busy_timeout_ms}")
             await self._initialize_fresh_or_validate()
             await self._validate_integrity()
             verify_sqlite_path(self._secure_path)
@@ -300,6 +404,11 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             "digital_twins",
             "workspace_actions",
             "recall_result_snapshots",
+            "erasure_epochs",
+            "turn_receipts",
+            "fact_jobs",
+            "fact_tombstones",
+            "suppression_receipts",
             "schema_meta",
         }
         if not expected.issubset(tables):
@@ -336,6 +445,747 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             violation = await cursor.fetchone()
         if violation is not None:
             raise MemoryCorruptionError("database foreign key check failed")
+
+    @staticmethod
+    def _principal_key(principal: MemoryPrincipal) -> str:
+        material = "\x1f".join(
+            (principal.deployment_id, principal.household_id, principal.actor_id)
+        )
+        return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+    async def _bind_agent_session(self, principal: MemoryPrincipal) -> str:
+        """Create the immutable trusted session binding, or reject a rebind."""
+
+        user_id = self._principal_key(principal)
+        now = time.time()
+        async with self._conn.execute(
+            "SELECT deployment_id, household_id, actor_id FROM sessions WHERE session_id = ?",
+            (principal.session_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is not None:
+            actual = (str(row[0]), str(row[1]), str(row[2]))
+            expected = (
+                principal.deployment_id,
+                principal.household_id,
+                principal.actor_id,
+            )
+            if actual != expected:
+                raise MemoryOwnershipConflict()
+            return user_id
+        await self._conn.execute(
+            "INSERT OR IGNORE INTO users (user_id, created_at) VALUES (?, ?)",
+            (user_id, now),
+        )
+        try:
+            await self._conn.execute(
+                "INSERT INTO sessions "
+                "(session_id, user_id, deployment_id, household_id, actor_id, "
+                "created_at, last_activity_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    principal.session_id,
+                    user_id,
+                    principal.deployment_id,
+                    principal.household_id,
+                    principal.actor_id,
+                    now,
+                    now,
+                ),
+            )
+        except aiosqlite.IntegrityError as exc:
+            raise MemoryOwnershipConflict() from exc
+        return user_id
+
+    async def _scope_epoch(
+        self, principal: MemoryPrincipal, scope: MemoryScope
+    ) -> tuple[int, float | None]:
+        scope.authorize(principal)
+        await self._conn.execute(
+            "INSERT INTO erasure_epochs "
+            "(deployment_id, household_id, scope_kind, scope_owner, epoch) "
+            "VALUES (?, ?, ?, ?, 0) ON CONFLICT DO NOTHING",
+            (
+                principal.deployment_id,
+                principal.household_id,
+                scope.kind.value,
+                scope.owner_id,
+            ),
+        )
+        async with self._conn.execute(
+            "SELECT epoch, erased_at FROM erasure_epochs WHERE deployment_id = ? "
+            "AND household_id = ? AND scope_kind = ? AND scope_owner = ?",
+            (
+                principal.deployment_id,
+                principal.household_id,
+                scope.kind.value,
+                scope.owner_id,
+            ),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            raise MemoryCorruptionError("erasure epoch unavailable")
+        return int(row[0]), None if row[1] is None else float(row[1])
+
+    @staticmethod
+    def _write_fence(principal: MemoryPrincipal, scope: MemoryScope, epoch: int) -> str:
+        material = {
+            "protocol": "simple-harness-memory/write-fence/v1",
+            "deployment_id": principal.deployment_id,
+            "household_id": principal.household_id,
+            "scope_kind": scope.kind.value,
+            "scope_owner": scope.owner_id,
+            "epoch": epoch,
+        }
+        encoded = json.dumps(material, sort_keys=True, separators=(",", ":")).encode()
+        return hashlib.sha256(encoded).hexdigest()
+
+    async def agent_recall(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        scopes: tuple[MemoryScope, ...],
+        query_id: str,
+        query_hash: str,
+        query_text: str,
+        max_items: int,
+        max_bytes: int,
+    ) -> tuple[dict[str, object], str, bool]:
+        """Return a durable identity-filtered recall payload and personal fence."""
+
+        self._agent_fence_context.set(None)
+        async with self._transaction():
+            user_id = await self._bind_agent_session(principal)
+            personal = MemoryScope.personal(principal.actor_id)
+            epoch, _ = await self._scope_epoch(principal, personal)
+            write_fence = self._write_fence(principal, personal, epoch)
+            self._agent_fence_context.set(write_fence)
+            async with self._conn.execute(
+                "SELECT query_hash, result_payload, write_fence, deployment_id, "
+                "household_id, actor_id, session_id FROM recall_result_snapshots "
+                "WHERE context_query_id = ?",
+                (query_id,),
+            ) as cursor:
+                prior = await cursor.fetchone()
+            if prior is not None:
+                identity = (
+                    str(prior[3]),
+                    str(prior[4]),
+                    str(prior[5]),
+                    str(prior[6]),
+                )
+                if str(prior[0]) != query_hash or identity != (
+                    principal.deployment_id,
+                    principal.household_id,
+                    principal.actor_id,
+                    principal.session_id,
+                ):
+                    raise MemoryIdempotencyConflict()
+                return json.loads(str(prior[1])), str(prior[2]), True
+
+            predicate, params = scope_predicate(principal, scopes)
+            candidate_limit = max_items + 1
+            like = f"%{query_text[:256]}%"
+            async with self._conn.execute(
+                "SELECT id, content, role, session_id, created_at, scope_kind, scope_owner "
+                f"FROM messages WHERE {predicate} "
+                "ORDER BY (content LIKE ?) DESC, created_at DESC, id DESC LIMIT ?",
+                (*params, like, candidate_limit),
+            ) as cursor:
+                rows = list(await cursor.fetchall())
+            async with self._conn.execute(
+                "SELECT id, value, category, created_at, scope_kind, scope_owner "
+                f"FROM facts WHERE {predicate} AND forgotten_at IS NULL "
+                "ORDER BY (value LIKE ?) DESC, created_at DESC, id DESC LIMIT ?",
+                (*params, like, candidate_limit),
+            ) as cursor:
+                fact_rows = list(await cursor.fetchall())
+            truncated = len(rows) + len(fact_rows) > max_items
+            items: list[dict[str, object]] = []
+            candidates: list[dict[str, object]] = []
+            for row in rows:
+                item = {
+                    "record_id": f"message:{int(row['id'])}",
+                    "text": str(row["content"]),
+                    "role": str(row["role"]),
+                    "session_id": str(row["session_id"]),
+                    "created_at": float(row["created_at"]),
+                    "scope": {
+                        "kind": str(row["scope_kind"]),
+                        "owner_id": str(row["scope_owner"]),
+                    },
+                }
+                candidates.append(item)
+            for row in fact_rows:
+                candidates.append(
+                    {
+                        "record_id": f"fact:{int(row['id'])}",
+                        "text": str(row["value"]),
+                        "role": "memory_fact",
+                        "session_id": None,
+                        "created_at": float(row["created_at"]),
+                        "category": str(row["category"]),
+                        "scope": {
+                            "kind": str(row["scope_kind"]),
+                            "owner_id": str(row["scope_owner"]),
+                        },
+                    }
+                )
+            candidates.sort(key=lambda item: float(str(item["created_at"])), reverse=True)
+            for item in candidates[:max_items]:
+                proposed = {"items": [*items, item], "truncated": truncated}
+                proposed_bytes = json.dumps(
+                    proposed,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+                if len(proposed_bytes) > max_bytes:
+                    truncated = True
+                    break
+                items.append(item)
+            payload: dict[str, object] = {"items": items, "truncated": truncated}
+            encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            status = "truncated" if truncated else ("ready" if items else "empty")
+            envelope = {
+                "protocol": "simple-harness-agent-memory/recall-result/v1",
+                "query_id": query_id,
+                "query_hash": query_hash,
+                "result_id": f"memory-recall/v1/{query_id}",
+                "payload": payload,
+                "status": status,
+                "item_count": len(items),
+                "byte_count": len(encoded.encode("utf-8")),
+                "write_fence": write_fence,
+            }
+            result_hash = hashlib.sha256(
+                json.dumps(
+                    envelope,
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            await self._conn.execute(
+                "INSERT INTO recall_result_snapshots "
+                "(context_query_id, user_id, deployment_id, household_id, actor_id, "
+                "scope_set_hash, write_fence, session_id, query_hash, result_payload, "
+                "result_hash, state, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'retained', ?)",
+                (
+                    query_id,
+                    user_id,
+                    principal.deployment_id,
+                    principal.household_id,
+                    principal.actor_id,
+                    hashlib.sha256(repr(scopes).encode()).hexdigest(),
+                    write_fence,
+                    principal.session_id,
+                    query_hash,
+                    encoded,
+                    result_hash,
+                    time.time(),
+                ),
+            )
+            return payload, write_fence, False
+
+    def agent_failure_fence(self) -> str | None:
+        return self._agent_fence_context.get()
+
+    async def agent_release(
+        self,
+        *,
+        query_id: str,
+        query_hash: str,
+        result_hash: str,
+    ) -> None:
+        async with self._transaction():
+            async with self._conn.execute(
+                "SELECT query_hash, result_hash FROM recall_result_snapshots "
+                "WHERE context_query_id = ?",
+                (query_id,),
+            ) as cursor:
+                row = await cursor.fetchone()
+            if row is None or str(row[0]) != query_hash or str(row[1]) != result_hash:
+                raise MemoryIdempotencyConflict()
+            await self._conn.execute(
+                "UPDATE recall_result_snapshots SET state = 'released', "
+                "released_at = COALESCE(released_at, ?) WHERE context_query_id = ?",
+                (time.time(), query_id),
+            )
+            expired_before = time.time() - self._bounds.context_result_dedupe_seconds
+            await self._conn.execute(
+                "DELETE FROM recall_result_snapshots WHERE context_query_id IN ("
+                "SELECT context_query_id FROM recall_result_snapshots "
+                "WHERE state = 'released' AND released_at <= ? "
+                "ORDER BY released_at, context_query_id LIMIT 100)",
+                (expired_before,),
+            )
+
+    async def agent_record_turn(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        scope: MemoryScope,
+        turn_id: str,
+        payload_hash: str,
+        user_text: str,
+        assistant_text: str,
+        write_fence: str | None,
+        turn_started_at: float,
+    ) -> tuple[str, str]:
+        """Atomically store receipt, committed pair, and optional durable fact job."""
+
+        now = time.time()
+        receipt_id = f"memory-turn/v1/{turn_id}"
+        async with self._transaction():
+            async with self._conn.execute(
+                "SELECT payload_hash, status, receipt_id FROM turn_receipts WHERE turn_id = ?",
+                (turn_id,),
+            ) as cursor:
+                prior = await cursor.fetchone()
+            if prior is not None:
+                if str(prior[0]) != payload_hash:
+                    raise MemoryIdempotencyConflict()
+                prior_status = str(prior[1])
+                return (
+                    "already_applied" if prior_status == "applied" else prior_status,
+                    str(prior[2]),
+                )
+            user_id = await self._bind_agent_session(principal)
+            epoch, erased_at = await self._scope_epoch(principal, scope)
+            expected_fence = self._write_fence(principal, scope, epoch)
+            rejected = write_fence is not None and write_fence != expected_fence
+            if write_fence is None and erased_at is not None:
+                rejected = not (turn_started_at > erased_at and turn_started_at <= now)
+            status = "rejected_erased" if rejected else "applied"
+            await self._conn.execute(
+                "INSERT INTO turn_receipts "
+                "(turn_id, deployment_id, household_id, actor_id, session_id, "
+                "scope_kind, scope_owner, payload_hash, status, receipt_id, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    turn_id,
+                    principal.deployment_id,
+                    principal.household_id,
+                    principal.actor_id,
+                    principal.session_id,
+                    scope.kind.value,
+                    scope.owner_id,
+                    payload_hash,
+                    status,
+                    receipt_id,
+                    now,
+                ),
+            )
+            if rejected:
+                return status, receipt_id
+            message_ids: list[int] = []
+            for role, content in (("user", user_text), ("assistant", assistant_text)):
+                source_event_id = f"agent-turn/v1/{turn_id}/{role}"
+                row_hash = hashlib.sha256(f"{payload_hash}\x1f{role}".encode()).hexdigest()
+                cursor = await self._conn.execute(
+                    "INSERT INTO messages "
+                    "(user_id, deployment_id, household_id, actor_id, scope_kind, "
+                    "scope_owner, session_id, role, content, created_at, salience, decay_rate, "
+                    "embedding, is_summary, summary_of, source_event_id, payload_hash, "
+                    "embedder_kind, embedding_dim, embedding_format_version) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0.02, NULL, 0, NULL, "
+                    "?, ?, NULL, NULL, NULL)",
+                    (
+                        user_id,
+                        principal.deployment_id,
+                        principal.household_id,
+                        principal.actor_id,
+                        scope.kind.value,
+                        scope.owner_id,
+                        principal.session_id,
+                        role,
+                        content,
+                        now,
+                        source_event_id,
+                        row_hash,
+                    ),
+                )
+                message_ids.append(int(cursor.lastrowid or 0))
+            if self._auto_extract_facts:
+                job_id = hashlib.sha256(f"fact-job\x1f{turn_id}".encode()).hexdigest()
+                await self._conn.execute(
+                    "INSERT INTO fact_jobs "
+                    "(job_id, turn_id, deployment_id, household_id, actor_id, session_id, "
+                    "scope_kind, scope_owner, source_msg_id, payload, payload_hash, "
+                    "erasure_epoch, state, next_attempt_at, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
+                    (
+                        job_id,
+                        turn_id,
+                        principal.deployment_id,
+                        principal.household_id,
+                        principal.actor_id,
+                        principal.session_id,
+                        scope.kind.value,
+                        scope.owner_id,
+                        message_ids[0],
+                        user_text,
+                        hashlib.sha256(user_text.encode()).hexdigest(),
+                        epoch,
+                        now,
+                        now,
+                        now,
+                    ),
+                )
+            return status, receipt_id
+
+    async def recover_fact_jobs(self) -> None:
+        async with self._transaction():
+            await self._conn.execute(
+                "UPDATE fact_jobs SET state = 'pending', lease_until = NULL, "
+                "lease_token = NULL, updated_at = ? WHERE state = 'claimed' "
+                "AND lease_until <= ?",
+                (time.time(), time.time()),
+            )
+
+    async def claim_fact_job(self, *, lease_seconds: float = 30.0) -> dict[str, object] | None:
+        now = time.time()
+        token = uuid.uuid4().hex
+        async with self._transaction():
+            async with self._conn.execute(
+                "SELECT job_id FROM fact_jobs WHERE "
+                "(state = 'pending' OR (state = 'claimed' AND lease_until <= ?)) "
+                "AND next_attempt_at <= ? ORDER BY created_at, job_id LIMIT 1",
+                (now, now),
+            ) as cursor:
+                candidate = await cursor.fetchone()
+            if candidate is None:
+                return None
+            job_id = str(candidate[0])
+            await self._conn.execute(
+                "UPDATE fact_jobs SET state = 'claimed', lease_until = ?, lease_token = ?, "
+                "attempts = attempts + 1, updated_at = ? WHERE job_id = ?",
+                (now + lease_seconds, token, now, job_id),
+            )
+            async with self._conn.execute(
+                "SELECT * FROM fact_jobs WHERE job_id = ?", (job_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+            if row is None:
+                raise MemoryCorruptionError("claimed fact job disappeared")
+            return {key: row[key] for key in row.keys()}
+
+    async def apply_fact_job(
+        self,
+        job: dict[str, object],
+        facts: list[Fact],
+        *,
+        extractor_lineage: str,
+    ) -> str:
+        """Atomically apply a canonical extraction snapshot and acknowledge its job."""
+
+        snapshot = [
+            {
+                "subject": fact.subject,
+                "key": fact.key,
+                "value": fact.value,
+                "category": fact.category,
+                "confidence": fact.confidence,
+                "evidence": fact.evidence,
+            }
+            for fact in facts[: self._bounds.maintenance_batch_size]
+        ]
+        snapshot_json = json.dumps(
+            snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+        extraction_hash = hashlib.sha256(snapshot_json.encode()).hexdigest()
+        now = time.time()
+        async with self._transaction():
+            async with self._conn.execute(
+                "SELECT state, lease_token, erasure_epoch, deployment_id, household_id, "
+                "scope_kind, scope_owner, source_msg_id FROM fact_jobs WHERE job_id = ?",
+                (job["job_id"],),
+            ) as cursor:
+                current = await cursor.fetchone()
+            if current is None:
+                return "erased"
+            if str(current[0]) == "applied":
+                return "applied"
+            if str(current[0]) != "claimed" or str(current[1]) != str(job["lease_token"]):
+                return "lost_lease"
+            async with self._conn.execute(
+                "SELECT epoch FROM erasure_epochs WHERE deployment_id = ? AND household_id = ? "
+                "AND scope_kind = ? AND scope_owner = ?",
+                (current[3], current[4], current[5], current[6]),
+            ) as cursor:
+                epoch_row = await cursor.fetchone()
+            if epoch_row is None or int(epoch_row[0]) != int(current[2]):
+                await self._conn.execute(
+                    "UPDATE fact_jobs SET state = 'erased', payload = NULL, lease_token = NULL, "
+                    "lease_until = NULL, updated_at = ? WHERE job_id = ?",
+                    (now, job["job_id"]),
+                )
+                return "erased"
+            for index, fact in enumerate(facts[: self._bounds.maintenance_batch_size]):
+                deterministic_id = hashlib.sha256(
+                    f"{job['job_id']}\x1f{index}\x1f{extraction_hash}".encode()
+                ).hexdigest()
+                async with self._conn.execute(
+                    "SELECT 1 FROM fact_tombstones WHERE deterministic_id = ?",
+                    (deterministic_id,),
+                ) as cursor:
+                    if await cursor.fetchone() is not None:
+                        continue
+                await self._conn.execute(
+                    "INSERT INTO facts "
+                    "(user_id, deployment_id, household_id, actor_id, scope_kind, scope_owner, "
+                    "deterministic_id, extractor_lineage, subject, key, value, category, "
+                    "confidence, evidence, source_msg_id, created_at, decay_rate, pinned) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) "
+                    "ON CONFLICT(deterministic_id) DO NOTHING",
+                    (
+                        self._principal_key(
+                            MemoryPrincipal(
+                                str(job["deployment_id"]),
+                                str(job["household_id"]),
+                                str(job["actor_id"]),
+                                str(job["session_id"]),
+                            )
+                        ),
+                        job["deployment_id"],
+                        job["household_id"],
+                        job["actor_id"],
+                        job["scope_kind"],
+                        job["scope_owner"],
+                        deterministic_id,
+                        extractor_lineage,
+                        fact.subject,
+                        fact.key,
+                        fact.value,
+                        fact.category,
+                        fact.confidence,
+                        fact.evidence,
+                        current[7],
+                        now,
+                        fact.decay_rate,
+                    ),
+                )
+            await self._conn.execute(
+                "UPDATE fact_jobs SET state = 'applied', payload = NULL, lease_until = NULL, "
+                "lease_token = NULL, extractor_lineage = ?, extraction_hash = ?, "
+                "updated_at = ? WHERE job_id = ?",
+                (extractor_lineage, extraction_hash, now, job["job_id"]),
+            )
+        return "applied"
+
+    async def fail_fact_job(self, job: dict[str, object], *, stable_code: str) -> None:
+        now = time.time()
+        attempts = int(str(job.get("attempts") or 1))
+        state = "dead_letter" if attempts >= 5 else "pending"
+        backoff = min(300.0, 2.0**attempts)
+        async with self._transaction():
+            await self._conn.execute(
+                "UPDATE fact_jobs SET state = ?, lease_until = NULL, lease_token = NULL, "
+                "next_attempt_at = ?, last_error_code = ?, updated_at = ? "
+                "WHERE job_id = ? AND lease_token = ?",
+                (
+                    state,
+                    now + backoff,
+                    stable_code,
+                    now,
+                    job["job_id"],
+                    job["lease_token"],
+                ),
+            )
+
+    async def agent_export(
+        self,
+        principal: MemoryPrincipal,
+        scopes: tuple[MemoryScope, ...],
+        *,
+        cursor: int = 0,
+        limit: int = 100,
+    ) -> tuple[list[dict[str, object]], int | None]:
+        predicate, params = scope_predicate(principal, scopes)
+        async with self._operation():
+            await self._bind_agent_session(principal)
+            async with self._conn.execute(
+                "SELECT record_kind, id, role, content, created_at, scope_kind, scope_owner "
+                "FROM (SELECT 'message' AS record_kind, id, role, content, created_at, "
+                f"scope_kind, scope_owner FROM messages WHERE {predicate} "
+                "UNION ALL SELECT 'fact' AS record_kind, id, 'memory_fact' AS role, "
+                "value AS content, created_at, scope_kind, scope_owner FROM facts "
+                f"WHERE {predicate} "
+                "AND forgotten_at IS NULL) ORDER BY created_at, record_kind, id LIMIT ? OFFSET ?",
+                (*params, *params, limit + 1, cursor),
+            ) as query:
+                rows = list(await query.fetchall())
+        records = [
+            {
+                "record_id": f"{row['record_kind']}:{int(row['id'])}",
+                "role": str(row["role"]),
+                "content": str(row["content"]),
+                "created_at": float(row["created_at"]),
+                "scope": {"kind": str(row["scope_kind"]), "owner_id": str(row["scope_owner"])},
+            }
+            for row in rows[:limit]
+        ]
+        next_cursor = cursor + limit if len(rows) > limit and limit else None
+        return records, next_cursor
+
+    async def agent_delete_scopes(
+        self, principal: MemoryPrincipal, scopes: tuple[MemoryScope, ...]
+    ) -> dict[str, int | str]:
+        predicate, params = scope_predicate(principal, scopes)
+        now = time.time()
+        counts: dict[str, int | str] = {
+            "messages": 0,
+            "facts": 0,
+            "snapshots": 0,
+            "jobs": 0,
+        }
+        async with self._transaction():
+            await self._bind_agent_session(principal)
+            for scope in scopes:
+                await self._scope_epoch(principal, scope)
+                await self._conn.execute(
+                    "UPDATE erasure_epochs SET epoch = epoch + 1, erased_at = ? "
+                    "WHERE deployment_id = ? AND household_id = ? AND scope_kind = ? "
+                    "AND scope_owner = ?",
+                    (
+                        now,
+                        principal.deployment_id,
+                        principal.household_id,
+                        scope.kind.value,
+                        scope.owner_id,
+                    ),
+                )
+            async with self._conn.execute(
+                "SELECT job_id, payload_hash FROM fact_jobs WHERE source_msg_id IN "
+                f"(SELECT id FROM messages WHERE {predicate})",
+                params,
+            ) as query:
+                jobs = list(await query.fetchall())
+            for row in jobs:
+                await self._conn.execute(
+                    "INSERT OR IGNORE INTO fact_tombstones "
+                    "(deterministic_id, deployment_id, household_id, scope_kind, scope_owner, "
+                    "payload_hash, erased_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        f"job:{row['job_id']}",
+                        principal.deployment_id,
+                        principal.household_id,
+                        scopes[0].kind.value,
+                        scopes[0].owner_id,
+                        row["payload_hash"],
+                        now,
+                    ),
+                )
+            counts["jobs"] = len(jobs)
+            async with self._conn.execute(
+                f"SELECT COUNT(*) FROM facts WHERE {predicate}", params
+            ) as query:
+                fact_count_row = await query.fetchone()
+            counts["facts"] = int(fact_count_row[0]) if fact_count_row else 0
+            async with self._conn.execute(
+                f"SELECT COUNT(*) FROM messages WHERE {predicate}", params
+            ) as query:
+                message_count_row = await query.fetchone()
+            counts["messages"] = int(message_count_row[0]) if message_count_row else 0
+            # Recall stages can contain data from either authorized scope, so an
+            # erasure invalidates all stages belonging to this trusted principal.
+            cursor_result = await self._conn.execute(
+                "DELETE FROM recall_result_snapshots WHERE deployment_id = ? "
+                "AND household_id = ? AND actor_id = ?",
+                (principal.deployment_id, principal.household_id, principal.actor_id),
+            )
+            counts["snapshots"] = max(0, cursor_result.rowcount)
+            await self._conn.execute(
+                f"DELETE FROM messages WHERE id IN (SELECT id FROM messages WHERE {predicate})",
+                params,
+            )
+            await self._conn.execute(f"DELETE FROM facts WHERE {predicate}", params)
+        counts["receipt_id"] = hashlib.sha256(
+            f"delete\x1f{principal.opaque_id}\x1f{now}".encode()
+        ).hexdigest()
+        return counts
+
+    async def agent_forget_fact(self, principal: MemoryPrincipal, fact_id: int) -> bool:
+        personal = MemoryScope.personal(principal.actor_id)
+        predicate, params = scope_predicate(principal, (personal,))
+        now = time.time()
+        async with self._transaction():
+            async with self._conn.execute(
+                "SELECT deterministic_id, payload_hash FROM ("
+                "SELECT deterministic_id, '' AS payload_hash, id, deployment_id, household_id, "
+                "scope_kind, scope_owner FROM facts) "
+                f"WHERE {predicate} AND id = ?",
+                (*params, fact_id),
+            ) as cursor:
+                row = await cursor.fetchone()
+            if row is None:
+                return False
+            deterministic_id = str(row[0] or f"legacy-fact:{fact_id}")
+            await self._conn.execute(
+                "INSERT OR IGNORE INTO fact_tombstones "
+                "(deterministic_id, deployment_id, household_id, scope_kind, scope_owner, "
+                "payload_hash, erased_at) VALUES (?, ?, ?, 'personal', ?, ?, ?)",
+                (
+                    deterministic_id,
+                    principal.deployment_id,
+                    principal.household_id,
+                    principal.actor_id,
+                    hashlib.sha256(deterministic_id.encode()).hexdigest(),
+                    now,
+                ),
+            )
+            await self._conn.execute(
+                "DELETE FROM facts WHERE deterministic_id = ? OR projection_of = ?",
+                (deterministic_id, deterministic_id),
+            )
+            return True
+
+    async def agent_share_fact(self, principal: MemoryPrincipal, fact_id: int) -> str:
+        personal = MemoryScope.personal(principal.actor_id)
+        predicate, params = scope_predicate(principal, (personal,))
+        async with self._transaction():
+            async with self._conn.execute(
+                "SELECT * FROM facts WHERE " + predicate + " AND id = ? AND forgotten_at IS NULL",
+                (*params, fact_id),
+            ) as cursor:
+                source = await cursor.fetchone()
+            if source is None:
+                raise MemoryOwnershipConflict()
+            origin = str(source["deterministic_id"] or f"legacy-fact:{fact_id}")
+            projection_id = hashlib.sha256(
+                f"family-projection\x1f{origin}\x1f{principal.household_id}".encode()
+            ).hexdigest()
+            await self._conn.execute(
+                "INSERT INTO facts "
+                "(user_id, deployment_id, household_id, actor_id, scope_kind, scope_owner, "
+                "deterministic_id, extractor_lineage, projection_of, subject, key, value, "
+                "category, confidence, evidence, source_msg_id, created_at, decay_rate, pinned) "
+                "VALUES (?, ?, ?, ?, 'family', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(deterministic_id) DO NOTHING",
+                (
+                    source["user_id"],
+                    principal.deployment_id,
+                    principal.household_id,
+                    principal.actor_id,
+                    principal.household_id,
+                    projection_id,
+                    source["extractor_lineage"],
+                    origin,
+                    source["subject"],
+                    source["key"],
+                    source["value"],
+                    source["category"],
+                    source["confidence"],
+                    source["evidence"],
+                    source["source_msg_id"],
+                    time.time(),
+                    source["decay_rate"],
+                    source["pinned"],
+                ),
+            )
+            return projection_id
 
     async def close(self) -> None:
         async with self._operation():
@@ -382,12 +1232,8 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                     busy_timeout_ms = int(remaining * 1000) - 1
                     if busy_timeout_ms < 1:
                         raise TimeoutError("memory transaction deadline exceeded")
-                    busy_timeout_ms = min(
-                        busy_timeout_ms, self._default_busy_timeout_ms
-                    )
-                    await self._conn.execute(
-                        f"PRAGMA busy_timeout = {busy_timeout_ms}"
-                    )
+                    busy_timeout_ms = min(busy_timeout_ms, self._default_busy_timeout_ms)
+                    await self._conn.execute(f"PRAGMA busy_timeout = {busy_timeout_ms}")
                     busy_timeout_changed = True
                 await self._conn.execute("BEGIN IMMEDIATE")
                 try:
@@ -423,9 +1269,9 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             try:
                 await self._conn.execute(
                     "INSERT INTO sessions "
-                    "(session_id, user_id, created_at, last_activity_at) "
-                    "VALUES (?, ?, ?, ?)",
-                    (session_id, user_id, now, now),
+                    "(session_id, user_id, deployment_id, household_id, actor_id, "
+                    "created_at, last_activity_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (session_id, user_id, "standalone", user_id, user_id, now, now),
                 )
             except aiosqlite.IntegrityError as exc:
                 raise MemoryOwnershipConflict() from exc
@@ -452,12 +1298,18 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         try:
             cursor = await self._conn.execute(
                 "INSERT INTO messages "
-                "(user_id, session_id, role, content, created_at, salience, "
+                "(user_id, deployment_id, household_id, actor_id, scope_kind, "
+                "scope_owner, session_id, role, content, created_at, salience, "
                 "decay_rate, embedding, is_summary, summary_of, source_event_id, "
                 "payload_hash, embedder_kind, embedding_dim, "
                 "embedding_format_version) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
+                    user_id,
+                    "standalone",
+                    user_id,
+                    user_id,
+                    "personal",
                     user_id,
                     session_id,
                     role,
@@ -582,10 +1434,16 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
     async def _insert_fact_impl(self, user_id: str, fact: Fact) -> int:
         cursor = await self._conn.execute(
             "INSERT INTO facts "
-            "(user_id, subject, key, value, category, confidence, evidence, "
+            "(user_id, deployment_id, household_id, actor_id, scope_kind, scope_owner, "
+            "subject, key, value, category, confidence, evidence, "
             "source_msg_id, created_at, decay_rate, pinned) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
+                user_id,
+                "standalone",
+                user_id,
+                user_id,
+                "personal",
                 user_id,
                 fact.subject,
                 fact.key,
@@ -797,12 +1655,17 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         try:
             await self._conn.execute(
                 "INSERT INTO recall_result_snapshots "
-                "(context_query_id, user_id, session_id, query_hash, "
-                "result_payload, result_hash, state, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, 'retained', ?)",
+                "(context_query_id, user_id, deployment_id, household_id, actor_id, "
+                "scope_set_hash, write_fence, session_id, query_hash, result_payload, "
+                "result_hash, state, created_at) "
+                "VALUES (?, ?, 'standalone', ?, ?, ?, ?, ?, ?, ?, ?, 'retained', ?)",
                 (
                     context_query_id,
                     user_id,
+                    user_id,
+                    user_id,
+                    hashlib.sha256(f"personal:{user_id}".encode()).hexdigest(),
+                    hashlib.sha256(f"standalone:{user_id}:0".encode()).hexdigest(),
                     session_id,
                     query_hash,
                     result_payload,

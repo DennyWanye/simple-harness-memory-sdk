@@ -1363,6 +1363,7 @@ all = [
     { name = "openai" },
     { name = "python-dateutil" },
     { name = "sentence-transformers" },
+    { name = "simple-harness-sdk" },
     { name = "torch" },
 ]
 dev = [
@@ -1371,10 +1372,14 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
+    { name = "simple-harness-sdk" },
 ]
 embeddings = [
     { name = "sentence-transformers" },
     { name = "torch" },
+]
+harness = [
+    { name = "simple-harness-sdk" },
 ]
 openai = [
     { name = "openai" },
@@ -1391,6 +1396,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
+    { name = "simple-harness-sdk" },
 ]
 
 [package.metadata]
@@ -1411,11 +1417,14 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.16.3" },
     { name = "sentence-transformers", marker = "extra == 'all'", specifier = ">=3.0" },
     { name = "sentence-transformers", marker = "extra == 'embeddings'", specifier = ">=3.0" },
+    { name = "simple-harness-sdk", marker = "extra == 'all'", directory = "../simple-harness-sdk" },
+    { name = "simple-harness-sdk", marker = "extra == 'dev'", directory = "../simple-harness-sdk" },
+    { name = "simple-harness-sdk", marker = "extra == 'harness'", directory = "../simple-harness-sdk" },
     { name = "structlog", specifier = ">=24.0" },
     { name = "torch", marker = "extra == 'all'", specifier = ">=2.7.1" },
     { name = "torch", marker = "extra == 'embeddings'", specifier = ">=2.7.1" },
 ]
-provides-extras = ["all", "dev", "embeddings", "openai", "world"]
+provides-extras = ["all", "dev", "embeddings", "harness", "openai", "world"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1424,6 +1433,31 @@ dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.23" },
     { name = "ruff", specifier = "==0.16.3" },
+    { name = "simple-harness-sdk", directory = "../simple-harness-sdk" },
+]
+
+[[package]]
+name = "simple-harness-sdk"
+source = { directory = "../simple-harness-sdk" }
+dependencies = [
+    { name = "httpx" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27,<1" },
+    { name = "pytest", marker = "extra == 'testing'", specifier = ">=8.3,<9" },
+]
+provides-extras = ["testing"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.10,<2" },
+    { name = "pytest", specifier = ">=8.3,<9" },
+    { name = "pytest-anyio", specifier = ">=0.0.0" },
+    { name = "reuse", specifier = ">=5.0,<6" },
+    { name = "ruff", specifier = ">=0.5,<1" },
+    { name = "twine", specifier = ">=6.1,<7" },
 ]
 
 [[package]]

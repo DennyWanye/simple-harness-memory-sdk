@@ -44,6 +44,7 @@ async def test_same_event_same_payload_replays_and_conflict_rejects(tmp_path):
     async with backend._conn.execute(
         "SELECT COUNT(*) FROM messages WHERE source_event_id = 'event-1'"
     ) as cursor:
-        assert (await cursor.fetchone())[0] == 1
+        row = await cursor.fetchone()
+        assert row is not None and row[0] == 1
     assert len(await backend.get_facts(user_id="u1")) == 1
     await backend.close()

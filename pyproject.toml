@@ -30,15 +30,19 @@ world = [
 openai = [
     "openai>=1.0",
 ]
+harness = [
+    "simple-harness-sdk>=0.3,<0.4",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "anyio>=4.0",
     "ruff==0.16.3",
     "mypy==1.20.2",
+    "simple-harness-sdk>=0.3,<0.4",
 ]
 all = [
-    "simple-harness-memory-sdk[embeddings,world,openai]",
+    "simple-harness-memory-sdk[embeddings,world,openai,harness]",
 ]
 
 [dependency-groups]
@@ -48,7 +52,11 @@ dev = [
     "anyio>=4.0",
     "ruff==0.16.3",
     "mypy==1.20.2",
+    "simple-harness-sdk>=0.3,<0.4",
 ]
+
+[tool.uv.sources]
+simple-harness-sdk = { path = "../simple-harness-sdk" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/simple_harness_memory"]

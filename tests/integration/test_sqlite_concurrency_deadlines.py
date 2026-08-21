@@ -6,12 +6,6 @@ import pytest
 
 from simple_harness_memory.backends.mock import MockMemoryBackend
 from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
-from simple_harness_memory.core.conversation import (
-    ConversationMemoryAdapter,
-    ConversationMemoryError,
-    ConversationMemoryErrorCode,
-    ConversationMemoryRecallQuery,
-)
 from simple_harness_memory.core.errors import MemoryIdempotencyConflict
 
 
@@ -177,33 +171,38 @@ async def test_external_sqlite_lock_maps_to_bounded_stable_timeout(tmp_path):
     await backend.initialize()
     locker = sqlite3.connect(path, isolation_level=None)
     locker.execute("BEGIN IMMEDIATE")
-    query = ConversationMemoryRecallQuery.create(
-        context_query_id="locked-query",
-        user_id="user-1",
-        session_id="session-1",
-        query_text="query",
-        max_items=2,
-        max_bytes=1024,
-        timeout_seconds=0.01,
-    )
-    adapter = ConversationMemoryAdapter(backend, close_backend=False)
     started = time.monotonic()
     try:
-        with pytest.raises(ConversationMemoryError) as error:
-            await adapter.recall_bounded(query)
-        assert error.value.code is ConversationMemoryErrorCode.TIMEOUT
+        with pytest.raises(TimeoutError, match="memory recall deadline exceeded"):
+            await backend.recall_bounded(
+                "query",
+                context_query_id="locked-query",
+                user_id="user-1",
+                session_id="session-1",
+                max_results=2,
+                max_bytes=1024,
+                timeout_seconds=0.01,
+            )
         assert time.monotonic() - started < 0.25
     finally:
         locker.execute("ROLLBACK")
         locker.close()
 
-    retry = await adapter.recall_bounded(query)
+    retry = await backend.recall_bounded(
+        "query",
+        context_query_id="locked-query",
+        user_id="user-1",
+        session_id="session-1",
+        max_results=2,
+        max_bytes=1024,
+        timeout_seconds=0.01,
+    )
     assert retry.context_query_id == "locked-query"
     async with backend._conn.execute(
-        "SELECT count(*) FROM recall_result_snapshots "
-        "WHERE context_query_id = 'locked-query'"
+        "SELECT count(*) FROM recall_result_snapshots WHERE context_query_id = 'locked-query'"
     ) as cursor:
-        assert (await cursor.fetchone())[0] == 1
+        row = await cursor.fetchone()
+        assert row is not None and row[0] == 1
     await backend.close()
 
 
@@ -265,8 +264,7 @@ async def test_deadline_covers_durable_snapshot_insert_and_rollback(tmp_path, mo
             timeout_seconds=0.01,
         )
     assert time.monotonic() - started < 0.25
-    async with backend._conn.execute(
-        "SELECT count(*) FROM recall_result_snapshots"
-    ) as cursor:
-        assert (await cursor.fetchone())[0] == 0
+    async with backend._conn.execute("SELECT count(*) FROM recall_result_snapshots") as cursor:
+        row = await cursor.fetchone()
+        assert row is not None and row[0] == 0
     await backend.close()

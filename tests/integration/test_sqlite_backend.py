@@ -136,7 +136,7 @@ async def test_schema_version_recorded_and_drift_rejected(tmp_path):
         "SELECT value FROM schema_meta WHERE key = 'schema_version'"
     ) as cursor:
         row = await cursor.fetchone()
-    assert row is not None and int(row[0]) == SCHEMA_VERSION == 3
+    assert row is not None and int(row[0]) == SCHEMA_VERSION == 4
     await backend._conn.execute("UPDATE schema_meta SET value = '999' WHERE key = 'schema_version'")
     await backend.close()
     with pytest.raises(MemorySchemaIncompatible):

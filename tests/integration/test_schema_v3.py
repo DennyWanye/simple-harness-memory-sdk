@@ -11,10 +11,10 @@ from simple_harness_memory.core.errors import MemorySchemaIncompatible
 
 
 @pytest.mark.asyncio
-async def test_fresh_v3_schema_has_complete_ownership_graph(tmp_path):
+async def test_fresh_v4_schema_has_complete_ownership_graph(tmp_path):
     backend = SQLiteMemoryBackend(str(tmp_path / "memory.db"))
     await backend.initialize()
-    assert SCHEMA_VERSION == 3
+    assert SCHEMA_VERSION == 4
     assert len(SCHEMA_CHECKSUM) == 64
     async with backend._conn.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table'"
@@ -28,6 +28,11 @@ async def test_fresh_v3_schema_has_complete_ownership_graph(tmp_path):
         "digital_twins",
         "workspace_actions",
         "recall_result_snapshots",
+        "erasure_epochs",
+        "turn_receipts",
+        "fact_jobs",
+        "fact_tombstones",
+        "suppression_receipts",
         "schema_meta",
     }.issubset(tables)
     async with backend._conn.execute("PRAGMA foreign_key_check") as cursor:

@@ -1,8 +1,11 @@
 # simple-harness-memory-sdk
 
+当前生产架构、SQLite/召回边界与已知限制见
+[`ARCHITECTURE/index.md`](ARCHITECTURE/index.md)。
+
 认知记忆 SDK，为运行时 consumer 提供独立、product-neutral 的持久记忆系统。
 
-当前版本：**0.3.0**（Python 3.11–3.13）。
+当前版本：**0.4.0**（Python 3.11–3.13）。
 
 **基于认知科学三层模型 + 数字孪生体 + 世界对象，使用 RRF 混合召回。**
 
@@ -17,6 +20,7 @@ pip install -e .                 # 基础（仅核心）
 pip install -e ".[embeddings]"   # BGE-M3 语义嵌入 + CrossEncoder 重排
 pip install -e ".[world]"        # 联网新闻/天气 provider
 pip install -e ".[openai]"       # LLM 事实提取
+pip install -e ".[harness]"      # Simple Harness Agent Memory v1 一等集成
 pip install -e ".[dev]"          # 开发依赖
 pip install -e ".[all]"          # 以上全部
 ```
@@ -29,6 +33,7 @@ extras 与功能的对应关系（与 `pyproject.toml` 的 `[project.optional-de
 | `embeddings` | `torch`、`sentence-transformers` | BGE-M3 语义向量（`embedder="bge"`）、CrossEncoder 重排；首次使用需联网下载权重 |
 | `world`      | `httpx`、`python-dateutil`      | 联网的新闻/天气 provider（NewsAPI / OpenWeatherMap） |
 | `openai`     | `openai`                        | LLM 事实提取（需自备 OpenAI 客户端，见 `features/facts.py` 的 `LLMFactExtractor`） |
+| `harness`    | `simple-harness-sdk>=0.3,<0.4` | `MemoryManager` 直接实现 Harness `AgentMemoryPort` |
 | `dev`        | `pytest` 等                     | 开发 / 测试 |
 | `all`        | 上述三者之和                    | 完整功能 |
 
@@ -43,7 +48,7 @@ from simple_harness_memory import MemoryManager
 
 
 async def main():
-    # SQLite fresh schema v3；默认 HashEmbedder 仅需基础安装。
+    # SQLite fresh schema v4；默认 HashEmbedder 仅需基础安装。
     memory = await MemoryManager.build("memory.db", enable_facts=True)
 
     # user_id 是稳定产品主体；source_event_id 是 consumer 生成的确定性幂等键。
@@ -75,17 +80,32 @@ asyncio.run(main())
 
 同一个 `source_event_id` 与相同 canonical payload 重放返回
 `already_applied`；同 ID 不同 payload 稳定拒绝。`session_id` 首次绑定用户后不可改绑。
-对 Harness conversation ports，使用包根导出的 `ConversationMemoryAdapter`、
-`ConversationMemoryIntent` 与 `ConversationMemoryRecallQuery`；Memory SDK 不 import Harness 包。
+Harness 消费者不再创建 Memory Adapter，也不手动 recall/append。安装 `[harness]` 后，直接把
+`MemoryManager` 传给 Harness production ports；Harness canonical DTO 仅在 integration 方法调用时
+lazy import，基础安装仍可独立导入：
+
+```python fragment
+memory = await MemoryManager.build("memory.db", enable_facts=True)
+ports = ConsumerRuntimePorts(memory=memory)  # direct AgentMemoryPort
+```
+
+官方路径以 committed user→assistant Turn 为写入单位：receipt、两条消息和 durable fact job 在同一
+SQLite 事务创建；事实提取在事务外执行，结果与 job ack 再原子提交。
 
 ### 持久化边界
 
-- SQLite 只接受 fresh schema v3；旧 schema/version/checksum 一律 fail-fast，不做隐式迁移。
+- SQLite 只接受 fresh schema v4；旧 schema/version/checksum 一律 fail-fast，不做隐式迁移。
+- v4 全链路保存 deployment/household/actor/session 与 personal/family scope；session 首次绑定后不可换绑。
+- `export_principal`、`delete_scope`、`forget_fact` 和 `share_fact` 共用同一 scope predicate；删除先推进
+  erasure epoch，再级联 content/vector/stage/job，并保留 hash-only tombstone，旧 outbox/job 不会复活内容。
+- v3→v4 offline migrator 暂未发布：continuation 的早期 tentative event 尚需冻结新增 manifest taxonomy；
+  在该契约获批前，0.4 runtime 坚持 fail-closed，不猜测迁移。
+  迁移状态与操作边界见 [`docs/migration-v4.md`](docs/migration-v4.md)。
 - 数据库必须是当前用户拥有的 regular file，拒绝 symlink，并以 `0600` 创建和回读校验。
 - `recall_bounded()` 对确定性 `context_query_id` 保存 canonical 结果；commit 后重试不重新计算。
 - `delete_all()` 仅保留为 deprecated compatibility symbol，调用稳定抛出
   `runtime_delete_disabled`，不会执行全库 mutation。开发 reset 应在 consumer 停服后删除其精确配置的
-  SQLite storage set（主文件及 sidecars），再创建 fresh v3 数据库。
+  SQLite storage set（主文件及 sidecars），再创建 fresh v4 数据库。
 
 > **默认 HashEmbedder 前提说明**：未安装 `[embeddings]` extra 时，SDK 默认使用
 > `HashEmbedder`——一种确定性的哈希伪向量（字符 n-gram 哈希 + 符号累加，非语义

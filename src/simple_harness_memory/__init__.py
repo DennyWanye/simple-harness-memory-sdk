@@ -10,18 +10,12 @@
 """
 
 from simple_harness_memory.config import MemoryResourceBounds
-from simple_harness_memory.core.conversation import (
-    ContextPreparationMode,
-    ConversationMemoryAdapter,
-    ConversationMemoryApplyResult,
-    ConversationMemoryApplyStatus,
-    ConversationMemoryError,
-    ConversationMemoryErrorCode,
-    ConversationMemoryIntent,
-    ConversationMemoryQueryStatus,
-    ConversationMemoryRecallQuery,
-    ConversationMemoryRecallResult,
-    ConversationMemoryRole,
+from simple_harness_memory.core.identity import (
+    ExportPage,
+    MemoryPrincipal,
+    MemoryScope,
+    PrivacyReceipt,
+    ScopeKind,
 )
 from simple_harness_memory.core.manager import MemoryManager
 from simple_harness_memory.core.models import (
@@ -46,17 +40,11 @@ __all__ = [
     "MemoryApplyResult",
     "BoundedRecallResult",
     "MemoryResourceBounds",
-    "ConversationMemoryAdapter",
-    "ConversationMemoryIntent",
-    "ConversationMemoryRecallQuery",
-    "ConversationMemoryRecallResult",
-    "ConversationMemoryApplyResult",
-    "ConversationMemoryRole",
-    "ConversationMemoryQueryStatus",
-    "ConversationMemoryApplyStatus",
-    "ConversationMemoryError",
-    "ConversationMemoryErrorCode",
-    "ContextPreparationMode",
+    "MemoryPrincipal",
+    "MemoryScope",
+    "ScopeKind",
+    "ExportPage",
+    "PrivacyReceipt",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Protocol
 
+from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
 from simple_harness_memory.core.models import (
     BoundedRecallResult,
     Fact,
@@ -220,3 +222,45 @@ class MemoryBackend(ABC):
 
     async def __aexit__(self, *_: object) -> None:
         await self.close()
+
+
+class AgentMemoryBackend(Protocol):
+    """Internal v4 backend surface consumed by the direct AgentMemory integration."""
+
+    async def agent_recall(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        scopes: tuple[MemoryScope, ...],
+        query_id: str,
+        query_hash: str,
+        query_text: str,
+        max_items: int,
+        max_bytes: int,
+    ) -> tuple[dict[str, object], str, bool]: ...
+
+    async def agent_record_turn(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        scope: MemoryScope,
+        turn_id: str,
+        payload_hash: str,
+        user_text: str,
+        assistant_text: str,
+        write_fence: str | None,
+        turn_started_at: float,
+    ) -> tuple[str, str]: ...
+
+    async def agent_export(
+        self,
+        principal: MemoryPrincipal,
+        scopes: tuple[MemoryScope, ...],
+        *,
+        cursor: int = 0,
+        limit: int = 100,
+    ) -> tuple[list[dict[str, object]], int | None]: ...
+
+    async def agent_delete_scopes(
+        self, principal: MemoryPrincipal, scopes: tuple[MemoryScope, ...]
+    ) -> dict[str, int | str]: ...

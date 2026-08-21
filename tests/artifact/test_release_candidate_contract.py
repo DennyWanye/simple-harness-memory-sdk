@@ -44,7 +44,7 @@ def _read_build_info(path: Path) -> dict[str, str]:
 def _assert_ci_metadata(dist: Path) -> None:
     info = _read_build_info(dist / "BUILD_INFO.txt")
     assert info["package"] == "simple-harness-memory-sdk"
-    assert info["version"] == "0.3.0"
+    assert info["version"] == "0.4.0"
     assert re.fullmatch(r"[0-9a-f]{40}", info["source_commit"])
     assert info["requires_python"] == "<3.14,>=3.11"
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", info["build_utc"])
@@ -54,18 +54,14 @@ def _assert_ci_metadata(dist: Path) -> None:
     assert info["wheel_sha256"] == _sha256(wheels[0])
     assert info["sdist_sha256"] == _sha256(sdists[0])
     lines = (dist / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
-    assert [line.split("  ", 1)[1] for line in lines] == sorted(
-        (wheels[0].name, sdists[0].name)
-    )
+    assert [line.split("  ", 1)[1] for line in lines] == sorted((wheels[0].name, sdists[0].name))
     assert all(re.fullmatch(r"[0-9a-f]{64}  [^/]+", line) for line in lines)
     for line in lines:
         digest, name = line.split("  ", 1)
         assert digest == _sha256(dist / name)
 
 
-def test_ci_metadata_writer_has_canonical_contract(
-    tmp_path: Path, artifact_dist: Path
-) -> None:
+def test_ci_metadata_writer_has_canonical_contract(tmp_path: Path, artifact_dist: Path) -> None:
     dist = tmp_path / "candidate-dist"
     dist.mkdir()
     for artifact in (*artifact_dist.glob("*.whl"), *artifact_dist.glob("*.tar.gz")):
@@ -103,7 +99,7 @@ def test_ci_covers_full_matrix_clean_wheel_and_arm64() -> None:
     assert 'MEMORY_SDK_CI_CANDIDATE: "1"' in workflow
     assert "retention-days: 30" in workflow
     assert "ubuntu-24.04-arm" in workflow
-    assert "test \"$(uname -m)\" = \"aarch64\"" in workflow
+    assert 'test "$(uname -m)" = "aarch64"' in workflow
     assert "PRAGMA journal_mode" in workflow
     assert "PRAGMA foreign_key_check" in workflow
 

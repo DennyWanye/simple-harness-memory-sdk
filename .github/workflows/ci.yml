@@ -83,7 +83,7 @@ jobs:
               )
               assert applied.status.value == "applied"
               await backend.close()
-              assert __version__ == "0.3.0"
+              assert __version__ == "0.4.0"
               assert os.stat(path).st_mode & 0o777 == 0o600
               with sqlite3.connect(path) as connection:
                   assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"

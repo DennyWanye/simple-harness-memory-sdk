@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Agent Memory v1 / schema v4
+
+- `MemoryManager` now directly implements the Simple Harness `AgentMemoryPort` through lazy
+  imports supplied by the optional `[harness]` extra; the former public conversation adapter and
+  duplicate DTO exports are retired.
+- Fresh SQLite schema v4 persists deployment/household/actor/session identity, personal/family
+  scope, immutable bindings, recall write fences, erasure epochs, turn receipts and tombstones.
+- A committed turn atomically creates one receipt, the user/assistant pair, and a durable fact job.
+  The leased worker performs extraction outside the write transaction and atomically applies its
+  canonical snapshot with the job acknowledgement; expired claims recover at startup.
+- Added principal export, scope deletion, fact forgetting and authorized family projection APIs.
+  Deletion advances the erasure epoch before cascading content and prevents late replay/job
+  resurrection.
+- Structured Agent Memory events emit opaque principal identifiers and counts/hashes only.
+- The explicit v3→v4 migrator remains blocked pending a frozen manifest category for early
+  tentative continuation events; runtime opening of v3 databases remains fail-closed.
+
 ### Changed
 - `recall()` is now read-only: it no longer bumps salience or writes `last_recalled`.
   Reinforcement is available via the explicit `recall_and_reinforce()` method.

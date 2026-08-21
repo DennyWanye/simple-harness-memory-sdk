@@ -32,65 +32,36 @@ def test_exact_wheel_in_clean_consumer(tmp_path: Path, exact_wheel: Path) -> Non
         textwrap.dedent(
             """
             import asyncio
-            import hashlib
-            import json
             import os
             import sqlite3
             from pathlib import Path
 
-            from simple_harness_memory import (
-                ConversationMemoryAdapter,
-                ConversationMemoryApplyStatus,
-                ConversationMemoryIntent,
-                ConversationMemoryRecallQuery,
-                ConversationMemoryRole,
-                __version__,
-            )
-            from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
+            import simple_harness_memory
+            from simple_harness_memory import MemoryManager, __version__
+            from simple_harness_memory.core.errors import HarnessIntegrationExtraRequired
 
             async def main():
-                assert __version__ == "0.3.0"
+                assert __version__ == "0.4.0"
+                assert not hasattr(simple_harness_memory, "ConversationMemoryAdapter")
                 path = Path("memory.db").resolve()
-                backend = SQLiteMemoryBackend(str(path))
-                await backend.initialize()
-                adapter = ConversationMemoryAdapter(backend, close_backend=False)
-                intent = ConversationMemoryIntent(
-                    "event-1", "user-1", "session-1",
-                    ConversationMemoryRole.USER, "line1\\r\\nline2",
+                manager = await MemoryManager.build(str(path))
+                first = await manager.append_message(
+                    "session-1", "user", "line1\\r\\nline2",
+                    user_id="user-1", source_event_id="event-1",
                 )
-                first = await adapter.apply(intent)
-                replay = await adapter.apply(intent)
-                assert first.status is ConversationMemoryApplyStatus.APPLIED
-                assert replay.status is ConversationMemoryApplyStatus.ALREADY_APPLIED
-                assert replay.record_id == first.record_id
-                query = ConversationMemoryRecallQuery.create(
-                    context_query_id="query-1",
-                    user_id="user-1",
-                    session_id="session-1",
-                    query_text="line1",
-                    max_items=4,
-                    max_bytes=4096,
-                    timeout_seconds=1.0,
+                replay = await manager.append_message(
+                    "session-1", "user", "line1\\r\\nline2",
+                    user_id="user-1", source_event_id="event-1",
                 )
-                result = await adapter.recall_bounded(query)
-                payload = json.dumps(
-                    result.payload, ensure_ascii=False, allow_nan=False,
-                    separators=(",", ":"), sort_keys=True,
-                ).encode("utf-8")
-                assert result.byte_count == len(payload)
-                assert result.result_hash == hashlib.sha256(payload).hexdigest()
-                await adapter.release(
-                    user_id="user-1",
-                    context_query_id="query-1",
-                    result_hash=result.result_hash,
-                )
-                await adapter.release(
-                    user_id="user-1",
-                    context_query_id="query-1",
-                    result_hash=result.result_hash,
-                )
-                await adapter.close()
-                await backend.close()
+                assert replay.message_id == first.message_id
+                assert await manager.recall("line1", user_id="user-1")
+                try:
+                    await manager.recall_for_turn(object())
+                except HarnessIntegrationExtraRequired as error:
+                    assert str(error) == "harness_integration_extra_required"
+                else:
+                    raise AssertionError("base wheel unexpectedly imported Harness")
+                await manager.close()
                 assert os.stat(path).st_mode & 0o777 == 0o600
                 with sqlite3.connect(path) as connection:
                     assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"

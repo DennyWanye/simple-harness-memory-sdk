@@ -5,10 +5,6 @@ import pytest
 from simple_harness_memory.backends.mock import MockMemoryBackend
 from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
 from simple_harness_memory.config import MemoryResourceBounds
-from simple_harness_memory.core.conversation import (
-    ConversationMemoryAdapter,
-    ConversationMemoryRecallQuery,
-)
 from simple_harness_memory.core.errors import MemoryValidationError
 from simple_harness_memory.core.models import RecallStatus
 
@@ -88,19 +84,18 @@ async def test_consumer_query_identity_survives_stricter_backend_ceilings() -> N
             user_id="u1",
             source_event_id=f"event-{index}",
         )
-    query = ConversationMemoryRecallQuery.create(
+    result = await backend.recall_bounded(
+        "shared",
         context_query_id="query-ceiling",
         user_id="u1",
         session_id="s1",
-        query_text="shared",
-        max_items=10,
+        max_results=10,
         max_bytes=4096,
         timeout_seconds=10.0,
     )
-    result = await ConversationMemoryAdapter(backend, close_backend=False).recall_bounded(query)
-    assert result.query_hash == query.query_hash
-    assert result.item_count <= 1
-    assert result.byte_count <= 512
+    assert result.query_hash is not None
+    assert len(result.hits) <= 1
+    assert result.result_bytes <= 512
 
 
 @pytest.mark.asyncio
@@ -196,8 +191,7 @@ async def test_sqlite_recall_uses_user_predicates_limits_and_indexes(tmp_path) -
 
     plans: list[str] = []
     for sql in (
-        "SELECT * FROM messages WHERE user_id = ? "
-        "ORDER BY created_at DESC, id DESC LIMIT ?",
+        "SELECT * FROM messages WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
         "SELECT * FROM facts WHERE user_id = ? AND superseded_by IS NULL "
         "AND forgotten_at IS NULL ORDER BY id DESC LIMIT ?",
     ):

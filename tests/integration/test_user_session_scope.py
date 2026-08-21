@@ -37,7 +37,8 @@ async def test_user_scoped_reads_and_immutable_session_binding(tmp_path):
             source_event_id="event-steal",
         )
     async with backend._conn.execute("PRAGMA foreign_keys") as cursor:
-        assert (await cursor.fetchone())[0] == 1
+        row = await cursor.fetchone()
+        assert row is not None and row[0] == 1
     with pytest.raises(sqlite3.IntegrityError):
         await backend._conn.execute(
             "INSERT INTO messages "

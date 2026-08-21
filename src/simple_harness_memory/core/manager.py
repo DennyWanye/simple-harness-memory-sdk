@@ -2,11 +2,36 @@
 
 from __future__ import annotations
 
+import json
+from typing import TYPE_CHECKING, Any
+
 import structlog
 
 from simple_harness_memory.config import MemoryResourceBounds
+from simple_harness_memory.core.errors import (
+    HarnessIntegrationExtraRequired,
+    MemoryIdempotencyConflict,
+    MemoryOwnershipConflict,
+)
+from simple_harness_memory.core.fact_jobs import FactJobWorker
+from simple_harness_memory.core.identity import (
+    ExportPage,
+    MemoryPrincipal,
+    MemoryScope,
+    PrivacyReceipt,
+    ScopeKind,
+)
 from simple_harness_memory.core.port import MemoryBackend
 from simple_harness_memory.world.port import WorldModelPort
+
+if TYPE_CHECKING:
+    from simple_harness import (
+        CommittedTurn,
+        CommittedTurnReceipt,
+        MemoryRecallRequest,
+        MemoryRecallResult,
+        MemoryReleaseRequest,
+    )
 
 logger = structlog.get_logger("simple_harness_memory.core.manager")
 
@@ -31,9 +56,16 @@ class _NullWorldModel(WorldModelPort):
 
 
 class MemoryManager:
-    def __init__(self, backend: MemoryBackend, world: WorldModelPort) -> None:
+    def __init__(
+        self,
+        backend: MemoryBackend,
+        world: WorldModelPort,
+        *,
+        fact_worker: FactJobWorker | None = None,
+    ) -> None:
         self._backend = backend
         self.world = world
+        self._fact_worker = fact_worker
 
     @property
     def backend(self) -> MemoryBackend:
@@ -90,7 +122,214 @@ class MemoryManager:
             enable_facts=enable_facts,
             enable_world_model=enable_world_model,
         )
-        return cls(backend=backend, world=world_model)
+        worker = None
+        if enable_facts and all(
+            hasattr(backend, name)
+            for name in ("recover_fact_jobs", "claim_fact_job", "apply_fact_job")
+        ):
+            worker = FactJobWorker(backend, backend._fact_extractor)
+            await worker.start()
+        return cls(backend=backend, world=world_model, fact_worker=worker)
+
+    @staticmethod
+    def _harness() -> Any:
+        try:
+            import simple_harness
+        except ImportError as exc:
+            raise HarnessIntegrationExtraRequired() from exc
+        return simple_harness
+
+    @staticmethod
+    def _principal(identity: object) -> MemoryPrincipal:
+        return MemoryPrincipal(
+            str(getattr(identity, "deployment_id")),
+            str(getattr(identity, "household_id")),
+            str(getattr(identity, "actor_id")),
+            str(getattr(identity, "session_id")),
+        )
+
+    @staticmethod
+    def _scope(scope: object) -> MemoryScope:
+        return MemoryScope(
+            ScopeKind(str(getattr(getattr(scope, "kind"), "value", getattr(scope, "kind")))),
+            str(getattr(scope, "owner_id")),
+        )
+
+    async def recall_for_turn(self, request: MemoryRecallRequest) -> MemoryRecallResult:
+        """Implement the canonical AgentMemoryPort without a consumer adapter."""
+
+        harness = self._harness()
+        principal = self._principal(request.identity)
+        scopes = tuple(self._scope(scope) for scope in request.scopes)
+        try:
+            recall = getattr(self._backend, "agent_recall")
+            payload, fence, _replayed = await recall(
+                principal=principal,
+                scopes=scopes,
+                query_id=request.query_id,
+                query_hash=request.query_hash,
+                query_text=request.query_text,
+                max_items=request.bounds.max_items,
+                max_bytes=request.bounds.max_bytes,
+            )
+        except MemoryIdempotencyConflict as exc:
+            raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.CONFLICT) from exc
+        except MemoryOwnershipConflict as exc:
+            raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.PERMANENT) from exc
+        except TimeoutError as exc:
+            fence = getattr(self._backend, "agent_failure_fence", lambda: None)()
+            raise harness.AgentMemoryError(
+                harness.AgentMemoryErrorCode.TIMEOUT, write_fence=fence
+            ) from exc
+        except AttributeError as exc:
+            raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.PERMANENT) from exc
+        except Exception as exc:
+            fence = getattr(self._backend, "agent_failure_fence", lambda: None)()
+            raise harness.AgentMemoryError(
+                harness.AgentMemoryErrorCode.TRANSIENT, write_fence=fence
+            ) from exc
+        items = payload.get("items", [])
+        assert isinstance(items, list)
+        status = (
+            harness.MemoryRecallStatus.TRUNCATED
+            if payload.get("truncated")
+            else (harness.MemoryRecallStatus.READY if items else harness.MemoryRecallStatus.EMPTY)
+        )
+        byte_count = len(
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+        result = harness.MemoryRecallResult(
+            request.query_id,
+            request.query_hash,
+            f"memory-recall/v1/{request.query_id}",
+            payload,
+            status,
+            len(items),
+            byte_count,
+            fence,
+        )
+        logger.info(
+            "memory.agent_recall",
+            principal_id=principal.opaque_id,
+            item_count=len(items),
+            byte_count=byte_count,
+            stable_code=status.value,
+        )
+        return result
+
+    async def release_recall(self, request: MemoryReleaseRequest) -> None:
+        harness = self._harness()
+        try:
+            release = getattr(self._backend, "agent_release")
+            await release(
+                query_id=request.query_id,
+                query_hash=request.query_hash,
+                result_hash=request.result_hash,
+            )
+        except MemoryIdempotencyConflict as exc:
+            raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.CONFLICT) from exc
+        except Exception as exc:
+            raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.TRANSIENT) from exc
+
+    async def record_committed_turn(self, request: CommittedTurn) -> CommittedTurnReceipt:
+        harness = self._harness()
+        principal = self._principal(request.identity)
+        scope = self._scope(request.write_scope)
+        try:
+            record = getattr(self._backend, "agent_record_turn")
+            status_value, receipt_id = await record(
+                principal=principal,
+                scope=scope,
+                turn_id=request.turn_id,
+                payload_hash=request.payload_hash,
+                user_text=request.user_text,
+                assistant_text=request.assistant_text,
+                write_fence=request.write_fence,
+                turn_started_at=request.turn_started_at,
+            )
+        except MemoryIdempotencyConflict as exc:
+            raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.CONFLICT) from exc
+        except MemoryOwnershipConflict as exc:
+            raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.PERMANENT) from exc
+        except TimeoutError as exc:
+            raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.TIMEOUT) from exc
+        except Exception as exc:
+            raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.TRANSIENT) from exc
+        if self._fact_worker is not None and status_value == "applied":
+            self._fact_worker.notify()
+        status = harness.CommittedTurnStatus(status_value)
+        logger.info(
+            "memory.committed_turn",
+            principal_id=principal.opaque_id,
+            turn_id=request.turn_id,
+            stable_code=status.value,
+        )
+        return harness.CommittedTurnReceipt(
+            request.turn_id, request.payload_hash, status, receipt_id
+        )
+
+    async def drain_fact_jobs(self) -> None:
+        if self._fact_worker is not None:
+            while await self._fact_worker.drain_once():
+                pass
+
+    async def export_principal(
+        self,
+        principal: MemoryPrincipal,
+        *,
+        scopes: tuple[MemoryScope, ...] | None = None,
+        cursor: int = 0,
+        limit: int = 100,
+    ) -> ExportPage:
+        selected = scopes or (
+            MemoryScope.personal(principal.actor_id),
+            MemoryScope.family(principal.household_id),
+        )
+        records, next_cursor = await getattr(self._backend, "agent_export")(
+            principal, selected, cursor=cursor, limit=limit
+        )
+        return ExportPage(
+            "simple-harness-memory/export/v1",
+            tuple(records),
+            None if next_cursor is None else str(next_cursor),
+        )
+
+    async def delete_principal(self, principal: MemoryPrincipal) -> PrivacyReceipt:
+        return await self.delete_scope(
+            principal,
+            (
+                MemoryScope.personal(principal.actor_id),
+                MemoryScope.family(principal.household_id),
+            ),
+        )
+
+    async def delete_scope(
+        self, principal: MemoryPrincipal, scopes: tuple[MemoryScope, ...]
+    ) -> PrivacyReceipt:
+        counts = await getattr(self._backend, "agent_delete_scopes")(principal, scopes)
+        logger.info(
+            "memory.privacy_delete",
+            principal_id=principal.opaque_id,
+            message_count=int(counts["messages"]),
+            fact_count=int(counts["facts"]),
+            stable_code="deleted",
+        )
+        return PrivacyReceipt(
+            str(counts["receipt_id"]),
+            int(counts["messages"]),
+            int(counts["facts"]),
+            int(counts["snapshots"]),
+            int(counts["jobs"]),
+        )
+
+    async def share_fact(self, principal: MemoryPrincipal, fact_id: int) -> str:
+        return await getattr(self._backend, "agent_share_fact")(principal, fact_id)
 
     async def append_message(
         self,
@@ -141,7 +380,18 @@ class MemoryManager:
             limit=limit,
         )
 
-    async def forget_fact(self, fact_id, reason="", *, user_id):
+    async def forget_fact(
+        self,
+        fact_id,
+        reason="",
+        *,
+        user_id=None,
+        principal: MemoryPrincipal | None = None,
+    ):
+        if principal is not None:
+            return await getattr(self._backend, "agent_forget_fact")(principal, fact_id)
+        if user_id is None:
+            raise TypeError("user_id or principal is required")
         return await self._backend.forget_fact(fact_id, reason, user_id=user_id)
 
     async def recall(self, query, session_id=None, limit=10, *, user_id):
@@ -242,6 +492,8 @@ class MemoryManager:
         return await self._backend.reindex(embedder, user_id=user_id, limit=limit)
 
     async def close(self):
+        if self._fact_worker is not None:
+            await self._fact_worker.close()
         await self._backend.close()
         logger.info("memory.manager_closed", backend_type=type(self._backend).__name__)
 

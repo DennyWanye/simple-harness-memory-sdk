@@ -69,15 +69,17 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 
+def _opaque_id(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:20]
+
+
 def _serialized_operation(
     method: Callable[Concatenate[BaseMemoryBackend, _P], Coroutine[Any, Any, _R]],
 ) -> Callable[Concatenate[BaseMemoryBackend, _P], Coroutine[Any, Any, _R]]:
     """Serialize one public backend operation on backends that require it."""
 
     @wraps(method)
-    async def wrapped(
-        self: BaseMemoryBackend, /, *args: _P.args, **kwargs: _P.kwargs
-    ) -> _R:
+    async def wrapped(self: BaseMemoryBackend, /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
         async with self._operation():
             return await method(self, *args, **kwargs)
 
@@ -105,9 +107,7 @@ class BaseMemoryBackend(MemoryBackend):
                 base.max_content_chars if max_content_chars is None else max_content_chars
             ),
             max_fact_value_chars=(
-                base.max_fact_value_chars
-                if max_fact_value_chars is None
-                else max_fact_value_chars
+                base.max_fact_value_chars if max_fact_value_chars is None else max_fact_value_chars
             ),
             max_payload_bytes=(
                 base.max_payload_bytes if max_payload_bytes is None else max_payload_bytes
@@ -130,9 +130,7 @@ class BaseMemoryBackend(MemoryBackend):
         self._auto_extract_facts = auto_extract_facts
         self._operation_lock = asyncio.Lock()
         self._operation_owner: asyncio.Task[Any] | None = None
-        self._operation_depth = ContextVar[int](
-            f"memory_operation_depth_{id(self)}", default=0
-        )
+        self._operation_depth = ContextVar[int](f"memory_operation_depth_{id(self)}", default=0)
 
     async def _commit(self) -> None:
         return None
@@ -426,9 +424,9 @@ class BaseMemoryBackend(MemoryBackend):
                 await self.extract_facts(result.message_id, content, role, user_id=user_id)
         logger.info(
             "memory.append_message",
-            user_id=user_id,
-            session_id=session_id,
-            source_event_id=source_event_id,
+            principal_id=_opaque_id(user_id),
+            session_id=_opaque_id(session_id),
+            source_event_id=_opaque_id(source_event_id),
             payload_hash=expected_hash,
             status=result.status.value,
             content_len=len(content),
@@ -504,7 +502,10 @@ class BaseMemoryBackend(MemoryBackend):
                         await self._supersede_fact_impl(user_id, old.id, new_id)
         await self._commit()
         logger.info(
-            "memory.extract_facts", user_id=user_id, message_id=message_id, fact_count=len(stored)
+            "memory.extract_facts",
+            principal_id=_opaque_id(user_id),
+            message_id=message_id,
+            fact_count=len(stored),
         )
         return stored
 
@@ -637,8 +638,8 @@ class BaseMemoryBackend(MemoryBackend):
         )
         logger.info(
             "memory.recall",
-            user_id=user_id,
-            session_id=session_id,
+            principal_id=_opaque_id(user_id),
+            session_id=None if session_id is None else _opaque_id(session_id),
             query_len=len(query),
             hit_count=len(hits),
         )
@@ -660,9 +661,7 @@ class BaseMemoryBackend(MemoryBackend):
         assert session_id is not None
         context_query_id = validate_identity(context_query_id, "context_query_id")
         query = canonicalize_memory_text(query)
-        requested_results = (
-            self._bounds.recall_max_results if max_results is None else max_results
-        )
+        requested_results = self._bounds.recall_max_results if max_results is None else max_results
         if (
             isinstance(requested_results, bool)
             or not isinstance(requested_results, int)
@@ -691,9 +690,7 @@ class BaseMemoryBackend(MemoryBackend):
             or timeout_seconds <= 0
         ):
             raise MemoryValidationError("timeout_seconds must be finite and positive")
-        timeout_seconds = float(
-            min(timeout_seconds, self._bounds.recall_timeout_seconds)
-        )
+        timeout_seconds = float(min(timeout_seconds, self._bounds.recall_timeout_seconds))
         expected_query_hash = canonical_recall_query_hash(
             user_id=user_id,
             session_id=session_id,
@@ -714,9 +711,7 @@ class BaseMemoryBackend(MemoryBackend):
         try:
             async with asyncio.timeout_at(deadline):
                 async with self._transaction(deadline=deadline):
-                    existing = await self._get_recall_snapshot_impl(
-                        user_id, context_query_id
-                    )
+                    existing = await self._get_recall_snapshot_impl(user_id, context_query_id)
                     if existing is not None:
                         (
                             saved_user,
@@ -751,20 +746,14 @@ class BaseMemoryBackend(MemoryBackend):
                                     session_id=session_id,
                                     limit=effective_results,
                                 )
-                            status = (
-                                RecallStatus.TRUNCATED
-                                if truncated
-                                else RecallStatus.COMPLETE
-                            )
+                            status = RecallStatus.TRUNCATED if truncated else RecallStatus.COMPLETE
                         except TimeoutError:
                             hits = []
                             status = RecallStatus.TIMEOUT
                     hits, status, payload_json = self._fit_recall_payload(
                         hits, status=status, max_bytes=effective_bytes
                     )
-                    result_hash = hashlib.sha256(
-                        payload_json.encode("utf-8")
-                    ).hexdigest()
+                    result_hash = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
                     await self._insert_recall_snapshot_impl(
                         context_query_id=context_query_id,
                         user_id=user_id,
@@ -778,8 +767,8 @@ class BaseMemoryBackend(MemoryBackend):
             raise TimeoutError("memory recall deadline exceeded") from None
         logger.info(
             "memory.recall_bounded",
-            user_id=user_id,
-            context_query_id=context_query_id,
+            principal_id=_opaque_id(user_id),
+            context_query_id=_opaque_id(context_query_id),
             query_hash=query_hash,
             result_hash=result_hash,
             status=status.value,

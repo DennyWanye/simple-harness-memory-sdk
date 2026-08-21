@@ -1,102 +1,91 @@
-# ARCHITECTURE — simple-harness-memory-sdk（v0.3.0）
+<!-- last-calibrated: working-tree-after-87820fe2c4cdde21c3a9356ca461b93fe00aadcb -->
 
-> 最后更新：2026-08-21
-> 来源：agent-runtime-sdk-integration Task 4–5；本地 M1/M2/M3、M-ALL 与 latest M-WHEEL 全绿
+# ARCHITECTURE — simple-harness-memory-sdk（v0.4.0）
+
+> 最后更新：2026-08-22
+> 当前事实：S3 runtime 已实现并通过本仓 unit/integration/type/lint；offline migration 因 A2 taxonomy
+> 冻结问题暂停，S4 storage/embedding 能力尚未实施。
 
 ## 分层
 
 ```text
 src/simple_harness_memory/
-├── core/         # Port（MemoryBackend） + 数据模型 + DigitalTwin + MemoryManager + errors
-├── backends/     # BaseMemoryBackend + Mock + SQLite（schema 版本化 + 事务）
-├── features/     # facts 提取 / RRF 六路召回 / reranker / summarizer
+├── core/         # MemoryManager、standalone identity/scope、Agent backend port、fact worker
+├── backends/     # BaseMemoryBackend + Mock + SQLite fresh-v4
+├── features/     # facts 提取 / Python 内有界候选融合 / reranker / summarizer
 ├── cognitive/    # 遗忘曲线 / 显著性 / 会话亲和 / 孪生体构建
-├── embedders/    # Embedder（hash 默认 / bge 可选 / cloud 云端）
+├── embedders/    # hash 默认 / bge 可选 / cloud
 └── world/        # WorldModelPort + temporal/events/geography/knowledge
 ```
 
-## 生产事实（0.3.0）
+## Agent Memory v1 一等边界
 
-### Product-neutral conversation boundary
+- `MemoryManager` 直接结构满足 Harness `AgentMemoryPort`：`recall_for_turn`、`release_recall`、
+  `record_committed_turn`。消费者不构造公开 Adapter，也不维护自动 recall/append/outbox。
+- Memory→Harness 是单向 optional `[harness]` extra；包根和 standalone API 不 import Harness，integration
+  方法才 lazy import canonical DTO/status/error。缺 extra 稳定报 `harness_integration_extra_required`。
+- root `__all__` 已移除旧 `ConversationMemoryAdapter` 与重复 DTO/enums；`core.conversation` 仅作为现有
+  standalone canonical/hash 与内部兼容 helper，不是官方组合入口。
+- default write scope 是 actor personal；recall 可读取 actor personal + household family。Memory 内容只作为
+  带 scope provenance 的数据返回，instruction trust 投影由 Harness S1 负责。
 
-- `ConversationMemoryAdapter` 对齐冻结的 Harness structural ports，但 Memory 包不 import Harness。
-- sink intent 使用 `source_event_id/user_id/session_id/role/canonical memory_text` 计算 SHA-256；同 ID 同
-  hash 返回 `already_applied`，同 ID 异 hash 返回稳定 conflict。
-- `recall_bounded()` 使用 deterministic `context_query_id/query_hash`，在 memory transaction 内持久化
-  canonical payload/result hash；commit 后重放直接返回原 bytes，不重新 recall。
-- overall deadline 覆盖 backend operation lock、SQLite busy/`BEGIN IMMEDIATE`、compute、snapshot insert
-  与 durable commit；锁等待超时映射为稳定 `memory_timeout`，不泄漏 SQLite error。
-- recall result 支持 `complete/truncated/timeout`、显式 count/UTF-8 byte bounds 与幂等 release。
-  user-scoped bounded maintenance 会清理超过 dedupe horizon 的 released 与 retained/unreleased 结果，
-  horizon 内记录均保留。
-- adapter `release()` 与 recall 使用相同 query-side 错误边界：conflict/timeout/permanent/transient 均映射
-  为稳定 `ConversationMemoryError` code，backend 异常正文不跨 SDK 泄漏。
+## Fresh schema v4 与 identity/scope
 
-### Fresh schema v3 与 ownership
+- SQLite 仅接受 fresh v4/checksum；v3、缺 meta 或 checksum 漂移均 `MemorySchemaIncompatible`，不会在
+  runtime 隐式迁移或删除。
+- sessions/messages/facts/recall snapshots/receipts/jobs/erasure state 全链路保存
+  deployment/household/actor/session/scope_kind/scope_owner；session 第一次绑定后，任何 identity rebind
+  在 recall/read 前失败。
+- recall/export/delete/forget 使用 `core.identity.scope_predicate()` 同一 ownership predicate；personal
+  owner 必须是 actor，family owner 必须是 household，不同 household 不进入候选集。
+- SQLite 使用 WAL、FK、busy timeout、task-owned operation lock 与 `BEGIN IMMEDIATE`；数据库文件继续要求
+  regular/no-symlink/current-owner/`0600`。任意多进程共享同一 connection 不在能力声明内。
 
-- v3 只有 fresh initialization：`users`、immutable owner `sessions`、messages source identity、facts 真实
-  source FK、session-owned actions、user-keyed twins、durable recall snapshots；旧版、缺 meta 或 checksum
-  漂移均 `MemorySchemaIncompatible`，不隐式迁移。
-- 每个公开 Memory read/write/maintenance path 显式接收 `user_id`；SQLite 先用 user predicate/index/limit
-  缩小集合，再进入 Python ranking。生产代码不再存在 `_messages_all/_facts_all`。
-- 每次连接在事务外启用并 read-back `PRAGMA foreign_keys=ON`；初始化/打开后执行 integrity 与
-  `foreign_key_check`。DB 路径必须 regular/no-symlink/current-owner，mode 创建及回读均为 `0600`。
-- message insert 与自动 fact extraction/supersede 位于同一个 `BEGIN IMMEDIATE`；任一失败整体 rollback。
-- Base 公开 API 使用 task-owned operation lock 串行化，Mock/SQLite 对相同 query ID 的并发均稳定返回
-  首次结果 + replay；SQLite transaction owner + task-local depth 仅允许同 task nested，异 task（包括
-  继承 ContextVar 的 child task）必须等待并独立 commit/rollback。
-- `delete_all` 是 deprecated fail-closed compatibility surface，只抛 `runtime_delete_disabled` 且不 mutation；
-  不提供 runtime `delete_user`/public clear API。
+## Durable recall 与 committed turn
 
-### Resource bounds 与维护
+- 每个 query id 保存 canonical payload/result hash、identity binding、scope-set hash 与 personal erasure
+  write fence；同 id 异 query/identity 冲突，同 id 同输入重放冻结 payload。release 校验 query/result hash，
+  并有界清理超过 retention horizon 的 released stage。
+- recall 先读取 erasure epoch/fence，再做候选查询；查询后故障通过 task-local fence 传入稳定 Harness error，
+  使空召回降级后的 committed turn仍能校验删除边界。
+- `record_committed_turn` 在一个事务中写 turn receipt、user row、assistant row和可选 fact job；任一步失败
+  全部回滚。同 turn+hash 返回 `already_applied`，同 turn 异 hash 返回 conflict。
+- fence 过期返回 hash-only `rejected_erased`。无 fence时，仅可信 `turn_started_at` 严格晚于最新
+  `erased_at` 且不超当前可信时钟才可绑定当前 epoch；早于、相等或时钟回退均 fail closed。
 
-- `MemoryResourceBounds` 集中限制 content/fact/payload/DB、recall candidates/results/bytes/timeout、maintenance
-  batch、summary batch 与 recall-result dedupe horizon。
-- query DTO、backend direct recall 和 resource bounds 的 timeout 必须 finite 且严格大于零；dedupe horizon
-  同样必须 finite 且严格大于零，拒绝 bool、NaN 与正负 infinity。
-- recall/vector/facts/twin/reinforce/decay/summarize/retention/reindex/workspace action 均为 user-scoped；
-  decay/reindex/retention/snapshot cleanup 有界。
-- `MemoryManager` 的 bounded recall/release/cleanup facade 显式列出 user/session/query/hash/bounds/deadline
-  参数，不使用 `**kwargs` 逃逸身份合同。
-- message/fact decay 持久化本次衰减水位；同一逻辑时间的重试不重复衰减。summary 以确定性
-  source event 去重，reindex 仅选取 lineage mismatch，重试均不重复写入。
+## Durable fact worker
 
-### 召回（M1）
-- `recall()` 物理只读（不写 salience/last_recalled）；reinforcement 显式走 `recall_and_reinforce()`。
-- `Embedder.embed()/embed_batch()` 是 async；retriever/recall 全链路 await。
-- `get_embedder("auto")` 恒返回 `HashEmbedder`（不急切加载 BGE-M3）。
-- 隐私日志：recall/fact 只记长度与计数，不记 query 原文 / fact key/value/evidence。
+- committed user row只创建 durable `pending` job。worker 用 claim/lease/attempt/backoff 状态机；启动时
+  回收过期 `claimed`，5 次失败进入 `dead_letter`，close 做有界 drain。
+- extractor 在事务外运行并携带 versioned lineage；canonical extraction hash、deterministic fact ids、
+  facts 与 job `applied` 在一个事务提交。提交前复核 erasure epoch 和 fact tombstone，删除/forget 之后的
+  late worker只能进入 erased/no-op，不能复活内容。
+- 旧 standalone `append_message` 保留兼容行为；官方自动 Memory 生命周期只走 committed-turn worker。
 
-### Lineage 与 session maintenance
+## Privacy lifecycle
 
-- `delete_session`/user-scoped bounded `delete_old_sessions` 级联 messages+facts+workspace actions并重建 twin。
-- embedding lineage 列（embedder_kind/dim/format_version）+ `reindex(embedder)`（换掉 self._embedder/retriever）。
+- `export_principal` 是 versioned、有界、分页输出，默认不包含 raw embedding。
+- `delete_scope/delete_principal` 先推进 erasure epoch，再级联 messages/facts/recall stages/job payload；
+  turn receipt 与 hash-only tombstone保留以拦截旧 outbox/job。
+- `forget_fact` 保存 deterministic provenance tombstone，并删除该 personal fact 及 family projections；
+  `share_fact` 以 deterministic projection id投影到 household family scope，重复调用幂等。
+- Agent Memory structured events只记录 opaque principal、ID/hash、count/bytes/stable code；不记录 content、
+  token、embedding、数据库路径或 exception repr。legacy standalone日志中的 user/session/source id也已哈希。
 
-### 云端 embedding（M4）
-- `CloudEmbedder`：async + 批量 + LRU 缓存 + 指数退避重试 + fail-closed（无静默降级）。
-- `OpenAICompatibleClient`：httpx `/embeddings` + dim 校验；api_key 不进 repr/str/异常/log。
-- `get_embedder("cloud", base_url/api_key/model/dim)` 集成；dim 必填（None 哨兵）。
+## 当前明确限制 / 后续 Slice
 
-## 关键边界
-- 核心依赖仅 `aiosqlite`/`pydantic`/`numpy`；torch/httpx/openai 均为可选 extra。
-- 向量化默认 `HashEmbedder`（确定性伪向量）；语义嵌入走 `BGEM3Embedder`（可选）；云端走 `CloudEmbedder`。
-- 版本单一来源：`[tool.hatch.version] path = "src/simple_harness_memory/__init__.py"`（动态，不漂移）。
-- `pyproject.toml`/`uv.lock` 固定 Ruff `0.16.3`、mypy `1.20.2`；CI matrix 覆盖 Python
-  3.11/3.12/3.13、clean exact wheel 与 Linux ARM64 core gate。
-- CI authoritative artifact 才生成 canonical `BUILD_INFO.txt`/`SHA256SUMS`；本地 M-WHEEL dist 保持
-  wheel/sdist 原 bytes。release workflow 仅手动验证指定 run/artifact ID、source commit 与 wheel SHA，
-  再上传 verified Actions artifact 供 Task 10 single publisher 消费；它不由 tag 触发、不 rebuild、
-  不创建 tag/release。
-- artifact tests 仅在显式传入 `MEMORY_SDK_ARTIFACT_DIST` 时执行候选字节门；普通 full suite
-  稳定 skip 这三项候选制品测试，candidate job/M-WHEEL 始终显式传入且不可降级。
+- 当前候选读取仍是 identity predicate + bounded `ORDER BY/LIMIT` 后的 Python lexical/vector融合；SQLite
+  FTS5、完整 provider/model/revision/dimension/normalization lineage、production local-only embedder、
+  reindex generation 与 backup/restore由 S4 实施。
+- 显式 offline v3→v4 migrator与公开 migration manifest API 尚未实现。原因是已冻结三类 decision 无法
+  唯一覆盖 continuation completed run 的早期 tentative user events（A2 `a2-001`）；在新增 taxonomy
+  获批前必须暂停，不能猜测导入、丢弃或复制。
+- AIPhone、K6/AgentOS、NovelTagSystem 未修改；它们只通过后续 joint wheel fixture验证未来接口。
 
 ## 验证状态
 
-- M1：27 passed。
-- M2：41 passed（含 SQLite query-plan/user predicate+limit、跨 user maintenance）。
-- M3：Ruff 与 mypy 全绿。
-- M-ALL（无候选制品 env）：154 passed、6 skipped；Python 3.11/3.12/3.13 与 Ruff/mypy 全绿。
-- latest M-WHEEL：5 passed（exact wheel clean consumer + candidate/release contract）。
-- frozen exact candidate、三版本 full suite 与 Linux ARM64 core gate 已在 Actions run `32443846753`
-  验证通过（artifact `9433370906`）；每次 promotion 仍须绑定 exact replacement run。Xperia/consumer
-  exact candidate 验收属于后续 Task 6–10，不能由本地 macOS 结果代替。
+- S3 targeted：Agent direct port、Mock/SQLite、atomic fault、fact recovery、identity rebind、scope matrix、
+  export/delete/forget、erasure replay、日志 canary均通过。
+- 当前本仓 full：`145 passed, 4 skipped`（以最终 gate 重跑数字为准）；Ruff 与 mypy全绿。
+- exact wheel、Python 3.11/3.12/3.13联合 Harness candidate 与 release metadata 属 S5 gate，不能由 editable
+  开发安装替代。

@@ -29,7 +29,7 @@ class MemoryErrorBase(RuntimeError):
 
 
 class MemorySchemaIncompatible(MemoryCorruptionError):
-    """The database is not an empty/fresh v3 database."""
+    """The database is not an empty/fresh v4 database."""
 
     code = "memory_schema_incompatible"
 
@@ -59,3 +59,9 @@ class MemoryUnsupportedOperation(MemoryErrorBase):
     """A legacy operation is intentionally fail-closed."""
 
     code = "runtime_delete_disabled"
+
+
+class HarnessIntegrationExtraRequired(MemoryErrorBase):
+    """The optional Harness integration dependency is unavailable."""
+
+    code = "harness_integration_extra_required"
