@@ -1,4 +1,5 @@
 """Embedder 工厂：按 kind 选择哈希伪向量、BGE-M3 或云端。"""
+
 from __future__ import annotations
 
 import structlog
@@ -40,6 +41,10 @@ def get_embedder(
     if kind == "cloud":
         if not all((base_url, api_key, model, dim)):
             raise ValueError("kind='cloud' requires base_url, api_key, model, and dim")
+        assert base_url is not None
+        assert api_key is not None
+        assert model is not None
+        assert dim is not None
         from simple_harness_memory.embedders.cloud import CloudEmbedder
         from simple_harness_memory.embedders.openai_compatible import (
             OpenAICompatibleClient,

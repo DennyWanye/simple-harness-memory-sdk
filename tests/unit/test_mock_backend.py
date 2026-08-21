@@ -10,7 +10,6 @@ from simple_harness_memory.backends.mock import MockMemoryBackend
 from simple_harness_memory.core.errors import MemoryUnsupportedOperation
 from simple_harness_memory.core.models import FACT_DECAY_DEFAULTS, Fact
 
-
 USER = "user-1"
 
 
@@ -32,21 +31,15 @@ async def _append(backend, session_id, role, content, event):
 @pytest.mark.asyncio
 async def test_append_and_get_recent(backend: MockMemoryBackend) -> None:
     first = await _append(backend, "test-session", "user", "你好", "mock-1")
-    second = await _append(
-        backend, "test-session", "assistant", "你好呀", "mock-2"
-    )
-    messages = await backend.get_recent_messages(
-        "test-session", limit=10, user_id=USER
-    )
+    second = await _append(backend, "test-session", "assistant", "你好呀", "mock-2")
+    messages = await backend.get_recent_messages("test-session", limit=10, user_id=USER)
     assert [message.content for message in messages] == ["你好", "你好呀"]
     assert first.message_id < second.message_id
 
 
 @pytest.mark.asyncio
 async def test_get_message_by_id(backend: MockMemoryBackend) -> None:
-    result = await _append(
-        backend, "test-session", "user", "测试消息", "mock-3"
-    )
+    result = await _append(backend, "test-session", "user", "测试消息", "mock-3")
     message = await backend.get_message(result.message_id, user_id=USER)
     assert message is not None
     assert (message.content, message.role, message.user_id) == (
@@ -60,12 +53,8 @@ async def test_get_message_by_id(backend: MockMemoryBackend) -> None:
 async def test_session_isolation(backend: MockMemoryBackend) -> None:
     await _append(backend, "session-A", "user", "A的消息", "mock-4")
     await _append(backend, "session-B", "user", "B的消息", "mock-5")
-    messages_a = await backend.get_recent_messages(
-        "session-A", user_id=USER
-    )
-    messages_b = await backend.get_recent_messages(
-        "session-B", user_id=USER
-    )
+    messages_a = await backend.get_recent_messages("session-A", user_id=USER)
+    messages_b = await backend.get_recent_messages("session-B", user_id=USER)
     assert [message.content for message in messages_a] == ["A的消息"]
     assert [message.content for message in messages_b] == ["B的消息"]
 
@@ -123,15 +112,9 @@ async def test_fact_active_and_forget(backend: MockMemoryBackend) -> None:
         created_at=time.time(),
     )
     fact_id = await backend._insert_fact_impl(USER, fact)
-    assert any(
-        item.key == "pet_name"
-        for item in await backend.get_facts(user_id=USER)
-    )
+    assert any(item.key == "pet_name" for item in await backend.get_facts(user_id=USER))
     assert await backend.forget_fact(fact_id, user_id=USER)
-    assert not any(
-        item.key == "pet_name"
-        for item in await backend.get_facts(user_id=USER)
-    )
+    assert not any(item.key == "pet_name" for item in await backend.get_facts(user_id=USER))
 
 
 def test_fact_decay_defaults_by_category() -> None:
@@ -139,14 +122,28 @@ def test_fact_decay_defaults_by_category() -> None:
     assert FACT_DECAY_DEFAULTS["event"] == 0.05
     assert FACT_DECAY_DEFAULTS["constraint"] == 0.001
     profile = Fact(
-        id=None, user_id=USER, subject="user", key="name", value="张三",
-        category="profile", confidence=0.9, evidence="", source_msg_id=1,
+        id=None,
+        user_id=USER,
+        subject="user",
+        key="name",
+        value="张三",
+        category="profile",
+        confidence=0.9,
+        evidence="",
+        source_msg_id=1,
         created_at=0.0,
     )
     event = Fact(
-        id=None, user_id=USER, subject="user", key="event",
-        value="昨天去了北京", category="event", confidence=0.6,
-        evidence="", source_msg_id=1, created_at=0.0,
+        id=None,
+        user_id=USER,
+        subject="user",
+        key="event",
+        value="昨天去了北京",
+        category="event",
+        confidence=0.6,
+        evidence="",
+        source_msg_id=1,
+        created_at=0.0,
     )
     assert profile.decay_rate == 0.0
     assert event.decay_rate == 0.05

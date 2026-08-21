@@ -18,12 +18,12 @@ from dataclasses import dataclass
 
 # 各召回源的 RRF 权重
 SIGNAL_WEIGHTS: dict[str, float] = {
-    "vec":      0.5,
-    "fts":      0.3,
-    "recency":  0.15,
+    "vec": 0.5,
+    "fts": 0.3,
+    "recency": 0.15,
     "salience": 0.05,
-    "facts":    0.2,
-    "entity":   0.1,
+    "facts": 0.2,
+    "entity": 0.1,
 }
 
 RRF_K = 60  # Cormack 2009 推荐值
@@ -32,9 +32,10 @@ RRF_K = 60  # Cormack 2009 推荐值
 @dataclass
 class RankedItem:
     """单路召回中的排名项。"""
+
     message_id: int
     text: str
-    rank: int           # 1-based
+    rank: int  # 1-based
     source: str
     raw_score: float = 0.0
     recency: float = 0.0
@@ -79,16 +80,18 @@ def fuse(
     result = []
     for mid in sorted_ids:
         item = meta[mid]
-        result.append({
-            "message_id": mid,
-            "text": item.text,
-            "score": round(scores[mid], 6),
-            "source": item.source,
-            "recency": item.recency,
-            "salience": item.salience,
-            "session_affinity": item.session_affinity,
-            "session_id": item.session_id,
-            "role": item.role,
-            "created_at": item.created_at,
-        })
+        result.append(
+            {
+                "message_id": mid,
+                "text": item.text,
+                "score": round(scores[mid], 6),
+                "source": item.source,
+                "recency": item.recency,
+                "salience": item.salience,
+                "session_affinity": item.session_affinity,
+                "session_id": item.session_id,
+                "role": item.role,
+                "created_at": item.created_at,
+            }
+        )
     return result

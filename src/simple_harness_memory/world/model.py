@@ -1,19 +1,27 @@
 """WorldModel 组合实现。"""
+
 from __future__ import annotations
 
 import time
-from collections.abc import Awaitable, Callable
-from typing import Optional
 
-from simple_harness_memory.world.events import EventProvider, NoopEventProvider
-from simple_harness_memory.world.geography import NoopWeatherProvider, WeatherProvider
+from simple_harness_memory.world.events import NoopEventProvider
+from simple_harness_memory.world.geography import NoopWeatherProvider
 from simple_harness_memory.world.knowledge import detect_knowledge_gap
-from simple_harness_memory.world.port import KnowledgeGap, TemporalContext, Weather, WorldEvent, WorldModelPort
+from simple_harness_memory.world.port import (
+    WorldModelPort,
+)
 from simple_harness_memory.world.temporal import build_temporal_context
 
 
 class WorldModel(WorldModelPort):
-    def __init__(self, *, knowledge_cutoff="2026-05-31", event_provider=None, weather_provider=None, personal_event_loader=None):
+    def __init__(
+        self,
+        *,
+        knowledge_cutoff="2026-05-31",
+        event_provider=None,
+        weather_provider=None,
+        personal_event_loader=None,
+    ):
         self.knowledge_cutoff = knowledge_cutoff
         self._event_provider = event_provider or NoopEventProvider()
         self._weather_provider = weather_provider or NoopWeatherProvider()

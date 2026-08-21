@@ -9,7 +9,6 @@ import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
 
 import aiosqlite
 import structlog
@@ -45,7 +44,6 @@ from simple_harness_memory.core.twin import (
     SkillMap,
     UserProfile,
 )
-
 
 logger = structlog.get_logger("simple_harness_memory.backends.sqlite")
 
@@ -185,7 +183,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         )
         self._db_path = str(db_path)
         self._secure_path: Path | None = None
-        self._db: Optional[aiosqlite.Connection] = None
+        self._db: aiosqlite.Connection | None = None
         self._tx_depth = 0
 
     async def initialize(self) -> None:
@@ -194,9 +192,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         digest = path_digest(self._db_path)
         try:
             self._secure_path = secure_sqlite_path(self._db_path)
-            self._db = await aiosqlite.connect(
-                str(self._secure_path), isolation_level=None
-            )
+            self._db = await aiosqlite.connect(str(self._secure_path), isolation_level=None)
             self._db.row_factory = aiosqlite.Row
             await self._db.execute("PRAGMA foreign_keys = ON")
             async with self._db.execute("PRAGMA foreign_keys") as cursor:
@@ -259,8 +255,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
 
     async def _table_names(self) -> set[str]:
         async with self._conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' "
-            "AND name NOT LIKE 'sqlite_%'"
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
         ) as cursor:
             return {str(row[0]) for row in await cursor.fetchall()}
 
@@ -295,9 +290,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             return
         await self._db.close()
         self._db = None
-        logger.info(
-            "memory.backend_closed", db_path_hash=path_digest(self._db_path)
-        )
+        logger.info("memory.backend_closed", db_path_hash=path_digest(self._db_path))
 
     @property
     def _conn(self) -> aiosqlite.Connection:
@@ -336,8 +329,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             (user_id, now),
         )
         async with self._conn.execute(
-            "SELECT user_id FROM sessions "
-            "WHERE user_id = ? AND session_id = ?",
+            "SELECT user_id FROM sessions WHERE user_id = ? AND session_id = ?",
             (user_id, session_id),
         ) as cursor:
             row = await cursor.fetchone()
@@ -353,11 +345,23 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                 raise MemoryOwnershipConflict() from exc
 
     async def _append_message_impl(
-        self, *, user_id: str, session_id: str, role: str, content: str,
-        embedding: bytes | None, salience: float, decay_rate: float,
-        created_at: float, is_summary: bool, summary_of: str | None,
-        source_event_id: str, payload_hash: str, embedder_kind: str | None,
-        embedding_dim: int | None, embedding_format_version: int | None,
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        role: str,
+        content: str,
+        embedding: bytes | None,
+        salience: float,
+        decay_rate: float,
+        created_at: float,
+        is_summary: bool,
+        summary_of: str | None,
+        source_event_id: str,
+        payload_hash: str,
+        embedder_kind: str | None,
+        embedding_dim: int | None,
+        embedding_format_version: int | None,
     ) -> MemoryApplyResult:
         try:
             cursor = await self._conn.execute(
@@ -387,15 +391,11 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             )
         except aiosqlite.IntegrityError as exc:
             async with self._conn.execute(
-                "SELECT id, payload_hash FROM messages "
-                "WHERE user_id = ? AND source_event_id = ?",
+                "SELECT id, payload_hash FROM messages WHERE user_id = ? AND source_event_id = ?",
                 (user_id, source_event_id),
             ) as query:
                 row = await query.fetchone()
-            if (
-                row is None
-                or row["payload_hash"] != payload_hash
-            ):
+            if row is None or row["payload_hash"] != payload_hash:
                 raise MemoryIdempotencyConflict() from exc
             return MemoryApplyResult(
                 message_id=int(row["id"]),
@@ -404,8 +404,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                 status=MemoryApplyStatus.ALREADY_APPLIED,
             )
         await self._conn.execute(
-            "UPDATE sessions SET last_activity_at = ? "
-            "WHERE user_id = ? AND session_id = ?",
+            "UPDATE sessions SET last_activity_at = ? WHERE user_id = ? AND session_id = ?",
             (created_at, user_id, session_id),
         )
         return MemoryApplyResult(
@@ -419,8 +418,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         self, user_id: str, source_event_id: str
     ) -> tuple[int, str] | None:
         async with self._conn.execute(
-            "SELECT id, payload_hash FROM messages "
-            "WHERE user_id = ? AND source_event_id = ?",
+            "SELECT id, payload_hash FROM messages WHERE user_id = ? AND source_event_id = ?",
             (user_id, source_event_id),
         ) as cursor:
             row = await cursor.fetchone()
@@ -428,9 +426,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             return None
         return int(row["id"]), str(row["payload_hash"])
 
-    async def _get_message_impl(
-        self, user_id: str, message_id: int
-    ) -> Optional[Message]:
+    async def _get_message_impl(self, user_id: str, message_id: int) -> Message | None:
         async with self._conn.execute(
             "SELECT * FROM messages WHERE user_id = ? AND id = ?",
             (user_id, message_id),
@@ -439,7 +435,11 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         return self._row_to_message(row) if row is not None else None
 
     async def _query_messages_impl(
-        self, user_id: str, *, limit: int, session_id: str | None = None,
+        self,
+        user_id: str,
+        *,
+        limit: int,
+        session_id: str | None = None,
         older_than: float | None = None,
         lineage_mismatch: tuple[str, int, int] | None = None,
     ) -> list[Message]:
@@ -468,8 +468,13 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         return [self._row_to_message(row) for row in rows]
 
     async def _query_facts_impl(
-        self, user_id: str, *, limit: int, subject: str | None = None,
-        category: str | None = None, active_only: bool = False,
+        self,
+        user_id: str,
+        *,
+        limit: int,
+        subject: str | None = None,
+        category: str | None = None,
+        active_only: bool = False,
     ) -> list[Fact]:
         clauses = ["user_id = ?"]
         params: list[object] = [user_id]
@@ -483,11 +488,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             clauses.append("superseded_by IS NULL")
             clauses.append("forgotten_at IS NULL")
         params.append(limit)
-        sql = (
-            "SELECT * FROM facts WHERE "
-            + " AND ".join(clauses)
-            + " ORDER BY id DESC LIMIT ?"
-        )
+        sql = "SELECT * FROM facts WHERE " + " AND ".join(clauses) + " ORDER BY id DESC LIMIT ?"
         async with self._conn.execute(sql, tuple(params)) as cursor:
             rows = await cursor.fetchall()
         return [self._row_to_fact(row) for row in rows]
@@ -514,12 +515,9 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         )
         return int(cursor.lastrowid or 0)
 
-    async def _supersede_fact_impl(
-        self, user_id: str, fact_id: int, superseded_by: int
-    ) -> None:
+    async def _supersede_fact_impl(self, user_id: str, fact_id: int, superseded_by: int) -> None:
         await self._conn.execute(
-            "UPDATE facts SET superseded_by = ? "
-            "WHERE user_id = ? AND id = ?",
+            "UPDATE facts SET superseded_by = ? WHERE user_id = ? AND id = ?",
             (superseded_by, user_id, fact_id),
         )
 
@@ -527,14 +525,16 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         self, user_id: str, fact_id: int, forgotten_at: float
     ) -> bool:
         cursor = await self._conn.execute(
-            "UPDATE facts SET forgotten_at = ? "
-            "WHERE user_id = ? AND id = ?",
+            "UPDATE facts SET forgotten_at = ? WHERE user_id = ? AND id = ?",
             (forgotten_at, user_id, fact_id),
         )
         return cursor.rowcount > 0
 
     async def _update_message_salience_impl(
-        self, user_id: str, message_id: int, salience: float,
+        self,
+        user_id: str,
+        message_id: int,
+        salience: float,
         last_recalled: float | None,
     ) -> None:
         await self._conn.execute(
@@ -545,7 +545,10 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         )
 
     async def _set_fact_decay_impl(
-        self, user_id: str, fact_id: int, *,
+        self,
+        user_id: str,
+        fact_id: int,
+        *,
         forgotten_at: float | None = None,
         last_decay_at: float | None = None,
     ) -> None:
@@ -560,14 +563,11 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         if updates:
             params.extend((user_id, fact_id))
             await self._conn.execute(
-                f"UPDATE facts SET {', '.join(updates)} "
-                "WHERE user_id = ? AND id = ?",
+                f"UPDATE facts SET {', '.join(updates)} WHERE user_id = ? AND id = ?",
                 tuple(params),
             )
 
-    async def _load_twin_impl(
-        self, user_id: str, subject: str
-    ) -> DigitalTwin:
+    async def _load_twin_impl(self, user_id: str, subject: str) -> DigitalTwin:
         async with self._conn.execute(
             "SELECT subject, data_json FROM digital_twins WHERE user_id = ?",
             (user_id,),
@@ -581,8 +581,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
 
     async def _save_twin_impl(self, user_id: str, twin: DigitalTwin) -> None:
         await self._conn.execute(
-            "INSERT INTO users (user_id, created_at) VALUES (?, ?) "
-            "ON CONFLICT(user_id) DO NOTHING",
+            "INSERT INTO users (user_id, created_at) VALUES (?, ?) ON CONFLICT(user_id) DO NOTHING",
             (user_id, time.time()),
         )
         await self._conn.execute(
@@ -629,8 +628,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
 
     async def _delete_session_impl(self, user_id: str, session_id: str) -> int:
         async with self._conn.execute(
-            "SELECT COUNT(*) FROM messages "
-            "WHERE user_id = ? AND session_id = ?",
+            "SELECT COUNT(*) FROM messages WHERE user_id = ? AND session_id = ?",
             (user_id, session_id),
         ) as cursor:
             row = await cursor.fetchone()
@@ -641,9 +639,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         )
         return deleted
 
-    async def _old_session_ids_impl(
-        self, user_id: str, cutoff: float, limit: int
-    ) -> list[str]:
+    async def _old_session_ids_impl(self, user_id: str, cutoff: float, limit: int) -> list[str]:
         async with self._conn.execute(
             "SELECT session_id FROM sessions "
             "WHERE user_id = ? AND last_activity_at < ? "
@@ -654,8 +650,12 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         return [str(row["session_id"]) for row in rows]
 
     async def _update_embedding_impl(
-        self, user_id: str, message_id: int, embedding: bytes,
-        embedder_kind: str, embedding_dim: int,
+        self,
+        user_id: str,
+        message_id: int,
+        embedding: bytes,
+        embedder_kind: str,
+        embedding_dim: int,
         embedding_format_version: int,
     ) -> None:
         await self._conn.execute(
@@ -693,8 +693,14 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         )
 
     async def _insert_recall_snapshot_impl(
-        self, *, context_query_id: str, user_id: str, session_id: str,
-        query_hash: str, result_payload: str, result_hash: str,
+        self,
+        *,
+        context_query_id: str,
+        user_id: str,
+        session_id: str,
+        query_hash: str,
+        result_payload: str,
+        result_hash: str,
         created_at: float,
     ) -> None:
         try:
@@ -717,7 +723,11 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             raise MemoryIdempotencyConflict() from exc
 
     async def _release_recall_snapshot_impl(
-        self, *, user_id: str, context_query_id: str, result_hash: str,
+        self,
+        *,
+        user_id: str,
+        context_query_id: str,
+        result_hash: str,
         released_at: float,
     ) -> bool:
         cursor = await self._conn.execute(

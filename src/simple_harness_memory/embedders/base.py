@@ -1,4 +1,5 @@
 """Embedder 抽象与向量编码/余弦相似度。"""
+
 from __future__ import annotations
 
 import json
@@ -43,4 +44,4 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
         nb += y * y
     if na == 0.0 or nb == 0.0:
         return 0.0
-    return dot / ((na ** 0.5) * (nb ** 0.5))
+    return dot / ((na**0.5) * (nb**0.5))

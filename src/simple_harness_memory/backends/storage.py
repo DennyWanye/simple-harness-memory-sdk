@@ -9,7 +9,6 @@ from pathlib import Path
 
 from simple_harness_memory.core.errors import MemoryValidationError
 
-
 OWNER_ONLY_MODE = 0o600
 
 

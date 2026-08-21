@@ -1,4 +1,5 @@
 """CloudEmbedder / OpenAICompatibleClient 测试（不真发网络请求）。"""
+
 from __future__ import annotations
 
 import asyncio
@@ -60,9 +61,7 @@ async def test_cloud_embedder_timeout_fail_closed():
 
 def test_credential_not_in_repr():
     key = "sk-SENTINEL-123"
-    client = OpenAICompatibleClient(
-        "https://api.example.com", key, "text-embedding-3-small", 1536
-    )
+    client = OpenAICompatibleClient("https://api.example.com", key, "text-embedding-3-small", 1536)
     assert key not in repr(client)
     assert key not in str(client)
     cloud = CloudEmbedder(client, model="text-embedding-3-small", dim=1536)
@@ -84,7 +83,10 @@ async def test_openai_compatible_client():
         )
 
     client = OpenAICompatibleClient(
-        "https://api.example.com", "sk-test", "text-embedding-3-small", 2,
+        "https://api.example.com",
+        "sk-test",
+        "text-embedding-3-small",
+        2,
         _transport=httpx.MockTransport(handler),
     )
     vectors = await client.embed(["a", "b"])
@@ -96,7 +98,10 @@ async def test_openai_compatible_dim_mismatch():
     httpx = pytest.importorskip("httpx")
 
     client = OpenAICompatibleClient(
-        "https://api.example.com", "sk-test", "m", 3,  # 期望 3 维
+        "https://api.example.com",
+        "sk-test",
+        "m",
+        3,  # 期望 3 维
         _transport=httpx.MockTransport(
             lambda r: httpx.Response(200, json={"data": [{"embedding": [1.0, 0.0]}]})
         ),

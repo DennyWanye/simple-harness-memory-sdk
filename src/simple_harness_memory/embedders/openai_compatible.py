@@ -1,4 +1,5 @@
 """OpenAICompatibleClient — OpenAI 兼容 /embeddings HTTP client。"""
+
 from __future__ import annotations
 
 from simple_harness_memory.core.errors import EmbeddingError
@@ -54,9 +55,7 @@ class OpenAICompatibleClient:
                 data = response.json()
         except httpx.HTTPError as exc:
             # 不把 request/header 的 repr 带进异常消息（防 api_key 泄露）
-            raise EmbeddingError(
-                f"embedding request failed: {type(exc).__name__}"
-            ) from exc
+            raise EmbeddingError(f"embedding request failed: {type(exc).__name__}") from exc
 
         vectors = [item["embedding"] for item in data["data"]]
         if any(len(v) != self._dim for v in vectors):

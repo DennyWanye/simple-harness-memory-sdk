@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import ast
-import logging
 from pathlib import Path
 
 import pytest
@@ -58,13 +57,15 @@ def test_recall_query_is_redacted() -> None:
 async def test_recall_emits_memory_recall(capsys) -> None:
     retriever = Retriever(HashEmbedder())
     msg = Message(
-        id=1, user_id="u1", session_id="s1", role="user",
-        content="I have a dog named Max", created_at=0.0,
+        id=1,
+        user_id="u1",
+        session_id="s1",
+        role="user",
+        content="I have a dog named Max",
+        created_at=0.0,
     )
     twin = DigitalTwin()
-    hits = await retriever.recall(
-        "dog", messages=[msg], facts=[], twin=twin, limit=5
-    )
+    hits = await retriever.recall("dog", messages=[msg], facts=[], twin=twin, limit=5)
     assert hits  # "dog" is a substring of the message content (FTS hit)
     captured = capsys.readouterr().out
     # structlog's default print logger writes to stdout
@@ -72,9 +73,7 @@ async def test_recall_emits_memory_recall(capsys) -> None:
 
 
 @pytest.mark.asyncio
-async def test_sqlite_logs_never_emit_path_or_memory_content(
-    tmp_path, capsys
-) -> None:
+async def test_sqlite_logs_never_emit_path_or_memory_content(tmp_path, capsys) -> None:
     from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
 
     canary = "PRIVATE-MEMORY-CANARY-81f30a"
@@ -82,8 +81,11 @@ async def test_sqlite_logs_never_emit_path_or_memory_content(
     backend = SQLiteMemoryBackend(str(path))
     await backend.initialize()
     await backend.append_message(
-        "s1", "user", canary,
-        user_id="u1", source_event_id="privacy-event",
+        "s1",
+        "user",
+        canary,
+        user_id="u1",
+        source_event_id="privacy-event",
     )
     await backend.recall(canary, user_id="u1")
     await backend.close()

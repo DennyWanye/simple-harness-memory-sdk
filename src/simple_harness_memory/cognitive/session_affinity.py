@@ -5,20 +5,21 @@
   code session → companion  code-type 降权到 0.5，person/preference 保留 0.8
   同 session 时间衰减  → 0.5^(age/half_life)，half_life=7天，floor=0.15
 """
+
 from __future__ import annotations
 
-import math
-
 # 跨 session 降权系数
-CROSS_SESSION_CODE_TYPE = 0.5       # code 类 fact 跨 session 降权
-CROSS_SESSION_PERSON_TYPE = 0.8     # person/preference 跨 session 保留
+CROSS_SESSION_CODE_TYPE = 0.5  # code 类 fact 跨 session 降权
+CROSS_SESSION_PERSON_TYPE = 0.8  # person/preference 跨 session 保留
 
 # 同 session 时间衰减
 SESSION_HALF_LIFE_DAYS = 7.0
 SESSION_DECAY_FLOOR = 0.15
 
 # 属于"人物/偏好"类的 fact category（跨 session 保留更多）
-PERSON_CATEGORIES = frozenset({"profile", "preference", "goal", "decision", "constraint", "reflection"})
+PERSON_CATEGORIES = frozenset(
+    {"profile", "preference", "goal", "decision", "constraint", "reflection"}
+)
 
 
 def cross_session_weight(source_session: str, target_session: str, category: str = "") -> float:

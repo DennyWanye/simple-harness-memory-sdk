@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.7"
+      - run: uv sync --frozen --group dev
+      - run: uv run --frozen --group dev pytest -q
+      - run: uv run --frozen --group dev ruff check src tests
+      - run: uv run --frozen --group dev mypy src/simple_harness_memory
+
+  candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.7"
+      - name: Build candidate bytes once
+        env:
+          SOURCE_DATE_EPOCH: "0"
+        run: uv build --out-dir candidate-dist
+      - name: Record candidate identity and checksums
+        run: >-
+          python scripts/write_candidate_metadata.py
+          --dist candidate-dist
+          --source-commit "${{ github.sha }}"
+          --build-utc "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      - name: Test exact wheel and authoritative metadata contracts
+        env:
+          MEMORY_SDK_ARTIFACT_DIST: candidate-dist
+          MEMORY_SDK_CI_CANDIDATE: "1"
+        run: >-
+          uv run --frozen --group dev pytest -q
+          tests/artifact/test_exact_wheel_consumer.py
+          tests/artifact/test_release_candidate_contract.py
+      - name: Verify exact wheel in a clean environment
+        run: |
+          cd candidate-dist
+          sha256sum --check SHA256SUMS
+          cd ..
+          uv venv .candidate-venv --python 3.13
+          WHEEL="$(find candidate-dist -maxdepth 1 -name '*.whl' -print -quit)"
+          uv pip install --python .candidate-venv/bin/python "$WHEEL"
+          .candidate-venv/bin/python -I - <<'PY'
+          import asyncio
+          import os
+          import sqlite3
+          import tempfile
+          from pathlib import Path
+
+          from simple_harness_memory import __version__
+          from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
+
+          async def verify() -> None:
+              root = Path(tempfile.mkdtemp(prefix="memory-wheel-"))
+              path = root / "memory.db"
+              backend = SQLiteMemoryBackend(str(path))
+              await backend.initialize()
+              applied = await backend.append_message(
+                  "session-1", "user", "hello", user_id="user-1", source_event_id="event-1"
+              )
+              assert applied.status.value == "applied"
+              await backend.close()
+              assert __version__ == "0.3.0"
+              assert os.stat(path).st_mode & 0o777 == 0o600
+              with sqlite3.connect(path) as connection:
+                  assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+                  assert not connection.execute("PRAGMA foreign_key_check").fetchall()
+
+          asyncio.run(verify())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: memory-sdk-candidate-${{ github.sha }}
+          path: candidate-dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+  linux-arm64-core:
+    needs: candidate
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.7"
+      - uses: actions/download-artifact@v4
+        with:
+          name: memory-sdk-candidate-${{ github.sha }}
+          path: candidate-dist
+      - name: Install and verify the same ARM64 candidate bytes
+        run: |
+          test "$(uname -m)" = "aarch64"
+          cd candidate-dist
+          sha256sum --check SHA256SUMS
+          cd ..
+          uv venv .arm64-venv --python 3.13
+          WHEEL="$(find candidate-dist -maxdepth 1 -name '*.whl' -print -quit)"
+          uv pip install --python .arm64-venv/bin/python "$WHEEL"
+          .arm64-venv/bin/python -I - <<'PY'
+          import asyncio
+          import os
+          import sqlite3
+          import tempfile
+          from pathlib import Path
+
+          from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
+
+          async def verify() -> None:
+              path = Path(tempfile.mkdtemp(prefix="memory-arm64-")) / "memory.db"
+              backend = SQLiteMemoryBackend(str(path))
+              await backend.initialize()
+              first = await backend.append_message(
+                  "session-1", "user", "arm64", user_id="user-1", source_event_id="event-1"
+              )
+              replay = await backend.append_message(
+                  "session-1", "user", "arm64", user_id="user-1", source_event_id="event-1"
+              )
+              assert first.status.value == "applied"
+              assert replay.status.value == "already_applied"
+              await backend.close()
+              assert os.stat(path).st_mode & 0o777 == 0o600
+              with sqlite3.connect(path) as connection:
+                  assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+                  assert not connection.execute("PRAGMA foreign_key_check").fetchall()
+
+          asyncio.run(verify())
+          PY

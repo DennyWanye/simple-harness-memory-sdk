@@ -1,4 +1,5 @@
 """HashEmbedder — 确定性哈希伪向量。"""
+
 from __future__ import annotations
 
 import hashlib
@@ -30,7 +31,7 @@ class HashEmbedder(Embedder):
             if n <= 1:
                 shingles.extend(norm)
             else:
-                shingles.extend(norm[i:i + n] for i in range(len(norm) - n + 1))
+                shingles.extend(norm[i : i + n] for i in range(len(norm) - n + 1))
         for gram in shingles:
             h = int.from_bytes(hashlib.md5(gram.encode("utf-8")).digest()[:8], "big")
             idx = h % self._dim

@@ -3,6 +3,7 @@
 每次被召回：salience += SALIENCE_RECALL_DELTA
 每日衰减：见 cognitive/decay.py
 """
+
 from __future__ import annotations
 
 from simple_harness_memory.cognitive.decay import SALIENCE_RECALL_DELTA, bump_salience

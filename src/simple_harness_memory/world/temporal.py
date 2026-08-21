@@ -1,4 +1,5 @@
 """时间感知实现。"""
+
 from __future__ import annotations
 
 import time

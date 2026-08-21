@@ -8,7 +8,7 @@ import json
 import time
 from abc import abstractmethod
 from contextlib import asynccontextmanager
-from typing import Any, Optional
+from typing import Any, overload
 
 import structlog
 
@@ -37,6 +37,7 @@ from simple_harness_memory.core.errors import (
     MemoryValidationError,
 )
 from simple_harness_memory.core.models import (
+    SINGLE_VALUED_KEYS,
     BoundedRecallResult,
     Fact,
     FactConflict,
@@ -45,7 +46,6 @@ from simple_harness_memory.core.models import (
     MemoryApplyStatus,
     Message,
     RecallStatus,
-    SINGLE_VALUED_KEYS,
 )
 from simple_harness_memory.core.port import MemoryBackend
 from simple_harness_memory.core.twin import DigitalTwin
@@ -58,7 +58,6 @@ from simple_harness_memory.features.facts import RuleBasedFactExtractor
 from simple_harness_memory.features.reranker import IdentityReranker
 from simple_harness_memory.features.retriever import Retriever
 from simple_harness_memory.features.summarizer import RuleBasedSummarizer
-
 
 logger = structlog.get_logger("simple_harness_memory.backends.base")
 
@@ -115,31 +114,55 @@ class BaseMemoryBackend(MemoryBackend):
 
     @abstractmethod
     async def _append_message_impl(
-        self, *, user_id: str, session_id: str, role: str, content: str,
-        embedding: bytes | None, salience: float, decay_rate: float,
-        created_at: float, is_summary: bool, summary_of: str | None,
-        source_event_id: str, payload_hash: str, embedder_kind: str | None,
-        embedding_dim: int | None, embedding_format_version: int | None,
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        role: str,
+        content: str,
+        embedding: bytes | None,
+        salience: float,
+        decay_rate: float,
+        created_at: float,
+        is_summary: bool,
+        summary_of: str | None,
+        source_event_id: str,
+        payload_hash: str,
+        embedder_kind: str | None,
+        embedding_dim: int | None,
+        embedding_format_version: int | None,
     ) -> MemoryApplyResult: ...
 
     @abstractmethod
     async def _get_source_event_impl(
-        self, user_id: str, source_event_id: str,
+        self,
+        user_id: str,
+        source_event_id: str,
     ) -> tuple[int, str] | None: ...
 
     @abstractmethod
-    async def _get_message_impl(self, user_id: str, message_id: int) -> Optional[Message]: ...
+    async def _get_message_impl(self, user_id: str, message_id: int) -> Message | None: ...
 
     @abstractmethod
     async def _query_messages_impl(
-        self, user_id: str, *, limit: int, session_id: str | None = None,
-        older_than: float | None = None, lineage_mismatch: tuple[str, int, int] | None = None,
+        self,
+        user_id: str,
+        *,
+        limit: int,
+        session_id: str | None = None,
+        older_than: float | None = None,
+        lineage_mismatch: tuple[str, int, int] | None = None,
     ) -> list[Message]: ...
 
     @abstractmethod
     async def _query_facts_impl(
-        self, user_id: str, *, limit: int, subject: str | None = None,
-        category: str | None = None, active_only: bool = False,
+        self,
+        user_id: str,
+        *,
+        limit: int,
+        subject: str | None = None,
+        category: str | None = None,
+        active_only: bool = False,
     ) -> list[Fact]: ...
 
     @abstractmethod
@@ -147,23 +170,36 @@ class BaseMemoryBackend(MemoryBackend):
 
     @abstractmethod
     async def _supersede_fact_impl(
-        self, user_id: str, fact_id: int, superseded_by: int,
+        self,
+        user_id: str,
+        fact_id: int,
+        superseded_by: int,
     ) -> None: ...
 
     @abstractmethod
     async def _forget_fact_by_id_impl(
-        self, user_id: str, fact_id: int, forgotten_at: float,
+        self,
+        user_id: str,
+        fact_id: int,
+        forgotten_at: float,
     ) -> bool: ...
 
     @abstractmethod
     async def _update_message_salience_impl(
-        self, user_id: str, message_id: int, salience: float,
+        self,
+        user_id: str,
+        message_id: int,
+        salience: float,
         last_recalled: float | None,
     ) -> None: ...
 
     @abstractmethod
     async def _set_fact_decay_impl(
-        self, user_id: str, fact_id: int, *, forgotten_at: float | None = None,
+        self,
+        user_id: str,
+        fact_id: int,
+        *,
+        forgotten_at: float | None = None,
         last_decay_at: float | None = None,
     ) -> None: ...
 
@@ -175,7 +211,11 @@ class BaseMemoryBackend(MemoryBackend):
 
     @abstractmethod
     async def _record_workspace_impl(
-        self, user_id: str, session_id: str, action_type: str, payload: dict,
+        self,
+        user_id: str,
+        session_id: str,
+        action_type: str,
+        payload: dict,
     ) -> None: ...
 
     @abstractmethod
@@ -183,37 +223,67 @@ class BaseMemoryBackend(MemoryBackend):
 
     @abstractmethod
     async def _old_session_ids_impl(
-        self, user_id: str, cutoff: float, limit: int,
+        self,
+        user_id: str,
+        cutoff: float,
+        limit: int,
     ) -> list[str]: ...
 
     @abstractmethod
     async def _update_embedding_impl(
-        self, user_id: str, message_id: int, embedding: bytes,
-        embedder_kind: str, embedding_dim: int,
+        self,
+        user_id: str,
+        message_id: int,
+        embedding: bytes,
+        embedder_kind: str,
+        embedding_dim: int,
         embedding_format_version: int,
     ) -> None: ...
 
     @abstractmethod
     async def _get_recall_snapshot_impl(
-        self, user_id: str, context_query_id: str,
+        self,
+        user_id: str,
+        context_query_id: str,
     ) -> tuple[str, str, str, str, str] | None: ...
 
     @abstractmethod
     async def _insert_recall_snapshot_impl(
-        self, *, context_query_id: str, user_id: str, session_id: str,
-        query_hash: str, result_payload: str, result_hash: str, created_at: float,
+        self,
+        *,
+        context_query_id: str,
+        user_id: str,
+        session_id: str,
+        query_hash: str,
+        result_payload: str,
+        result_hash: str,
+        created_at: float,
     ) -> None: ...
 
     @abstractmethod
     async def _release_recall_snapshot_impl(
-        self, *, user_id: str, context_query_id: str, result_hash: str,
+        self,
+        *,
+        user_id: str,
+        context_query_id: str,
+        result_hash: str,
         released_at: float,
     ) -> bool: ...
 
     @abstractmethod
     async def _cleanup_recall_snapshots_impl(
-        self, *, user_id: str, released_before: float, limit: int,
+        self,
+        *,
+        user_id: str,
+        released_before: float,
+        limit: int,
     ) -> int: ...
+
+    @overload
+    def _identity(self, user_id: str, session_id: str) -> tuple[str, str]: ...
+
+    @overload
+    def _identity(self, user_id: str, session_id: None = None) -> tuple[str, None]: ...
 
     def _identity(self, user_id: str, session_id: str | None = None) -> tuple[str, str | None]:
         user_id = validate_identity(user_id, "user_id")
@@ -228,9 +298,16 @@ class BaseMemoryBackend(MemoryBackend):
         return canonical
 
     async def append_message(
-        self, session_id: str, role: str, content: str, *, user_id: str,
-        source_event_id: str, payload_hash: str | None = None,
-        salience: float = 0.0, decay_rate: float = 0.02,
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        *,
+        user_id: str,
+        source_event_id: str,
+        payload_hash: str | None = None,
+        salience: float = 0.0,
+        decay_rate: float = 0.02,
     ) -> MemoryApplyResult:
         user_id, session_id = self._identity(user_id, session_id)
         assert session_id is not None
@@ -247,7 +324,10 @@ class BaseMemoryBackend(MemoryBackend):
             )
         except ValueError as exc:
             raise MemoryValidationError("role is not conversation-memory compatible") from exc
-        if payload_hash is not None and validate_digest(payload_hash, "payload_hash") != expected_hash:
+        if (
+            payload_hash is not None
+            and validate_digest(payload_hash, "payload_hash") != expected_hash
+        ):
             raise MemoryIdempotencyConflict()
         existing = await self._get_source_event_impl(user_id, source_event_id)
         if existing is not None:
@@ -282,9 +362,7 @@ class BaseMemoryBackend(MemoryBackend):
                 embedding_format_version=EMBEDDING_FORMAT_VERSION,
             )
             if self._auto_extract_facts and role == "user" and result.status.value == "applied":
-                await self.extract_facts(
-                    result.message_id, content, role, user_id=user_id
-                )
+                await self.extract_facts(result.message_id, content, role, user_id=user_id)
         logger.info(
             "memory.append_message",
             user_id=user_id,
@@ -297,20 +375,33 @@ class BaseMemoryBackend(MemoryBackend):
         return result
 
     async def get_recent_messages(
-        self, session_id: str, limit: int = 20, *, user_id: str,
+        self,
+        session_id: str,
+        limit: int = 20,
+        *,
+        user_id: str,
     ) -> list[Message]:
         user_id, session_id = self._identity(user_id, session_id)
         assert session_id is not None
-        return list(reversed(await self._query_messages_impl(
-            user_id, session_id=session_id, limit=self._bounded_limit(limit)
-        )))
+        return list(
+            reversed(
+                await self._query_messages_impl(
+                    user_id, session_id=session_id, limit=self._bounded_limit(limit)
+                )
+            )
+        )
 
-    async def get_message(self, message_id: int, *, user_id: str) -> Optional[Message]:
+    async def get_message(self, message_id: int, *, user_id: str) -> Message | None:
         user_id, _ = self._identity(user_id)
         return await self._get_message_impl(user_id, message_id)
 
     async def extract_facts(
-        self, message_id: int, content: str, role: str, *, user_id: str,
+        self,
+        message_id: int,
+        content: str,
+        role: str,
+        *,
+        user_id: str,
     ) -> list[Fact]:
         user_id, _ = self._identity(user_id)
         source_message = await self._get_message_impl(user_id, message_id)
@@ -348,12 +439,19 @@ class BaseMemoryBackend(MemoryBackend):
                     if old.key == fact.key and old.id != new_id and old.id is not None:
                         await self._supersede_fact_impl(user_id, old.id, new_id)
         await self._commit()
-        logger.info("memory.extract_facts", user_id=user_id, message_id=message_id, fact_count=len(stored))
+        logger.info(
+            "memory.extract_facts", user_id=user_id, message_id=message_id, fact_count=len(stored)
+        )
         return stored
 
     async def get_facts(
-        self, subject: str = "user", category: str | None = None,
-        active_only: bool = True, *, user_id: str, limit: int | None = None,
+        self,
+        subject: str = "user",
+        category: str | None = None,
+        active_only: bool = True,
+        *,
+        user_id: str,
+        limit: int | None = None,
     ) -> list[Fact]:
         user_id, _ = self._identity(user_id)
         return await self._query_facts_impl(
@@ -371,7 +469,10 @@ class BaseMemoryBackend(MemoryBackend):
         return result
 
     async def get_digital_twin(
-        self, subject: str = "user", *, user_id: str,
+        self,
+        subject: str = "user",
+        *,
+        user_id: str,
     ) -> DigitalTwin:
         user_id, _ = self._identity(user_id)
         base = await self._load_twin_impl(user_id, subject)
@@ -392,7 +493,10 @@ class BaseMemoryBackend(MemoryBackend):
         await self._commit()
 
     async def suggest_questions(
-        self, subject: str = "user", *, user_id: str,
+        self,
+        subject: str = "user",
+        *,
+        user_id: str,
     ) -> list[str]:
         twin = await self.get_digital_twin(subject, user_id=user_id)
         q_map = {
@@ -404,21 +508,27 @@ class BaseMemoryBackend(MemoryBackend):
         return [q_map[field] for field in twin.missing_profile_fields() if field in q_map]
 
     async def detect_inconsistencies(
-        self, subject: str = "user", *, user_id: str,
+        self,
+        subject: str = "user",
+        *,
+        user_id: str,
     ) -> list[FactConflict]:
-        return detect_fact_conflicts(await self.get_facts(
-            subject, active_only=True, user_id=user_id
-        ))
+        return detect_fact_conflicts(
+            await self.get_facts(subject, active_only=True, user_id=user_id)
+        )
 
     async def _compute_recall(
-        self, query: str, *, user_id: str, session_id: str | None, limit: int,
+        self,
+        query: str,
+        *,
+        user_id: str,
+        session_id: str | None,
+        limit: int,
     ) -> tuple[list[Hit], bool]:
         message_cap = self._bounds.recall_candidate_messages
         fact_cap = self._bounds.recall_candidate_facts
         messages = await self._query_messages_impl(user_id, limit=message_cap + 1)
-        facts = await self._query_facts_impl(
-            user_id, limit=fact_cap + 1, active_only=True
-        )
+        facts = await self._query_facts_impl(user_id, limit=fact_cap + 1, active_only=True)
         truncated = len(messages) > message_cap or len(facts) > fact_cap
         messages = messages[:message_cap]
         facts = facts[:fact_cap]
@@ -436,8 +546,12 @@ class BaseMemoryBackend(MemoryBackend):
         return hits[:limit], truncated
 
     async def recall(
-        self, query: str, session_id: str | None = None, limit: int = 10,
-        *, user_id: str,
+        self,
+        query: str,
+        session_id: str | None = None,
+        limit: int = 10,
+        *,
+        user_id: str,
     ) -> list[Hit]:
         user_id, session_id = self._identity(user_id, session_id)
         if session_id is not None:
@@ -445,19 +559,30 @@ class BaseMemoryBackend(MemoryBackend):
             await self._commit()
         query = canonicalize_memory_text(query)
         hits, _ = await self._compute_recall(
-            query, user_id=user_id, session_id=session_id,
+            query,
+            user_id=user_id,
+            session_id=session_id,
             limit=self._bounded_limit(limit),
         )
         logger.info(
-            "memory.recall", user_id=user_id, session_id=session_id,
-            query_len=len(query), hit_count=len(hits),
+            "memory.recall",
+            user_id=user_id,
+            session_id=session_id,
+            query_len=len(query),
+            hit_count=len(hits),
         )
         return hits
 
     async def recall_bounded(
-        self, query: str, *, user_id: str, session_id: str,
-        context_query_id: str, query_hash: str | None = None,
-        max_results: int | None = None, max_bytes: int | None = None,
+        self,
+        query: str,
+        *,
+        user_id: str,
+        session_id: str,
+        context_query_id: str,
+        query_hash: str | None = None,
+        max_results: int | None = None,
+        max_bytes: int | None = None,
         timeout_seconds: float | None = None,
     ) -> BoundedRecallResult:
         user_id, session_id = self._identity(user_id, session_id)
@@ -476,7 +601,10 @@ class BaseMemoryBackend(MemoryBackend):
             max_items=max_results,
             max_bytes=max_bytes,
         )
-        if query_hash is not None and validate_digest(query_hash, "query_hash") != expected_query_hash:
+        if (
+            query_hash is not None
+            and validate_digest(query_hash, "query_hash") != expected_query_hash
+        ):
             raise MemoryIdempotencyConflict()
         query_hash = expected_query_hash
         async with self._transaction():
@@ -484,7 +612,9 @@ class BaseMemoryBackend(MemoryBackend):
             if existing is not None:
                 saved_user, saved_session, saved_query_hash, payload_json, result_hash = existing
                 if (saved_user, saved_session, saved_query_hash) != (
-                    user_id, session_id, query_hash
+                    user_id,
+                    session_id,
+                    query_hash,
                 ):
                     raise MemoryIdempotencyConflict()
                 return self._decode_recall_result(
@@ -521,10 +651,14 @@ class BaseMemoryBackend(MemoryBackend):
                 created_at=time.time(),
             )
         logger.info(
-            "memory.recall_bounded", user_id=user_id,
-            context_query_id=context_query_id, query_hash=query_hash,
-            result_hash=result_hash, status=status.value,
-            item_count=len(hits), result_bytes=len(payload_json.encode("utf-8")),
+            "memory.recall_bounded",
+            user_id=user_id,
+            context_query_id=context_query_id,
+            query_hash=query_hash,
+            result_hash=result_hash,
+            status=status.value,
+            item_count=len(hits),
+            result_bytes=len(payload_json.encode("utf-8")),
         )
         return BoundedRecallResult(
             hits=tuple(hits),
@@ -536,7 +670,11 @@ class BaseMemoryBackend(MemoryBackend):
         )
 
     def _fit_recall_payload(
-        self, hits: list[Hit], *, status: RecallStatus, max_bytes: int,
+        self,
+        hits: list[Hit],
+        *,
+        status: RecallStatus,
+        max_bytes: int,
     ) -> tuple[list[Hit], RecallStatus, str]:
         selected: list[Hit] = []
         for hit in hits:
@@ -565,8 +703,13 @@ class BaseMemoryBackend(MemoryBackend):
         return result.as_payload()
 
     def _decode_recall_result(
-        self, *, context_query_id: str, query_hash: str,
-        payload_json: str, result_hash: str, replayed: bool,
+        self,
+        *,
+        context_query_id: str,
+        query_hash: str,
+        payload_json: str,
+        result_hash: str,
+        replayed: bool,
     ) -> BoundedRecallResult:
         if hashlib.sha256(payload_json.encode("utf-8")).hexdigest() != result_hash:
             raise MemoryIdempotencyConflict()
@@ -584,7 +727,11 @@ class BaseMemoryBackend(MemoryBackend):
         )
 
     async def release_recall_result(
-        self, *, user_id: str, context_query_id: str, result_hash: str,
+        self,
+        *,
+        user_id: str,
+        context_query_id: str,
+        result_hash: str,
     ) -> None:
         user_id, _ = self._identity(user_id)
         validate_identity(context_query_id, "context_query_id")
@@ -600,7 +747,11 @@ class BaseMemoryBackend(MemoryBackend):
         await self._commit()
 
     async def cleanup_recall_results(
-        self, *, user_id: str, now: float | None = None, limit: int | None = None,
+        self,
+        *,
+        user_id: str,
+        now: float | None = None,
+        limit: int | None = None,
     ) -> int:
         user_id, _ = self._identity(user_id)
         cutoff = (now or time.time()) - self._bounds.context_result_dedupe_seconds
@@ -613,34 +764,44 @@ class BaseMemoryBackend(MemoryBackend):
         return deleted
 
     async def recall_and_reinforce(
-        self, query: str, session_id: str | None = None, limit: int = 10,
-        *, user_id: str,
+        self,
+        query: str,
+        session_id: str | None = None,
+        limit: int = 10,
+        *,
+        user_id: str,
     ) -> list[Hit]:
         hits = await self.recall(query, session_id, limit, user_id=user_id)
         now = time.time()
         for hit in hits:
             bumped = bump_salience(hit.salience)
-            await self._update_message_salience_impl(
-                user_id, hit.message_id, bumped, now
-            )
+            await self._update_message_salience_impl(user_id, hit.message_id, bumped, now)
             hit.salience = bumped
         await self._commit()
         return hits
 
     async def vector_search(
-        self, query: str, limit: int = 20, *, user_id: str,
+        self,
+        query: str,
+        limit: int = 20,
+        *,
+        user_id: str,
     ) -> list[Hit]:
         user_id, _ = self._identity(user_id)
         messages = await self._query_messages_impl(
             user_id, limit=self._bounds.recall_candidate_messages
         )
         return await self._retriever.vector_search(
-            canonicalize_memory_text(query), messages=messages,
+            canonicalize_memory_text(query),
+            messages=messages,
             limit=self._bounded_limit(limit),
         )
 
     async def daily_decay(
-        self, *, user_id: str, limit: int | None = None,
+        self,
+        *,
+        user_id: str,
+        limit: int | None = None,
     ) -> dict[str, int]:
         user_id, _ = self._identity(user_id)
         cap = self._bounded_limit(limit or self._bounds.maintenance_batch_size)
@@ -654,9 +815,7 @@ class BaseMemoryBackend(MemoryBackend):
             days = (now - ref) / 86400.0
             new_salience = decay_salience(message.salience, message.decay_rate, days)
             if abs(new_salience - message.salience) > 1e-9 and message.id is not None:
-                await self._update_message_salience_impl(
-                    user_id, message.id, new_salience, None
-                )
+                await self._update_message_salience_impl(user_id, message.id, new_salience, None)
                 decayed += 1
         for fact in facts:
             if fact.pinned or fact.id is None:
@@ -664,21 +823,20 @@ class BaseMemoryBackend(MemoryBackend):
             ref = fact.last_decay_at or fact.created_at
             days = (now - ref) / 86400.0
             if should_forget(fact.decay_rate, days):
-                await self._set_fact_decay_impl(
-                    user_id, fact.id, forgotten_at=now
-                )
+                await self._set_fact_decay_impl(user_id, fact.id, forgotten_at=now)
                 forgotten += 1
             else:
-                await self._set_fact_decay_impl(
-                    user_id, fact.id, last_decay_at=now
-                )
+                await self._set_fact_decay_impl(user_id, fact.id, last_decay_at=now)
                 decayed += 1
         await self._commit()
         return {"decayed": decayed, "forgotten": forgotten}
 
     async def summarize_old_sessions(
-        self, older_than_days: int = 7, max_sessions: int = 5,
-        *, user_id: str,
+        self,
+        older_than_days: int = 7,
+        max_sessions: int = 5,
+        *,
+        user_id: str,
     ) -> dict[str, int]:
         user_id, _ = self._identity(user_id)
         max_sessions = self._bounded_limit(max_sessions)
@@ -686,24 +844,33 @@ class BaseMemoryBackend(MemoryBackend):
         sessions = await self._old_session_ids_impl(user_id, cutoff, max_sessions)
         count = 0
         for session_id in sessions:
-            messages = list(reversed(await self._query_messages_impl(
-                user_id,
-                session_id=session_id,
-                older_than=cutoff,
-                limit=self._bounds.summary_messages_per_session,
-            )))
+            messages = list(
+                reversed(
+                    await self._query_messages_impl(
+                        user_id,
+                        session_id=session_id,
+                        older_than=cutoff,
+                        limit=self._bounds.summary_messages_per_session,
+                    )
+                )
+            )
             messages = [message for message in messages if not message.is_summary]
             summary = await self._summarizer.summarize(messages)
             if not summary:
                 continue
             source_ids = [message.id for message in messages]
-            source_event_id = "memory-summary/v1/" + hashlib.sha256(
-                canonical_json({
-                    "user_id": user_id,
-                    "session_id": session_id,
-                    "source_ids": source_ids,
-                }).encode("utf-8")
-            ).hexdigest()
+            source_event_id = (
+                "memory-summary/v1/"
+                + hashlib.sha256(
+                    canonical_json(
+                        {
+                            "user_id": user_id,
+                            "session_id": session_id,
+                            "source_ids": source_ids,
+                        }
+                    ).encode("utf-8")
+                ).hexdigest()
+            )
             payload_hash = canonical_message_payload_hash(
                 source_event_id=source_event_id,
                 user_id=user_id,
@@ -733,8 +900,12 @@ class BaseMemoryBackend(MemoryBackend):
         return {"summarized_sessions": count}
 
     async def record_workspace_action(
-        self, session_id: str, action_type: str, payload: dict,
-        *, user_id: str,
+        self,
+        session_id: str,
+        action_type: str,
+        payload: dict,
+        *,
+        user_id: str,
     ) -> None:
         user_id, session_id = self._identity(user_id, session_id)
         assert session_id is not None
@@ -758,7 +929,10 @@ class BaseMemoryBackend(MemoryBackend):
         raise MemoryUnsupportedOperation()
 
     async def delete_old_sessions(
-        self, older_than_days: float = 30.0, *, user_id: str,
+        self,
+        older_than_days: float = 30.0,
+        *,
+        user_id: str,
         limit: int | None = None,
     ) -> int:
         user_id, _ = self._identity(user_id)
@@ -789,7 +963,11 @@ class BaseMemoryBackend(MemoryBackend):
         await self._commit()
 
     async def reindex(
-        self, embedder=None, *, user_id: str, limit: int | None = None,
+        self,
+        embedder=None,
+        *,
+        user_id: str,
+        limit: int | None = None,
     ) -> int:
         user_id, _ = self._identity(user_id)
         new_embedder = embedder or self._embedder
@@ -797,9 +975,7 @@ class BaseMemoryBackend(MemoryBackend):
         messages = await self._query_messages_impl(
             user_id,
             limit=cap,
-            lineage_mismatch=(
-                new_embedder.kind, new_embedder.dim, EMBEDDING_FORMAT_VERSION
-            ),
+            lineage_mismatch=(new_embedder.kind, new_embedder.dim, EMBEDDING_FORMAT_VERSION),
         )
         vectors = await new_embedder.embed_batch([message.content for message in messages])
         for message, vector in zip(messages, vectors):

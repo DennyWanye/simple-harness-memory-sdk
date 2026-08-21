@@ -80,9 +80,10 @@ async def test_adapter_implements_sink_and_query_shapes() -> None:
     assert result.status is ConversationMemoryQueryStatus.COMPLETE
     assert result.item_count == 1
     assert result.byte_count == len(canonical_json(result.payload).encode("utf-8"))
-    assert hashlib.sha256(
-        canonical_json(result.payload).encode("utf-8")
-    ).hexdigest() == result.result_hash
+    assert (
+        hashlib.sha256(canonical_json(result.payload).encode("utf-8")).hexdigest()
+        == result.result_hash
+    )
     await adapter.close()
     await adapter.close()
 

@@ -47,7 +47,9 @@ def test_get_embedder_auto_returns_hash():
     assert isinstance(get_embedder("auto"), HashEmbedder)
 
 
-@pytest.mark.skipif(_HAS_SENTENCE_TRANSFORMERS, reason="sentence-transformers installed, ImportError not triggered")
+@pytest.mark.skipif(
+    _HAS_SENTENCE_TRANSFORMERS, reason="sentence-transformers installed, ImportError not triggered"
+)
 def test_get_embedder_bge_raises_without_dependency():
     with pytest.raises(ImportError):
         get_embedder("bge")

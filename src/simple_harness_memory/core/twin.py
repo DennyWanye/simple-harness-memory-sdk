@@ -11,36 +11,38 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
-
 
 # ─────────────────────────────────────────────
 # 子结构
 # ─────────────────────────────────────────────
 
+
 @dataclass
 class UserProfile:
     """身份层：静态 / 缓变属性。"""
-    name: Optional[str] = None
-    occupation: Optional[str] = None
-    location: Optional[str] = None
-    language: Optional[str] = None
-    timezone: Optional[str] = None
+
+    name: str | None = None
+    occupation: str | None = None
+    location: str | None = None
+    language: str | None = None
+    timezone: str | None = None
     extra: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
 class Skill:
     """单项技能。"""
+
     name: str
-    level: float = 0.5          # 0.0-1.0，从 Facts 累积推断
-    evidence_count: int = 0     # 支撑该技能的 fact 数量
-    last_updated: Optional[float] = None
+    level: float = 0.5  # 0.0-1.0，从 Facts 累积推断
+    evidence_count: int = 0  # 支撑该技能的 fact 数量
+    last_updated: float | None = None
 
 
 @dataclass
 class SkillMap:
     """认知层：技能图谱。"""
+
     skills: dict[str, Skill] = field(default_factory=dict)
 
     def upsert(self, name: str, delta: float = 0.1) -> Skill:
@@ -55,15 +57,17 @@ class SkillMap:
 @dataclass
 class Preference:
     """单条偏好。"""
-    key: str                    # 如 "prefers_dark_theme"
-    value: str                  # 如 "true" / "tea"
-    strength: float = 0.5       # 偏好强度 0.0-1.0
+
+    key: str  # 如 "prefers_dark_theme"
+    value: str  # 如 "true" / "tea"
+    strength: float = 0.5  # 偏好强度 0.0-1.0
     evidence_count: int = 0
 
 
 @dataclass
 class PreferenceMap:
     """情感层：偏好地图。"""
+
     preferences: dict[str, Preference] = field(default_factory=dict)
 
     def upsert(self, key: str, value: str, strength_delta: float = 0.1) -> Preference:
@@ -79,17 +83,19 @@ class PreferenceMap:
 @dataclass
 class Entity:
     """关系图中的实体节点。"""
+
     name: str
-    entity_type: str            # "person" | "pet" | "place" | "org" | "object"
-    relation: str               # 与 subject 的关系，如 "pet" / "colleague"
+    entity_type: str  # "person" | "pet" | "place" | "org" | "object"
+    relation: str  # 与 subject 的关系，如 "pet" / "colleague"
     attributes: dict[str, str] = field(default_factory=dict)
     confidence: float = 0.5
-    last_mentioned: Optional[float] = None
+    last_mentioned: float | None = None
 
 
 @dataclass
 class RelationshipGraph:
     """社交层：实体关系图（用 SQLite 实现，不引入图数据库）。"""
+
     entities: dict[str, Entity] = field(default_factory=dict)
 
     def upsert(self, name: str, entity_type: str, relation: str) -> Entity:
@@ -101,17 +107,19 @@ class RelationshipGraph:
 @dataclass
 class Goal:
     """动机层：单个目标。"""
+
     goal_id: str
     description: str
-    deadline: Optional[str] = None     # ISO date string
-    status: str = "active"             # "active" | "completed" | "abandoned"
+    deadline: str | None = None  # ISO date string
+    status: str = "active"  # "active" | "completed" | "abandoned"
     priority: float = 0.5
-    created_at: Optional[float] = None
+    created_at: float | None = None
 
 
 # ─────────────────────────────────────────────
 # 数字孪生体主体
 # ─────────────────────────────────────────────
+
 
 @dataclass
 class DigitalTwin:
@@ -131,9 +139,9 @@ class DigitalTwin:
     goals: list[Goal] = field(default_factory=list)
 
     # 元数据
-    completeness: float = 0.0   # 已知字段 / 期望字段
-    confidence: float = 0.0     # 整体置信度（各 fact confidence 均值）
-    last_updated: Optional[float] = None
+    completeness: float = 0.0  # 已知字段 / 期望字段
+    confidence: float = 0.0  # 整体置信度（各 fact confidence 均值）
+    last_updated: float | None = None
 
     def active_goals(self) -> list[Goal]:
         return [g for g in self.goals if g.status == "active"]
@@ -142,10 +150,14 @@ class DigitalTwin:
         """返回 profile 中尚未填充的字段列表，用于主动追问。"""
         missing = []
         p = self.profile
-        if not p.name:       missing.append("name")
-        if not p.occupation: missing.append("occupation")
-        if not p.location:   missing.append("location")
-        if not p.language:   missing.append("language")
+        if not p.name:
+            missing.append("name")
+        if not p.occupation:
+            missing.append("occupation")
+        if not p.location:
+            missing.append("location")
+        if not p.language:
+            missing.append("language")
         return missing
 
     def recalculate_completeness(self) -> None:

@@ -1,4 +1,5 @@
 """单元测试：RRF 融合算法。"""
+
 from __future__ import annotations
 
 from simple_harness_memory.features.rrf import RankedItem, fuse
@@ -52,6 +53,7 @@ def test_fuse_empty_input() -> None:
 def test_fuse_scores_sum_correctly() -> None:
     """验证 RRF 分数公式：weight / (k + rank)，精度到小数点后6位。"""
     from simple_harness_memory.features.rrf import RRF_K, SIGNAL_WEIGHTS
+
     ranked = [RankedItem(message_id=1, text="x", rank=1, source="vec")]
     result = fuse([ranked])
     expected = SIGNAL_WEIGHTS["vec"] / (RRF_K + 1)

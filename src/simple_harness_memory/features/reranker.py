@@ -1,4 +1,5 @@
 """Reranker — 召回后精排。"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -21,7 +22,9 @@ class CrossEncoderReranker(Reranker):
         try:
             from sentence_transformers import CrossEncoder
         except ImportError as exc:
-            raise ImportError("CrossEncoderReranker requires simple-harness-memory-sdk[embeddings]") from exc
+            raise ImportError(
+                "CrossEncoderReranker requires simple-harness-memory-sdk[embeddings]"
+            ) from exc
         self._model = CrossEncoder(model_name)
 
     def rerank(self, query: str, hits: list[Hit]) -> list[Hit]:

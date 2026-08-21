@@ -1,8 +1,8 @@
 """Retriever — 六路 RRF 混合召回。"""
+
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 import structlog
 
@@ -10,8 +10,7 @@ from simple_harness_memory.cognitive.session_affinity import (
     cross_session_weight,
     temporal_affinity,
 )
-from simple_harness_memory.core.models import Fact, Hit, Message
-from simple_harness_memory.core.twin import DigitalTwin
+from simple_harness_memory.core.models import Hit
 from simple_harness_memory.embedders.base import (
     Embedder,
     cosine_similarity,
@@ -24,7 +23,9 @@ logger = structlog.get_logger("simple_harness_memory.features.retriever")
 
 
 class Retriever:
-    def __init__(self, embedder: Embedder, reranker: Optional[Reranker] = None, min_similarity: float = 0.15) -> None:
+    def __init__(
+        self, embedder: Embedder, reranker: Reranker | None = None, min_similarity: float = 0.15
+    ) -> None:
         self._embedder = embedder
         self._reranker = reranker or IdentityReranker()
         self._min_similarity = min_similarity
@@ -41,7 +42,10 @@ class Retriever:
         candidates = [m for m in messages if m.id in candidate_ids]
         recency_items = self._rank_recency(candidates)
         salience_items = self._rank_salience(candidates)
-        fused = fuse([vec_items, fts_items, recency_items, salience_items, facts_items, entity_items], limit=max(limit * 2, 30))
+        fused = fuse(
+            [vec_items, fts_items, recency_items, salience_items, facts_items, entity_items],
+            limit=max(limit * 2, 30),
+        )
         hits = [self._to_hit(f) for f in fused]
         hits = self._apply_session_affinity(hits, session_id, facts)
         hits = self._reranker.rerank(query, hits)
@@ -102,7 +106,9 @@ class Retriever:
         matched = [name for name in twin.relationships.entities if name and name.casefold() in q]
         if not matched:
             return []
-        items = [self._ranked(m, "entity", 1.0) for m in messages if any(n in m.content for n in matched)]
+        items = [
+            self._ranked(m, "entity", 1.0) for m in messages if any(n in m.content for n in matched)
+        ]
         self._assign_ranks(items)
         return items
 
@@ -117,9 +123,17 @@ class Retriever:
     @staticmethod
     def _ranked(m, source, raw_score):
         return RankedItem(
-            message_id=m.id or 0, text=m.content, rank=0, source=source,
-            raw_score=raw_score, recency=0.0, salience=m.salience,
-            session_affinity=1.0, session_id=m.session_id, role=m.role, created_at=m.created_at,
+            message_id=m.id or 0,
+            text=m.content,
+            rank=0,
+            source=source,
+            raw_score=raw_score,
+            recency=0.0,
+            salience=m.salience,
+            session_affinity=1.0,
+            session_id=m.session_id,
+            role=m.role,
+            created_at=m.created_at,
         )
 
     @staticmethod
@@ -130,10 +144,16 @@ class Retriever:
     @staticmethod
     def _to_hit(item):
         return Hit(
-            message_id=item["message_id"], text=item["text"], score=item["score"],
-            source=item["source"], recency=item["recency"], salience=item["salience"],
-            session_affinity=item["session_affinity"], session_id=item["session_id"],
-            role=item["role"], created_at=item["created_at"],
+            message_id=item["message_id"],
+            text=item["text"],
+            score=item["score"],
+            source=item["source"],
+            recency=item["recency"],
+            salience=item["salience"],
+            session_affinity=item["session_affinity"],
+            session_id=item["session_id"],
+            role=item["role"],
+            created_at=item["created_at"],
         )
 
     @staticmethod
@@ -147,9 +167,13 @@ class Retriever:
         now = time.time()
         for hit in hits:
             if hit.session_id == session_id:
-                hit.session_affinity = temporal_affinity(max(0.0, (now - (hit.created_at or now)) / 86400.0))
+                hit.session_affinity = temporal_affinity(
+                    max(0.0, (now - (hit.created_at or now)) / 86400.0)
+                )
             else:
-                hit.session_affinity = cross_session_weight(hit.session_id or "", session_id, cat_by_msg.get(hit.message_id, ""))
+                hit.session_affinity = cross_session_weight(
+                    hit.session_id or "", session_id, cat_by_msg.get(hit.message_id, "")
+                )
             hit.score = round(hit.score * hit.session_affinity, 6)
         hits.sort(key=lambda h: h.score, reverse=True)
         return hits

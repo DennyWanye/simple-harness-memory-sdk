@@ -2,12 +2,11 @@
 
 检测查询中是否包含时间敏感词，判断 LLM 知识截止日期后的内容。
 """
+
 from __future__ import annotations
 
 import re
-import time
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from simple_harness_memory.world.port import KnowledgeGap
 
@@ -20,9 +19,9 @@ _TIME_SENSITIVE_PATTERNS = re.compile(
 
 # 建议工具映射
 _TOOL_SUGGESTIONS: dict[str, list[str]] = {
-    "news":    ["web_search"],
+    "news": ["web_search"],
     "weather": ["weather_api"],
-    "stock":   ["financial_api"],
+    "stock": ["financial_api"],
     "default": ["web_search"],
 }
 
@@ -30,7 +29,7 @@ _TOOL_SUGGESTIONS: dict[str, list[str]] = {
 def detect_knowledge_gap(
     query: str,
     cutoff_date: str = "2026-05-31",
-) -> Optional[KnowledgeGap]:
+) -> KnowledgeGap | None:
     """检测查询是否涉及知识截止日期后的内容。
 
     Args:
@@ -44,7 +43,7 @@ def detect_knowledge_gap(
     if not terms:
         return None
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     current_date = now.strftime("%Y-%m-%d")
     try:
         cutoff_dt = datetime.fromisoformat(cutoff_date)

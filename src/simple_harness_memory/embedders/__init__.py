@@ -13,8 +13,15 @@ from simple_harness_memory.embedders.mock import HashEmbedder, MockEmbedder
 from simple_harness_memory.embedders.openai_compatible import OpenAICompatibleClient
 
 __all__ = [
-    "Embedder", "HashEmbedder", "MockEmbedder", "BGEM3Embedder",
-    "CloudEmbedder", "EmbeddingClient", "OpenAICompatibleClient",
+    "Embedder",
+    "HashEmbedder",
+    "MockEmbedder",
+    "BGEM3Embedder",
+    "CloudEmbedder",
+    "EmbeddingClient",
+    "OpenAICompatibleClient",
     "get_embedder",
-    "encode_vector", "decode_vector", "cosine_similarity",
+    "encode_vector",
+    "decode_vector",
+    "cosine_similarity",
 ]

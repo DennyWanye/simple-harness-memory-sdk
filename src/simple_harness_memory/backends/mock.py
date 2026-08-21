@@ -19,10 +19,21 @@ from simple_harness_memory.core.models import (
 from simple_harness_memory.core.twin import DigitalTwin
 
 
+def _as_float(value: object) -> float:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return 0.0
+
+
 class MockMemoryBackend(BaseMemoryBackend):
     def __init__(
-        self, *, embedder=None, fact_extractor=None, reranker=None,
-        summarizer=None, auto_extract_facts: bool = False,
+        self,
+        *,
+        embedder=None,
+        fact_extractor=None,
+        reranker=None,
+        summarizer=None,
+        auto_extract_facts: bool = False,
         bounds: MemoryResourceBounds | None = None,
     ) -> None:
         super().__init__(
@@ -51,11 +62,23 @@ class MockMemoryBackend(BaseMemoryBackend):
             raise MemoryOwnershipConflict()
 
     async def _append_message_impl(
-        self, *, user_id: str, session_id: str, role: str, content: str,
-        embedding: bytes | None, salience: float, decay_rate: float,
-        created_at: float, is_summary: bool, summary_of: str | None,
-        source_event_id: str, payload_hash: str, embedder_kind: str | None,
-        embedding_dim: int | None, embedding_format_version: int | None,
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        role: str,
+        content: str,
+        embedding: bytes | None,
+        salience: float,
+        decay_rate: float,
+        created_at: float,
+        is_summary: bool,
+        summary_of: str | None,
+        source_event_id: str,
+        payload_hash: str,
+        embedder_kind: str | None,
+        embedding_dim: int | None,
+        embedding_format_version: int | None,
     ) -> MemoryApplyResult:
         previous = self._source_events.get(source_event_id)
         if previous is not None:
@@ -107,9 +130,7 @@ class MockMemoryBackend(BaseMemoryBackend):
             return None
         return previous[2], previous[1]
 
-    async def _get_message_impl(
-        self, user_id: str, message_id: int
-    ) -> Message | None:
+    async def _get_message_impl(self, user_id: str, message_id: int) -> Message | None:
         return next(
             (
                 message
@@ -120,19 +141,19 @@ class MockMemoryBackend(BaseMemoryBackend):
         )
 
     async def _query_messages_impl(
-        self, user_id: str, *, limit: int, session_id: str | None = None,
+        self,
+        user_id: str,
+        *,
+        limit: int,
+        session_id: str | None = None,
         older_than: float | None = None,
         lineage_mismatch: tuple[str, int, int] | None = None,
     ) -> list[Message]:
         messages = [message for message in self._messages if message.user_id == user_id]
         if session_id is not None:
-            messages = [
-                message for message in messages if message.session_id == session_id
-            ]
+            messages = [message for message in messages if message.session_id == session_id]
         if older_than is not None:
-            messages = [
-                message for message in messages if message.created_at < older_than
-            ]
+            messages = [message for message in messages if message.created_at < older_than]
         if lineage_mismatch is not None:
             kind, dim, version = lineage_mismatch
             messages = [
@@ -149,8 +170,13 @@ class MockMemoryBackend(BaseMemoryBackend):
         return messages[:limit]
 
     async def _query_facts_impl(
-        self, user_id: str, *, limit: int, subject: str | None = None,
-        category: str | None = None, active_only: bool = False,
+        self,
+        user_id: str,
+        *,
+        limit: int,
+        subject: str | None = None,
+        category: str | None = None,
+        active_only: bool = False,
     ) -> list[Fact]:
         facts = [fact for fact in self._facts if fact.user_id == user_id]
         if subject is not None:
@@ -169,9 +195,7 @@ class MockMemoryBackend(BaseMemoryBackend):
         self._facts.append(fact)
         return fact.id
 
-    async def _supersede_fact_impl(
-        self, user_id: str, fact_id: int, superseded_by: int
-    ) -> None:
+    async def _supersede_fact_impl(self, user_id: str, fact_id: int, superseded_by: int) -> None:
         for fact in self._facts:
             if fact.user_id == user_id and fact.id == fact_id:
                 fact.superseded_by = superseded_by
@@ -186,7 +210,10 @@ class MockMemoryBackend(BaseMemoryBackend):
         return False
 
     async def _update_message_salience_impl(
-        self, user_id: str, message_id: int, salience: float,
+        self,
+        user_id: str,
+        message_id: int,
+        salience: float,
         last_recalled: float | None,
     ) -> None:
         for message in self._messages:
@@ -196,7 +223,10 @@ class MockMemoryBackend(BaseMemoryBackend):
                     message.last_recalled = last_recalled
 
     async def _set_fact_decay_impl(
-        self, user_id: str, fact_id: int, *,
+        self,
+        user_id: str,
+        fact_id: int,
+        *,
         forgotten_at: float | None = None,
         last_decay_at: float | None = None,
     ) -> None:
@@ -207,9 +237,7 @@ class MockMemoryBackend(BaseMemoryBackend):
                 if last_decay_at is not None:
                     fact.last_decay_at = last_decay_at
 
-    async def _load_twin_impl(
-        self, user_id: str, subject: str
-    ) -> DigitalTwin:
+    async def _load_twin_impl(self, user_id: str, subject: str) -> DigitalTwin:
         twin = self._twins.get(user_id)
         if twin is not None and twin.subject != subject:
             raise MemoryOwnershipConflict("digital twin subject conflict")
@@ -221,9 +249,7 @@ class MockMemoryBackend(BaseMemoryBackend):
     async def _record_workspace_impl(
         self, user_id: str, session_id: str, action_type: str, payload: dict
     ) -> None:
-        self._workspace_actions.append(
-            (user_id, session_id, action_type, payload, time.time())
-        )
+        self._workspace_actions.append((user_id, session_id, action_type, payload, time.time()))
 
     async def _delete_session_impl(self, user_id: str, session_id: str) -> int:
         ids = {
@@ -250,10 +276,7 @@ class MockMemoryBackend(BaseMemoryBackend):
         self._recall_snapshots = {
             key: value
             for key, value in self._recall_snapshots.items()
-            if not (
-                value["user_id"] == user_id
-                and value["session_id"] == session_id
-            )
+            if not (value["user_id"] == user_id and value["session_id"] == session_id)
         }
         owner = self._sessions.get(session_id)
         if owner is not None and owner[0] == user_id:
@@ -269,9 +292,7 @@ class MockMemoryBackend(BaseMemoryBackend):
                 fact.superseded_by = None
         return before
 
-    async def _old_session_ids_impl(
-        self, user_id: str, cutoff: float, limit: int
-    ) -> list[str]:
+    async def _old_session_ids_impl(self, user_id: str, cutoff: float, limit: int) -> list[str]:
         matches = [
             (session_id, value[1])
             for session_id, value in self._sessions.items()
@@ -281,8 +302,12 @@ class MockMemoryBackend(BaseMemoryBackend):
         return [session_id for session_id, _ in matches[:limit]]
 
     async def _update_embedding_impl(
-        self, user_id: str, message_id: int, embedding: bytes,
-        embedder_kind: str, embedding_dim: int,
+        self,
+        user_id: str,
+        message_id: int,
+        embedding: bytes,
+        embedder_kind: str,
+        embedding_dim: int,
         embedding_format_version: int,
     ) -> None:
         for message in self._messages:
@@ -307,8 +332,14 @@ class MockMemoryBackend(BaseMemoryBackend):
         )
 
     async def _insert_recall_snapshot_impl(
-        self, *, context_query_id: str, user_id: str, session_id: str,
-        query_hash: str, result_payload: str, result_hash: str,
+        self,
+        *,
+        context_query_id: str,
+        user_id: str,
+        session_id: str,
+        query_hash: str,
+        result_payload: str,
+        result_hash: str,
         created_at: float,
     ) -> None:
         if context_query_id in self._recall_snapshots:
@@ -325,15 +356,15 @@ class MockMemoryBackend(BaseMemoryBackend):
         }
 
     async def _release_recall_snapshot_impl(
-        self, *, user_id: str, context_query_id: str, result_hash: str,
+        self,
+        *,
+        user_id: str,
+        context_query_id: str,
+        result_hash: str,
         released_at: float,
     ) -> bool:
         row = self._recall_snapshots.get(context_query_id)
-        if (
-            row is None
-            or row["user_id"] != user_id
-            or row["result_hash"] != result_hash
-        ):
+        if row is None or row["user_id"] != user_id or row["result_hash"] != result_hash:
             return False
         row["state"] = "released"
         if row["released_at"] is None:
@@ -349,9 +380,9 @@ class MockMemoryBackend(BaseMemoryBackend):
                 for key, row in self._recall_snapshots.items()
                 if row["user_id"] == user_id
                 and row["state"] == "released"
-                and float(row["released_at"] or 0) <= released_before
+                and _as_float(row["released_at"]) <= released_before
             ),
-            key=lambda item: (float(item[1]["released_at"] or 0), item[0]),
+            key=lambda item: (_as_float(item[1]["released_at"]), item[0]),
         )[:limit]
         for key, _ in candidates:
             del self._recall_snapshots[key]

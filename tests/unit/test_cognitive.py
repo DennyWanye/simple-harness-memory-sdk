@@ -1,7 +1,8 @@
 """单元测试：遗忘曲线与数字孪生体。"""
+
 from __future__ import annotations
 
-import math
+import pytest
 
 from simple_harness_memory.cognitive.decay import (
     bump_salience,
@@ -16,8 +17,8 @@ from simple_harness_memory.core.twin import (
     SkillMap,
 )
 
-
 # ── 遗忘曲线 ─────────────────────────────────────────
+
 
 def test_retention_zero_days() -> None:
     assert retention(0.02, 0.0) == 1.0
@@ -58,6 +59,7 @@ def test_decay_salience() -> None:
 
 
 # ── 数字孪生体 ───────────────────────────────────────
+
 
 def test_twin_default_state() -> None:
     twin = DigitalTwin()
@@ -109,6 +111,3 @@ def test_active_goals_filter() -> None:
     active = twin.active_goals()
     assert len(active) == 1
     assert active[0].goal_id == "g1"
-
-
-import pytest

@@ -1,4 +1,5 @@
 """Stable error types for the memory SDK."""
+
 from __future__ import annotations
 
 

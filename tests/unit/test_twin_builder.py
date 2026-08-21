@@ -9,8 +9,16 @@ from simple_harness_memory.core.models import Fact
 
 def _fact(fact_id, key, value, category):
     return Fact(
-        id=fact_id, user_id="u1", subject="user", key=key, value=value, category=category,
-        confidence=0.8, evidence="", source_msg_id=1, created_at=time.time(),
+        id=fact_id,
+        user_id="u1",
+        subject="user",
+        key=key,
+        value=value,
+        category=category,
+        confidence=0.8,
+        evidence="",
+        source_msg_id=1,
+        created_at=time.time(),
     )
 
 

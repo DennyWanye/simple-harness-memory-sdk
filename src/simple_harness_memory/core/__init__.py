@@ -1,4 +1,5 @@
 """simple_harness_memory.core — 核心接口与数据模型。"""
+
 from simple_harness_memory.core.manager import MemoryManager
 from simple_harness_memory.core.models import (
     BoundedRecallResult,

@@ -9,9 +9,9 @@
     Message, Fact, Hit, DigitalTwin
 """
 
-from simple_harness_memory.core.manager import MemoryManager
 from simple_harness_memory.config import MemoryResourceBounds
 from simple_harness_memory.core.conversation import (
+    ContextPreparationMode,
     ConversationMemoryAdapter,
     ConversationMemoryApplyResult,
     ConversationMemoryApplyStatus,
@@ -23,6 +23,7 @@ from simple_harness_memory.core.conversation import (
     ConversationMemoryRecallResult,
     ConversationMemoryRole,
 )
+from simple_harness_memory.core.manager import MemoryManager
 from simple_harness_memory.core.models import (
     BoundedRecallResult,
     Fact,
@@ -55,6 +56,7 @@ __all__ = [
     "ConversationMemoryApplyStatus",
     "ConversationMemoryError",
     "ConversationMemoryErrorCode",
+    "ContextPreparationMode",
 ]
 
 __version__ = "0.3.0"

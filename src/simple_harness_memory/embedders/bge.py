@@ -1,4 +1,5 @@
 """BGEM3Embedder — 可选本地语义向量。"""
+
 from __future__ import annotations
 
 from typing import Any

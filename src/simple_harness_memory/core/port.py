@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional
 
 from simple_harness_memory.core.models import (
     BoundedRecallResult,
@@ -21,28 +20,49 @@ class MemoryBackend(ABC):
 
     @abstractmethod
     async def append_message(
-        self, session_id: str, role: str, content: str, *, user_id: str,
-        source_event_id: str, payload_hash: str | None = None,
-        salience: float = 0.0, decay_rate: float = 0.02,
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        *,
+        user_id: str,
+        source_event_id: str,
+        payload_hash: str | None = None,
+        salience: float = 0.0,
+        decay_rate: float = 0.02,
     ) -> MemoryApplyResult: ...
 
     @abstractmethod
     async def get_recent_messages(
-        self, session_id: str, limit: int = 20, *, user_id: str,
+        self,
+        session_id: str,
+        limit: int = 20,
+        *,
+        user_id: str,
     ) -> list[Message]: ...
 
     @abstractmethod
-    async def get_message(self, message_id: int, *, user_id: str) -> Optional[Message]: ...
+    async def get_message(self, message_id: int, *, user_id: str) -> Message | None: ...
 
     @abstractmethod
     async def extract_facts(
-        self, message_id: int, content: str, role: str, *, user_id: str,
+        self,
+        message_id: int,
+        content: str,
+        role: str,
+        *,
+        user_id: str,
     ) -> list[Fact]: ...
 
     @abstractmethod
     async def get_facts(
-        self, subject: str = "user", category: Optional[str] = None,
-        active_only: bool = True, *, user_id: str, limit: int | None = None,
+        self,
+        subject: str = "user",
+        category: str | None = None,
+        active_only: bool = True,
+        *,
+        user_id: str,
+        limit: int | None = None,
     ) -> list[Fact]: ...
 
     @abstractmethod
@@ -50,7 +70,10 @@ class MemoryBackend(ABC):
 
     @abstractmethod
     async def get_digital_twin(
-        self, subject: str = "user", *, user_id: str,
+        self,
+        subject: str = "user",
+        *,
+        user_id: str,
     ) -> DigitalTwin: ...
 
     @abstractmethod
@@ -58,63 +81,106 @@ class MemoryBackend(ABC):
 
     @abstractmethod
     async def suggest_questions(
-        self, subject: str = "user", *, user_id: str,
+        self,
+        subject: str = "user",
+        *,
+        user_id: str,
     ) -> list[str]: ...
 
     @abstractmethod
     async def detect_inconsistencies(
-        self, subject: str = "user", *, user_id: str,
+        self,
+        subject: str = "user",
+        *,
+        user_id: str,
     ) -> list[FactConflict]: ...
 
     @abstractmethod
     async def recall(
-        self, query: str, session_id: Optional[str] = None, limit: int = 10,
-        *, user_id: str,
+        self,
+        query: str,
+        session_id: str | None = None,
+        limit: int = 10,
+        *,
+        user_id: str,
     ) -> list[Hit]: ...
 
     @abstractmethod
     async def recall_bounded(
-        self, query: str, *, user_id: str, session_id: str,
-        context_query_id: str, query_hash: str | None = None,
-        max_results: int | None = None, max_bytes: int | None = None,
+        self,
+        query: str,
+        *,
+        user_id: str,
+        session_id: str,
+        context_query_id: str,
+        query_hash: str | None = None,
+        max_results: int | None = None,
+        max_bytes: int | None = None,
         timeout_seconds: float | None = None,
     ) -> BoundedRecallResult: ...
 
     @abstractmethod
     async def release_recall_result(
-        self, *, user_id: str, context_query_id: str, result_hash: str,
+        self,
+        *,
+        user_id: str,
+        context_query_id: str,
+        result_hash: str,
     ) -> None: ...
 
     @abstractmethod
     async def cleanup_recall_results(
-        self, *, user_id: str, now: float | None = None, limit: int | None = None,
+        self,
+        *,
+        user_id: str,
+        now: float | None = None,
+        limit: int | None = None,
     ) -> int: ...
 
     @abstractmethod
     async def recall_and_reinforce(
-        self, query: str, session_id: Optional[str] = None, limit: int = 10,
-        *, user_id: str,
+        self,
+        query: str,
+        session_id: str | None = None,
+        limit: int = 10,
+        *,
+        user_id: str,
     ) -> list[Hit]: ...
 
     @abstractmethod
     async def vector_search(
-        self, query: str, limit: int = 20, *, user_id: str,
+        self,
+        query: str,
+        limit: int = 20,
+        *,
+        user_id: str,
     ) -> list[Hit]: ...
 
     @abstractmethod
     async def daily_decay(
-        self, *, user_id: str, limit: int | None = None,
+        self,
+        *,
+        user_id: str,
+        limit: int | None = None,
     ) -> dict[str, int]: ...
 
     @abstractmethod
     async def summarize_old_sessions(
-        self, older_than_days: int = 7, max_sessions: int = 5,
-        *, user_id: str,
+        self,
+        older_than_days: int = 7,
+        max_sessions: int = 5,
+        *,
+        user_id: str,
     ) -> dict[str, int]: ...
 
     @abstractmethod
     async def record_workspace_action(
-        self, session_id: str, action_type: str, payload: dict, *, user_id: str,
+        self,
+        session_id: str,
+        action_type: str,
+        payload: dict,
+        *,
+        user_id: str,
     ) -> None: ...
 
     @abstractmethod
@@ -126,13 +192,20 @@ class MemoryBackend(ABC):
 
     @abstractmethod
     async def delete_old_sessions(
-        self, older_than_days: float = 30.0, *, user_id: str,
+        self,
+        older_than_days: float = 30.0,
+        *,
+        user_id: str,
         limit: int | None = None,
     ) -> int: ...
 
     @abstractmethod
     async def reindex(
-        self, embedder=None, *, user_id: str, limit: int | None = None,
+        self,
+        embedder=None,
+        *,
+        user_id: str,
+        limit: int | None = None,
     ) -> int: ...
 
     async def initialize(self) -> None:
@@ -141,7 +214,7 @@ class MemoryBackend(ABC):
     async def close(self) -> None:
         """Close the backend."""
 
-    async def __aenter__(self) -> "MemoryBackend":
+    async def __aenter__(self) -> MemoryBackend:
         await self.initialize()
         return self
 

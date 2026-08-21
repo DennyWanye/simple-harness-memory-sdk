@@ -21,8 +21,14 @@ async def test_fresh_v3_schema_has_complete_ownership_graph(tmp_path):
     ) as cursor:
         tables = {row[0] for row in await cursor.fetchall()}
     assert {
-        "users", "sessions", "messages", "facts", "digital_twins",
-        "workspace_actions", "recall_result_snapshots", "schema_meta",
+        "users",
+        "sessions",
+        "messages",
+        "facts",
+        "digital_twins",
+        "workspace_actions",
+        "recall_result_snapshots",
+        "schema_meta",
     }.issubset(tables)
     async with backend._conn.execute("PRAGMA foreign_key_check") as cursor:
         assert await cursor.fetchall() == []
@@ -37,9 +43,7 @@ async def test_old_or_unstamped_schema_fails_fast_and_closes(tmp_path, kind):
     if kind == "no-meta":
         connection.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY)")
     else:
-        connection.execute(
-            "CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT)"
-        )
+        connection.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT)")
         connection.executemany(
             "INSERT INTO schema_meta VALUES (?, ?)",
             (("schema_version", "2"), ("schema_checksum", "legacy")),

@@ -1,4 +1,5 @@
 """CloudEmbedder — 云端向量化（provider 无关）。"""
+
 from __future__ import annotations
 
 import asyncio
@@ -79,17 +80,14 @@ class CloudEmbedder(Embedder):
         last_exc: Exception | None = None
         for attempt in range(self._retries + 1):
             try:
-                return await asyncio.wait_for(
-                    self._client.embed(texts), timeout=self._timeout
-                )
+                return await asyncio.wait_for(self._client.embed(texts), timeout=self._timeout)
             except EmbeddingError:
                 # 确定性错误（如维度不符）不重试，保留具体消息
                 raise
             except Exception as exc:  # noqa: BLE001 - network boundary, retry then fail-closed
                 last_exc = exc
                 if attempt < self._retries:
-                    await asyncio.sleep(0.5 * (2 ** attempt))
+                    await asyncio.sleep(0.5 * (2**attempt))
         raise EmbeddingError(
-            f"cloud embedding failed after {self._retries + 1} attempts: "
-            f"{type(last_exc).__name__}"
+            f"cloud embedding failed after {self._retries + 1} attempts: {type(last_exc).__name__}"
         ) from last_exc

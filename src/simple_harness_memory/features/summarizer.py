@@ -1,4 +1,5 @@
 """Summarizer — 旧会话记忆压缩。"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -37,7 +38,9 @@ class LLMSummarizer(Summarizer):
     async def summarize(self, messages: list[Message]) -> str:
         if not messages:
             return ""
-        transcript = "\n".join(f"{m.role}: {m.content}" for m in sorted(messages, key=lambda x: x.created_at))
+        transcript = "\n".join(
+            f"{m.role}: {m.content}" for m in sorted(messages, key=lambda x: x.created_at)
+        )
         try:
             resp = await self._client.chat.completions.create(
                 model=self._model,

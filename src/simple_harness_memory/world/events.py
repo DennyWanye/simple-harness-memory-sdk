@@ -1,10 +1,10 @@
 """事件感知。"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from typing import Any
 
-from simple_harness_memory.core.models import Fact
 from simple_harness_memory.world.port import WorldEvent
 
 
@@ -33,6 +33,7 @@ class NewsAPIEventProvider(EventProvider):
 
     async def fetch(self, days=3, interests=None, categories=None):
         import httpx
+
         params: dict[str, Any] = {"apiKey": self._api_key, "pageSize": 20, "language": "zh"}
         if interests:
             params["q"] = " OR ".join(interests)
@@ -49,10 +50,15 @@ class NewsAPIEventProvider(EventProvider):
         for a in articles:
             if not a.get("title"):
                 continue
-            events.append(WorldEvent(
-                title=a["title"], summary=(a.get("description") or "")[:500],
-                source="news", published_at=_iso_to_ts(a.get("publishedAt")), url=a.get("url"),
-            ))
+            events.append(
+                WorldEvent(
+                    title=a["title"],
+                    summary=(a.get("description") or "")[:500],
+                    source="news",
+                    published_at=_iso_to_ts(a.get("publishedAt")),
+                    url=a.get("url"),
+                )
+            )
         return events
 
 
@@ -60,7 +66,15 @@ def facts_to_events(facts):
     events = []
     for f in facts:
         if f.category == "event" and f.is_active:
-            events.append(WorldEvent(title=f.value, summary=f.evidence, source="personal", published_at=f.created_at, relevance=1.0))
+            events.append(
+                WorldEvent(
+                    title=f.value,
+                    summary=f.evidence,
+                    source="personal",
+                    published_at=f.created_at,
+                    relevance=1.0,
+                )
+            )
     return events
 
 
@@ -69,6 +83,7 @@ def _iso_to_ts(value, default=0.0):
         return default
     try:
         from datetime import datetime
+
         return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
     except (ValueError, TypeError):
         return default

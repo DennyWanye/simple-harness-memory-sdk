@@ -46,3 +46,4 @@ secrets/
 
 # plan-test gate ledger
 plans/*/verification/
+.local-test-evidence/

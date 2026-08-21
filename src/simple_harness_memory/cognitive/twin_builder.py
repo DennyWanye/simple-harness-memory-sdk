@@ -1,7 +1,8 @@
 """Digital Twin 构建与一致性检测。"""
+
 from __future__ import annotations
 
-from simple_harness_memory.core.models import Fact, FactConflict, SINGLE_VALUED_KEYS
+from simple_harness_memory.core.models import SINGLE_VALUED_KEYS, Fact, FactConflict
 from simple_harness_memory.core.twin import DigitalTwin, Goal
 
 
@@ -20,7 +21,13 @@ def build_twin_from_facts(facts, base=None, subject="user"):
 
 def _apply_fact(twin, fact):
     value = fact.value
-    profile_fields = {"name": "name", "occupation": "occupation", "location": "location", "language": "language", "timezone": "timezone"}
+    profile_fields = {
+        "name": "name",
+        "occupation": "occupation",
+        "location": "location",
+        "language": "language",
+        "timezone": "timezone",
+    }
     if fact.key in profile_fields and fact.category == "profile":
         if getattr(twin.profile, profile_fields[fact.key]) is None:
             setattr(twin.profile, profile_fields[fact.key], value)
@@ -39,7 +46,11 @@ def _apply_fact(twin, fact):
         twin.relationships.upsert(value, entity_type="pet", relation="owner")
         return
     if fact.category == "goal":
-        twin.goals.append(Goal(goal_id=f"goal-{len(twin.goals) + 1}", description=value, created_at=fact.created_at))
+        twin.goals.append(
+            Goal(
+                goal_id=f"goal-{len(twin.goals) + 1}", description=value, created_at=fact.created_at
+            )
+        )
 
 
 def detect_fact_conflicts(facts):
@@ -53,5 +64,9 @@ def detect_fact_conflicts(facts):
     for (subject, key), items in by_key.items():
         values = sorted({i.value for i in items})
         if len(values) > 1:
-            conflicts.append(FactConflict(subject=subject, key=key, values=values, fact_ids=[i.id or 0 for i in items]))
+            conflicts.append(
+                FactConflict(
+                    subject=subject, key=key, values=values, fact_ids=[i.id or 0 for i in items]
+                )
+            )
     return conflicts
