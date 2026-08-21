@@ -7,7 +7,11 @@ from collections import OrderedDict
 from typing import Protocol
 
 from simple_harness_memory.core.errors import EmbeddingError
-from simple_harness_memory.embedders.base import Embedder
+from simple_harness_memory.embedders.base import (
+    EMBEDDING_FORMAT_FINGERPRINT,
+    Embedder,
+    EmbeddingLineage,
+)
 
 
 class EmbeddingClient(Protocol):
@@ -28,12 +32,20 @@ class CloudEmbedder(Embedder):
         *,
         model: str,
         dim: int,
+        provider: str = "openai-compatible",
+        revision: str = "unspecified",
         cache_size: int = 1024,
         retries: int = 2,
         timeout: float = 30.0,
     ) -> None:
         self._client = client
+        if not provider.strip() or not model.strip() or not revision.strip():
+            raise ValueError("provider, model, and revision must be non-empty")
+        if dim <= 0:
+            raise ValueError("dim must be positive")
+        self._provider = provider
         self._model = model
+        self._revision = revision
         self._dim = dim
         self._cache_size = cache_size
         self._retries = retries
@@ -47,6 +59,18 @@ class CloudEmbedder(Embedder):
     @property
     def dim(self) -> int:
         return self._dim
+
+    @property
+    def lineage(self) -> EmbeddingLineage:
+        return EmbeddingLineage(
+            kind="cloud",
+            provider=self._provider,
+            model=self._model,
+            revision=self._revision,
+            dimension=self._dim,
+            normalization="provider-defined",
+            format_fingerprint=EMBEDDING_FORMAT_FINGERPRINT,
+        )
 
     def __repr__(self) -> str:
         return f"CloudEmbedder(model={self._model!r}, dim={self._dim})"
@@ -65,6 +89,10 @@ class CloudEmbedder(Embedder):
                 missing.append(text)
         if missing:
             vectors = await self._embed_with_retry(missing)
+            try:
+                self.validate_vectors(vectors, expected_count=len(missing))
+            except ValueError as exc:
+                raise EmbeddingError(str(exc)) from exc
             idx = 0
             for i, text in enumerate(texts):
                 if text in missing:

@@ -7,7 +7,9 @@ import dataclasses
 import hashlib
 import json
 import os
+import re
 import sqlite3
+import tempfile
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -26,11 +28,13 @@ from simple_harness_memory.backends.storage import (
 )
 from simple_harness_memory.config import MemoryResourceBounds
 from simple_harness_memory.core.errors import (
+    MemoryBackupError,
     MemoryCorruptionError,
     MemoryIdempotencyConflict,
     MemoryLimitError,
     MemoryOwnershipConflict,
     MemorySchemaIncompatible,
+    MemoryWriterConflict,
 )
 from simple_harness_memory.core.identity import (
     MemoryPrincipal,
@@ -53,6 +57,12 @@ from simple_harness_memory.core.twin import (
     Skill,
     SkillMap,
     UserProfile,
+)
+from simple_harness_memory.embedders.base import (
+    EMBEDDING_FORMAT_VERSION,
+    cosine_similarity,
+    decode_vector,
+    encode_vector,
 )
 
 logger = structlog.get_logger("simple_harness_memory.backends.sqlite")
@@ -264,6 +274,70 @@ CREATE INDEX idx_facts_scope_active
     ON facts(deployment_id, household_id, scope_kind, scope_owner, forgotten_at, id DESC);
 CREATE INDEX idx_fact_jobs_claim
     ON fact_jobs(state, next_attempt_at, lease_until, created_at);
+CREATE VIRTUAL TABLE messages_fts USING fts5(
+    content, content='messages', content_rowid='id', tokenize='unicode61'
+);
+CREATE TRIGGER messages_fts_insert AFTER INSERT ON messages BEGIN
+    INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+END;
+CREATE TRIGGER messages_fts_delete AFTER DELETE ON messages BEGIN
+    INSERT INTO messages_fts(messages_fts, rowid, content)
+    VALUES ('delete', old.id, old.content);
+END;
+CREATE TRIGGER messages_fts_update AFTER UPDATE OF content ON messages BEGIN
+    INSERT INTO messages_fts(messages_fts, rowid, content)
+    VALUES ('delete', old.id, old.content);
+    INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+END;
+CREATE VIRTUAL TABLE facts_fts USING fts5(
+    value, content='facts', content_rowid='id', tokenize='unicode61'
+);
+CREATE TRIGGER facts_fts_insert AFTER INSERT ON facts BEGIN
+    INSERT INTO facts_fts(rowid, value) VALUES (new.id, new.value);
+END;
+CREATE TRIGGER facts_fts_delete AFTER DELETE ON facts BEGIN
+    INSERT INTO facts_fts(facts_fts, rowid, value)
+    VALUES ('delete', old.id, old.value);
+END;
+CREATE TRIGGER facts_fts_update AFTER UPDATE OF value ON facts BEGIN
+    INSERT INTO facts_fts(facts_fts, rowid, value)
+    VALUES ('delete', old.id, old.value);
+    INSERT INTO facts_fts(rowid, value) VALUES (new.id, new.value);
+END;
+CREATE TABLE embedding_lineages (
+    lineage_id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    revision TEXT NOT NULL,
+    dimension INTEGER NOT NULL CHECK (dimension > 0),
+    normalization TEXT NOT NULL,
+    format_version INTEGER NOT NULL,
+    format_fingerprint TEXT NOT NULL,
+    fingerprint TEXT NOT NULL UNIQUE
+);
+CREATE TABLE embedding_generations (
+    generation_id TEXT PRIMARY KEY,
+    lineage_id TEXT NOT NULL REFERENCES embedding_lineages(lineage_id),
+    state TEXT NOT NULL CHECK (state IN ('building', 'active', 'retired', 'failed')),
+    cursor INTEGER NOT NULL DEFAULT 0,
+    vector_count INTEGER NOT NULL DEFAULT 0,
+    content_hash TEXT,
+    last_error_code TEXT,
+    created_at REAL NOT NULL,
+    activated_at REAL
+);
+CREATE UNIQUE INDEX idx_embedding_one_active
+    ON embedding_generations(state) WHERE state = 'active';
+CREATE TABLE message_vectors (
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    generation_id TEXT NOT NULL REFERENCES embedding_generations(generation_id) ON DELETE CASCADE,
+    embedding BLOB NOT NULL,
+    dimension INTEGER NOT NULL CHECK (dimension > 0),
+    PRIMARY KEY (message_id, generation_id)
+);
+CREATE INDEX idx_message_vectors_generation
+    ON message_vectors(generation_id, message_id);
 CREATE TABLE schema_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -335,6 +409,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         self._transaction_owner: asyncio.Task[Any] | None = None
         self._transaction_depth = ContextVar[int](f"memory_transaction_depth_{id(self)}", default=0)
         self._default_busy_timeout_ms = 5000
+        self._writer_lock_file: Any | None = None
         self._agent_fence_context = ContextVar[str | None](
             f"memory_agent_fence_{id(self)}", default=None
         )
@@ -349,6 +424,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         digest = path_digest(self._db_path)
         try:
             self._secure_path = secure_sqlite_path(self._db_path)
+            self._acquire_writer_lease()
             self._db = await aiosqlite.connect(str(self._secure_path), isolation_level=None)
             self._db.row_factory = aiosqlite.Row
             await self._db.execute("PRAGMA foreign_keys = ON")
@@ -365,17 +441,48 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                 "memory.backend_initialized",
                 db_path_hash=digest,
                 schema_version=SCHEMA_VERSION,
+                sqlite_version=sqlite3.sqlite_version,
+                fts5=True,
             )
         except Exception:
             if self._db is not None:
                 await self._db.close()
                 self._db = None
+            self._release_writer_lease()
             logger.error(
                 "memory.backend_initialize_failed",
                 db_path_hash=digest,
                 stable_code="memory_backend_initialize_failed",
             )
             raise
+
+    def _acquire_writer_lease(self) -> None:
+        if self._writer_lock_file is not None:
+            return
+        assert self._secure_path is not None
+        lock_path = self._secure_path.with_name(self._secure_path.name + ".writer.lock")
+        lock_path.touch(mode=0o600, exist_ok=True)
+        handle = lock_path.open("r+")
+        try:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (BlockingIOError, OSError) as exc:
+            handle.close()
+            raise MemoryWriterConflict() from exc
+        self._writer_lock_file = handle
+
+    def _release_writer_lease(self) -> None:
+        handle = self._writer_lock_file
+        if handle is None:
+            return
+        try:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
+            self._writer_lock_file = None
 
     async def _initialize_fresh_or_validate(self) -> None:
         tables = await self._table_names()
@@ -409,6 +516,11 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             "fact_jobs",
             "fact_tombstones",
             "suppression_receipts",
+            "messages_fts",
+            "facts_fts",
+            "embedding_lineages",
+            "embedding_generations",
+            "message_vectors",
             "schema_meta",
         }
         if not expected.issubset(tables):
@@ -553,6 +665,15 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         """Return a durable identity-filtered recall payload and personal fence."""
 
         self._agent_fence_context.set(None)
+        query_vector: list[float] | None = None
+        try:
+            query_vector = await self._embedder.embed(query_text)
+            self._embedder.validate_vectors([query_vector], expected_count=1)
+        except Exception:
+            logger.warning(
+                "memory.recall_vector_degraded",
+                stable_code="memory_embedding_unavailable_lexical_only",
+            )
         async with self._transaction():
             user_id = await self._bind_agent_session(principal)
             personal = MemoryScope.personal(principal.actor_id)
@@ -582,23 +703,95 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                     raise MemoryIdempotencyConflict()
                 return json.loads(str(prior[1])), str(prior[2]), True
 
-            predicate, params = scope_predicate(principal, scopes)
-            candidate_limit = max_items + 1
-            like = f"%{query_text[:256]}%"
+            message_predicate, message_params = scope_predicate(principal, scopes, table_alias="m")
+            fact_predicate, fact_params = scope_predicate(principal, scopes, table_alias="f")
+            candidate_limit = min(
+                self._bounds.recall_candidate_messages, max(max_items * 8, max_items + 1)
+            )
+            fact_limit = min(self._bounds.recall_candidate_facts, max(max_items * 4, max_items + 1))
+            terms = re.findall(r"[\w]+", query_text[:256], flags=re.UNICODE)[:16]
+            fts_query = " OR ".join(f'"{term.replace(chr(34), chr(34) * 2)}"' for term in terms)
+            if fts_query:
+                async with self._conn.execute(
+                    "SELECT m.id, m.content, m.role, m.session_id, m.created_at, "
+                    "m.scope_kind, m.scope_owner FROM messages_fts "
+                    "JOIN messages AS m ON m.id = messages_fts.rowid "
+                    f"WHERE {message_predicate} AND messages_fts MATCH ? "
+                    "ORDER BY bm25(messages_fts), m.created_at DESC, m.id DESC LIMIT ?",
+                    (*message_params, fts_query, candidate_limit),
+                ) as cursor:
+                    rows = list(await cursor.fetchall())
+                async with self._conn.execute(
+                    "SELECT f.id, f.value, f.category, f.created_at, f.scope_kind, "
+                    "f.scope_owner FROM facts_fts JOIN facts AS f "
+                    "ON f.id = facts_fts.rowid "
+                    f"WHERE {fact_predicate} AND f.forgotten_at IS NULL "
+                    "AND facts_fts MATCH ? ORDER BY bm25(facts_fts), "
+                    "f.created_at DESC, f.id DESC LIMIT ?",
+                    (*fact_params, fts_query, fact_limit),
+                ) as cursor:
+                    fact_rows = list(await cursor.fetchall())
+            else:
+                rows = []
+                fact_rows = []
             async with self._conn.execute(
-                "SELECT id, content, role, session_id, created_at, scope_kind, scope_owner "
-                f"FROM messages WHERE {predicate} "
-                "ORDER BY (content LIKE ?) DESC, created_at DESC, id DESC LIMIT ?",
-                (*params, like, candidate_limit),
+                "SELECT m.id, m.content, m.role, m.session_id, m.created_at, "
+                "m.scope_kind, m.scope_owner FROM messages AS m "
+                f"WHERE {message_predicate} ORDER BY m.created_at DESC, m.id DESC LIMIT ?",
+                (*message_params, candidate_limit),
             ) as cursor:
-                rows = list(await cursor.fetchall())
+                recent_rows = list(await cursor.fetchall())
+            rows = list({int(row["id"]): row for row in [*rows, *recent_rows]}.values())
             async with self._conn.execute(
-                "SELECT id, value, category, created_at, scope_kind, scope_owner "
-                f"FROM facts WHERE {predicate} AND forgotten_at IS NULL "
-                "ORDER BY (value LIKE ?) DESC, created_at DESC, id DESC LIMIT ?",
-                (*params, like, candidate_limit),
+                "SELECT f.id, f.value, f.category, f.created_at, f.scope_kind, "
+                "f.scope_owner FROM facts AS f "
+                f"WHERE {fact_predicate} AND f.forgotten_at IS NULL "
+                "ORDER BY f.created_at DESC, f.id DESC LIMIT ?",
+                (*fact_params, fact_limit),
             ) as cursor:
-                fact_rows = list(await cursor.fetchall())
+                recent_fact_rows = list(await cursor.fetchall())
+            fact_rows = list(
+                {int(row["id"]): row for row in [*fact_rows, *recent_fact_rows]}.values()
+            )
+            vector_scores: dict[int, float] = {}
+            if query_vector is not None:
+                async with self._conn.execute(
+                    "SELECT generation_id, lineage_id FROM embedding_generations "
+                    "WHERE state = 'active' LIMIT 1"
+                ) as cursor:
+                    active = await cursor.fetchone()
+                if (
+                    active is not None
+                    and str(active["lineage_id"]) == self._embedder.lineage.lineage_id
+                ):
+                    lexical_ids = [int(row["id"]) for row in rows]
+                    placeholders = ",".join("?" for _ in lexical_ids)
+                    lexical_clause = f"m.id IN ({placeholders}) OR " if lexical_ids else ""
+                    async with self._conn.execute(
+                        "SELECT m.id, v.embedding FROM messages AS m "
+                        "JOIN message_vectors AS v ON v.message_id = m.id "
+                        f"WHERE {message_predicate} AND v.generation_id = ? AND "
+                        f"({lexical_clause}m.id IN (SELECT id FROM messages AS recent "
+                        f"WHERE {message_predicate.replace('m.', 'recent.')} "
+                        "ORDER BY recent.created_at DESC, recent.id DESC LIMIT ?)) "
+                        "ORDER BY m.created_at DESC, m.id DESC LIMIT ?",
+                        (
+                            *message_params,
+                            str(active["generation_id"]),
+                            *lexical_ids,
+                            *message_params,
+                            candidate_limit,
+                            candidate_limit,
+                        ),
+                    ) as cursor:
+                        vector_rows = await cursor.fetchall()
+                    for vector_row in vector_rows:
+                        try:
+                            vector_scores[int(vector_row["id"])] = cosine_similarity(
+                                query_vector, decode_vector(bytes(vector_row["embedding"]))
+                            )
+                        except (TypeError, ValueError, UnicodeDecodeError):
+                            continue
             truncated = len(rows) + len(fact_rows) > max_items
             items: list[dict[str, object]] = []
             candidates: list[dict[str, object]] = []
@@ -613,6 +806,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                         "kind": str(row["scope_kind"]),
                         "owner_id": str(row["scope_owner"]),
                     },
+                    "_rank_score": vector_scores.get(int(row["id"]), 0.0),
                 }
                 candidates.append(item)
             for row in fact_rows:
@@ -630,8 +824,16 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                         },
                     }
                 )
-            candidates.sort(key=lambda item: float(str(item["created_at"])), reverse=True)
+            candidates.sort(
+                key=lambda item: (
+                    float(str(item.get("_rank_score", 0.0))),
+                    float(str(item["created_at"])),
+                    str(item["record_id"]),
+                ),
+                reverse=True,
+            )
             for item in candidates[:max_items]:
+                item.pop("_rank_score", None)
                 proposed = {"items": [*items, item], "truncated": truncated}
                 proposed_bytes = json.dumps(
                     proposed,
@@ -1191,11 +1393,314 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         async with self._operation():
             await self._close_locked()
 
+    async def reindex_generation(
+        self, embedder=None, *, page_size: int | None = None
+    ) -> dict[str, object]:
+        """Build and atomically activate a complete, restartable vector generation."""
+
+        selected = embedder or self._embedder
+        size = self._bounded_limit(page_size or self._bounds.maintenance_batch_size)
+        lineage = selected.lineage
+        started = time.monotonic()
+        async with self._transaction():
+            await self._conn.execute(
+                "INSERT INTO embedding_lineages "
+                "(lineage_id, kind, provider, model, revision, dimension, normalization, "
+                "format_version, format_fingerprint, fingerprint) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(lineage_id) DO NOTHING",
+                (
+                    lineage.lineage_id,
+                    lineage.kind,
+                    lineage.provider,
+                    lineage.model,
+                    lineage.revision,
+                    lineage.dimension,
+                    lineage.normalization,
+                    EMBEDDING_FORMAT_VERSION,
+                    lineage.format_fingerprint,
+                    lineage.lineage_id,
+                ),
+            )
+            async with self._conn.execute(
+                "SELECT generation_id, cursor, vector_count FROM embedding_generations "
+                "WHERE lineage_id = ? AND state = 'building' "
+                "ORDER BY created_at DESC LIMIT 1",
+                (lineage.lineage_id,),
+            ) as existing_cursor:
+                existing = await existing_cursor.fetchone()
+            if existing is None:
+                generation_id = f"gen:{uuid.uuid4().hex}"
+                cursor_id = 0
+                count = 0
+                await self._conn.execute(
+                    "INSERT INTO embedding_generations "
+                    "(generation_id, lineage_id, state, created_at) "
+                    "VALUES (?, ?, 'building', ?)",
+                    (generation_id, lineage.lineage_id, time.time()),
+                )
+            else:
+                generation_id = str(existing["generation_id"])
+                cursor_id = int(existing["cursor"])
+                count = int(existing["vector_count"])
+        digest = hashlib.sha256()
+        if count:
+            vector_cursor = 0
+            while True:
+                async with self._operation():
+                    async with self._conn.execute(
+                        "SELECT message_id, embedding FROM message_vectors "
+                        "WHERE generation_id = ? AND message_id > ? "
+                        "ORDER BY message_id LIMIT ?",
+                        (generation_id, vector_cursor, size),
+                    ) as persisted_cursor:
+                        persisted = list(await persisted_cursor.fetchall())
+                if not persisted:
+                    break
+                for row in persisted:
+                    digest.update(str(int(row["message_id"])).encode())
+                    digest.update(bytes(row["embedding"]))
+                vector_cursor = int(persisted[-1]["message_id"])
+        try:
+            while True:
+                async with self._operation():
+                    async with self._conn.execute(
+                        "SELECT id, content FROM messages WHERE id > ? ORDER BY id LIMIT ?",
+                        (cursor_id, size),
+                    ) as cursor:
+                        page = list(await cursor.fetchall())
+                if not page:
+                    break
+                vectors = await selected.embed_batch([str(row["content"]) for row in page])
+                selected.validate_vectors(vectors, expected_count=len(page))
+                encoded = [encode_vector(vector) for vector in vectors]
+                async with self._transaction():
+                    await self._conn.executemany(
+                        "INSERT OR REPLACE INTO message_vectors "
+                        "(message_id, generation_id, embedding, dimension) VALUES (?, ?, ?, ?)",
+                        [
+                            (int(row["id"]), generation_id, blob, lineage.dimension)
+                            for row, blob in zip(page, encoded)
+                        ],
+                    )
+                    cursor_id = int(page[-1]["id"])
+                    count += len(page)
+                    for row, blob in zip(page, encoded):
+                        digest.update(str(int(row["id"])).encode())
+                        digest.update(blob)
+                    await self._conn.execute(
+                        "UPDATE embedding_generations SET cursor = ?, vector_count = ?, "
+                        "content_hash = ? WHERE generation_id = ? AND state = 'building'",
+                        (cursor_id, count, digest.hexdigest(), generation_id),
+                    )
+            async with self._transaction():
+                async with self._conn.execute("SELECT COUNT(*) FROM messages") as cursor:
+                    expected_row = await cursor.fetchone()
+                    if expected_row is None:
+                        raise MemoryCorruptionError("message count unavailable")
+                    expected = int(expected_row[0])
+                async with self._conn.execute(
+                    "SELECT COUNT(*) FROM message_vectors WHERE generation_id = ? "
+                    "AND dimension = ?",
+                    (generation_id, lineage.dimension),
+                ) as cursor:
+                    actual_row = await cursor.fetchone()
+                    if actual_row is None:
+                        raise MemoryCorruptionError("vector count unavailable")
+                    actual = int(actual_row[0])
+                if actual != expected or actual != count:
+                    raise MemoryCorruptionError("embedding generation verification failed")
+                async with self._conn.execute(
+                    "SELECT embedding FROM message_vectors WHERE generation_id = ? "
+                    "ORDER BY message_id LIMIT 1",
+                    (generation_id,),
+                ) as sample_cursor:
+                    sample = await sample_cursor.fetchone()
+                if sample is not None and len(decode_vector(bytes(sample[0]))) != lineage.dimension:
+                    raise MemoryCorruptionError("embedding generation sample verification failed")
+                await self._conn.execute(
+                    "UPDATE embedding_generations SET state = 'retired' WHERE state = 'active'"
+                )
+                await self._conn.execute(
+                    "UPDATE embedding_generations SET state = 'active', activated_at = ? "
+                    "WHERE generation_id = ? AND state = 'building'",
+                    (time.time(), generation_id),
+                )
+            self._embedder = selected
+            logger.info(
+                "memory.reindex_completed",
+                generation_id_hash=hashlib.sha256(generation_id.encode()).hexdigest()[:16],
+                vector_count=count,
+                duration_ms=round((time.monotonic() - started) * 1000),
+            )
+            return {
+                "generation_id": generation_id,
+                "lineage_id": lineage.lineage_id,
+                "vector_count": count,
+                "state": "active",
+            }
+        except Exception:
+            async with self._transaction():
+                await self._conn.execute(
+                    "UPDATE embedding_generations SET state = 'failed', "
+                    "last_error_code = 'memory_reindex_failed' "
+                    "WHERE generation_id = ? AND state = 'building'",
+                    (generation_id,),
+                )
+            logger.error("memory.reindex_failed", stable_code="memory_reindex_failed")
+            raise
+
+    async def checkpoint(self, *, deadline_seconds: float = 5.0) -> tuple[int, int]:
+        """Serialize a bounded WAL checkpoint with all writers and backups."""
+
+        if deadline_seconds <= 0:
+            raise ValueError("deadline_seconds must be positive")
+        async with asyncio.timeout(deadline_seconds):
+            async with self._operation():
+                async with self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)") as cursor:
+                    row = await cursor.fetchone()
+        if row is None or int(row[0]) != 0:
+            raise TimeoutError("memory checkpoint deadline exceeded")
+        return int(row[1]), int(row[2])
+
+    async def backup(self, destination: str | os.PathLike[str]) -> dict[str, object]:
+        """Create a validated online backup and adjacent content-addressed manifest."""
+
+        destination_path = Path(destination).resolve()
+        manifest_path = destination_path.with_name(destination_path.name + ".manifest.json")
+        if destination_path.exists() or manifest_path.exists():
+            raise MemoryBackupError("memory_backup_destination_exists")
+        if not destination_path.parent.is_dir():
+            raise MemoryBackupError("memory_backup_parent_missing")
+        temp_path = destination_path.with_name(f".{destination_path.name}.{uuid.uuid4().hex}.tmp")
+        started = time.monotonic()
+        try:
+            secure_sqlite_path(temp_path)
+            target = await aiosqlite.connect(str(temp_path), isolation_level=None)
+            try:
+                async with self._operation():
+                    await self._conn.backup(target)
+            finally:
+                await target.close()
+            verify_sqlite_path(temp_path)
+            sha = hashlib.sha256(temp_path.read_bytes()).hexdigest()
+            async with self._operation():
+                async with self._conn.execute(
+                    "SELECT generation_id, lineage_id FROM embedding_generations "
+                    "WHERE state = 'active' LIMIT 1"
+                ) as cursor:
+                    active = await cursor.fetchone()
+            manifest: dict[str, object] = {
+                "protocol": "simple-harness-memory/sqlite-backup/v1",
+                "schema_version": SCHEMA_VERSION,
+                "schema_checksum": SCHEMA_CHECKSUM,
+                "sqlite_version": sqlite3.sqlite_version,
+                "sha256": sha,
+                "created_at": time.time(),
+                "active_generation_id": None if active is None else str(active[0]),
+                "active_lineage_id": None if active is None else str(active[1]),
+            }
+            os.replace(temp_path, destination_path)
+            os.chmod(destination_path, 0o600)
+            manifest_tmp = manifest_path.with_name(f".{manifest_path.name}.{uuid.uuid4().hex}.tmp")
+            manifest_tmp.write_text(
+                json.dumps(manifest, sort_keys=True, separators=(",", ":")), encoding="utf-8"
+            )
+            os.chmod(manifest_tmp, 0o600)
+            os.replace(manifest_tmp, manifest_path)
+            logger.info(
+                "memory.backup_completed",
+                backup_sha256=sha,
+                duration_ms=round((time.monotonic() - started) * 1000),
+            )
+            return manifest
+        except Exception:
+            temp_path.unlink(missing_ok=True)
+            logger.error("memory.backup_failed", stable_code="memory_backup_failed")
+            raise
+
+    @staticmethod
+    def restore_backup_sync(
+        backup: str | os.PathLike[str], target: str | os.PathLike[str]
+    ) -> dict[str, object]:
+        """Validate a closed backup in isolation, then atomically replace the target."""
+
+        backup_path = Path(backup).resolve()
+        target_path = Path(target).resolve()
+        manifest_path = backup_path.with_name(backup_path.name + ".manifest.json")
+        try:
+            verify_sqlite_path(backup_path)
+            if manifest_path.is_symlink() or not manifest_path.is_file():
+                raise MemoryBackupError()
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if manifest.get("protocol") != "simple-harness-memory/sqlite-backup/v1":
+                raise MemoryBackupError()
+            if manifest.get("schema_version") != SCHEMA_VERSION:
+                raise MemoryBackupError()
+            if manifest.get("schema_checksum") != SCHEMA_CHECKSUM:
+                raise MemoryBackupError()
+            if hashlib.sha256(backup_path.read_bytes()).hexdigest() != manifest.get("sha256"):
+                raise MemoryBackupError()
+            if (
+                backup_path.with_name(backup_path.name + "-wal").exists()
+                or backup_path.with_name(backup_path.name + "-shm").exists()
+            ):
+                raise MemoryBackupError("memory_backup_has_wal_residue")
+            source = sqlite3.connect(f"file:{backup_path}?mode=ro", uri=True)
+            try:
+                if source.execute("PRAGMA integrity_check").fetchone() != ("ok",):
+                    raise MemoryBackupError()
+                if source.execute("PRAGMA foreign_key_check").fetchone() is not None:
+                    raise MemoryBackupError()
+                meta = dict(source.execute("SELECT key, value FROM schema_meta"))
+                if meta.get("schema_version") != str(SCHEMA_VERSION):
+                    raise MemoryBackupError()
+                if meta.get("schema_checksum") != SCHEMA_CHECKSUM:
+                    raise MemoryBackupError()
+                active = source.execute(
+                    "SELECT generation_id, lineage_id FROM embedding_generations "
+                    "WHERE state = 'active' LIMIT 1"
+                ).fetchone()
+                actual_generation = None if active is None else str(active[0])
+                actual_lineage = None if active is None else str(active[1])
+                if manifest.get("active_generation_id") != actual_generation:
+                    raise MemoryBackupError()
+                if manifest.get("active_lineage_id") != actual_lineage:
+                    raise MemoryBackupError()
+            finally:
+                source.close()
+            target_path.parent.mkdir(parents=False, exist_ok=True)
+            fd, raw_temp = tempfile.mkstemp(prefix=f".{target_path.name}.", dir=target_path.parent)
+            os.close(fd)
+            temp = Path(raw_temp)
+            try:
+                os.chmod(temp, 0o600)
+                source = sqlite3.connect(f"file:{backup_path}?mode=ro", uri=True)
+                destination = sqlite3.connect(temp)
+                try:
+                    source.backup(destination)
+                    if destination.execute("PRAGMA integrity_check").fetchone() != ("ok",):
+                        raise MemoryBackupError()
+                finally:
+                    source.close()
+                    destination.close()
+                os.replace(temp, target_path)
+                os.chmod(target_path, 0o600)
+            finally:
+                temp.unlink(missing_ok=True)
+            return manifest
+        except MemoryBackupError:
+            raise
+        except Exception as exc:
+            raise MemoryBackupError() from exc
+
     async def _close_locked(self) -> None:
         if self._db is None:
+            self._release_writer_lease()
             return
         await self._db.close()
         self._db = None
+        self._release_writer_lease()
         logger.info("memory.backend_closed", db_path_hash=path_digest(self._db_path))
 
     @property

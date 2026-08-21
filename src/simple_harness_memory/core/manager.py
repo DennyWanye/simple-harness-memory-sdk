@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -12,6 +14,7 @@ from simple_harness_memory.core.errors import (
     HarnessIntegrationExtraRequired,
     MemoryIdempotencyConflict,
     MemoryOwnershipConflict,
+    MemoryProductionConfigurationError,
 )
 from simple_harness_memory.core.fact_jobs import FactJobWorker
 from simple_harness_memory.core.identity import (
@@ -66,6 +69,7 @@ class MemoryManager:
         self._backend = backend
         self.world = world
         self._fact_worker = fact_worker
+        self._closed = False
 
     @property
     def backend(self) -> MemoryBackend:
@@ -131,6 +135,34 @@ class MemoryManager:
             await worker.start()
         return cls(backend=backend, world=world_model, fact_worker=worker)
 
+    @classmethod
+    async def build_development(cls, db_path=None, **kwargs):
+        """Explicit development builder; deterministic hash embeddings are allowed."""
+
+        return await cls.build(db_path, **kwargs)
+
+    @classmethod
+    async def build_production(
+        cls,
+        db_path,
+        *,
+        embedder=None,
+        resource_path=None,
+        **kwargs,
+    ):
+        """Build with an explicit production embedder and pre-resolved local resources."""
+
+        if embedder is None or isinstance(embedder, str):
+            raise MemoryProductionConfigurationError()
+        if getattr(embedder, "kind", None) in {"hash", "mock"}:
+            raise MemoryProductionConfigurationError()
+        if resource_path is None:
+            raise MemoryProductionConfigurationError("memory_embedding_resource_unavailable")
+        pinned_resource = Path(resource_path)
+        if not pinned_resource.is_absolute() or not pinned_resource.exists():
+            raise MemoryProductionConfigurationError("memory_embedding_resource_unavailable")
+        return await cls.build(db_path, embedder=embedder, **kwargs)
+
     @staticmethod
     def _harness() -> Any:
         try:
@@ -163,15 +195,16 @@ class MemoryManager:
         scopes = tuple(self._scope(scope) for scope in request.scopes)
         try:
             recall = getattr(self._backend, "agent_recall")
-            payload, fence, _replayed = await recall(
-                principal=principal,
-                scopes=scopes,
-                query_id=request.query_id,
-                query_hash=request.query_hash,
-                query_text=request.query_text,
-                max_items=request.bounds.max_items,
-                max_bytes=request.bounds.max_bytes,
-            )
+            async with asyncio.timeout(request.bounds.deadline_seconds):
+                payload, fence, _replayed = await recall(
+                    principal=principal,
+                    scopes=scopes,
+                    query_id=request.query_id,
+                    query_hash=request.query_hash,
+                    query_text=request.query_text,
+                    max_items=request.bounds.max_items,
+                    max_bytes=request.bounds.max_bytes,
+                )
         except MemoryIdempotencyConflict as exc:
             raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.CONFLICT) from exc
         except MemoryOwnershipConflict as exc:
@@ -491,10 +524,42 @@ class MemoryManager:
     async def reindex(self, embedder=None, *, user_id, limit=None):
         return await self._backend.reindex(embedder, user_id=user_id, limit=limit)
 
+    async def reindex_generation(self, embedder=None, *, page_size=None):
+        operation = getattr(self._backend, "reindex_generation", None)
+        if operation is None:
+            raise RuntimeError("backend does not support embedding generations")
+        return await operation(embedder, page_size=page_size)
+
+    async def checkpoint(self, *, deadline_seconds=5.0):
+        operation = getattr(self._backend, "checkpoint", None)
+        if operation is None:
+            raise RuntimeError("backend does not support checkpoints")
+        return await operation(deadline_seconds=deadline_seconds)
+
+    async def backup(self, destination):
+        operation = getattr(self._backend, "backup", None)
+        if operation is None:
+            raise RuntimeError("backend does not support backups")
+        return await operation(destination)
+
+    async def restore_backup(self, backup):
+        """Restore this manager's SQLite path after it has been explicitly closed."""
+
+        if not self._closed:
+            raise RuntimeError("memory_restore_requires_closed_manager")
+        from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
+
+        if not isinstance(self._backend, SQLiteMemoryBackend):
+            raise RuntimeError("backend does not support restore")
+        return await asyncio.to_thread(
+            SQLiteMemoryBackend.restore_backup_sync, backup, self._backend._db_path
+        )
+
     async def close(self):
         if self._fact_worker is not None:
             await self._fact_worker.close()
         await self._backend.close()
+        self._closed = True
         logger.info("memory.manager_closed", backend_type=type(self._backend).__name__)
 
     async def __aenter__(self):

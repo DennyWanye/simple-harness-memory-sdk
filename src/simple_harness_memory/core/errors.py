@@ -65,3 +65,21 @@ class HarnessIntegrationExtraRequired(MemoryErrorBase):
     """The optional Harness integration dependency is unavailable."""
 
     code = "harness_integration_extra_required"
+
+
+class MemoryWriterConflict(MemoryErrorBase):
+    """Another live manager already owns the SQLite writer lease."""
+
+    code = "memory_second_writer_rejected"
+
+
+class MemoryBackupError(MemoryErrorBase):
+    """Backup or restore validation failed without exposing local paths."""
+
+    code = "memory_backup_invalid"
+
+
+class MemoryProductionConfigurationError(MemoryErrorBase):
+    """A production manager was requested without pinned embedding resources."""
+
+    code = "memory_production_embedder_required"

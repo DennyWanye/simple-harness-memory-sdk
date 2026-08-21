@@ -2,7 +2,8 @@
 
 本目录是 simple-harness-memory-sdk 的当前架构事实源。当前 0.4.0 已实现 Agent Memory v1 direct
 `MemoryManager`、deployment/household/actor/session + personal/family 隔离、committed-turn 原子写、
-durable fact worker 与 privacy tombstone。FTS5、完整 embedding lineage、backup/restore 属 S4；显式
+durable fact worker、privacy tombstone、有界 FTS5/vector recall、完整 embedding lineage、双 generation
+reindex、单写者与 SQLite backup/restore。显式
 v3→v4 migrator 因 continuation tentative taxonomy 的 A2 冻结问题暂未发布。
 
 | 文档 | 范围 |

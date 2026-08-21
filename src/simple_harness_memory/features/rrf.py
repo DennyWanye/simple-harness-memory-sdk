@@ -63,12 +63,16 @@ def fuse(
     Returns:
         按 rrf_score 降序排列的融合结果列表，每项为 dict。
     """
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+        raise ValueError("limit must be a positive integer")
+    bounded_limit = min(limit, 4096)
+    candidate_cap = min(max(bounded_limit * 8, 256), 32768)
     w = weights or SIGNAL_WEIGHTS
     scores: dict[int, float] = {}
     meta: dict[int, RankedItem] = {}
 
     for ranked in ranked_lists:
-        for item in ranked:
+        for item in ranked[:candidate_cap]:
             weight = w.get(item.source, 0.1)
             contrib = weight / (k + item.rank)
             scores[item.message_id] = scores.get(item.message_id, 0.0) + contrib
@@ -76,7 +80,7 @@ def fuse(
             if item.message_id not in meta or item.raw_score > meta[item.message_id].raw_score:
                 meta[item.message_id] = item
 
-    sorted_ids = sorted(scores, key=lambda mid: scores[mid], reverse=True)[:limit]
+    sorted_ids = sorted(scores, key=lambda mid: (-scores[mid], mid))[:bounded_limit]
     result = []
     for mid in sorted_ids:
         item = meta[mid]

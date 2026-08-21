@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bounded retrieval and SQLite operations
+
+- Added identity/scope-filtered external-content FTS5 indexes and bounded lexical/recent vector
+  candidate decoding against the active embedding generation only.
+- Added complete embedding lineage, local-only BGE loading, fail-closed production embedder
+  construction, and restartable two-generation reindex with verified atomic activation.
+- Added a per-database writer lease, serialized bounded checkpoints, online backups with
+  schema/lineage/SHA-256 manifests, and closed-manager restore with corruption checks and atomic
+  replacement.
+
 ### Agent Memory v1 / schema v4
 
 - `MemoryManager` now directly implements the Simple Harness `AgentMemoryPort` through lazy

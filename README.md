@@ -30,7 +30,7 @@ extras 与功能的对应关系（与 `pyproject.toml` 的 `[project.optional-de
 
 | extra        | 依赖（pyproject 声明）         | 启用能力 |
 |--------------|--------------------------------|----------|
-| `embeddings` | `torch`、`sentence-transformers` | BGE-M3 语义向量（`embedder="bge"`）、CrossEncoder 重排；首次使用需联网下载权重 |
+| `embeddings` | `torch`、`sentence-transformers` | BGE-M3 语义向量（`embedder="bge"`）、CrossEncoder 重排；运行时只读本地权重，不下载 |
 | `world`      | `httpx`、`python-dateutil`      | 联网的新闻/天气 provider（NewsAPI / OpenWeatherMap） |
 | `openai`     | `openai`                        | LLM 事实提取（需自备 OpenAI 客户端，见 `features/facts.py` 的 `LLMFactExtractor`） |
 | `harness`    | `simple-harness-sdk>=0.3,<0.4` | `MemoryManager` 直接实现 Harness `AgentMemoryPort` |
@@ -102,33 +102,61 @@ SQLite 事务创建；事实提取在事务外执行，结果与 job ack 再原�
   在该契约获批前，0.4 runtime 坚持 fail-closed，不猜测迁移。
   迁移状态与操作边界见 [`docs/migration-v4.md`](docs/migration-v4.md)。
 - 数据库必须是当前用户拥有的 regular file，拒绝 symlink，并以 `0600` 创建和回读校验。
+- 同一数据库只允许一个 live `MemoryManager` 持有 writer lease；第二个 writer 稳定报
+  `memory_second_writer_rejected`。writer、checkpoint 与 online backup 共用同一串行边界。
+- 召回使用 external-content FTS5，先做 deployment/household/scope 过滤，再执行 MATCH/ORDER/LIMIT；
+  vector 只 decode 当前 active generation 的有界 lexical/recent candidates。lineage 漂移或 embedding
+  暂不可用时明确降级为 lexical-only，不混用不同模型向量。
+- `reindex_generation()` 分页建立 building generation，校验 count/dimension/hash/sample 后原子切换；失败
+  保留旧 active generation。`backup()` 生成带 schema/lineage/SHA-256 的 manifest，`restore_backup()`
+  仅允许 manager 关闭后执行，并在替换原库前完成独立完整性校验。
 - `recall_bounded()` 对确定性 `context_query_id` 保存 canonical 结果；commit 后重试不重新计算。
 - `delete_all()` 仅保留为 deprecated compatibility symbol，调用稳定抛出
   `runtime_delete_disabled`，不会执行全库 mutation。开发 reset 应在 consumer 停服后删除其精确配置的
   SQLite storage set（主文件及 sidecars），再创建 fresh v4 数据库。
 
-> **默认 HashEmbedder 前提说明**：未安装 `[embeddings]` extra 时，SDK 默认使用
+> **默认 HashEmbedder 前提说明**：未安装 `[embeddings]` extra 时，development builder 默认使用
 > `HashEmbedder`——一种确定性的哈希伪向量（字符 n-gram 哈希 + 符号累加，非语义
 > 嵌入）。它的语义召回质量有限（关键词/文本子串命中可靠，近义语义召回不可靠），
-> 仅用于跑通 API 与开发期占位。**生产环境建议安装 `[embeddings]` extra 启用
-> BGE-M3 语义嵌入。**
+> 仅用于跑通 API 与开发期占位。生产代码必须显式提供 production embedder 和已解析资源路径；
+> `build_production()` 会拒绝 hash/mock 与缺失资源。
 
 ## 可选能力
 
 ### BGE-M3 语义嵌入
 
-需要 `[embeddings]` extra（`torch` + `sentence-transformers`），首次使用会联网
-下载 `BAAI/bge-m3` 权重：
+需要 `[embeddings]` extra（`torch` + `sentence-transformers`）。模型权重必须在部署阶段准备好；
+SDK 始终以 `local_files_only=True` 加载，运行时不会下载：
 
 ```bash
 pip install -e ".[embeddings]"
 ```
 
 ```python fragment
-memory = await MemoryManager.build(
-    enable_facts=True,
-    embedder="bge",   # 显式 BGE-M3；"auto" 会在缺依赖时回退 HashEmbedder
+from simple_harness_memory.embedders import get_production_embedder
+
+embedder = get_production_embedder(
+    "bge",
+    resource_path="/opt/models/bge-m3",
+    model="BAAI/bge-m3",
+    revision="pinned-model-revision",
 )
+memory = await MemoryManager.build_production(
+    "memory.db",
+    embedder=embedder,
+    resource_path="/opt/models/bge-m3",
+    enable_facts=True,
+)
+```
+
+运维操作同样由 manager 承担：
+
+```python fragment
+await memory.reindex_generation(embedder, page_size=256)
+await memory.checkpoint(deadline_seconds=5.0)
+manifest = await memory.backup("memory.backup.db")
+await memory.close()
+await memory.restore_backup("memory.backup.db")
 ```
 
 ### 世界对象（World Model）

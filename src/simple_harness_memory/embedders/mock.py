@@ -5,7 +5,11 @@ from __future__ import annotations
 import hashlib
 import math
 
-from simple_harness_memory.embedders.base import Embedder
+from simple_harness_memory.embedders.base import (
+    EMBEDDING_FORMAT_FINGERPRINT,
+    Embedder,
+    EmbeddingLineage,
+)
 
 
 class HashEmbedder(Embedder):
@@ -22,6 +26,18 @@ class HashEmbedder(Embedder):
     @property
     def dim(self) -> int:
         return self._dim
+
+    @property
+    def lineage(self) -> EmbeddingLineage:
+        return EmbeddingLineage(
+            kind="hash",
+            provider="simple-harness-memory-sdk",
+            model="character-ngram-hash",
+            revision="1",
+            dimension=self._dim,
+            normalization="l2",
+            format_fingerprint=EMBEDDING_FORMAT_FINGERPRINT,
+        )
 
     async def embed(self, text: str) -> list[float]:
         vec = [0.0] * self._dim

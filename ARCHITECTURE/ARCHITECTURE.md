@@ -3,8 +3,7 @@
 # ARCHITECTURE — simple-harness-memory-sdk（v0.4.0）
 
 > 最后更新：2026-08-22
-> 当前事实：S3 runtime 已实现并通过本仓 unit/integration/type/lint；offline migration 因 A2 taxonomy
-> 冻结问题暂停，S4 storage/embedding 能力尚未实施。
+> 当前事实：S3 runtime 与 S4 storage/embedding 已实现；offline migration 因 A2 taxonomy 冻结问题暂停。
 
 ## 分层
 
@@ -39,7 +38,28 @@ src/simple_harness_memory/
 - recall/export/delete/forget 使用 `core.identity.scope_predicate()` 同一 ownership predicate；personal
   owner 必须是 actor，family owner 必须是 household，不同 household 不进入候选集。
 - SQLite 使用 WAL、FK、busy timeout、task-owned operation lock 与 `BEGIN IMMEDIATE`；数据库文件继续要求
-  regular/no-symlink/current-owner/`0600`。任意多进程共享同一 connection 不在能力声明内。
+  regular/no-symlink/current-owner/`0600`。每个数据库另有 OS writer lease，第二个 live manager fail-closed；
+  writer、checkpoint 与 online backup 都经同一 operation lock 串行。
+
+## 有界检索与 embedding generation
+
+- messages/facts 使用 external-content FTS5 与同步 insert/update/delete trigger。查询先绑定
+  deployment/household/scope predicate，再 MATCH、稳定排序和 SQL LIMIT；20k/100k scale fixture 均确认
+  query plan 使用 FTS virtual-table index。
+- vector 只从当前 active generation 读取，候选来自有界 FTS + recent ids；每次 decode 有硬上限。
+  active lineage 与当前 embedder 不一致，或 query embedding 失败时，记录稳定降级 code并只走 lexical，
+  不混算未知 revision/dimension 的向量。
+- lineage 包含 kind/provider/model/revision/dimension/normalization/format fingerprint，并以 canonical SHA-256
+  标识。BGE 强制 local-only；production builder 拒绝 hash/mock、隐式模型或缺失资源。
+- reindex 建立 building generation，分页持久化 cursor，可从中断点继续；count/dimension/hash/sample 校验全部
+  通过后，在一个事务中 retired 旧 active并激活新 generation。故障 generation标记 failed，旧 active不变。
+
+## SQLite 运维
+
+- online backup 由 live manager串行执行，manifest记录 protocol、schema/checksum、SQLite version、active
+  generation/lineage、SHA-256 与时间。日志只包含 hash/count/duration/stable code，不含路径或内容。
+- restore 仅在 manager关闭后开放；先校验 manifest/hash、WAL残留、integrity/FK/schema/lineage，再写临时库并
+  原子替换。任一校验失败保留原库。
 
 ## Durable recall 与 committed turn
 
@@ -74,9 +94,6 @@ src/simple_harness_memory/
 
 ## 当前明确限制 / 后续 Slice
 
-- 当前候选读取仍是 identity predicate + bounded `ORDER BY/LIMIT` 后的 Python lexical/vector融合；SQLite
-  FTS5、完整 provider/model/revision/dimension/normalization lineage、production local-only embedder、
-  reindex generation 与 backup/restore由 S4 实施。
 - 显式 offline v3→v4 migrator与公开 migration manifest API 尚未实现。原因是已冻结三类 decision 无法
   唯一覆盖 continuation completed run 的早期 tentative user events（A2 `a2-001`）；在新增 taxonomy
   获批前必须暂停，不能猜测导入、丢弃或复制。
@@ -86,6 +103,8 @@ src/simple_harness_memory/
 
 - S3 targeted：Agent direct port、Mock/SQLite、atomic fault、fact recovery、identity rebind、scope matrix、
   export/delete/forget、erasure replay、日志 canary均通过。
-- 当前本仓 full：`145 passed, 4 skipped`（以最终 gate 重跑数字为准）；Ruff 与 mypy全绿。
+- S4 targeted：20k/100k FTS query plan与有界 recall、generation restart/switch/failure、production embedder、
+  second-writer reject、checkpoint、backup/restore/corruption preserve均通过。
+- 当前本仓 full 以最终 gate 重跑数字为准；Ruff 与 mypy全绿。
 - exact wheel、Python 3.11/3.12/3.13联合 Harness candidate 与 release metadata 属 S5 gate，不能由 editable
   开发安装替代。
