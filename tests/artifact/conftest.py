@@ -11,6 +11,7 @@ def artifact_dist() -> Path:
     configured = os.environ.get("MEMORY_SDK_ARTIFACT_DIST")
     if configured is None:
         pytest.skip("artifact tests require explicit MEMORY_SDK_ARTIFACT_DIST")
+    assert configured is not None
     assert configured.strip(), "MEMORY_SDK_ARTIFACT_DIST must be non-empty"
     path = Path(configured).resolve()
     assert path.is_dir(), f"artifact dist does not exist: {path}"
@@ -29,6 +30,7 @@ def harness_artifact_dist() -> Path:
     configured = os.environ.get("HARNESS_SDK_ARTIFACT_DIST")
     if configured is None:
         pytest.skip("joint artifact tests require explicit HARNESS_SDK_ARTIFACT_DIST")
+    assert configured is not None
     assert configured.strip(), "HARNESS_SDK_ARTIFACT_DIST must be non-empty"
     path = Path(configured).resolve()
     assert path.is_dir(), f"Harness artifact dist does not exist: {path}"
