@@ -784,6 +784,37 @@ class MockMemoryBackend(BaseMemoryBackend):
             return None
         return next((fact for fact in self._facts if fact.id == fact_id and fact.is_active), None)
 
+    async def agent_list_facts(
+        self,
+        principal: MemoryPrincipal,
+        *,
+        subject: str | None,
+        category: str | None,
+        limit: int,
+    ) -> list[Fact]:
+        self._bind_agent(principal)
+        bounded_limit = self._bounded_limit(limit)
+        owned: list[Fact] = []
+        for fact in self._facts:
+            if fact.id is None or not fact.is_active:
+                continue
+            meta = self._agent_fact_meta.get(fact.id)
+            if meta is None or meta[:5] != (
+                principal.deployment_id,
+                principal.household_id,
+                principal.actor_id,
+                "personal",
+                principal.actor_id,
+            ):
+                continue
+            if subject is not None and fact.subject != subject:
+                continue
+            if category is not None and fact.category != category:
+                continue
+            owned.append(fact)
+        owned.sort(key=lambda fact: (fact.created_at, fact.id or 0), reverse=True)
+        return owned[:bounded_limit]
+
     async def agent_share_fact(self, principal: MemoryPrincipal, fact_id: int) -> str:
         meta = self._agent_fact_meta.get(fact_id)
         source = next((fact for fact in self._facts if fact.id == fact_id), None)

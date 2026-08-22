@@ -409,6 +409,28 @@ class MemoryManager:
 
         return await getattr(self._backend, "agent_read_fact")(principal, fact_id)
 
+    async def list_facts(
+        self,
+        principal: MemoryPrincipal,
+        *,
+        subject: str | None = None,
+        category: str | None = None,
+        limit: int = 200,
+    ) -> list[Fact]:
+        """List active personal facts owned by a trusted principal.
+
+        This is the identity-safe read surface for consumer fact-management UIs.
+        It deliberately excludes household projections; consumers must use an
+        explicitly authorized sharing/read flow for broader scopes.
+        """
+
+        return await getattr(self._backend, "agent_list_facts")(
+            principal,
+            subject=subject,
+            category=category,
+            limit=limit,
+        )
+
     async def append_message(
         self,
         session_id,

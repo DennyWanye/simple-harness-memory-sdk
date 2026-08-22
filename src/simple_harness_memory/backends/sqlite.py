@@ -1862,6 +1862,36 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                 row = await cursor.fetchone()
         return None if row is None else self._row_to_fact(row)
 
+    async def agent_list_facts(
+        self,
+        principal: MemoryPrincipal,
+        *,
+        subject: str | None,
+        category: str | None,
+        limit: int,
+    ) -> list[Fact]:
+        personal = MemoryScope.personal(principal.actor_id)
+        predicate, params = scope_predicate(principal, (personal,))
+        clauses = [predicate, "actor_id = ?", "forgotten_at IS NULL"]
+        values: list[object] = [*params, principal.actor_id]
+        if subject is not None:
+            clauses.append("subject = ?")
+            values.append(subject)
+        if category is not None:
+            clauses.append("category = ?")
+            values.append(category)
+        values.append(self._bounded_limit(limit))
+        async with self._operation():
+            await self._bind_agent_session(principal)
+            async with self._conn.execute(
+                "SELECT * FROM facts WHERE "
+                + " AND ".join(clauses)
+                + " ORDER BY created_at DESC, id DESC LIMIT ?",
+                values,
+            ) as cursor:
+                rows = list(await cursor.fetchall())
+        return [self._row_to_fact(row) for row in rows]
+
     async def agent_share_fact(self, principal: MemoryPrincipal, fact_id: int) -> str:
         personal = MemoryScope.personal(principal.actor_id)
         predicate, params = scope_predicate(principal, (personal,))

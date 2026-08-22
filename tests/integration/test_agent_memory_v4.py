@@ -485,6 +485,82 @@ async def test_principal_explicit_fact_is_exact_idempotent_and_forgotten(tmp_pat
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("backend_kind", ["mock", "sqlite"])
+async def test_principal_fact_listing_is_scoped_filtered_bounded_and_active_only(
+    tmp_path, backend_kind
+):
+    backend = (
+        MockMemoryBackend()
+        if backend_kind == "mock"
+        else SQLiteMemoryBackend(str(tmp_path / "list-facts.db"))
+    )
+    manager = await MemoryManager.build(backend=backend)
+    principal = MemoryPrincipal("deployment-a", "house-a", "actor-a", "session-a")
+    same_house_other_actor = MemoryPrincipal(
+        "deployment-a", "house-a", "actor-b", "session-b"
+    )
+    other_house = MemoryPrincipal("deployment-a", "house-b", "actor-a", "session-c")
+
+    first_id = await manager.remember_fact(
+        principal,
+        "first preference",
+        source_event_id="list-write-1",
+        tier="long_term",
+    )
+    second_id = await manager.remember_fact(
+        principal,
+        "second profile",
+        source_event_id="list-write-2",
+        tier="identity",
+    )
+    forgotten_id = await manager.remember_fact(
+        principal,
+        "forgotten preference",
+        source_event_id="list-write-3",
+        tier="long_term",
+    )
+    await manager.remember_fact(
+        same_house_other_actor,
+        "other actor",
+        source_event_id="list-write-other-actor",
+        tier="long_term",
+    )
+    await manager.remember_fact(
+        other_house,
+        "other household",
+        source_event_id="list-write-other-house",
+        tier="long_term",
+    )
+    assert await manager.forget_fact(
+        forgotten_id,
+        principal=principal,
+        source_event_id="list-forget-3",
+    )
+
+    listed = await manager.list_facts(principal)
+    assert [fact.id for fact in listed] == [second_id, first_id]
+    assert all(fact.user_id not in {"actor-a", "actor-b"} for fact in listed)
+    assert [fact.id for fact in await manager.list_facts(principal, limit=1)] == [second_id]
+    assert [
+        fact.id
+        for fact in await manager.list_facts(principal, category="learning")
+    ] == [first_id]
+    assert [
+        fact.id
+        for fact in await manager.list_facts(principal, subject="actor-a")
+    ] == [second_id, first_id]
+    assert await manager.list_facts(principal, subject="not-the-owner") == []
+    assert [fact.value for fact in await manager.list_facts(same_house_other_actor)] == [
+        "other actor"
+    ]
+    assert [fact.value for fact in await manager.list_facts(other_house)] == [
+        "other household"
+    ]
+    assert forgotten_id not in {fact.id for fact in listed}
+    await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backend_kind", ["mock", "sqlite"])
 async def test_explicit_forget_action_is_durable_idempotent_and_owned(tmp_path, backend_kind):
     path = tmp_path / "forget-action.db"
     backend = MockMemoryBackend() if backend_kind == "mock" else SQLiteMemoryBackend(str(path))
