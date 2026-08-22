@@ -1572,8 +1572,8 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                     ),
                 )
                 await self._conn.execute(
-                    "DELETE FROM facts WHERE deterministic_id = ? OR projection_of = ?",
-                    (deterministic_id, deterministic_id),
+                    "DELETE FROM facts WHERE id = ? OR deterministic_id = ? OR projection_of = ?",
+                    (fact_id, deterministic_id, deterministic_id),
                 )
                 result = True
             await self._conn.execute(
