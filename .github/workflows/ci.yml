@@ -247,7 +247,7 @@ jobs:
               await reopened.initialize()
               async with reopened._conn.execute(
                   "SELECT deployment_id, household_id, actor_id, session_id, status "
-                  "FROM turn_receipts WHERE turn_id='turn-a'"
+                  "FROM turn_receipts WHERE deployment_id='deployment-a' AND turn_id='turn-a'"
               ) as cursor:
                   assert tuple(await cursor.fetchone()) == (
                       "deployment-a", "household-a", "actor-a", "session-a", "applied"

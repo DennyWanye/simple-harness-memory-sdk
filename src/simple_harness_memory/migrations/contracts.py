@@ -103,13 +103,14 @@ class LegacyIdentityMap:
         if not hmac.compare_digest(self.digest, _digest(payload)):
             raise MemoryMigrationManifestError()
         by_legacy: dict[tuple[str, str], LegacyIdentityBinding] = {}
-        target_sessions: set[str] = set()
+        target_sessions: set[tuple[str, str]] = set()
         for binding in self.bindings:
             key = _binding_key(binding)
-            if key in by_legacy or binding.session_id in target_sessions:
+            target_session = (binding.deployment_id, binding.session_id)
+            if key in by_legacy or target_session in target_sessions:
                 raise MemoryMigrationManifestError()
             by_legacy[key] = binding
-            target_sessions.add(binding.session_id)
+            target_sessions.add(target_session)
         return by_legacy
 
 

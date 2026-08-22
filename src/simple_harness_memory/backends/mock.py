@@ -60,16 +60,18 @@ class MockMemoryBackend(BaseMemoryBackend):
         self._facts: list[Fact] = []
         self._twins: dict[str, DigitalTwin] = {}
         self._workspace_actions: list[tuple[str, str, str, dict, float]] = []
-        self._sessions: dict[str, tuple[str, float]] = {}
+        self._sessions: dict[tuple[str, str], float] = {}
         self._source_events: dict[str, tuple[str, str, int]] = {}
         self._recall_snapshots: dict[str, dict[str, object]] = {}
         self._next_msg_id = 1
         self._next_fact_id = 1
-        self._agent_bindings: dict[str, tuple[str, str, str]] = {}
+        self._agent_bindings: dict[tuple[str, str], tuple[str, str]] = {}
         self._agent_meta: dict[int, tuple[str, str, str, str, str]] = {}
         self._agent_recalls: dict[str, dict[str, object]] = {}
         self._agent_epochs: dict[tuple[str, str, str, str], tuple[int, float | None]] = {}
-        self._turn_receipts: dict[str, tuple[str, str, str]] = {}
+        self._turn_receipts: dict[
+            tuple[str, str], tuple[str, str, str, str, str, str, str, str]
+        ] = {}
         self._fact_jobs: dict[str, dict[str, object]] = {}
         self._fact_tombstones: set[str] = set()
         self._agent_fact_meta: dict[int, tuple[str, str, str, str, str, str, str | None]] = {}
@@ -83,15 +85,12 @@ class MockMemoryBackend(BaseMemoryBackend):
         ).hexdigest()
 
     def _bind_agent(self, principal: MemoryPrincipal) -> str:
-        expected = (
-            principal.deployment_id,
-            principal.household_id,
-            principal.actor_id,
-        )
-        prior = self._agent_bindings.get(principal.session_id)
+        key = (principal.deployment_id, principal.session_id)
+        expected = (principal.household_id, principal.actor_id)
+        prior = self._agent_bindings.get(key)
         if prior is not None and prior != expected:
             raise MemoryOwnershipConflict()
-        self._agent_bindings[principal.session_id] = expected
+        self._agent_bindings[key] = expected
         return self._agent_user(principal)
 
     def _epoch(self, principal: MemoryPrincipal, scope: MemoryScope) -> tuple[int, float | None]:
@@ -134,10 +133,16 @@ class MockMemoryBackend(BaseMemoryBackend):
         personal = MemoryScope.personal(principal.actor_id)
         fence = self._fence(principal, personal, self._epoch(principal, personal)[0])
         prior = self._agent_recalls.get(query_id)
+        binding = (
+            principal.deployment_id,
+            principal.household_id,
+            principal.actor_id,
+            principal.session_id,
+        )
         if prior is not None:
             if (
                 prior["query_hash"] != query_hash
-                or prior["binding"] != self._agent_bindings[principal.session_id]
+                or prior["binding"] != binding
             ):
                 raise MemoryIdempotencyConflict()
             previous_payload = prior["payload"]
@@ -222,7 +227,7 @@ class MockMemoryBackend(BaseMemoryBackend):
         }
         self._agent_recalls[query_id] = {
             "query_hash": query_hash,
-            "binding": self._agent_bindings[principal.session_id],
+            "binding": binding,
             "payload": payload,
             "fence": fence,
             "result_hash": hashlib.sha256(
@@ -256,9 +261,17 @@ class MockMemoryBackend(BaseMemoryBackend):
         write_fence: str | None,
         turn_started_at: float,
     ) -> tuple[str, str]:
-        prior = self._turn_receipts.get(turn_id)
+        key = (principal.deployment_id, turn_id)
+        prior = self._turn_receipts.get(key)
         if prior is not None:
-            if prior[0] != payload_hash:
+            expected_owner = (
+                principal.household_id,
+                principal.actor_id,
+                principal.session_id,
+                scope.kind.value,
+                scope.owner_id,
+            )
+            if prior[0] != payload_hash or prior[3:] != expected_owner:
                 raise MemoryIdempotencyConflict()
             return ("already_applied" if prior[1] == "applied" else prior[1], prior[2])
         user_id = self._bind_agent(principal)
@@ -268,10 +281,20 @@ class MockMemoryBackend(BaseMemoryBackend):
             rejected = not (turn_started_at > erased_at and turn_started_at <= time.time())
         status = "rejected_erased" if rejected else "applied"
         receipt_id = f"memory-turn/v1/{turn_id}"
-        self._turn_receipts[turn_id] = (payload_hash, status, receipt_id)
+        self._turn_receipts[key] = (
+            payload_hash,
+            status,
+            receipt_id,
+            principal.household_id,
+            principal.actor_id,
+            principal.session_id,
+            scope.kind.value,
+            scope.owner_id,
+        )
         if rejected:
             return status, receipt_id
         ids: list[int] = []
+        deployment_key = hashlib.sha256(principal.deployment_id.encode()).hexdigest()[:16]
         for role, content in (("user", user_text), ("assistant", assistant_text)):
             message_id = self._next_msg_id
             self._next_msg_id += 1
@@ -283,7 +306,7 @@ class MockMemoryBackend(BaseMemoryBackend):
                     role=role,
                     content=content,
                     created_at=time.time(),
-                    source_event_id=f"agent-turn/v1/{turn_id}/{role}",
+                    source_event_id=f"agent-turn/v1/{deployment_key}/{turn_id}/{role}",
                     payload_hash=hashlib.sha256(f"{payload_hash}\x1f{role}".encode()).hexdigest(),
                 )
             )
@@ -296,7 +319,9 @@ class MockMemoryBackend(BaseMemoryBackend):
             )
             ids.append(message_id)
         if self._auto_extract_facts:
-            job_id = hashlib.sha256(f"fact-job\x1f{turn_id}".encode()).hexdigest()
+            job_id = hashlib.sha256(
+                f"fact-job\x1f{principal.deployment_id}\x1f{turn_id}".encode()
+            ).hexdigest()
             self._fact_jobs[job_id] = {
                 "job_id": job_id,
                 "turn_id": turn_id,
@@ -496,13 +521,25 @@ class MockMemoryBackend(BaseMemoryBackend):
             [
                 key
                 for key, row in self._agent_recalls.items()
-                if row["binding"] == self._agent_bindings[principal.session_id]
+                if row["binding"]
+                == (
+                    principal.deployment_id,
+                    principal.household_id,
+                    principal.actor_id,
+                    principal.session_id,
+                )
             ]
         )
         self._agent_recalls = {
             key: row
             for key, row in self._agent_recalls.items()
-            if row["binding"] != self._agent_bindings[principal.session_id]
+            if row["binding"]
+            != (
+                principal.deployment_id,
+                principal.household_id,
+                principal.actor_id,
+                principal.session_id,
+            )
         }
         return {
             "messages": len(ids),
@@ -582,11 +619,7 @@ class MockMemoryBackend(BaseMemoryBackend):
         return projection
 
     async def _ensure_session_impl(self, user_id: str, session_id: str) -> None:
-        owner = self._sessions.get(session_id)
-        if owner is None:
-            self._sessions[session_id] = (user_id, time.time())
-        elif owner[0] != user_id:
-            raise MemoryOwnershipConflict()
+        self._sessions.setdefault((user_id, session_id), time.time())
 
     async def _append_message_impl(
         self,
@@ -640,7 +673,7 @@ class MockMemoryBackend(BaseMemoryBackend):
                 embedding_format_version=embedding_format_version,
             )
         )
-        self._sessions[session_id] = (user_id, created_at)
+        self._sessions[(user_id, session_id)] = created_at
         self._source_events[source_event_id] = (user_id, payload_hash, message_id)
         return MemoryApplyResult(
             message_id=message_id,
@@ -808,9 +841,7 @@ class MockMemoryBackend(BaseMemoryBackend):
             for key, value in self._recall_snapshots.items()
             if not (value["user_id"] == user_id and value["session_id"] == session_id)
         }
-        owner = self._sessions.get(session_id)
-        if owner is not None and owner[0] == user_id:
-            del self._sessions[session_id]
+        self._sessions.pop((user_id, session_id), None)
         self._source_events = {
             event_id: record
             for event_id, record in self._source_events.items()
@@ -824,9 +855,9 @@ class MockMemoryBackend(BaseMemoryBackend):
 
     async def _old_session_ids_impl(self, user_id: str, cutoff: float, limit: int) -> list[str]:
         matches = [
-            (session_id, value[1])
-            for session_id, value in self._sessions.items()
-            if value[0] == user_id and value[1] < cutoff
+            (session_id, created_at)
+            for (owner_id, session_id), created_at in self._sessions.items()
+            if owner_id == user_id and created_at < cutoff
         ]
         matches.sort(key=lambda item: (item[1], item[0]))
         return [session_id for session_id, _ in matches[:limit]]

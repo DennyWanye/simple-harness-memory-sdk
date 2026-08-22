@@ -281,12 +281,13 @@ def _build_v4(
         _validate_coverage(rows, execution, provenance, bindings)
         kept: list[tuple[_ResolvedMessage, LegacyIdentityBinding, str | None]] = []
         suppressed = 0
-        pair_entries: dict[str, list[NormalizedExecutionEntry]] = {}
+        pair_entries: dict[tuple[str, str], list[NormalizedExecutionEntry]] = {}
         for entry in execution_entries:
             if entry.decision is MigrationDecision.KEEP_COMPLETED_PAIR:
                 if entry.turn_id is None:
                     raise MemoryMigrationManifestError()
-                pair_entries.setdefault(entry.turn_id, []).append(entry)
+                deployment_id = _entry_target_deployment(entry, rows, bindings)
+                pair_entries.setdefault((deployment_id, entry.turn_id), []).append(entry)
             else:
                 target.execute(
                     "INSERT INTO suppression_receipts "
@@ -299,18 +300,21 @@ def _build_v4(
                     ),
                 )
                 suppressed += 1
-        pairs: dict[str, list[tuple[_ResolvedMessage, LegacyIdentityBinding]]] = {}
-        for turn_id, entries in sorted(pair_entries.items()):
+        pairs: dict[
+            tuple[str, str], list[tuple[_ResolvedMessage, LegacyIdentityBinding]]
+        ] = {}
+        for pair_key, entries in sorted(pair_entries.items()):
+            deployment_id, turn_id = pair_key
             pair = _resolve_execution_pair(entries, rows, bindings)
             roles = {message.role for message, _binding in pair}
             if len(pair) != 2 or roles != {"user", "assistant"}:
                 raise MemoryMigrationManifestError()
             principals = {binding.principal for _message, binding in pair}
-            if len(principals) != 1:
+            if len(principals) != 1 or pair[0][1].deployment_id != deployment_id:
                 raise MemoryMigrationManifestError()
             for message, binding in pair:
                 kept.append((message, binding, turn_id))
-            pairs[turn_id] = pair
+            pairs[pair_key] = pair
         for source_id in sorted(provenance):
             row = rows[source_id]
             binding = bindings[(str(row["user_id"]), str(row["session_id"]))]
@@ -324,10 +328,11 @@ def _build_v4(
             new_id = _insert_message(target, message, binding)
             if message.old_message_id is not None:
                 message_map[message.old_message_id] = new_id
-        for turn_id, pair in sorted(pairs.items()):
+        for pair_key, pair in sorted(pairs.items()):
+            _deployment_id, turn_id = pair_key
             binding = pair[0][1]
             hashes = sorted(message.payload_hash for message, _binding in pair)
-            manifest_pair = pair_entries[turn_id]
+            manifest_pair = pair_entries[pair_key]
             canonical_hashes = {
                 entry.canonical_turn_hash
                 for entry in manifest_pair
@@ -461,6 +466,29 @@ def _resolve_execution_message(
     if binding is None:
         raise MemoryMigrationManifestError()
     return message, binding
+
+
+def _entry_target_deployment(
+    entry: NormalizedExecutionEntry,
+    rows: dict[str, sqlite3.Row],
+    bindings: dict[tuple[str, str], LegacyIdentityBinding],
+) -> str:
+    row = rows.get(entry.source_event_id)
+    if row is not None:
+        binding = bindings.get((str(row["user_id"]), str(row["session_id"])))
+        if binding is None:
+            raise MemoryMigrationManifestError()
+        return binding.deployment_id
+    if entry.legacy_user_id is not None and entry.legacy_session_id is not None:
+        binding = bindings.get((entry.legacy_user_id, entry.legacy_session_id))
+        if binding is None:
+            raise MemoryMigrationManifestError()
+        return binding.deployment_id
+    if entry.canonical_turn is not None:
+        identity = entry.canonical_turn.get("identity")
+        if isinstance(identity, dict) and isinstance(identity.get("deployment_id"), str):
+            return str(identity["deployment_id"])
+    raise MemoryMigrationManifestError()
 
 
 def _resolve_execution_pair(
@@ -604,12 +632,12 @@ def _ensure_target_session(connection: sqlite3.Connection, binding: LegacyIdenti
         ),
     )
     row = connection.execute(
-        "SELECT user_id, deployment_id, household_id, actor_id FROM sessions WHERE session_id=?",
-        (binding.session_id,),
+        "SELECT user_id, household_id, actor_id FROM sessions "
+        "WHERE deployment_id=? AND session_id=?",
+        (binding.deployment_id, binding.session_id),
     ).fetchone()
     if row is None or tuple(row) != (
         user_id,
-        binding.deployment_id,
         binding.household_id,
         binding.actor_id,
     ):

@@ -73,13 +73,14 @@ CREATE TABLE users (
     created_at REAL NOT NULL
 );
 CREATE TABLE sessions (
-    session_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
     user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     deployment_id TEXT NOT NULL,
     household_id TEXT NOT NULL,
     actor_id TEXT NOT NULL,
     created_at REAL NOT NULL,
     last_activity_at REAL NOT NULL,
+    PRIMARY KEY (deployment_id, session_id),
     UNIQUE (user_id, session_id)
 );
 CREATE TABLE messages (
@@ -183,7 +184,7 @@ CREATE TABLE erasure_epochs (
     PRIMARY KEY (deployment_id, household_id, scope_kind, scope_owner)
 );
 CREATE TABLE turn_receipts (
-    turn_id TEXT PRIMARY KEY,
+    turn_id TEXT NOT NULL,
     deployment_id TEXT NOT NULL,
     household_id TEXT NOT NULL,
     actor_id TEXT NOT NULL,
@@ -192,12 +193,14 @@ CREATE TABLE turn_receipts (
     scope_owner TEXT NOT NULL,
     payload_hash TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('applied', 'rejected_erased')),
-    receipt_id TEXT NOT NULL UNIQUE,
-    created_at REAL NOT NULL
+    receipt_id TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (deployment_id, turn_id),
+    UNIQUE (deployment_id, receipt_id)
 );
 CREATE TABLE fact_jobs (
     job_id TEXT PRIMARY KEY,
-    turn_id TEXT NOT NULL UNIQUE REFERENCES turn_receipts(turn_id),
+    turn_id TEXT NOT NULL,
     deployment_id TEXT NOT NULL,
     household_id TEXT NOT NULL,
     actor_id TEXT NOT NULL,
@@ -217,7 +220,10 @@ CREATE TABLE fact_jobs (
     extraction_hash TEXT,
     last_error_code TEXT,
     created_at REAL NOT NULL,
-    updated_at REAL NOT NULL
+    updated_at REAL NOT NULL,
+    UNIQUE (deployment_id, turn_id),
+    FOREIGN KEY (deployment_id, turn_id)
+        REFERENCES turn_receipts(deployment_id, turn_id)
 );
 CREATE TABLE fact_tombstones (
     deterministic_id TEXT PRIMARY KEY,
@@ -573,17 +579,14 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         user_id = self._principal_key(principal)
         now = time.time()
         async with self._conn.execute(
-            "SELECT deployment_id, household_id, actor_id FROM sessions WHERE session_id = ?",
-            (principal.session_id,),
+            "SELECT household_id, actor_id FROM sessions "
+            "WHERE deployment_id = ? AND session_id = ?",
+            (principal.deployment_id, principal.session_id),
         ) as cursor:
             row = await cursor.fetchone()
         if row is not None:
-            actual = (str(row[0]), str(row[1]), str(row[2]))
-            expected = (
-                principal.deployment_id,
-                principal.household_id,
-                principal.actor_id,
-            )
+            actual = (str(row[0]), str(row[1]))
+            expected = (principal.household_id, principal.actor_id)
             if actual != expected:
                 raise MemoryOwnershipConflict()
             return user_id
@@ -667,17 +670,8 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         """Return a durable identity-filtered recall payload and personal fence."""
 
         self._agent_fence_context.set(None)
-        query_vector: list[float] | None = None
-        try:
-            query_vector = await self._embedder.embed(query_text)
-            self._embedder.validate_vectors([query_vector], expected_count=1)
-        except Exception:
-            logger.warning(
-                "memory.recall_vector_degraded",
-                stable_code="memory_embedding_unavailable_lexical_only",
-            )
         async with self._transaction():
-            user_id = await self._bind_agent_session(principal)
+            await self._bind_agent_session(principal)
             personal = MemoryScope.personal(principal.actor_id)
             epoch, _ = await self._scope_epoch(principal, personal)
             write_fence = self._write_fence(principal, personal, epoch)
@@ -705,6 +699,17 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                     raise MemoryIdempotencyConflict()
                 return json.loads(str(prior[1])), str(prior[2]), True
 
+        query_vector: list[float] | None = None
+        try:
+            query_vector = await self._embedder.embed(query_text)
+            self._embedder.validate_vectors([query_vector], expected_count=1)
+        except Exception:
+            logger.warning(
+                "memory.recall_vector_degraded",
+                stable_code="memory_embedding_unavailable_lexical_only",
+            )
+        async with self._transaction():
+            user_id = await self._bind_agent_session(principal)
             message_predicate, message_params = scope_predicate(principal, scopes, table_alias="m")
             fact_predicate, fact_params = scope_predicate(principal, scopes, table_alias="f")
             candidate_limit = min(
@@ -944,12 +949,21 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         receipt_id = f"memory-turn/v1/{turn_id}"
         async with self._transaction():
             async with self._conn.execute(
-                "SELECT payload_hash, status, receipt_id FROM turn_receipts WHERE turn_id = ?",
-                (turn_id,),
+                "SELECT payload_hash, status, receipt_id, household_id, actor_id, session_id, "
+                "scope_kind, scope_owner FROM turn_receipts "
+                "WHERE deployment_id = ? AND turn_id = ?",
+                (principal.deployment_id, turn_id),
             ) as cursor:
                 prior = await cursor.fetchone()
             if prior is not None:
-                if str(prior[0]) != payload_hash:
+                expected_owner = (
+                    principal.household_id,
+                    principal.actor_id,
+                    principal.session_id,
+                    scope.kind.value,
+                    scope.owner_id,
+                )
+                if str(prior[0]) != payload_hash or tuple(map(str, prior[3:])) != expected_owner:
                     raise MemoryIdempotencyConflict()
                 prior_status = str(prior[1])
                 return (
@@ -985,8 +999,9 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             if rejected:
                 return status, receipt_id
             message_ids: list[int] = []
+            deployment_key = hashlib.sha256(principal.deployment_id.encode()).hexdigest()[:16]
             for role, content in (("user", user_text), ("assistant", assistant_text)):
-                source_event_id = f"agent-turn/v1/{turn_id}/{role}"
+                source_event_id = f"agent-turn/v1/{deployment_key}/{turn_id}/{role}"
                 row_hash = hashlib.sha256(f"{payload_hash}\x1f{role}".encode()).hexdigest()
                 cursor = await self._conn.execute(
                     "INSERT INTO messages "
@@ -1013,7 +1028,9 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                 )
                 message_ids.append(int(cursor.lastrowid or 0))
             if self._auto_extract_facts:
-                job_id = hashlib.sha256(f"fact-job\x1f{turn_id}".encode()).hexdigest()
+                job_id = hashlib.sha256(
+                    f"fact-job\x1f{principal.deployment_id}\x1f{turn_id}".encode()
+                ).hexdigest()
                 await self._conn.execute(
                     "INSERT INTO fact_jobs "
                     "(job_id, turn_id, deployment_id, household_id, actor_id, session_id, "
@@ -1778,7 +1795,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                     "INSERT INTO sessions "
                     "(session_id, user_id, deployment_id, household_id, actor_id, "
                     "created_at, last_activity_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (session_id, user_id, "standalone", user_id, user_id, now, now),
+                    (session_id, user_id, user_id, user_id, user_id, now, now),
                 )
             except aiosqlite.IntegrityError as exc:
                 raise MemoryOwnershipConflict() from exc
@@ -1813,7 +1830,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     user_id,
-                    "standalone",
+                    user_id,
                     user_id,
                     user_id,
                     "personal",

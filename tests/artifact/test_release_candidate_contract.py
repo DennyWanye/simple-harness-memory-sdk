@@ -108,7 +108,10 @@ def test_ci_covers_full_matrix_clean_wheel_and_arm64() -> None:
     assert "uv pip install --system" in workflow
     assert 'test "$(uname -m)" = "aarch64"' in workflow
     assert "agent_record_turn" in workflow
-    assert "FROM turn_receipts WHERE turn_id='turn-a'" in workflow
+    assert (
+        "FROM turn_receipts WHERE deployment_id='deployment-a' AND turn_id='turn-a'"
+        in workflow
+    )
     assert "PRAGMA journal_mode" in workflow
     assert "PRAGMA foreign_key_check" in workflow
 

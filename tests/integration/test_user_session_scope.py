@@ -4,12 +4,11 @@ import time
 import pytest
 
 from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
-from simple_harness_memory.core.errors import MemoryOwnershipConflict
 from simple_harness_memory.core.models import Fact
 
 
 @pytest.mark.asyncio
-async def test_user_scoped_reads_and_immutable_session_binding(tmp_path):
+async def test_user_scoped_reads_and_same_session_id_is_deployment_isolated(tmp_path):
     backend = SQLiteMemoryBackend(str(tmp_path / "memory.db"))
     await backend.initialize()
     first = await backend.append_message(
@@ -28,14 +27,14 @@ async def test_user_scoped_reads_and_immutable_session_binding(tmp_path):
     )
     assert all("白桦" not in hit.text for hit in await backend.recall("共享词", user_id="user-a"))
     assert await backend.get_message(first.message_id, user_id="user-b") is None
-    with pytest.raises(MemoryOwnershipConflict):
-        await backend.append_message(
-            "session-a",
-            "user",
-            "steal",
-            user_id="user-b",
-            source_event_id="event-steal",
-        )
+    second = await backend.append_message(
+        "session-a",
+        "user",
+        "isolated",
+        user_id="user-b",
+        source_event_id="event-isolated",
+    )
+    assert await backend.get_message(second.message_id, user_id="user-a") is None
     async with backend._conn.execute("PRAGMA foreign_keys") as cursor:
         row = await cursor.fetchone()
         assert row is not None and row[0] == 1

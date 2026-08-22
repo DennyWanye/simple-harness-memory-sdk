@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   duplicate DTO exports are retired.
 - Fresh SQLite schema v4 persists deployment/household/actor/session identity, personal/family
   scope, immutable bindings, recall write fences, erasure epochs, turn receipts and tombstones.
+- Session and committed-turn receipt keys are deployment-scoped, with full household/actor/session/scope
+  validation on replay; different deployments may safely reuse external session and turn identifiers.
+- Recall captures its erasure fence before embedding/ranking, so timeout/corruption degradation retains the
+  delete boundary and stale turns remain `rejected_erased`.
 - A committed turn atomically creates one receipt, the user/assistant pair, and a durable fact job.
   The leased worker performs extraction outside the write transaction and atomically applies its
   canonical snapshot with the job acknowledgement; expired claims recover at startup.

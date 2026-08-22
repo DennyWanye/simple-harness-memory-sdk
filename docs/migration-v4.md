@@ -15,6 +15,10 @@ Execution and product provenance must assign every v3 `source_event_id` exactly 
 missing ownership, unknown product source, identity ambiguity, unknown manifest version, digest tamper or
 row/payload hash mismatch fails closed.
 
+Target session uniqueness and completed-turn receipts are deployment-scoped. Identity maps may therefore
+rename two legacy sessions to the same target session string when their target deployments differ; the same
+target deployment/session pair remains ambiguous and is rejected.
+
 ```python fragment
 from simple_harness_memory.migrations import (
     NonHarnessProvenanceEntry,

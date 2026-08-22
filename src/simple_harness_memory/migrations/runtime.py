@@ -57,15 +57,17 @@ async def import_execution_manifest(
     backend = getattr(manager, "backend", None)
     if not isinstance(backend, SQLiteMemoryBackend):
         raise MemoryMigrationError("memory_migration_sqlite_required")
-    groups: dict[str, list[NormalizedExecutionEntry]] = {}
+    groups: dict[tuple[str, str], list[NormalizedExecutionEntry]] = {}
     for entry in normalized.entries:
         if entry.turn_id is None:
             raise MemoryMigrationManifestError()
-        groups.setdefault(entry.turn_id, []).append(entry)
+        deployment_id = _entry_target_deployment(entry, bindings)
+        groups.setdefault((deployment_id, entry.turn_id), []).append(entry)
     applied = 0
     replayed = 0
     async with backend._transaction():
-        for turn_id, entries in sorted(groups.items()):
+        for group_key, entries in sorted(groups.items()):
+            deployment_id, turn_id = group_key
             entries = _materialize_pair(entries, bindings)
             if len(entries) != 2 or {entry.role for entry in entries} != {"user", "assistant"}:
                 raise MemoryMigrationManifestError()
@@ -85,7 +87,7 @@ async def import_execution_manifest(
             if len(identities) != 1:
                 raise MemoryMigrationManifestError()
             binding = bindings.get(next(iter(identities)))
-            if binding is None:
+            if binding is None or binding.deployment_id != deployment_id:
                 raise MemoryMigrationManifestError()
             for entry in entries:
                 computed = canonical_message_payload_hash(
@@ -120,8 +122,8 @@ async def import_execution_manifest(
             async with backend._conn.execute(
                 "SELECT payload_hash, deployment_id, household_id, actor_id, session_id, "
                 "scope_kind, scope_owner, status, receipt_id "
-                "FROM turn_receipts WHERE turn_id = ?",
-                (turn_id,),
+                "FROM turn_receipts WHERE deployment_id = ? AND turn_id = ?",
+                (principal.deployment_id, turn_id),
             ) as cursor:
                 prior = await cursor.fetchone()
             existing: list[str] = []
@@ -129,8 +131,8 @@ async def import_execution_manifest(
                 async with backend._conn.execute(
                     "SELECT source_event_id, payload_hash, deployment_id, household_id, actor_id, "
                     "session_id, scope_kind, scope_owner, role, content "
-                    "FROM messages WHERE source_event_id = ?",
-                    (entry.source_event_id,),
+                    "FROM messages WHERE deployment_id = ? AND source_event_id = ?",
+                    (principal.deployment_id, entry.source_event_id),
                 ) as cursor:
                     row = await cursor.fetchone()
                 if row is not None:
@@ -209,6 +211,22 @@ async def import_execution_manifest(
         applied,
         replayed,
     )
+
+
+def _entry_target_deployment(
+    entry: NormalizedExecutionEntry,
+    bindings: Mapping[tuple[str, str], object],
+) -> str:
+    if entry.legacy_user_id is not None and entry.legacy_session_id is not None:
+        binding = bindings.get((entry.legacy_user_id, entry.legacy_session_id))
+        if binding is None:
+            raise MemoryMigrationManifestError()
+        return str(getattr(binding, "deployment_id"))
+    if entry.canonical_turn is not None:
+        identity = entry.canonical_turn.get("identity")
+        if isinstance(identity, dict) and isinstance(identity.get("deployment_id"), str):
+            return str(identity["deployment_id"])
+    raise MemoryMigrationManifestError()
 
 
 def _materialize_pair(

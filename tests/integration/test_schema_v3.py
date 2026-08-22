@@ -37,6 +37,24 @@ async def test_fresh_v4_schema_has_complete_ownership_graph(tmp_path):
     }.issubset(tables)
     async with backend._conn.execute("PRAGMA foreign_key_check") as cursor:
         assert await cursor.fetchall() == []
+    async with backend._conn.execute("PRAGMA table_info(sessions)") as cursor:
+        session_columns = {row[1]: row[5] for row in await cursor.fetchall()}
+    assert session_columns["deployment_id"] == 1
+    assert session_columns["session_id"] == 2
+    async with backend._conn.execute("PRAGMA table_info(turn_receipts)") as cursor:
+        receipt_columns = {row[1]: row[5] for row in await cursor.fetchall()}
+    assert receipt_columns["deployment_id"] == 1
+    assert receipt_columns["turn_id"] == 2
+    async with backend._conn.execute("PRAGMA foreign_key_list(fact_jobs)") as cursor:
+        fact_job_foreign_keys = await cursor.fetchall()
+    assert {
+        (row[2], row[3], row[4]) for row in fact_job_foreign_keys
+    }.issuperset(
+        {
+            ("turn_receipts", "deployment_id", "deployment_id"),
+            ("turn_receipts", "turn_id", "turn_id"),
+        }
+    )
     await backend.close()
 
 

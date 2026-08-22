@@ -34,8 +34,9 @@ src/simple_harness_memory/
 - SQLite 仅接受 fresh v4/checksum；v3、缺 meta 或 checksum 漂移均 `MemorySchemaIncompatible`，不会在
   runtime 隐式迁移或删除。
 - sessions/messages/facts/recall snapshots/receipts/jobs/erasure state 全链路保存
-  deployment/household/actor/session/scope_kind/scope_owner；session 第一次绑定后，任何 identity rebind
-  在 recall/read 前失败。
+  deployment/household/actor/session/scope_kind/scope_owner；sessions主键为deployment+session，turn receipt
+  主键为deployment+turn，允许不同deployment复用外部ID；同一deployment内的household/actor/session
+  rebind在recall/read前失败，receipt replay还复核完整owner与scope。
 - recall/export/delete/forget 使用 `core.identity.scope_predicate()` 同一 ownership predicate；personal
   owner 必须是 actor，family owner 必须是 household，不同 household 不进入候选集。
 - SQLite 使用 WAL、FK、busy timeout、task-owned operation lock 与 `BEGIN IMMEDIATE`；数据库文件继续要求
@@ -80,10 +81,12 @@ src/simple_harness_memory/
 - 每个 query id 保存 canonical payload/result hash、identity binding、scope-set hash 与 personal erasure
   write fence；同 id 异 query/identity 冲突，同 id 同输入重放冻结 payload。release 校验 query/result hash，
   并有界清理超过 retention horizon 的 released stage。
-- recall 先读取 erasure epoch/fence，再做候选查询；查询后故障通过 task-local fence 传入稳定 Harness error，
-  使空召回降级后的 committed turn仍能校验删除边界。
+- recall 先在短事务读取 erasure epoch/fence，再做embedding与候选ranking；embedding timeout/corruption或
+  后续查询故障都通过task-local fence传入稳定Harness error。删除可以安全跨越embedding边界，旧fence的
+  committed turn仍会被拒绝。
 - `record_committed_turn` 在一个事务中写 turn receipt、user row、assistant row和可选 fact job；任一步失败
-  全部回滚。同 turn+hash 返回 `already_applied`，同 turn 异 hash 返回 conflict。
+  全部回滚。幂等键为deployment+turn；同deployment下同turn+hash且完整identity/scope相同返回
+  `already_applied`，payload或owner/scope不同返回conflict。
 - fence 过期返回 hash-only `rejected_erased`。无 fence时，仅可信 `turn_started_at` 严格晚于最新
   `erased_at` 且不超当前可信时钟才可绑定当前 epoch；早于、相等或时钟回退均 fail closed。
 

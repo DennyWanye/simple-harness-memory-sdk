@@ -10,6 +10,9 @@ the automatic conversation lifecycle.
 Each production operation is bound to an `AgentIdentity` containing deployment, household, actor and
 session. The consumer authentication boundary supplies that identity; model text, ordinary request data,
 Memory content and tool output cannot replace it. A session is immutable after its first identity binding.
+Session and committed-turn identifiers are scoped by deployment, so separate deployments may safely reuse
+the same external session/turn strings. Within one deployment, household/actor/session ownership and scope
+must match on replay.
 
 - Personal scope owner is the authenticated actor. Only that actor can read, export, forget or delete it.
 - Family scope owner is the authenticated household. Actors in the same household may recall authorized
@@ -27,6 +30,10 @@ Recall failure may degrade a turn to empty Memory context. A committed response 
 Memory delivery fails: Harness retries its durable outbox and Memory deduplicates by turn receipt. Erasure
 epochs and write fences reject late recall, outbox and fact-worker replay with `rejected_erased` rather than
 resurrecting deleted content.
+
+The backend reads and exposes the personal erasure fence before embedding or ranking. An embedding timeout
+or corruption path therefore retains the fence, and a deletion crossing that work boundary invalidates the
+older turn rather than allowing a fence-less write.
 
 Important stable configuration failures include:
 

@@ -21,12 +21,18 @@ from simple_harness import (
 from simple_harness_memory import MemoryManager, MemoryPrincipal, MemoryScope
 from simple_harness_memory.backends.mock import MockMemoryBackend
 from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
+from simple_harness_memory.embedders.mock import HashEmbedder
 
 IDENTITY = AgentIdentity("deployment-a", "house-a", "actor-a", "session-a")
 SCOPES = (MemoryScopeRef.personal("actor-a"), MemoryScopeRef.family("house-a"))
 
 
-def recall_request(identity: AgentIdentity = IDENTITY, *, query_id: str = "query-1"):
+def recall_request(
+    identity: AgentIdentity = IDENTITY,
+    *,
+    query_id: str = "query-1",
+    deadline_seconds: float = 1.0,
+):
     return MemoryRecallRequest(
         query_id,
         f"turn-{query_id}",
@@ -36,9 +42,21 @@ def recall_request(identity: AgentIdentity = IDENTITY, *, query_id: str = "query
             MemoryScopeRef.family(identity.household_id),
         ),
         "Max",
-        MemoryRecallBounds(20, 16_384, 1.0),
+        MemoryRecallBounds(20, 16_384, deadline_seconds),
         time.time(),
     )
+
+
+class _CoordinatedEmbedder(HashEmbedder):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def embed(self, text: str) -> list[float]:
+        self.started.set()
+        await self.release.wait()
+        return await super().embed(text)
 
 
 def committed_turn(
@@ -142,6 +160,86 @@ async def test_session_rebind_fails_before_read(tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("backend_kind", ["mock", "sqlite"])
+async def test_same_session_and_turn_ids_are_isolated_by_deployment(tmp_path, backend_kind):
+    backend = (
+        MockMemoryBackend()
+        if backend_kind == "mock"
+        else SQLiteMemoryBackend(str(tmp_path / "deployment.db"))
+    )
+    manager = await MemoryManager.build(backend=backend)
+    first_identity = AgentIdentity("deployment-a", "house-a", "actor-a", "shared-session")
+    second_identity = AgentIdentity("deployment-b", "house-b", "actor-b", "shared-session")
+    first_recall = await manager.recall_for_turn(
+        recall_request(first_identity, query_id="deployment-a-query")
+    )
+    second_recall = await manager.recall_for_turn(
+        recall_request(second_identity, query_id="deployment-b-query")
+    )
+    first = await manager.record_committed_turn(
+        committed_turn("shared-turn", identity=first_identity, fence=first_recall.write_fence)
+    )
+    second = await manager.record_committed_turn(
+        committed_turn("shared-turn", identity=second_identity, fence=second_recall.write_fence)
+    )
+    assert first.status is CommittedTurnStatus.APPLIED
+    assert second.status is CommittedTurnStatus.APPLIED
+    if isinstance(backend, SQLiteMemoryBackend):
+        async with backend._conn.execute(
+            "SELECT (SELECT COUNT(*) FROM sessions WHERE session_id='shared-session'), "
+            "(SELECT COUNT(*) FROM turn_receipts WHERE turn_id='shared-turn'), "
+            "(SELECT COUNT(*) FROM messages)"
+        ) as cursor:
+            row = await cursor.fetchone()
+        assert row is not None and tuple(row) == (2, 2, 4)
+    else:
+        assert len(backend._agent_bindings) == 2
+        assert len(backend._turn_receipts) == 2
+
+    conflicting_identity = AgentIdentity(
+        "deployment-a", "house-a", "actor-a", "different-session"
+    )
+    conflicting_recall = await manager.recall_for_turn(
+        recall_request(conflicting_identity, query_id="same-deployment-query")
+    )
+    with pytest.raises(AgentMemoryError) as conflict:
+        await manager.record_committed_turn(
+            committed_turn(
+                "shared-turn",
+                identity=conflicting_identity,
+                fence=conflicting_recall.write_fence,
+            )
+        )
+    assert conflict.value.code is AgentMemoryErrorCode.CONFLICT
+
+    first_principal = MemoryPrincipal(
+        first_identity.deployment_id,
+        first_identity.household_id,
+        first_identity.actor_id,
+        first_identity.session_id,
+    )
+    second_principal = MemoryPrincipal(
+        second_identity.deployment_id,
+        second_identity.household_id,
+        second_identity.actor_id,
+        second_identity.session_id,
+    )
+    assert len((await manager.export_principal(first_principal)).records) == 2
+    assert len((await manager.export_principal(second_principal)).records) == 2
+    deleted = await manager.delete_scope(
+        first_principal, (MemoryScope.personal(first_identity.actor_id),)
+    )
+    assert deleted.deleted_messages == 2
+    assert len((await manager.export_principal(first_principal)).records) == 0
+    assert len((await manager.export_principal(second_principal)).records) == 2
+    second_after_delete = await manager.recall_for_turn(
+        recall_request(second_identity, query_id="deployment-b-after-delete")
+    )
+    assert second_after_delete.item_count == 2
+    await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_erasure_fence_blocks_old_turn_and_allows_new_degraded_turn(tmp_path):
     manager = await MemoryManager.build(db_path=str(tmp_path / "memory.db"))
     old_started = time.time()
@@ -166,6 +264,56 @@ async def test_erasure_fence_blocks_old_turn_and_allows_new_degraded_turn(tmp_pa
     assert pre_delete.status is CommittedTurnStatus.REJECTED_ERASED
     assert boundary.status is CommittedTurnStatus.REJECTED_ERASED
     assert new_degraded.status is CommittedTurnStatus.APPLIED
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_embedding_timeout_retains_fence_and_delete_rejects_degraded_turn(tmp_path):
+    embedder = _CoordinatedEmbedder()
+    backend = SQLiteMemoryBackend(str(tmp_path / "memory.db"), embedder=embedder)
+    manager = await MemoryManager.build(backend=backend)
+
+    with pytest.raises(AgentMemoryError) as error:
+        await manager.recall_for_turn(
+            recall_request(query_id="timeout", deadline_seconds=0.01)
+        )
+    assert error.value.code is AgentMemoryErrorCode.TIMEOUT
+    assert error.value.write_fence is not None
+
+    principal = MemoryPrincipal("deployment-a", "house-a", "actor-a", "session-a")
+    await manager.delete_scope(principal, (MemoryScope.personal("actor-a"),))
+    rejected = await manager.record_committed_turn(
+        committed_turn("timeout-stale", fence=error.value.write_fence)
+    )
+    assert rejected.status is CommittedTurnStatus.REJECTED_ERASED
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_delete_can_cross_embedding_boundary_and_stale_fence_is_rejected(tmp_path):
+    backend = SQLiteMemoryBackend(str(tmp_path / "memory.db"), embedder=HashEmbedder())
+    manager = await MemoryManager.build(backend=backend)
+    initial = await manager.recall_for_turn(recall_request(query_id="seed"))
+    await manager.record_committed_turn(
+        committed_turn("seed-turn", fence=initial.write_fence)
+    )
+
+    embedder = _CoordinatedEmbedder()
+    backend._embedder = embedder
+    pending = asyncio.create_task(
+        manager.recall_for_turn(recall_request(query_id="delete-boundary"))
+    )
+    await asyncio.wait_for(embedder.started.wait(), timeout=1.0)
+    principal = MemoryPrincipal("deployment-a", "house-a", "actor-a", "session-a")
+    await manager.delete_scope(principal, (MemoryScope.personal("actor-a"),))
+    embedder.release.set()
+    recalled = await asyncio.wait_for(pending, timeout=1.0)
+
+    assert recalled.item_count == 0
+    stale = await manager.record_committed_turn(
+        committed_turn("boundary-stale", fence=recalled.write_fence)
+    )
+    assert stale.status is CommittedTurnStatus.REJECTED_ERASED
     await manager.close()
 
 

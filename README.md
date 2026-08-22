@@ -78,7 +78,8 @@ asyncio.run(main())
 ```
 
 同一个 `source_event_id` 与相同 canonical payload 重放返回
-`already_applied`；同 ID 不同 payload 稳定拒绝。`session_id` 首次绑定用户后不可改绑。
+`already_applied`；同 ID 不同 payload 稳定拒绝。standalone user 作为 deployment 边界，同名
+`session_id` 可在不同 user/deployment 共存，但同一 deployment 内首次绑定后不可改绑。
 Harness 消费者不再创建 Memory Adapter，也不手动 recall/append。安装 `[harness]` 后，直接把
 `MemoryManager` 传给 Harness production ports；Harness canonical DTO 仅在 integration 方法调用时
 lazy import，基础安装仍可独立导入：
@@ -98,7 +99,8 @@ SQLite 事务创建；事实提取在事务外执行，结果与 job ack 再原�
 ### 持久化边界
 
 - SQLite 只接受 fresh schema v4；旧 schema/version/checksum 一律 fail-fast，不做隐式迁移。
-- v4 全链路保存 deployment/household/actor/session 与 personal/family scope；session 首次绑定后不可换绑。
+- v4 全链路保存 deployment/household/actor/session 与 personal/family scope；session 和 turn receipt
+  都以 deployment 为持久化命名空间，同一 deployment 内首次绑定后不可换 household/actor。
 - `export_principal`、`delete_scope`、`forget_fact` 和 `share_fact` 共用同一 scope predicate；删除先推进
   erasure epoch，再级联 content/vector/stage/job，并保留 hash-only tombstone，旧 outbox/job 不会复活内容。
 - v3→v4 只通过显式、closed-runtime、backup-first migrator执行，runtime仍不会隐式升级。迁移接收 Harness
@@ -111,6 +113,8 @@ SQLite 事务创建；事实提取在事务外执行，结果与 job ack 再原�
 - 召回使用 external-content FTS5，先做 deployment/household/scope 过滤，再执行 MATCH/ORDER/LIMIT；
   vector 只 decode 当前 active generation 的有界 lexical/recent candidates。lineage 漂移或 embedding
   暂不可用时明确降级为 lexical-only，不混用不同模型向量。
+- Agent recall 在任何 embedding/ranking 前持久读取 erasure fence；embedding 超时或损坏的降级错误仍
+  携带该 fence，因此并发删除后的旧 turn 会稳定返回 `rejected_erased`。
 - `reindex_generation()` 分页建立 building generation，校验 count/dimension/hash/sample 后原子切换；失败
   保留旧 active generation。`backup()` 生成带 schema/lineage/SHA-256 的 manifest，`restore_backup()`
   仅允许 manager 关闭后执行，并在替换原库前完成独立完整性校验。

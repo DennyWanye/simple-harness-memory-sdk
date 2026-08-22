@@ -172,6 +172,22 @@ def _identity_map() -> LegacyIdentityMap:
     )
 
 
+def test_identity_map_scopes_target_session_uniqueness_to_deployment():
+    shared_session = (
+        LegacyIdentityBinding(
+            "legacy-a", "legacy-session-a", "deployment-a", "house-a", "actor-a", "shared"
+        ),
+        LegacyIdentityBinding(
+            "legacy-b", "legacy-session-b", "deployment-b", "house-b", "actor-b", "shared"
+        ),
+    )
+    assert len(LegacyIdentityMap.create(shared_session).verified()) == 2
+
+    conflicting = dataclasses.replace(shared_session[1], deployment_id="deployment-a")
+    with pytest.raises(MemoryMigrationManifestError):
+        LegacyIdentityMap.create((shared_session[0], conflicting)).verified()
+
+
 def _entry(
     source: str,
     payload_hash: str,
@@ -489,6 +505,58 @@ async def test_public_runtime_import_accepts_keep_only_and_replays(tmp_path):
         }
         with pytest.raises(MemoryMigrationManifestError):
             await import_execution_manifest(manager, rejected, _identity_map())
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_import_scopes_same_session_and_turn_to_deployment(tmp_path):
+    manager = await MemoryManager.build(db_path=str(tmp_path / "deployment-import.db"))
+    bindings = (
+        LegacyIdentityBinding(
+            "legacy-a", "legacy-session-a", "deployment-a", "house-a", "actor-a", "shared"
+        ),
+        LegacyIdentityBinding(
+            "legacy-b", "legacy-session-b", "deployment-b", "house-b", "actor-b", "shared"
+        ),
+    )
+    identity_map = LegacyIdentityMap.create(bindings)
+    entries: list[NormalizedExecutionEntry] = []
+    for binding, suffix in zip(bindings, ("a", "b"), strict=True):
+        for role, text in (("user", f"user-{suffix}"), ("assistant", f"assistant-{suffix}")):
+            source = f"runtime-{suffix}-{role}"
+            payload_hash = canonical_message_payload_hash(
+                source_event_id=source,
+                user_id=binding.legacy_user_id,
+                session_id=binding.legacy_session_id,
+                role=role,
+                memory_text=text,
+            )
+            entries.append(
+                NormalizedExecutionEntry(
+                    source,
+                    payload_hash,
+                    MigrationDecision.KEEP_COMPLETED_PAIR,
+                    "shared-turn",
+                    role,
+                    text,
+                    binding.legacy_user_id,
+                    binding.legacy_session_id,
+                )
+            )
+    manifest = {
+        "protocol": EXECUTION_MANIFEST_PROTOCOL,
+        "entries": [dataclasses.asdict(entry) for entry in entries],
+        "digest": execution_manifest_digest(tuple(entries)),
+    }
+
+    result = await import_execution_manifest(manager, manifest, identity_map)
+    assert result.applied_pairs == 2
+    async with manager.backend._conn.execute(
+        "SELECT (SELECT COUNT(*) FROM sessions WHERE session_id='shared'), "
+        "(SELECT COUNT(*) FROM turn_receipts WHERE turn_id='shared-turn'), "
+        "(SELECT COUNT(*) FROM messages)"
+    ) as cursor:
+        assert tuple(await cursor.fetchone()) == (2, 2, 4)
     await manager.close()
 
 
