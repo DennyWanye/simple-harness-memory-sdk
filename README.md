@@ -2,6 +2,8 @@
 
 当前生产架构、SQLite/召回边界与已知限制见
 [`ARCHITECTURE/index.md`](ARCHITECTURE/index.md)。
+本地构建、冻结校验、GitHub 分发与 AIPhone 交接的操作手册见
+[`docs/build-and-release.md`](docs/build-and-release.md)。
 
 认知记忆 SDK，为运行时 consumer 提供独立、product-neutral 的持久记忆系统。
 
