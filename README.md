@@ -34,7 +34,7 @@ extras 与功能的对应关系（与 `pyproject.toml` 的 `[project.optional-de
 | `embeddings` | `torch`、`sentence-transformers` | BGE-M3 语义向量（`embedder="bge"`）、CrossEncoder 重排；运行时只读本地权重，不下载 |
 | `world`      | `httpx`、`python-dateutil`      | 联网的新闻/天气 provider（NewsAPI / OpenWeatherMap） |
 | `openai`     | `openai`                        | LLM 事实提取（需自备 OpenAI 客户端，见 `features/facts.py` 的 `LLMFactExtractor`） |
-| `harness`    | `simple-harness-sdk>=0.3,<0.4` | `MemoryManager` 直接实现 Harness `AgentMemoryPort` |
+| `harness`    | `simple-harness-sdk>=0.4,<0.5` | `MemoryManager` 直接实现 Harness `AgentMemoryPort` |
 | `dev`        | `pytest` 等                     | 开发 / 测试 |
 | `all`        | 上述四个运行时 extra            | 完整功能 |
 
@@ -84,12 +84,24 @@ asyncio.run(main())
 `session_id` 可在不同 user/deployment 共存，但同一 deployment 内首次绑定后不可改绑。
 Harness 消费者不再创建 Memory Adapter，也不手动 recall/append。安装 `[harness]` 后，直接把
 `MemoryManager` 传给 Harness production ports；Harness canonical DTO 仅在 integration 方法调用时
-lazy import，基础安装仍可独立导入：
+lazy import。Harness 0.4 现在也是基础依赖，用于共享 import-pure 的 observability wire contract；
+Memory 不复制事件 schema，也不导入 Harness runtime/provider/tool 实现：
 
 ```python fragment
 memory = await MemoryManager.build("memory.db", enable_facts=True)
 ports = ConsumerRuntimePorts(memory=memory)  # direct AgentMemoryPort
 ```
+
+### 安全 observability
+
+`MemoryManager` 的直接构造、`build()`、`build_development()`、`build_production()`，以及
+`MockMemoryBackend` / `SQLiteMemoryBackend` 直接构造均接受可选 `observability_sink=` 与
+`correlation=`。未注入 sink 时使用共享 Noop 路径；sink 失败只进入有界丢弃/错误计数，不改变召回、
+提交、fact job 或恢复结果。
+
+`await memory.diagnostics_snapshot()` 返回稳定、有界的聚合状态，包括 recall stage、turn receipt、
+fact-job queue/retry/dead-letter/recovery 与 sink counters。SQLite 查询只读取状态、时间和稳定错误码列，
+不会选择 query/content/response/fact/payload/embedding/path 或异常文本。
 
 官方路径以 committed user→assistant Turn 为写入单位：receipt、两条消息和 durable fact job 在同一
 SQLite 事务创建；事实提取在事务外执行，结果与 job ack 再原子提交。

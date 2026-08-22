@@ -11,7 +11,8 @@ bytes for AIPhone and other consumers, but must never rebuild them.
 
 ## Invariants
 
-- Release Harness SDK first; Memory SDK 0.4 requires Harness SDK `>=0.3,<0.4` for `[harness]`.
+- Release Harness SDK first; Memory requires Harness SDK `>=0.4,<0.5` as a base dependency and
+  keeps the same range for `[harness]`.
 - Build once from the exact candidate commit in a clean detached worktree.
 - The version tag, `BUILD_INFO.txt`, wheel metadata, and source commit must agree.
 - Publish the wheel, sdist, `SHA256SUMS`, and `BUILD_INFO.txt` together.
@@ -143,4 +144,3 @@ git -C "$MEMORY_REPO" worktree remove "$RELEASE_DIR"
 Update `README.md`, `docs/integration-status.md`, and `ARCHITECTURE/ARCHITECTURE.md` with the tag,
 source commit, wheel SHA-256, test result, and Release URL. Do not commit generated distributions,
 credentials, logs, databases, or raw test evidence.
-

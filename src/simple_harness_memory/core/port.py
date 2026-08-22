@@ -216,6 +216,11 @@ class MemoryBackend(ABC):
     async def close(self) -> None:
         """Close the backend."""
 
+    async def diagnostics_snapshot(self) -> dict[str, object]:
+        """Return bounded aggregate operational health."""
+
+        return {"health": "healthy"}
+
     async def __aenter__(self) -> MemoryBackend:
         await self.initialize()
         return self

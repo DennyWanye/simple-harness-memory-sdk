@@ -1,10 +1,10 @@
-<!-- last-calibrated: 3d4247b -->
+<!-- last-calibrated: pending-observability-s1-s2 -->
 
 # ARCHITECTURE — simple-harness-memory-sdk（v0.4.0）
 
 > 最后更新：2026-08-23
 > 当前事实：S3 runtime、四类 taxonomy offline migration、S4 storage/embedding、S5 candidate packaging
-> 与 S6 simple_harness 产品接线/真人测试均已完成。
+> 与 S6 simple_harness 产品接线/真人测试均已完成；Memory observability S1+S2 已通过自动化验收。
 
 ## 分层
 
@@ -28,6 +28,24 @@ src/simple_harness_memory/
   standalone canonical/hash 与内部兼容 helper，不是官方组合入口。
 - default write scope 是 actor personal；recall 可读取 actor personal + household family。Memory 内容只作为
   带 scope provenance 的数据返回，instruction trust 投影由 Harness S1 负责。
+
+## Observability S1+S2
+
+- 基础依赖为 `simple-harness-sdk>=0.4,<0.5`，本地开发仍由 `uv.sources` 指向 sibling checkout。
+  Memory 只复用 import-pure `simple_harness.observability` envelope、correlation、runtime 与 sinks；没有
+  复制 wire schema，也不让 observability 成为授权、重试、CAS、事务或恢复 authority。
+- `MemoryManager` direct init、三个 builders，以及 Mock/SQLite direct backend constructors 接受可选
+  `observability_sink` / `correlation`。manager、backend 与 fact worker 共享单一 runtime；Noop 默认路径
+  保持旧行为，sink construction/emit/close failure 只增加共享 runtime counters。
+- recall 发射 accepted/started/replayed/degraded/succeeded/released/cleanup/failed；committed turn 在权威
+  receipt 可见后发射 applied/replayed/rejected；fact worker 在权威返回可见处发射 pending/claimed/
+  recovered/retrying/dead-letter/applied/erased/lost-lease。
+- correlation 未新增 durable 列：recall `query_id`、receipt/fact job `turn_id`、`job_id` 与 `session_id`
+  已足以生成 bounded opaque identity；Host 显式注入时原样贯穿，close/reopen recovery 可重建同一链。
+- `diagnostics_snapshot()` 的 schema 固定且有界。Mock 从内存状态聚合；SQLite 仅 GROUP BY/COUNT/MIN
+  `state/status/created_at/last_error_code`，100ms query timeout、250ms manager deadline，错误与 close
+  返回 degraded/closed schema 而不影响业务。禁止查询 content、result_payload、fact value、embedding、
+  文件 path 或 exception repr；recent error codes 最多 20 项，age clamp 为非负值。
 
 ## Fresh schema v4 与 identity/scope
 
@@ -126,14 +144,19 @@ src/simple_harness_memory/
 
 - 唯一版本事实源为`src/simple_harness_memory/__init__.py`，当前为0.4.0；wheel metadata、README、公开API
   snapshot、changelog与candidate `BUILD_INFO.txt`必须一致。
-- base wheel metadata不必选Harness；`[harness]`严格要求`simple-harness-sdk>=0.3,<0.4`。clean resolver gate
-  使用真实Harness 0.3 candidate，0.2.x和0.4.x均必须拒绝。
+- base wheel metadata 直接要求 `simple-harness-sdk>=0.4,<0.5`，`[harness]` 保持同一范围；clean
+  resolver gate 使用真实 Harness 0.4 candidate，0.3.x 与 0.5.x 均必须拒绝。
 - CI只build一次candidate wheel/sdist并记录source commit与SHA-256；Python 3.11/3.12/3.13及Windows x64、
   macOS ARM64、Linux ARM64 downstream只下载/验证同一artifact，不允许重建。release workflow仍只验证并
   交接冻结bytes。Memory tag `v0.4.0` 指向 `3d4247b` 的同一冻结 candidate；2026-08-23 source、`main`
   与 tag 已推送；本地冻结 wheel/sdist 已正式发布到 GitHub Release，并通过公开稳定 URL 下载回验。
 
 ## 验证状态
+
+- Observability S1+S2 targeted：privacy canary、sink failure isolation、public/direct composition、recall/
+  receipt/fact-job 状态矩阵、snapshot schema/bounds/SQL denylist、close/reopen recovery correlation 均通过；
+  `tests/integration/test_observability.py` 13 passed。Harness candidate `bc6ae8d` 声明 0.4.0，Memory installed
+  metadata 确认 base/extra 均解析 `simple-harness-sdk>=0.4,<0.5`。
 
 - S3 targeted：Agent direct port、Mock/SQLite、atomic fault、fact recovery、identity rebind、scope matrix、
   export/delete/forget、erasure replay、日志 canary均通过。

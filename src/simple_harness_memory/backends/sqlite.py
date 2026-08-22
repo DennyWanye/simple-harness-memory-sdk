@@ -55,6 +55,7 @@ from simple_harness_memory.core.models import (
     MemoryApplyStatus,
     Message,
 )
+from simple_harness_memory.core.observability import CorrelationInput, MemoryObservability
 from simple_harness_memory.core.twin import (
     DigitalTwin,
     Entity,
@@ -472,6 +473,9 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         max_fact_value_chars: int | None = None,
         max_payload_bytes: int | None = None,
         max_db_bytes: int | None = None,
+        observability_sink=None,
+        correlation: CorrelationInput = None,
+        observability: MemoryObservability | None = None,
     ) -> None:
         super().__init__(
             embedder=embedder,
@@ -484,6 +488,9 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             max_fact_value_chars=max_fact_value_chars,
             max_payload_bytes=max_payload_bytes,
             max_db_bytes=max_db_bytes,
+            observability_sink=observability_sink,
+            correlation=correlation,
+            observability=observability,
         )
         self._db_path = str(db_path)
         self._secure_path: Path | None = None
@@ -1341,14 +1348,15 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                 )
             return status, receipt_id
 
-    async def recover_fact_jobs(self) -> None:
+    async def recover_fact_jobs(self) -> int:
         async with self._transaction():
-            await self._conn.execute(
+            cursor = await self._conn.execute(
                 "UPDATE fact_jobs SET state = 'pending', lease_until = NULL, "
                 "lease_token = NULL, updated_at = ? WHERE state = 'claimed' "
                 "AND lease_until <= ?",
                 (time.time(), time.time()),
             )
+            return max(0, int(cursor.rowcount))
 
     async def claim_fact_job(self, *, lease_seconds: float = 30.0) -> dict[str, object] | None:
         now = time.time()
@@ -1480,7 +1488,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             )
         return "applied"
 
-    async def fail_fact_job(self, job: dict[str, object], *, stable_code: str) -> None:
+    async def fail_fact_job(self, job: dict[str, object], *, stable_code: str) -> str:
         now = time.time()
         attempts = int(str(job.get("attempts") or 1))
         state = "dead_letter" if attempts >= 5 else "pending"
@@ -1499,6 +1507,93 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                     job["lease_token"],
                 ),
             )
+        return state
+
+    async def diagnostics_snapshot(self) -> dict[str, object]:
+        """Aggregate operational state using status/time columns only."""
+
+        if self._db is None:
+            return await super().diagnostics_snapshot() | {"health": "closed"}
+        now = time.time()
+        try:
+            async with asyncio.timeout(0.1):
+                async with self._operation():
+                    recall = await self._snapshot_group_counts(
+                        "SELECT state, COUNT(*), MIN(created_at) "
+                        "FROM recall_result_snapshots GROUP BY state",
+                        ("retained", "released"),
+                    )
+                    receipts = await self._snapshot_group_counts(
+                        "SELECT status, COUNT(*), MIN(created_at) "
+                        "FROM turn_receipts GROUP BY status",
+                        ("applied", "rejected_erased"),
+                    )
+                    jobs = await self._snapshot_group_counts(
+                        "SELECT state, COUNT(*), MIN(created_at) "
+                        "FROM fact_jobs GROUP BY state",
+                        ("pending", "claimed", "applied", "dead_letter", "erased"),
+                    )
+                    async with self._conn.execute(
+                        "SELECT last_error_code, COUNT(*) FROM fact_jobs "
+                        "WHERE last_error_code IS NOT NULL GROUP BY last_error_code "
+                        "ORDER BY COUNT(*) DESC, last_error_code LIMIT 20"
+                    ) as cursor:
+                        error_rows = await cursor.fetchall()
+            return {
+                "health": "degraded" if jobs["counts"]["dead_letter"] else "healthy",
+                "recall": {
+                    **recall["counts"],
+                    "oldest_age_ms": self._snapshot_age(now, recall["oldest"]),
+                },
+                "turn_receipts": receipts["counts"],
+                "fact_jobs": {
+                    **jobs["counts"],
+                    "oldest_pending_age_ms": self._snapshot_age(
+                        now,
+                        min(
+                            value
+                            for key, value in jobs["oldest_by_state"].items()
+                            if key in {"pending", "claimed"} and value is not None
+                        )
+                        if any(
+                            value is not None
+                            for key, value in jobs["oldest_by_state"].items()
+                            if key in {"pending", "claimed"}
+                        )
+                        else None,
+                    ),
+                    "recent_error_codes": {
+                        str(row[0]): int(row[1]) for row in error_rows
+                    },
+                },
+            }
+        except BaseException:
+            return {"health": "degraded", "error_code": "memory_snapshot_query_failed"}
+
+    async def _snapshot_group_counts(
+        self, sql: str, states: tuple[str, ...]
+    ) -> dict[str, Any]:
+        async with self._conn.execute(sql) as cursor:
+            rows = await cursor.fetchall()
+        counts = {state: 0 for state in states}
+        oldest_by_state: dict[str, float | None] = {state: None for state in states}
+        for row in rows:
+            state = str(row[0])
+            if state in counts:
+                counts[state] = int(row[1])
+                oldest_by_state[state] = None if row[2] is None else float(row[2])
+        present = [value for value in oldest_by_state.values() if value is not None]
+        return {
+            "counts": counts,
+            "oldest": min(present) if present else None,
+            "oldest_by_state": oldest_by_state,
+        }
+
+    @staticmethod
+    def _snapshot_age(now: float, oldest: float | None) -> float | None:
+        if oldest is None:
+            return None
+        return max(0.0, (now - float(oldest)) * 1000.0)
 
     async def agent_export(
         self,
@@ -1940,6 +2035,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
     async def close(self) -> None:
         async with self._operation():
             await self._close_locked()
+        self._observability.close()
 
     async def reindex_generation(
         self, embedder=None, *, page_size: int | None = None

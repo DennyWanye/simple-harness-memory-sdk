@@ -27,8 +27,9 @@ def test_0_4_0_version_sources_and_docs_are_consistent() -> None:
         "src/simple_harness_memory/__init__.py"
     )
     assert pyproject["project"]["optional-dependencies"]["harness"] == [
-        "simple-harness-sdk>=0.3,<0.4"
+        "simple-harness-sdk>=0.4,<0.5"
     ]
+    assert "simple-harness-sdk>=0.4,<0.5" in pyproject["project"]["dependencies"]
     assert "当前版本：**0.4.0**" in (ROOT / "README.md").read_text(encoding="utf-8")
     assert "## [0.4.0] - 2026-08-22" in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "version=0.4.0" in (ROOT / ".github/workflows/release.yml").read_text(

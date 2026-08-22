@@ -27,6 +27,7 @@ from simple_harness_memory.core.models import (
     MemoryApplyStatus,
     Message,
 )
+from simple_harness_memory.core.observability import CorrelationInput, MemoryObservability
 from simple_harness_memory.core.twin import DigitalTwin
 from simple_harness_memory.features.lexical import lexical_similarity
 
@@ -55,6 +56,9 @@ class MockMemoryBackend(BaseMemoryBackend):
         summarizer=None,
         auto_extract_facts: bool = False,
         bounds: MemoryResourceBounds | None = None,
+        observability_sink=None,
+        correlation: CorrelationInput = None,
+        observability: MemoryObservability | None = None,
     ) -> None:
         super().__init__(
             embedder=embedder,
@@ -63,6 +67,9 @@ class MockMemoryBackend(BaseMemoryBackend):
             summarizer=summarizer,
             auto_extract_facts=auto_extract_facts,
             bounds=bounds,
+            observability_sink=observability_sink,
+            correlation=correlation,
+            observability=observability,
         )
         self._messages: list[Message] = []
         self._facts: list[Fact] = []
@@ -375,10 +382,13 @@ class MockMemoryBackend(BaseMemoryBackend):
             }
         return status, receipt_id
 
-    async def recover_fact_jobs(self) -> None:
+    async def recover_fact_jobs(self) -> int:
+        recovered = 0
         for job in self._fact_jobs.values():
             if job["state"] == "claimed":
                 job["state"] = "pending"
+                recovered += 1
+        return recovered
 
     async def claim_fact_job(self, *, lease_seconds: float = 30.0) -> dict[str, object] | None:
         del lease_seconds
@@ -442,12 +452,60 @@ class MockMemoryBackend(BaseMemoryBackend):
         )
         return "applied"
 
-    async def fail_fact_job(self, job: dict[str, object], *, stable_code: str) -> None:
+    async def fail_fact_job(self, job: dict[str, object], *, stable_code: str) -> str:
         current = self._fact_jobs[str(job["job_id"])]
         attempts = _as_int(current["attempts"])
         current["state"] = "dead_letter" if attempts >= 5 else "pending"
         current["next_attempt_at"] = time.time() + 2**attempts
         current["last_error_code"] = stable_code
+        return str(current["state"])
+
+    async def diagnostics_snapshot(self) -> dict[str, object]:
+        now = time.time()
+        recall_counts = {"retained": 0, "released": 0}
+        recall_created: list[float] = []
+        for row in (*self._recall_snapshots.values(), *self._agent_recalls.values()):
+            state = "released" if row.get("released") else str(row.get("state", "retained"))
+            if state in recall_counts:
+                recall_counts[state] += 1
+            if state == "retained":
+                recall_created.append(_as_float(row.get("created_at")))
+        receipt_counts = {"applied": 0, "rejected_erased": 0}
+        for receipt in self._turn_receipts.values():
+            state = str(receipt[1])
+            if state in receipt_counts:
+                receipt_counts[state] += 1
+        job_counts = {
+            state: 0
+            for state in ("pending", "claimed", "applied", "dead_letter", "erased")
+        }
+        pending_created: list[float] = []
+        errors: dict[str, int] = {}
+        for job in self._fact_jobs.values():
+            state = str(job["state"])
+            job_counts[state] += 1
+            if state in {"pending", "claimed"}:
+                pending_created.append(_as_float(job.get("created_at")))
+            code = job.get("last_error_code")
+            if isinstance(code, str) and code:
+                errors[code] = errors.get(code, 0) + 1
+        return {
+            "health": "degraded" if job_counts["dead_letter"] else "healthy",
+            "recall": {
+                **recall_counts,
+                "oldest_age_ms": (
+                    None if not recall_created else max(0.0, (now - min(recall_created)) * 1000.0)
+                ),
+            },
+            "turn_receipts": receipt_counts,
+            "fact_jobs": {
+                **job_counts,
+                "oldest_pending_age_ms": (
+                    None if not pending_created else max(0.0, (now - min(pending_created)) * 1000.0)
+                ),
+                "recent_error_codes": dict(sorted(errors.items())[:20]),
+            },
+        }
 
     async def agent_export(
         self,

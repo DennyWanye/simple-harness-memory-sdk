@@ -1354,6 +1354,7 @@ dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pydantic" },
+    { name = "simple-harness-sdk" },
     { name = "structlog" },
 ]
 
@@ -1417,6 +1418,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.16.3" },
     { name = "sentence-transformers", marker = "extra == 'all'", specifier = ">=3.0" },
     { name = "sentence-transformers", marker = "extra == 'embeddings'", specifier = ">=3.0" },
+    { name = "simple-harness-sdk", directory = "../simple-harness-sdk" },
     { name = "simple-harness-sdk", marker = "extra == 'all'", directory = "../simple-harness-sdk" },
     { name = "simple-harness-sdk", marker = "extra == 'dev'", directory = "../simple-harness-sdk" },
     { name = "simple-harness-sdk", marker = "extra == 'harness'", directory = "../simple-harness-sdk" },

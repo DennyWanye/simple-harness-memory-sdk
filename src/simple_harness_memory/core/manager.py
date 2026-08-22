@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -25,6 +26,7 @@ from simple_harness_memory.core.identity import (
     ScopeKind,
 )
 from simple_harness_memory.core.models import Fact
+from simple_harness_memory.core.observability import CorrelationInput, MemoryObservability
 from simple_harness_memory.core.port import MemoryBackend
 from simple_harness_memory.world.port import WorldModelPort
 
@@ -66,11 +68,23 @@ class MemoryManager:
         world: WorldModelPort,
         *,
         fact_worker: FactJobWorker | None = None,
+        observability_sink=None,
+        correlation: CorrelationInput = None,
+        observability: MemoryObservability | None = None,
     ) -> None:
         self._backend = backend
         self.world = world
         self._fact_worker = fact_worker
         self._closed = False
+        inherited = getattr(backend, "observability", None)
+        self._observability = observability or (
+            inherited
+            if observability_sink is None and correlation is None and inherited is not None
+            else MemoryObservability(observability_sink, correlation)
+        )
+        setter = getattr(backend, "set_observability", None)
+        if callable(setter):
+            setter(self._observability)
 
     @property
     def backend(self) -> MemoryBackend:
@@ -90,6 +104,8 @@ class MemoryManager:
         summarizer=None,
         world=None,
         bounds: MemoryResourceBounds | None = None,
+        observability_sink=None,
+        correlation: CorrelationInput = None,
     ):
         if isinstance(embedder, str):
             from simple_harness_memory.embedders.factory import get_embedder
@@ -103,6 +119,8 @@ class MemoryManager:
                 "summarizer": summarizer,
                 "auto_extract_facts": enable_facts,
                 "bounds": bounds,
+                "observability_sink": observability_sink,
+                "correlation": correlation,
             }
             if db_path is not None:
                 from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
@@ -112,6 +130,12 @@ class MemoryManager:
                 from simple_harness_memory.backends.mock import MockMemoryBackend
 
                 backend = MockMemoryBackend(**kwargs)
+        observer = getattr(backend, "observability", None)
+        if observer is None or observability_sink is not None or correlation is not None:
+            observer = MemoryObservability(observability_sink, correlation)
+            setter = getattr(backend, "set_observability", None)
+            if callable(setter):
+                setter(observer)
         await backend.initialize()
         if world is not None:
             world_model = world
@@ -132,15 +156,32 @@ class MemoryManager:
             hasattr(backend, name)
             for name in ("recover_fact_jobs", "claim_fact_job", "apply_fact_job")
         ):
-            worker = FactJobWorker(backend, backend._fact_extractor)
+            worker = FactJobWorker(backend, backend._fact_extractor, observer)
             await worker.start()
-        return cls(backend=backend, world=world_model, fact_worker=worker)
+        return cls(
+            backend=backend,
+            world=world_model,
+            fact_worker=worker,
+            observability=observer,
+        )
 
     @classmethod
-    async def build_development(cls, db_path=None, **kwargs):
+    async def build_development(
+        cls,
+        db_path=None,
+        *,
+        observability_sink=None,
+        correlation: CorrelationInput = None,
+        **kwargs,
+    ):
         """Explicit development builder; deterministic hash embeddings are allowed."""
 
-        return await cls.build(db_path, **kwargs)
+        return await cls.build(
+            db_path,
+            observability_sink=observability_sink,
+            correlation=correlation,
+            **kwargs,
+        )
 
     @classmethod
     async def build_production(
@@ -149,6 +190,8 @@ class MemoryManager:
         *,
         embedder=None,
         resource_path=None,
+        observability_sink=None,
+        correlation: CorrelationInput = None,
         **kwargs,
     ):
         """Build with an explicit production embedder and pre-resolved local resources."""
@@ -162,7 +205,13 @@ class MemoryManager:
         pinned_resource = Path(resource_path)
         if not pinned_resource.is_absolute() or not pinned_resource.exists():
             raise MemoryProductionConfigurationError("memory_embedding_resource_unavailable")
-        manager = await cls.build(db_path, embedder=embedder, **kwargs)
+        manager = await cls.build(
+            db_path,
+            embedder=embedder,
+            observability_sink=observability_sink,
+            correlation=correlation,
+            **kwargs,
+        )
         try:
             await manager.ensure_embeddings()
         except Exception:
@@ -202,10 +251,27 @@ class MemoryManager:
         harness = self._harness()
         principal = self._principal(request.identity)
         scopes = tuple(self._scope(scope) for scope in request.scopes)
+        started = time.monotonic()
+        self._observability.emit(
+            "memory.recall.accepted",
+            operation="recall",
+            outcome="accepted",
+            entity_id=request.query_id,
+            session_id=principal.session_id,
+            attributes={"stage": "accepted"},
+        )
+        self._observability.emit(
+            "memory.recall.started",
+            operation="recall",
+            outcome="started",
+            entity_id=request.query_id,
+            session_id=principal.session_id,
+            attributes={"stage": "started"},
+        )
         try:
             recall = getattr(self._backend, "agent_recall")
             async with asyncio.timeout(request.bounds.deadline_seconds):
-                payload, fence, _replayed = await recall(
+                payload, fence, replayed = await recall(
                     principal=principal,
                     scopes=scopes,
                     query_id=request.query_id,
@@ -215,18 +281,33 @@ class MemoryManager:
                     max_bytes=request.bounds.max_bytes,
                 )
         except MemoryIdempotencyConflict as exc:
+            self._emit_failure(
+                "recall", request.query_id, principal.session_id, "memory_conflict", started
+            )
             raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.CONFLICT) from exc
         except MemoryOwnershipConflict as exc:
+            self._emit_failure(
+                "recall", request.query_id, principal.session_id, "memory_permanent", started
+            )
             raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.PERMANENT) from exc
         except TimeoutError as exc:
             fence = getattr(self._backend, "agent_failure_fence", lambda: None)()
+            self._emit_failure(
+                "recall", request.query_id, principal.session_id, "memory_timeout", started
+            )
             raise harness.AgentMemoryError(
                 harness.AgentMemoryErrorCode.TIMEOUT, write_fence=fence
             ) from exc
         except AttributeError as exc:
+            self._emit_failure(
+                "recall", request.query_id, principal.session_id, "memory_permanent", started
+            )
             raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.PERMANENT) from exc
         except Exception as exc:
             fence = getattr(self._backend, "agent_failure_fence", lambda: None)()
+            self._emit_failure(
+                "recall", request.query_id, principal.session_id, "memory_transient", started
+            )
             raise harness.AgentMemoryError(
                 harness.AgentMemoryErrorCode.TRANSIENT, write_fence=fence
             ) from exc
@@ -256,6 +337,42 @@ class MemoryManager:
             byte_count,
             fence,
         )
+        if replayed:
+            self._observability.emit(
+                "memory.recall.replayed",
+                operation="recall",
+                outcome="succeeded",
+                entity_id=request.query_id,
+                session_id=principal.session_id,
+                attributes={"stage": "replay", "replayed": True},
+            )
+        if status.value in {"empty", "truncated"}:
+            self._observability.emit(
+                "memory.recall.degraded",
+                operation="recall",
+                outcome="degraded",
+                entity_id=request.query_id,
+                session_id=principal.session_id,
+                attributes={
+                    "stage": "selection",
+                    "recall_status": status.value,
+                    "selected_count": len(items),
+                },
+                severity="warning",
+            )
+        self._observability.emit(
+            "memory.recall.succeeded",
+            operation="recall",
+            outcome="succeeded",
+            entity_id=request.query_id,
+            session_id=principal.session_id,
+            attributes={
+                "stage": "completed",
+                "recall_status": status.value,
+                "selected_count": len(items),
+                "duration_ms": max(0.0, (time.monotonic() - started) * 1000.0),
+            },
+        )
         logger.info(
             "memory.agent_recall",
             principal_id=principal.opaque_id,
@@ -267,6 +384,7 @@ class MemoryManager:
 
     async def release_recall(self, request: MemoryReleaseRequest) -> None:
         harness = self._harness()
+        started = time.monotonic()
         try:
             release = getattr(self._backend, "agent_release")
             await release(
@@ -274,15 +392,29 @@ class MemoryManager:
                 query_hash=request.query_hash,
                 result_hash=request.result_hash,
             )
+            self._observability.emit(
+                "memory.recall.released",
+                operation="recall_release",
+                outcome="succeeded",
+                entity_id=request.query_id,
+                attributes={"stage": "released"},
+            )
         except MemoryIdempotencyConflict as exc:
+            self._emit_failure(
+                "recall_release", request.query_id, None, "memory_conflict", started
+            )
             raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.CONFLICT) from exc
         except Exception as exc:
+            self._emit_failure(
+                "recall_release", request.query_id, None, "memory_transient", started
+            )
             raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.TRANSIENT) from exc
 
     async def record_committed_turn(self, request: CommittedTurn) -> CommittedTurnReceipt:
         harness = self._harness()
         principal = self._principal(request.identity)
         scope = self._scope(request.write_scope)
+        started = time.monotonic()
         try:
             record = getattr(self._backend, "agent_record_turn")
             status_value, receipt_id = await record(
@@ -296,12 +428,40 @@ class MemoryManager:
                 turn_started_at=request.turn_started_at,
             )
         except MemoryIdempotencyConflict as exc:
+            self._emit_failure(
+                "committed_turn",
+                request.turn_id,
+                principal.session_id,
+                "memory_conflict",
+                started,
+            )
             raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.CONFLICT) from exc
         except MemoryOwnershipConflict as exc:
+            self._emit_failure(
+                "committed_turn",
+                request.turn_id,
+                principal.session_id,
+                "memory_permanent",
+                started,
+            )
             raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.PERMANENT) from exc
         except TimeoutError as exc:
+            self._emit_failure(
+                "committed_turn",
+                request.turn_id,
+                principal.session_id,
+                "memory_timeout",
+                started,
+            )
             raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.TIMEOUT) from exc
         except Exception as exc:
+            self._emit_failure(
+                "committed_turn",
+                request.turn_id,
+                principal.session_id,
+                "memory_transient",
+                started,
+            )
             raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.TRANSIENT) from exc
         if status_value in {"applied", "already_applied"}:
             try:
@@ -314,6 +474,35 @@ class MemoryManager:
         if self._fact_worker is not None and status_value == "applied":
             self._fact_worker.notify()
         status = harness.CommittedTurnStatus(status_value)
+        event_name = {
+            "already_applied": "memory.committed_turn.replayed",
+            "rejected_erased": "memory.committed_turn.rejected",
+        }.get(status_value, "memory.committed_turn.applied")
+        self._observability.emit(
+            event_name,
+            operation="committed_turn",
+            outcome="dropped" if status_value == "rejected_erased" else "succeeded",
+            entity_id=request.turn_id,
+            session_id=principal.session_id,
+            attributes={
+                "stage": status_value,
+                "replayed": status_value == "already_applied",
+                "duration_ms": max(0.0, (time.monotonic() - started) * 1000.0),
+                "error_code": (
+                    "memory_rejected_erased" if status_value == "rejected_erased" else None
+                ),
+            },
+            severity="warning" if status_value == "rejected_erased" else "info",
+        )
+        if self._fact_worker is not None and status_value == "applied":
+            self._observability.emit(
+                "memory.fact_job.pending",
+                operation="fact_job",
+                outcome="accepted",
+                entity_id=request.turn_id,
+                session_id=principal.session_id,
+                attributes={"stage": "pending"},
+            )
         logger.info(
             "memory.committed_turn",
             principal_id=principal.opaque_id,
@@ -328,6 +517,63 @@ class MemoryManager:
         if self._fact_worker is not None:
             while await self._fact_worker.drain_once():
                 pass
+
+    def _emit_failure(
+        self,
+        operation: str,
+        entity_id: str,
+        session_id: str | None,
+        error_code: str,
+        started: float,
+    ) -> None:
+        self._observability.emit(
+            f"memory.{operation}.failed",
+            operation=operation,
+            outcome="failed",
+            entity_id=entity_id,
+            session_id=session_id,
+            attributes={
+                "stage": "failed",
+                "error_code": error_code,
+                "duration_ms": max(0.0, (time.monotonic() - started) * 1000.0),
+            },
+            severity="error",
+        )
+
+    async def diagnostics_snapshot(self) -> dict[str, object]:
+        """Return bounded aggregate health without reading business payload columns."""
+
+        if self._closed:
+            return {
+                "schema_version": 1,
+                "sdk_version": "0.4.0",
+                "component": "memory",
+                "lifecycle": "closed",
+                "health": "closed",
+                "storage": await self._backend.diagnostics_snapshot(),
+                "observability": dict(self._observability.snapshot()),
+            }
+        try:
+            storage = await asyncio.wait_for(
+                self._backend.diagnostics_snapshot(), timeout=0.25
+            )
+        except BaseException:
+            storage = {"health": "degraded", "error_code": "memory_snapshot_unavailable"}
+        observer = dict(self._observability.snapshot())
+        health = (
+            "degraded"
+            if storage.get("health") == "degraded" or observer.get("health") == "degraded"
+            else "healthy"
+        )
+        return {
+            "schema_version": 1,
+            "sdk_version": "0.4.0",
+            "component": "memory",
+            "lifecycle": "open",
+            "health": health,
+            "storage": storage,
+            "observability": observer,
+        }
 
     async def export_principal(
         self,
@@ -550,11 +796,19 @@ class MemoryManager:
         now=None,
         limit=None,
     ):
-        return await self._backend.cleanup_recall_results(
+        cleaned = await self._backend.cleanup_recall_results(
             user_id=user_id,
             now=now,
             limit=limit,
         )
+        self._observability.emit(
+            "memory.recall.cleanup",
+            operation="recall_cleanup",
+            outcome="succeeded",
+            entity_id=user_id,
+            attributes={"stage": "cleanup", "selected_count": cleaned},
+        )
+        return cleaned
 
     async def recall_and_reinforce(self, query, session_id=None, limit=10, *, user_id):
         return await self._backend.recall_and_reinforce(query, session_id, limit, user_id=user_id)
@@ -645,6 +899,7 @@ class MemoryManager:
             await self._fact_worker.close()
         await self._backend.close()
         self._closed = True
+        self._observability.close()
         logger.info("memory.manager_closed", backend_type=type(self._backend).__name__)
 
     async def __aenter__(self):

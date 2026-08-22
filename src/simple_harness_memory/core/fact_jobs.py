@@ -9,6 +9,7 @@ from typing import Protocol
 import structlog
 
 from simple_harness_memory.core.models import Fact
+from simple_harness_memory.core.observability import MemoryObservability
 
 logger = structlog.get_logger("simple_harness_memory.core.fact_jobs")
 
@@ -18,18 +19,38 @@ class _FactExtractor(Protocol):
 
 
 class FactJobWorker:
-    def __init__(self, backend: object, extractor: _FactExtractor) -> None:
+    def __init__(
+        self,
+        backend: object,
+        extractor: _FactExtractor,
+        observability: MemoryObservability | None = None,
+    ) -> None:
         self._backend = backend
         self._extractor = extractor
         self._wake = asyncio.Event()
         self._closing = False
         self._task: asyncio.Task[None] | None = None
+        self._observability = observability or getattr(backend, "observability")
 
     async def start(self) -> None:
         if self._task is not None:
             return
         recover = getattr(self._backend, "recover_fact_jobs")
-        await recover()
+        recovered = await recover()
+        if isinstance(recovered, int) and recovered:
+            self._observability.emit(
+                "memory.fact_job.recovered",
+                operation="fact_job",
+                outcome="succeeded",
+                entity_id=f"recovery:{recovered}",
+                attributes={
+                    "stage": "recovered",
+                    "recovery_result": "requeued",
+                    "selected_count": recovered,
+                    "replayed": True,
+                    "history_complete": False,
+                },
+            )
         self._task = asyncio.create_task(self._run(), name="memory-fact-worker")
         self._wake.set()
 
@@ -49,6 +70,19 @@ class FactJobWorker:
         job = await claim()
         if job is None:
             return False
+        entity_id = str(job["job_id"])
+        session_id = str(job.get("session_id") or "") or None
+        self._observability.emit(
+            "memory.fact_job.claimed",
+            operation="fact_job",
+            outcome="started",
+            entity_id=entity_id,
+            session_id=session_id,
+            attributes={
+                "stage": "claimed",
+                "attempt": int(job.get("attempts") or 0),
+            },
+        )
         try:
             facts = await self._extractor.extract(
                 str(job["payload"]),
@@ -60,6 +94,25 @@ class FactJobWorker:
             )
             apply_job = getattr(self._backend, "apply_fact_job")
             status = await apply_job(job, list(facts), extractor_lineage=self.lineage)
+            event_name = {
+                "applied": "memory.fact_job.applied",
+                "erased": "memory.fact_job.erased",
+                "lost_lease": "memory.fact_job.lost_lease",
+            }.get(status, "memory.fact_job.failed")
+            self._observability.emit(
+                event_name,
+                operation="fact_job",
+                outcome=("succeeded" if status == "applied" else "dropped"),
+                entity_id=entity_id,
+                session_id=session_id,
+                attributes={
+                    "stage": status,
+                    "attempt": int(job.get("attempts") or 0),
+                    "selected_count": len(facts),
+                    "error_code": None if status == "applied" else f"memory_fact_job_{status}",
+                },
+                severity="info" if status == "applied" else "warning",
+            )
             logger.info(
                 "memory.fact_job_settled",
                 job_id=str(job["job_id"]),
@@ -70,7 +123,22 @@ class FactJobWorker:
             raise
         except Exception:
             fail = getattr(self._backend, "fail_fact_job")
-            await fail(job, stable_code="fact_extraction_failed")
+            state = await fail(job, stable_code="fact_extraction_failed")
+            terminal = state == "dead_letter"
+            self._observability.emit(
+                "memory.fact_job.dead_letter" if terminal else "memory.fact_job.retrying",
+                operation="fact_job",
+                outcome="terminal" if terminal else "retrying",
+                entity_id=entity_id,
+                session_id=session_id,
+                attributes={
+                    "stage": state if isinstance(state, str) else "retrying",
+                    "attempt": int(job.get("attempts") or 0),
+                    "retry_count": int(job.get("attempts") or 0),
+                    "error_code": "fact_extraction_failed",
+                },
+                severity="error" if terminal else "warning",
+            )
             logger.warning(
                 "memory.fact_job_failed",
                 job_id=str(job["job_id"]),

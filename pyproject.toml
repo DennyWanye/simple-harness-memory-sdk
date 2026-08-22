@@ -17,6 +17,7 @@ dependencies = [
     "pydantic>=2.0",
     "numpy>=1.24",
     "structlog>=24.0",
+    "simple-harness-sdk>=0.4,<0.5",
 ]
 
 [project.optional-dependencies]
@@ -32,7 +33,7 @@ openai = [
     "openai>=1.0",
 ]
 harness = [
-    "simple-harness-sdk>=0.3,<0.4",
+    "simple-harness-sdk>=0.4,<0.5",
 ]
 dev = [
     "pytest>=8.0",
@@ -40,7 +41,7 @@ dev = [
     "anyio>=4.0",
     "ruff==0.16.3",
     "mypy==1.20.2",
-    "simple-harness-sdk>=0.3,<0.4",
+    "simple-harness-sdk>=0.4,<0.5",
 ]
 all = [
     "simple-harness-memory-sdk[embeddings,world,openai,harness]",
@@ -53,7 +54,7 @@ dev = [
     "anyio>=4.0",
     "ruff==0.16.3",
     "mypy==1.20.2",
-    "simple-harness-sdk>=0.3,<0.4",
+    "simple-harness-sdk>=0.4,<0.5",
 ]
 
 [tool.uv.sources]

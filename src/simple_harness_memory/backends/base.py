@@ -51,6 +51,7 @@ from simple_harness_memory.core.models import (
     Message,
     RecallStatus,
 )
+from simple_harness_memory.core.observability import CorrelationInput, MemoryObservability
 from simple_harness_memory.core.port import MemoryBackend
 from simple_harness_memory.core.twin import DigitalTwin
 from simple_harness_memory.embedders.base import (
@@ -100,6 +101,9 @@ class BaseMemoryBackend(MemoryBackend):
         max_fact_value_chars: int | None = None,
         max_payload_bytes: int | None = None,
         max_db_bytes: int | None = None,
+        observability_sink=None,
+        correlation: CorrelationInput = None,
+        observability: MemoryObservability | None = None,
     ) -> None:
         base = bounds or DEFAULT_BOUNDS
         self._bounds = MemoryResourceBounds(
@@ -131,6 +135,35 @@ class BaseMemoryBackend(MemoryBackend):
         self._operation_lock = asyncio.Lock()
         self._operation_owner: asyncio.Task[Any] | None = None
         self._operation_depth = ContextVar[int](f"memory_operation_depth_{id(self)}", default=0)
+        self._observability = observability or MemoryObservability(
+            observability_sink, correlation
+        )
+
+    @property
+    def observability(self) -> MemoryObservability:
+        return self._observability
+
+    def set_observability(self, observability: MemoryObservability) -> None:
+        self._observability = observability
+
+    async def diagnostics_snapshot(self) -> dict[str, object]:
+        return {
+            "health": "healthy",
+            "recall": {"retained": 0, "released": 0, "oldest_age_ms": None},
+            "turn_receipts": {"applied": 0, "rejected_erased": 0},
+            "fact_jobs": {
+                "pending": 0,
+                "claimed": 0,
+                "applied": 0,
+                "dead_letter": 0,
+                "erased": 0,
+                "oldest_pending_age_ms": None,
+                "recent_error_codes": {},
+            },
+        }
+
+    async def close(self) -> None:
+        self._observability.close()
 
     async def _commit(self) -> None:
         return None
