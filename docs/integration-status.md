@@ -4,8 +4,9 @@ Status as of 2026-08-23 for `simple-harness-memory-sdk` 0.4.0:
 
 Local promotion is complete: tag `v0.4.0` points to source commit `3d4247b`, and
 `candidate-dist/BUILD_INFO.txt` plus `SHA256SUMS` identify wheel `bfcd2506…`. The source branch,
-`main`, and tag have been pushed. The frozen wheel/sdist were uploaded to a draft GitHub Release
-and passed download-back checksum verification; the Release is not yet published.
+`main`, and tag have been pushed. The frozen wheel/sdist are published at the
+[`v0.4.0` Release](https://github.com/DennyWanye/simple-harness-memory-sdk/releases/tag/v0.4.0),
+and the public stable wheel URL returns the exact bytes verified by download-back checksums.
 
 | Consumer | Interface status | Product integration / testing |
 |---|---|---|
