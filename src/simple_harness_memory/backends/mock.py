@@ -28,6 +28,7 @@ from simple_harness_memory.core.models import (
     Message,
 )
 from simple_harness_memory.core.twin import DigitalTwin
+from simple_harness_memory.features.lexical import lexical_similarity
 
 
 def _as_float(value: object) -> float:
@@ -199,6 +200,7 @@ class MockMemoryBackend(BaseMemoryBackend):
                     "session_id": message.session_id,
                     "created_at": message.created_at,
                     "scope": {"kind": meta[3], "owner_id": meta[4]},
+                    "_lexical_score": lexical_similarity(query_text, message.content),
                 }
             )
         for fact in fact_rows:
@@ -212,11 +214,19 @@ class MockMemoryBackend(BaseMemoryBackend):
                     "created_at": fact.created_at,
                     "category": fact.category,
                     "scope": {"kind": fact_meta[3], "owner_id": fact_meta[4]},
+                    "_lexical_score": lexical_similarity(query_text, fact.value),
                 }
             )
-        candidates.sort(key=lambda item: _as_float(item["created_at"]), reverse=True)
+        candidates.sort(
+            key=lambda item: (
+                _as_float(item.get("_lexical_score", 0.0)),
+                _as_float(item["created_at"]),
+            ),
+            reverse=True,
+        )
         items: list[dict[str, object]] = []
         for item in candidates[:max_items]:
+            item.pop("_lexical_score", None)
             proposed = {"items": [*items, item], "truncated": truncated}
             if len(json.dumps(proposed, ensure_ascii=False).encode()) > max_bytes:
                 truncated = True

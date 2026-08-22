@@ -80,8 +80,7 @@ async def test_fts_query_plan_and_recall_remain_bounded(tmp_path, row_count):
     await backend.initialize()
     await _seed_messages(backend, row_count)
     predicate = (
-        "m.deployment_id = ? AND m.household_id = ? AND "
-        "m.scope_kind = ? AND m.scope_owner = ?"
+        "m.deployment_id = ? AND m.household_id = ? AND m.scope_kind = ? AND m.scope_owner = ?"
     )
     async with backend._conn.execute(
         "EXPLAIN QUERY PLAN SELECT m.id FROM messages_fts JOIN messages AS m "
@@ -90,6 +89,14 @@ async def test_fts_query_plan_and_recall_remain_bounded(tmp_path, row_count):
     ) as cursor:
         plan = " ".join(str(row[3]) for row in await cursor.fetchall())
     assert "VIRTUAL TABLE INDEX" in plan
+    async with backend._conn.execute(
+        "EXPLAIN QUERY PLAN SELECT m.id FROM messages_fts_trigram JOIN messages AS m "
+        "ON m.id = messages_fts_trigram.rowid "
+        f"WHERE {predicate} AND messages_fts_trigram MATCH ? LIMIT ?",
+        ("deployment-a", "house-a", "personal", "actor-a", '"我家的"', 64),
+    ) as cursor:
+        trigram_plan = " ".join(str(row[3]) for row in await cursor.fetchall())
+    assert "VIRTUAL TABLE INDEX" in trigram_plan
 
     payload, _fence, _replayed = await backend.agent_recall(
         principal=MemoryPrincipal("deployment-a", "house-a", "actor-a", "scale-session"),

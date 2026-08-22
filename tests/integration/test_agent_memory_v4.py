@@ -27,6 +27,7 @@ from simple_harness_memory import (
 from simple_harness_memory.backends.mock import MockMemoryBackend
 from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
 from simple_harness_memory.core.errors import MemoryIdempotencyConflict
+from simple_harness_memory.embedders.base import EmbeddingLineage
 from simple_harness_memory.embedders.mock import HashEmbedder
 
 IDENTITY = AgentIdentity("deployment-a", "house-a", "actor-a", "session-a")
@@ -63,6 +64,34 @@ class _CoordinatedEmbedder(HashEmbedder):
         self.started.set()
         await self.release.wait()
         return await super().embed(text)
+
+
+class _ProductionTestEmbedder(HashEmbedder):
+    def __init__(self, *, fail: bool = False) -> None:
+        super().__init__(dim=32)
+        self.fail = fail
+
+    @property
+    def kind(self) -> str:
+        return "local-test-bge"
+
+    @property
+    def lineage(self) -> EmbeddingLineage:
+        base = super().lineage
+        return EmbeddingLineage(
+            kind=self.kind,
+            provider="local-test",
+            model="bge-compatible",
+            revision="1",
+            dimension=base.dimension,
+            normalization=base.normalization,
+            format_fingerprint=base.format_fingerprint,
+        )
+
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        if self.fail:
+            raise RuntimeError("embedding temporarily unavailable")
+        return await super().embed_batch(texts)
 
 
 def committed_turn(
@@ -129,6 +158,92 @@ async def test_direct_port_committed_pair_recall_release_and_conflict(tmp_path, 
         )
     )
     await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backend_kind", ["mock", "sqlite"])
+async def test_dense_history_recall_keeps_older_lexically_relevant_turn(tmp_path, backend_kind):
+    backend = (
+        MockMemoryBackend()
+        if backend_kind == "mock"
+        else SQLiteMemoryBackend(str(tmp_path / "dense-history.db"))
+    )
+    manager = await MemoryManager.build(backend=backend)
+    first = await manager.recall_for_turn(recall_request(query_id="dense-seed"))
+    await manager.record_committed_turn(
+        committed_turn(
+            "dense-turn-0",
+            fence=first.write_fence,
+            user_text="记住，我家的狗叫 Max。",
+        )
+    )
+    # 120 pairs put the target outside SQLite's recent candidate window. The
+    # indexed trigram path (or Mock parity ranking), not oversampling, must recover it.
+    for index in range(120):
+        await manager.record_committed_turn(
+            committed_turn(
+                f"dense-turn-{index + 1}",
+                fence=first.write_fence,
+                user_text=f"第 {index + 1} 条普通近况：今天按计划完成日常事项。",
+            )
+        )
+
+    request = MemoryRecallRequest(
+        "dense-query",
+        "turn-dense-query",
+        IDENTITY,
+        SCOPES,
+        "我家的狗叫什么？",
+        MemoryRecallBounds(12, 16_384, 1.0),
+        time.time(),
+    )
+    result = await manager.recall_for_turn(request)
+    texts = [str(item["text"]) for item in result.payload["items"]]
+
+    assert len(texts) == 12
+    assert any("Max" in text for text in texts)
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_production_embeddings_create_incrementally_and_recover_missing_work(tmp_path):
+    database = tmp_path / "production-vectors.db"
+    resource = tmp_path / "model"
+    resource.mkdir()
+    embedder = _ProductionTestEmbedder(fail=True)
+    manager = await MemoryManager.build_production(
+        database,
+        embedder=embedder,
+        resource_path=resource,
+    )
+    initial = await manager.recall_for_turn(recall_request(query_id="vector-seed"))
+    receipt = await manager.record_committed_turn(
+        committed_turn("vector-turn", fence=initial.write_fence)
+    )
+    assert receipt.status is CommittedTurnStatus.APPLIED
+    async with manager.backend._conn.execute("SELECT COUNT(*) FROM messages") as cursor:
+        assert tuple(await cursor.fetchone()) == (2,)
+    async with manager.backend._conn.execute("SELECT COUNT(*) FROM message_vectors") as cursor:
+        assert tuple(await cursor.fetchone()) == (0,)
+    await manager.close()
+
+    embedder.fail = False
+    reopened = await MemoryManager.build_production(
+        database,
+        embedder=embedder,
+        resource_path=resource,
+    )
+    async with reopened.backend._conn.execute(
+        "SELECT (SELECT COUNT(*) FROM embedding_generations WHERE state='active'), "
+        "(SELECT COUNT(*) FROM message_vectors)"
+    ) as cursor:
+        assert tuple(await cursor.fetchone()) == (1, 2)
+    await reopened.record_committed_turn(
+        committed_turn("vector-turn-2", fence=initial.write_fence, user_text="新的普通偏好。")
+    )
+    async with reopened.backend._conn.execute("SELECT COUNT(*) FROM message_vectors") as cursor:
+        assert tuple(await cursor.fetchone()) == (4,)
+    await reopened.close()
 
 
 @pytest.mark.asyncio

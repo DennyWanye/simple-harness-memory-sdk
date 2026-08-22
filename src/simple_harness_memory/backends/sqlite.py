@@ -72,6 +72,7 @@ from simple_harness_memory.embedders.base import (
     decode_vector,
     encode_vector,
 )
+from simple_harness_memory.features.lexical import cjk_trigrams, lexical_similarity
 
 logger = structlog.get_logger("simple_harness_memory.backends.sqlite")
 
@@ -332,6 +333,21 @@ CREATE TRIGGER messages_fts_update AFTER UPDATE OF content ON messages BEGIN
     VALUES ('delete', old.id, old.content);
     INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
 END;
+CREATE VIRTUAL TABLE messages_fts_trigram USING fts5(
+    content, content='messages', content_rowid='id', tokenize='trigram'
+);
+CREATE TRIGGER messages_fts_trigram_insert AFTER INSERT ON messages BEGIN
+    INSERT INTO messages_fts_trigram(rowid, content) VALUES (new.id, new.content);
+END;
+CREATE TRIGGER messages_fts_trigram_delete AFTER DELETE ON messages BEGIN
+    INSERT INTO messages_fts_trigram(messages_fts_trigram, rowid, content)
+    VALUES ('delete', old.id, old.content);
+END;
+CREATE TRIGGER messages_fts_trigram_update AFTER UPDATE OF content ON messages BEGIN
+    INSERT INTO messages_fts_trigram(messages_fts_trigram, rowid, content)
+    VALUES ('delete', old.id, old.content);
+    INSERT INTO messages_fts_trigram(rowid, content) VALUES (new.id, new.content);
+END;
 CREATE VIRTUAL TABLE facts_fts USING fts5(
     value, content='facts', content_rowid='id', tokenize='unicode61'
 );
@@ -346,6 +362,21 @@ CREATE TRIGGER facts_fts_update AFTER UPDATE OF value ON facts BEGIN
     INSERT INTO facts_fts(facts_fts, rowid, value)
     VALUES ('delete', old.id, old.value);
     INSERT INTO facts_fts(rowid, value) VALUES (new.id, new.value);
+END;
+CREATE VIRTUAL TABLE facts_fts_trigram USING fts5(
+    value, content='facts', content_rowid='id', tokenize='trigram'
+);
+CREATE TRIGGER facts_fts_trigram_insert AFTER INSERT ON facts BEGIN
+    INSERT INTO facts_fts_trigram(rowid, value) VALUES (new.id, new.value);
+END;
+CREATE TRIGGER facts_fts_trigram_delete AFTER DELETE ON facts BEGIN
+    INSERT INTO facts_fts_trigram(facts_fts_trigram, rowid, value)
+    VALUES ('delete', old.id, old.value);
+END;
+CREATE TRIGGER facts_fts_trigram_update AFTER UPDATE OF value ON facts BEGIN
+    INSERT INTO facts_fts_trigram(facts_fts_trigram, rowid, value)
+    VALUES ('delete', old.id, old.value);
+    INSERT INTO facts_fts_trigram(rowid, value) VALUES (new.id, new.value);
 END;
 CREATE TABLE embedding_lineages (
     lineage_id TEXT PRIMARY KEY,
@@ -389,10 +420,12 @@ CREATE TABLE schema_meta (
 
 SCHEMA_VERSION = 4
 SCHEMA_CHECKSUM = hashlib.sha256(_DDL.encode("utf-8")).hexdigest()
+_PRE_TRIGRAM_V4_CHECKSUM = "a4ed75459a58e832a26caae15392baf7bc994c8de33be48e086fe6037b0d11c1"
 _LEGACY_V4_CHECKSUMS = frozenset(
     {
         "4e66bbfe712e479ef1e6ac5cbc0e720235b9ae6512a0668ddb18bb9cbf29e461",
         "59cb21710dcf4272231225fe93e9ab5015103aa810e842b356fc1b45faf7a8f6",
+        _PRE_TRIGRAM_V4_CHECKSUM,
     }
 )
 
@@ -575,9 +608,13 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         if version == str(SCHEMA_VERSION) and checksum in _LEGACY_V4_CHECKSUMS:
             if checksum == "4e66bbfe712e479ef1e6ac5cbc0e720235b9ae6512a0668ddb18bb9cbf29e461":
                 await self._upgrade_legacy_v4_snapshot_identity()
-            else:
+                checksum = _PRE_TRIGRAM_V4_CHECKSUM
+            elif checksum == "59cb21710dcf4272231225fe93e9ab5015103aa810e842b356fc1b45faf7a8f6":
                 await self._upgrade_legacy_v4_forget_receipts()
-            checksum = SCHEMA_CHECKSUM
+                checksum = _PRE_TRIGRAM_V4_CHECKSUM
+            if checksum == _PRE_TRIGRAM_V4_CHECKSUM:
+                await self._upgrade_legacy_v4_trigram_recall()
+                checksum = SCHEMA_CHECKSUM
             tables = await self._table_names()
         if version != str(SCHEMA_VERSION) or checksum != SCHEMA_CHECKSUM:
             raise MemorySchemaIncompatible()
@@ -597,7 +634,9 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             "explicit_fact_receipts",
             "explicit_forget_receipts",
             "messages_fts",
+            "messages_fts_trigram",
             "facts_fts",
+            "facts_fts_trigram",
             "embedding_lineages",
             "embedding_generations",
             "message_vectors",
@@ -655,7 +694,8 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             )
             await self._create_explicit_forget_receipts()
             await self._conn.execute(
-                "UPDATE schema_meta SET value = ? WHERE key = 'schema_checksum'", (SCHEMA_CHECKSUM,)
+                "UPDATE schema_meta SET value = ? WHERE key = 'schema_checksum'",
+                (_PRE_TRIGRAM_V4_CHECKSUM,),
             )
             await self._conn.execute("COMMIT")
         except Exception:
@@ -667,7 +707,8 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         try:
             await self._create_explicit_forget_receipts()
             await self._conn.execute(
-                "UPDATE schema_meta SET value = ? WHERE key = 'schema_checksum'", (SCHEMA_CHECKSUM,)
+                "UPDATE schema_meta SET value = ? WHERE key = 'schema_checksum'",
+                (_PRE_TRIGRAM_V4_CHECKSUM,),
             )
             await self._conn.execute("COMMIT")
         except Exception:
@@ -682,6 +723,66 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             "result INTEGER NOT NULL CHECK (result IN (0, 1)), created_at REAL NOT NULL, "
             "PRIMARY KEY (deployment_id, source_event_id))"
         )
+
+    async def _upgrade_legacy_v4_trigram_recall(self) -> None:
+        """Add indexed CJK substring recall without scanning the messages table."""
+
+        await self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            for statement in _ddl_statements(
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts_trigram USING fts5(
+                    content, content='messages', content_rowid='id', tokenize='trigram'
+                );
+                CREATE TRIGGER IF NOT EXISTS messages_fts_trigram_insert
+                AFTER INSERT ON messages BEGIN
+                    INSERT INTO messages_fts_trigram(rowid, content) VALUES (new.id, new.content);
+                END;
+                CREATE TRIGGER IF NOT EXISTS messages_fts_trigram_delete
+                AFTER DELETE ON messages BEGIN
+                    INSERT INTO messages_fts_trigram(messages_fts_trigram, rowid, content)
+                    VALUES ('delete', old.id, old.content);
+                END;
+                CREATE TRIGGER IF NOT EXISTS messages_fts_trigram_update
+                AFTER UPDATE OF content ON messages BEGIN
+                    INSERT INTO messages_fts_trigram(messages_fts_trigram, rowid, content)
+                    VALUES ('delete', old.id, old.content);
+                    INSERT INTO messages_fts_trigram(rowid, content) VALUES (new.id, new.content);
+                END;
+                CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts_trigram USING fts5(
+                    value, content='facts', content_rowid='id', tokenize='trigram'
+                );
+                CREATE TRIGGER IF NOT EXISTS facts_fts_trigram_insert
+                AFTER INSERT ON facts BEGIN
+                    INSERT INTO facts_fts_trigram(rowid, value) VALUES (new.id, new.value);
+                END;
+                CREATE TRIGGER IF NOT EXISTS facts_fts_trigram_delete
+                AFTER DELETE ON facts BEGIN
+                    INSERT INTO facts_fts_trigram(facts_fts_trigram, rowid, value)
+                    VALUES ('delete', old.id, old.value);
+                END;
+                CREATE TRIGGER IF NOT EXISTS facts_fts_trigram_update
+                AFTER UPDATE OF value ON facts BEGIN
+                    INSERT INTO facts_fts_trigram(facts_fts_trigram, rowid, value)
+                    VALUES ('delete', old.id, old.value);
+                    INSERT INTO facts_fts_trigram(rowid, value) VALUES (new.id, new.value);
+                END;
+                """
+            ):
+                await self._conn.execute(statement)
+            await self._conn.execute(
+                "INSERT INTO messages_fts_trigram(messages_fts_trigram) VALUES ('rebuild')"
+            )
+            await self._conn.execute(
+                "INSERT INTO facts_fts_trigram(facts_fts_trigram) VALUES ('rebuild')"
+            )
+            await self._conn.execute(
+                "UPDATE schema_meta SET value = ? WHERE key = 'schema_checksum'", (SCHEMA_CHECKSUM,)
+            )
+            await self._conn.execute("COMMIT")
+        except Exception:
+            await self._conn.execute("ROLLBACK")
+            raise
 
     async def _table_names(self) -> set[str]:
         async with self._conn.execute(
@@ -891,6 +992,32 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             else:
                 rows = []
                 fact_rows = []
+            trigram_terms = cjk_trigrams(query_text)[:16]
+            if trigram_terms:
+                trigram_query = " OR ".join(f'"{term}"' for term in trigram_terms)
+                async with self._conn.execute(
+                    "SELECT m.id, m.content, m.role, m.session_id, m.created_at, "
+                    "m.scope_kind, m.scope_owner FROM messages_fts_trigram "
+                    "JOIN messages AS m ON m.id = messages_fts_trigram.rowid "
+                    f"WHERE {message_predicate} AND messages_fts_trigram MATCH ? "
+                    "ORDER BY bm25(messages_fts_trigram), m.created_at DESC, m.id DESC LIMIT ?",
+                    (*message_params, trigram_query, self._bounds.recall_candidate_messages),
+                ) as cursor:
+                    trigram_rows = list(await cursor.fetchall())
+                rows = list({int(row["id"]): row for row in [*rows, *trigram_rows]}.values())
+                async with self._conn.execute(
+                    "SELECT f.id, f.value, f.category, f.created_at, f.scope_kind, "
+                    "f.scope_owner FROM facts_fts_trigram JOIN facts AS f "
+                    "ON f.id = facts_fts_trigram.rowid "
+                    f"WHERE {fact_predicate} AND f.forgotten_at IS NULL "
+                    "AND facts_fts_trigram MATCH ? ORDER BY bm25(facts_fts_trigram), "
+                    "f.created_at DESC, f.id DESC LIMIT ?",
+                    (*fact_params, trigram_query, self._bounds.recall_candidate_facts),
+                ) as cursor:
+                    trigram_fact_rows = list(await cursor.fetchall())
+                fact_rows = list(
+                    {int(row["id"]): row for row in [*fact_rows, *trigram_fact_rows]}.values()
+                )
             async with self._conn.execute(
                 "SELECT m.id, m.content, m.role, m.session_id, m.created_at, "
                 "m.scope_kind, m.scope_owner FROM messages AS m "
@@ -964,6 +1091,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                         "owner_id": str(row["scope_owner"]),
                     },
                     "_rank_score": vector_scores.get(int(row["id"]), 0.0),
+                    "_lexical_score": lexical_similarity(query_text, str(row["content"])),
                 }
                 candidates.append(item)
             for row in fact_rows:
@@ -979,11 +1107,15 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                             "kind": str(row["scope_kind"]),
                             "owner_id": str(row["scope_owner"]),
                         },
+                        "_lexical_score": lexical_similarity(query_text, str(row["value"])),
                     }
                 )
             candidates.sort(
                 key=lambda item: (
-                    float(str(item.get("_rank_score", 0.0))),
+                    max(
+                        float(str(item.get("_rank_score", 0.0))),
+                        float(str(item.get("_lexical_score", 0.0))),
+                    ),
                     float(str(item["created_at"])),
                     str(item["record_id"]),
                 ),
@@ -991,6 +1123,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             )
             for item in candidates[:max_items]:
                 item.pop("_rank_score", None)
+                item.pop("_lexical_score", None)
                 proposed = {"items": [*items, item], "truncated": truncated}
                 proposed_bytes = json.dumps(
                     proposed,
@@ -1934,6 +2067,88 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                 )
             logger.error("memory.reindex_failed", stable_code="memory_reindex_failed")
             raise
+
+    async def ensure_embedding_generation(
+        self, *, page_size: int | None = None
+    ) -> dict[str, object]:
+        """Create an active generation and idempotently fill every missing vector."""
+
+        selected = self._embedder
+        lineage = selected.lineage
+        size = self._bounded_limit(page_size or self._bounds.maintenance_batch_size)
+        async with self._operation():
+            async with self._conn.execute(
+                "SELECT generation_id, lineage_id FROM embedding_generations "
+                "WHERE state = 'active' LIMIT 1"
+            ) as cursor:
+                active = await cursor.fetchone()
+        if active is None or str(active["lineage_id"]) != lineage.lineage_id:
+            return await self.reindex_generation(selected, page_size=size)
+
+        generation_id = str(active["generation_id"])
+        added = 0
+        while True:
+            async with self._operation():
+                async with self._conn.execute(
+                    "SELECT m.id, m.content FROM messages AS m "
+                    "LEFT JOIN message_vectors AS v ON v.message_id = m.id "
+                    "AND v.generation_id = ? WHERE v.message_id IS NULL "
+                    "ORDER BY m.id LIMIT ?",
+                    (generation_id, size),
+                ) as cursor:
+                    page = list(await cursor.fetchall())
+            if not page:
+                break
+            vectors = await selected.embed_batch([str(row["content"]) for row in page])
+            selected.validate_vectors(vectors, expected_count=len(page))
+            encoded = [encode_vector(vector) for vector in vectors]
+            async with self._transaction():
+                async with self._conn.execute(
+                    "SELECT generation_id, lineage_id FROM embedding_generations "
+                    "WHERE state = 'active' LIMIT 1"
+                ) as cursor:
+                    current = await cursor.fetchone()
+                if (
+                    current is None
+                    or str(current["generation_id"]) != generation_id
+                    or str(current["lineage_id"]) != lineage.lineage_id
+                ):
+                    return await self.ensure_embedding_generation(page_size=size)
+                await self._conn.executemany(
+                    "INSERT OR IGNORE INTO message_vectors "
+                    "(message_id, generation_id, embedding, dimension) "
+                    "SELECT ?, ?, ?, ? WHERE EXISTS "
+                    "(SELECT 1 FROM messages WHERE id = ?)",
+                    [
+                        (int(row["id"]), generation_id, blob, lineage.dimension, int(row["id"]))
+                        for row, blob in zip(page, encoded)
+                    ],
+                )
+                async with self._conn.execute(
+                    "SELECT COUNT(*), COALESCE(MAX(message_id), 0) FROM message_vectors "
+                    "WHERE generation_id = ?",
+                    (generation_id,),
+                ) as cursor:
+                    counts = await cursor.fetchone()
+                if counts is None:
+                    raise MemoryCorruptionError("embedding generation count unavailable")
+                await self._conn.execute(
+                    "UPDATE embedding_generations SET vector_count = ?, cursor = ? "
+                    "WHERE generation_id = ? AND state = 'active'",
+                    (int(counts[0]), int(counts[1]), generation_id),
+                )
+            added += len(page)
+        logger.info(
+            "memory.embedding_catchup_completed",
+            vector_count=added,
+            stable_code="memory_embedding_catchup_completed",
+        )
+        return {
+            "generation_id": generation_id,
+            "lineage_id": lineage.lineage_id,
+            "vector_count": added,
+            "state": "active",
+        }
 
     async def checkpoint(self, *, deadline_seconds: float = 5.0) -> tuple[int, int]:
         """Serialize a bounded WAL checkpoint with all writers and backups."""

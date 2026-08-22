@@ -162,7 +162,15 @@ class MemoryManager:
         pinned_resource = Path(resource_path)
         if not pinned_resource.is_absolute() or not pinned_resource.exists():
             raise MemoryProductionConfigurationError("memory_embedding_resource_unavailable")
-        return await cls.build(db_path, embedder=embedder, **kwargs)
+        manager = await cls.build(db_path, embedder=embedder, **kwargs)
+        try:
+            await manager.ensure_embeddings()
+        except Exception:
+            logger.warning(
+                "memory.embedding_catchup_degraded",
+                stable_code="memory_embedding_catchup_degraded",
+            )
+        return manager
 
     @staticmethod
     def _harness() -> Any:
@@ -295,6 +303,14 @@ class MemoryManager:
             raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.TIMEOUT) from exc
         except Exception as exc:
             raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.TRANSIENT) from exc
+        if status_value in {"applied", "already_applied"}:
+            try:
+                await self.ensure_embeddings()
+            except Exception:
+                logger.warning(
+                    "memory.embedding_incremental_degraded",
+                    stable_code="memory_embedding_incremental_degraded",
+                )
         if self._fact_worker is not None and status_value == "applied":
             self._fact_worker.notify()
         status = harness.CommittedTurnStatus(status_value)
@@ -568,6 +584,14 @@ class MemoryManager:
         if operation is None:
             raise RuntimeError("backend does not support embedding generations")
         return await operation(embedder, page_size=page_size)
+
+    async def ensure_embeddings(self, *, page_size=None):
+        """Create or catch up the active vector generation when the backend supports it."""
+
+        operation = getattr(self._backend, "ensure_embedding_generation", None)
+        if operation is None:
+            return None
+        return await operation(page_size=page_size)
 
     async def checkpoint(self, *, deadline_seconds=5.0):
         operation = getattr(self._backend, "checkpoint", None)
