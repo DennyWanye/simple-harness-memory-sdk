@@ -15,7 +15,7 @@ authors = [{ name = "Denny" }]
 dependencies = [
     "aiosqlite>=0.19",
     "pydantic>=2.0",
-    "numpy>=1.24",
+    "numpy>=1.24,<2.5",
     "structlog>=24.0",
     "simple-harness-sdk>=0.4,<0.5",
 ]
