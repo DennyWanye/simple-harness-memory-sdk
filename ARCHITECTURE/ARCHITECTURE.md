@@ -142,7 +142,7 @@ src/simple_harness_memory/
   identity/digest tamper、三阶段fault rollback及Harness公开manifest/runtime replay均通过。
 - S5 Memory candidate：0.4.0 public snapshot、base import blocker、真实`[harness]` resolver、错误版本拒绝、
   installed-wheel strict typing、candidate metadata/SHA与跨Python/平台消费门禁已定义。
-- 最终本仓 full：`200 passed, 7 skipped`；Ruff 与 mypy 全绿。
+- 最终本仓默认 full：`200 passed, 7 skipped`；正式 candidate gate：`205 passed, 2 skipped`；Ruff 与 mypy 全绿。
 - Memory `3d4247b` / 0.4.0 wheel `bfcd2506…` 由 simple_harness `4e797ccd` exact installed-origin
   消费；产品 Gate r4 的 21/21 required 场景达到 `READY_FOR_AUDIT`。SH-M5 跨进程新 Session 召回，
   SH-M6 recall timeout 与 record transient/startup recovery 均由真实 UI + DeepSeek 验证。
