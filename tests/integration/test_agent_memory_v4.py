@@ -26,6 +26,7 @@ from simple_harness_memory import (
 )
 from simple_harness_memory.backends.mock import MockMemoryBackend
 from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
+from simple_harness_memory.core.errors import MemoryIdempotencyConflict
 from simple_harness_memory.embedders.mock import HashEmbedder
 
 IDENTITY = AgentIdentity("deployment-a", "house-a", "actor-a", "session-a")
@@ -201,9 +202,7 @@ async def test_same_session_and_turn_ids_are_isolated_by_deployment(tmp_path, ba
         assert len(backend._agent_bindings) == 2
         assert len(backend._turn_receipts) == 2
 
-    conflicting_identity = AgentIdentity(
-        "deployment-a", "house-a", "actor-a", "different-session"
-    )
+    conflicting_identity = AgentIdentity("deployment-a", "house-a", "actor-a", "different-session")
     conflicting_recall = await manager.recall_for_turn(
         recall_request(conflicting_identity, query_id="same-deployment-query")
     )
@@ -245,6 +244,131 @@ async def test_same_session_and_turn_ids_are_isolated_by_deployment(tmp_path, ba
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("backend_kind", ["mock", "sqlite"])
+async def test_same_query_id_is_isolated_by_deployment(tmp_path, backend_kind):
+    backend = (
+        MockMemoryBackend()
+        if backend_kind == "mock"
+        else SQLiteMemoryBackend(str(tmp_path / "query-identity.db"))
+    )
+    manager = await MemoryManager.build(backend=backend)
+    first = AgentIdentity("deployment-a", "house-a", "actor-a", "session-a")
+    second = AgentIdentity("deployment-b", "house-b", "actor-b", "session-b")
+
+    first_request = recall_request(first, query_id="same-query")
+    second_request = recall_request(second, query_id="same-query")
+    first_result = await manager.recall_for_turn(first_request)
+    second_result = await manager.recall_for_turn(second_request)
+    assert first_result.write_fence != second_result.write_fence
+    first_replay = await manager.recall_for_turn(first_request)
+    second_replay = await manager.recall_for_turn(second_request)
+    assert first_replay.result_hash == first_result.result_hash
+    assert second_replay.result_hash == second_result.result_hash
+    await manager.release_recall(
+        MemoryReleaseRequest(
+            first_result.query_id,
+            first_result.query_hash,
+            first_result.result_id,
+            first_result.result_hash,
+            first_result.write_fence,
+        )
+    )
+    await manager.release_recall(
+        MemoryReleaseRequest(
+            second_result.query_id,
+            second_result.query_hash,
+            second_result.result_id,
+            second_result.result_hash,
+            second_result.write_fence,
+        )
+    )
+    if isinstance(backend, SQLiteMemoryBackend):
+        async with backend._conn.execute(
+            "SELECT COUNT(*), COUNT(DISTINCT deployment_id) "
+            "FROM recall_result_snapshots WHERE context_query_id = 'same-query'"
+        ) as cursor:
+            row = await cursor.fetchone()
+        assert row is not None and tuple(row) == (2, 2)
+    else:
+        assert len(backend._agent_recalls) == 2
+    await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backend_kind", ["mock", "sqlite"])
+async def test_principal_explicit_fact_is_exact_idempotent_and_forgotten(tmp_path, backend_kind):
+    backend = (
+        MockMemoryBackend()
+        if backend_kind == "mock"
+        else SQLiteMemoryBackend(str(tmp_path / "explicit.db"))
+    )
+    manager = await MemoryManager.build(backend=backend)
+    principal = MemoryPrincipal("deployment-a", "house-a", "actor-a", "session-a")
+    other = MemoryPrincipal("deployment-a", "house-a", "actor-b", "session-b")
+    fact_id = await manager.remember_fact(
+        principal,
+        "Always use metric units",
+        source_event_id="tool-call-1",
+        salience=0.8,
+        pinned=True,
+        tier="long_term",
+    )
+    assert (
+        await manager.remember_fact(
+            principal,
+            "Always use metric units",
+            source_event_id="tool-call-1",
+            salience=0.8,
+            pinned=True,
+            tier="long_term",
+        )
+        == fact_id
+    )
+    fact = await manager.read_fact(principal, fact_id)
+    assert fact is not None
+    assert (fact.id, fact.value, fact.category, fact.pinned) == (
+        fact_id,
+        "Always use metric units",
+        "learning",
+        True,
+    )
+    assert await manager.read_fact(other, fact_id) is None
+    with pytest.raises(MemoryOwnershipConflict):
+        await manager.remember_fact(
+            other,
+            "Always use metric units",
+            source_event_id="tool-call-1",
+            salience=0.8,
+            pinned=True,
+            tier="long_term",
+        )
+    with pytest.raises(MemoryIdempotencyConflict):
+        await manager.remember_fact(
+            principal,
+            "Use imperial units",
+            source_event_id="tool-call-1",
+            salience=0.8,
+            pinned=True,
+            tier="long_term",
+        )
+    assert await manager.forget_fact(fact_id, principal=principal)
+    assert await manager.read_fact(principal, fact_id) is None
+    assert (
+        await manager.remember_fact(
+            principal,
+            "Always use metric units",
+            source_event_id="tool-call-1",
+            salience=0.8,
+            pinned=True,
+            tier="long_term",
+        )
+        == fact_id
+    )
+    assert await manager.read_fact(principal, fact_id) is None
+    await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_erasure_fence_blocks_old_turn_and_allows_new_degraded_turn(tmp_path):
     manager = await MemoryManager.build(db_path=str(tmp_path / "memory.db"))
     old_started = time.time()
@@ -279,9 +403,7 @@ async def test_embedding_timeout_retains_fence_and_delete_rejects_degraded_turn(
     manager = await MemoryManager.build(backend=backend)
 
     with pytest.raises(AgentMemoryError) as error:
-        await manager.recall_for_turn(
-            recall_request(query_id="timeout", deadline_seconds=0.01)
-        )
+        await manager.recall_for_turn(recall_request(query_id="timeout", deadline_seconds=0.01))
     assert error.value.code is AgentMemoryErrorCode.TIMEOUT
     assert error.value.write_fence is not None
 
@@ -299,9 +421,7 @@ async def test_delete_can_cross_embedding_boundary_and_stale_fence_is_rejected(t
     backend = SQLiteMemoryBackend(str(tmp_path / "memory.db"), embedder=HashEmbedder())
     manager = await MemoryManager.build(backend=backend)
     initial = await manager.recall_for_turn(recall_request(query_id="seed"))
-    await manager.record_committed_turn(
-        committed_turn("seed-turn", fence=initial.write_fence)
-    )
+    await manager.record_committed_turn(committed_turn("seed-turn", fence=initial.write_fence))
 
     embedder = _CoordinatedEmbedder()
     backend._embedder = embedder
@@ -464,8 +584,7 @@ async def test_public_share_is_idempotent_owned_and_forget_cascades(tmp_path, ba
 
     if isinstance(backend, SQLiteMemoryBackend):
         async with backend._conn.execute(
-            "SELECT id, deterministic_id FROM facts WHERE scope_kind='personal' "
-            "ORDER BY id LIMIT 1"
+            "SELECT id, deterministic_id FROM facts WHERE scope_kind='personal' ORDER BY id LIMIT 1"
         ) as cursor:
             source_row = await cursor.fetchone()
         assert source_row is not None

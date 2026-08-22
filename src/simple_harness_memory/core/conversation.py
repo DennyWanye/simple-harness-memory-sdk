@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import unicodedata
 
 from simple_harness_memory.core.errors import (
@@ -84,6 +85,45 @@ def canonical_message_payload_hash(
         "memory_text": canonical_text,
     }
     return hashlib.sha256(canonical_json(payload).encode()).hexdigest()
+
+
+def canonical_explicit_fact_payload(
+    *,
+    principal: object,
+    source_event_id: str,
+    content: str,
+    salience: float,
+    pinned: bool,
+    tier: str,
+) -> tuple[str, float, bool, str]:
+    """Validate and hash a principal-scoped explicit-memory command."""
+
+    if isinstance(salience, bool) or not isinstance(salience, (int, float)):
+        raise MemoryValidationError("salience must be a finite number from 0 to 1")
+    salience_value = float(salience)
+    if not math.isfinite(salience_value) or not 0.0 <= salience_value <= 1.0:
+        raise MemoryValidationError("salience must be a finite number from 0 to 1")
+    if not isinstance(pinned, bool):
+        raise MemoryValidationError("pinned must be a boolean")
+    if tier not in {"auto", "working", "long_term", "identity"}:
+        raise MemoryValidationError("tier must be auto, working, long_term, or identity")
+    payload = {
+        "protocol": "simple-harness-memory/explicit-fact/v1",
+        "deployment_id": validate_identity(getattr(principal, "deployment_id"), "deployment_id"),
+        "household_id": validate_identity(getattr(principal, "household_id"), "household_id"),
+        "actor_id": validate_identity(getattr(principal, "actor_id"), "actor_id"),
+        "source_event_id": validate_identity(source_event_id, "source_event_id"),
+        "content": canonicalize_memory_text(content),
+        "salience": salience_value,
+        "pinned": pinned,
+        "tier": tier,
+    }
+    return (
+        hashlib.sha256(canonical_json(payload).encode()).hexdigest(),
+        salience_value,
+        pinned,
+        tier,
+    )
 
 
 def canonical_recall_query_hash(

@@ -62,6 +62,16 @@ the personal source cascades to its projections and keeps the source tombstone, 
 cannot recreate either record. Sharing is intentionally outside `AgentMemoryPort`; model content cannot
 select or authorize a family scope.
 
+## SDK-only explicit fact write/read
+
+`await MemoryManager.remember_fact(principal, content, *, source_event_id, payload_hash=None,
+salience=0.5, pinned=False, tier="auto") -> int` returns the exact durable fact ID consumed by
+`await MemoryManager.read_fact(principal, fact_id) -> Fact | None`. The complete deployment/household/
+actor identity and all visible metadata participate in the canonical idempotency hash. `tier` is one of
+`auto|working|long_term|identity`, mapped to `explicit|event|learning|profile`. Forget preserves the
+receipt, so exact replay returns the original ID without resurrecting content. These APIs are also outside
+`AgentMemoryPort` and require no Harness import.
+
 ## Consumer migration map
 
 | Previous consumer responsibility | Official path |

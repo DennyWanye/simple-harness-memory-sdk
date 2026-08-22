@@ -111,9 +111,29 @@ projection_id = await memory.share_fact(principal, fact_id)
 并留下 tombstone 阻止 late fact job 重建。该 SDK-only API 不属于 Harness `AgentMemoryPort`，也不接受模型
 选择 scope。
 
+显式产品写入使用 principal-scoped fact API，直接返回随后可读取/遗忘/分享的 exact fact ID：
+
+```python fragment
+fact_id = await memory.remember_fact(
+    principal,
+    "Prefer concise replies",
+    source_event_id="tool-call-123",
+    salience=0.75,
+    pinned=True,
+    tier="long_term",
+)
+fact = await memory.read_fact(principal, fact_id)
+```
+
+`source_event_id` 在 deployment 内幂等；相同 canonical content/metadata 重放返回同一 ID，内容、
+`salience`、`pinned` 或 `tier` 变化均抛 `MemoryIdempotencyConflict`。`tier` 只接受
+`auto|working|long_term|identity`，分别稳定映射为 `explicit|event|learning|profile` category。
+跨 principal 读取返回 `None`；遗忘后 receipt 保留且重放不会复活 fact。
+
 ### 持久化边界
 
-- SQLite 只接受 fresh schema v4；旧 schema/version/checksum 一律 fail-fast，不做隐式迁移。
+- SQLite 接受 fresh schema v4；v3/未知 version/checksum 一律 fail-fast。仅已发布且可识别的早期 v4
+  recall-snapshot 全局键缺陷会在同一事务内修复为 deployment-scoped key；内容迁移仍只允许显式 migrator。
 - v4 全链路保存 deployment/household/actor/session 与 personal/family scope；session 和 turn receipt
   都以 deployment 为持久化命名空间，同一 deployment 内首次绑定后不可换 household/actor。
 - `export_principal`、`delete_scope`、`forget_fact` 和 `share_fact` 共用同一 scope predicate；删除先推进
@@ -124,7 +144,8 @@ projection_id = await memory.share_fact(principal, fact_id)
   [`docs/migration-v4.md`](docs/migration-v4.md)。
 - 数据库必须是当前用户拥有的 regular file，拒绝 symlink，并以 `0600` 创建和回读校验。
 - 同一数据库只允许一个 live `MemoryManager` 持有 writer lease；第二个 writer 稳定报
-  `memory_second_writer_rejected`。writer、checkpoint 与 online backup 共用同一串行边界。
+  `memory_second_writer_rejected`。POSIX 使用 `flock`，Windows 使用非阻塞 `msvcrt` byte-range lock；
+  writer、checkpoint 与 online backup 共用同一串行边界。
 - 召回使用 external-content FTS5，先做 deployment/household/scope 过滤，再执行 MATCH/ORDER/LIMIT；
   vector 只 decode 当前 active generation 的有界 lexical/recent candidates。lineage 漂移或 embedding
   暂不可用时明确降级为 lexical-only，不混用不同模型向量。
@@ -133,7 +154,8 @@ projection_id = await memory.share_fact(principal, fact_id)
 - `reindex_generation()` 分页建立 building generation，校验 count/dimension/hash/sample 后原子切换；失败
   保留旧 active generation。`backup()` 生成带 schema/lineage/SHA-256 的 manifest，`restore_backup()`
   仅允许 manager 关闭后执行，并在替换原库前完成独立完整性校验。
-- `recall_bounded()` 对确定性 `context_query_id` 保存 canonical 结果；commit 后重试不重新计算。
+- `recall_bounded()` 对 `(deployment_id, context_query_id)` 保存 canonical 结果；不同 deployment 可安全
+  复用 query ID，commit 后重试不重新计算。
 - `delete_all()` 仅保留为 deprecated compatibility symbol，调用稳定抛出
   `runtime_delete_disabled`，不会执行全库 mutation。开发 reset 应在 consumer 停服后删除其精确配置的
   SQLite storage set（主文件及 sidecars），再创建 fresh v4 数据库。

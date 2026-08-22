@@ -31,16 +31,18 @@ src/simple_harness_memory/
 
 ## Fresh schema v4 与 identity/scope
 
-- SQLite 仅接受 fresh v4/checksum；v3、缺 meta 或 checksum 漂移均 `MemorySchemaIncompatible`，不会在
-  runtime 隐式迁移或删除。
+- SQLite 接受 fresh v4/checksum；v3、缺 meta 或未知 checksum 漂移均 `MemorySchemaIncompatible`。仅已知
+  早期v4 recall snapshot全局键通过checksum-gated事务修复，不执行内容迁移或删除。
 - sessions/messages/facts/recall snapshots/receipts/jobs/erasure state 全链路保存
   deployment/household/actor/session/scope_kind/scope_owner；sessions主键为deployment+session，turn receipt
   主键为deployment+turn，允许不同deployment复用外部ID；同一deployment内的household/actor/session
   rebind在recall/read前失败，receipt replay还复核完整owner与scope。
+- recall snapshot主键为deployment+context_query_id，允许不同deployment复用外部query ID。
 - recall/export/delete/forget 使用 `core.identity.scope_predicate()` 同一 ownership predicate；personal
   owner 必须是 actor，family owner 必须是 household，不同 household 不进入候选集。
 - SQLite 使用 WAL、FK、busy timeout、task-owned operation lock 与 `BEGIN IMMEDIATE`；数据库文件继续要求
-  regular/no-symlink/current-owner/`0600`。每个数据库另有 OS writer lease，第二个 live manager fail-closed；
+  regular/no-symlink/current-owner/`0600`。每个数据库另有跨平台 OS writer lease（POSIX `flock`、Windows
+  `msvcrt`非阻塞byte-range lock），第二个 live manager fail-closed；
   writer、checkpoint 与 online backup 都经同一 operation lock 串行。
 
 ## 有界检索与 embedding generation
@@ -108,6 +110,8 @@ src/simple_harness_memory/
   `share_fact` 是Harness-free顶层公共能力，以source provenance+household生成deterministic projection id，
   重复调用幂等且只保留一行；跨actor/household抛`MemoryOwnershipConflict`，family row以`projection_of`
   保留来源。forget source级联删除projection并留source tombstone，applied/late job replay不会复活。
+- `remember_fact/read_fact` 是Harness-free principal显式写读能力，返回exact fact ID；完整identity、content、
+  salience/pinned/tier进入canonical replay hash，forget保留receipt且不复活。
 - Agent Memory structured events只记录 opaque principal、ID/hash、count/bytes/stable code；不记录 content、
   token、embedding、数据库路径或 exception repr。legacy standalone日志中的 user/session/source id也已哈希。
 

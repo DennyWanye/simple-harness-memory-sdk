@@ -48,6 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Froze the Harness-free public `share_fact(MemoryPrincipal, fact_id)` contract: deterministic replay,
   cross-principal ownership conflicts, `projection_of` provenance, and source-forget tombstone cascade;
   `MemoryOwnershipConflict` is exported at package top level for future consumers.
+- Added Harness-free `remember_fact` / `read_fact` principal APIs returning exact fact IDs, with canonical
+  source-event replay, persisted salience/pinned/tier metadata, ownership isolation, and no-resurrection forget.
+- Scoped recall snapshot identity by deployment, including checksum-gated transactional repair of the known
+  early-v4 global-key schema, and added portable POSIX/Windows fail-fast writer leases.
 - Structured Agent Memory events emit opaque principal identifiers and counts/hashes only.
 - Added an explicit backup-first v3→v4 migrator and public manifest import API. The approved
   four-way taxonomy suppresses tentative, terminal and deferred legacy sources with hash-only

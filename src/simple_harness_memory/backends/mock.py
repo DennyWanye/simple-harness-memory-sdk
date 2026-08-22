@@ -9,6 +9,12 @@ import uuid
 
 from simple_harness_memory.backends.base import BaseMemoryBackend
 from simple_harness_memory.config import MemoryResourceBounds
+from simple_harness_memory.core.conversation import (
+    canonical_explicit_fact_payload,
+    canonicalize_memory_text,
+    validate_digest,
+    validate_identity,
+)
 from simple_harness_memory.core.errors import (
     MemoryIdempotencyConflict,
     MemoryOwnershipConflict,
@@ -67,7 +73,7 @@ class MockMemoryBackend(BaseMemoryBackend):
         self._next_fact_id = 1
         self._agent_bindings: dict[tuple[str, str], tuple[str, str]] = {}
         self._agent_meta: dict[int, tuple[str, str, str, str, str]] = {}
-        self._agent_recalls: dict[str, dict[str, object]] = {}
+        self._agent_recalls: dict[tuple[str, str], dict[str, object]] = {}
         self._agent_epochs: dict[tuple[str, str, str, str], tuple[int, float | None]] = {}
         self._turn_receipts: dict[
             tuple[str, str], tuple[str, str, str, str, str, str, str, str]
@@ -75,6 +81,7 @@ class MockMemoryBackend(BaseMemoryBackend):
         self._fact_jobs: dict[str, dict[str, object]] = {}
         self._fact_tombstones: set[str] = set()
         self._agent_fact_meta: dict[int, tuple[str, str, str, str, str, str, str | None]] = {}
+        self._explicit_fact_receipts: dict[tuple[str, str], tuple[str, str, str, int, str]] = {}
 
     @staticmethod
     def _agent_user(principal: MemoryPrincipal) -> str:
@@ -92,6 +99,15 @@ class MockMemoryBackend(BaseMemoryBackend):
             raise MemoryOwnershipConflict()
         self._agent_bindings[key] = expected
         return self._agent_user(principal)
+
+    @staticmethod
+    def _recall_owned(row: dict[str, object], principal: MemoryPrincipal) -> bool:
+        binding = row.get("binding")
+        return isinstance(binding, tuple) and binding[:3] == (
+            principal.deployment_id,
+            principal.household_id,
+            principal.actor_id,
+        )
 
     def _epoch(self, principal: MemoryPrincipal, scope: MemoryScope) -> tuple[int, float | None]:
         scope.authorize(principal)
@@ -132,7 +148,8 @@ class MockMemoryBackend(BaseMemoryBackend):
         self._bind_agent(principal)
         personal = MemoryScope.personal(principal.actor_id)
         fence = self._fence(principal, personal, self._epoch(principal, personal)[0])
-        prior = self._agent_recalls.get(query_id)
+        snapshot_key = (principal.deployment_id, query_id)
+        prior = self._agent_recalls.get(snapshot_key)
         binding = (
             principal.deployment_id,
             principal.household_id,
@@ -140,10 +157,7 @@ class MockMemoryBackend(BaseMemoryBackend):
             principal.session_id,
         )
         if prior is not None:
-            if (
-                prior["query_hash"] != query_hash
-                or prior["binding"] != binding
-            ):
+            if prior["query_hash"] != query_hash or prior["binding"] != binding:
                 raise MemoryIdempotencyConflict()
             previous_payload = prior["payload"]
             if not isinstance(previous_payload, dict):
@@ -160,6 +174,7 @@ class MockMemoryBackend(BaseMemoryBackend):
             and self._agent_meta[message.id][:2]
             == (principal.deployment_id, principal.household_id)
             and self._agent_meta[message.id][3:] in allowed
+            and not str(message.source_event_id).startswith("explicit-memory-source/v1/")
         ]
         fact_rows = [
             fact
@@ -225,7 +240,7 @@ class MockMemoryBackend(BaseMemoryBackend):
             "byte_count": len(encoded.encode()),
             "write_fence": fence,
         }
-        self._agent_recalls[query_id] = {
+        self._agent_recalls[snapshot_key] = {
             "query_hash": query_hash,
             "binding": binding,
             "payload": payload,
@@ -244,10 +259,16 @@ class MockMemoryBackend(BaseMemoryBackend):
         return payload, fence, False
 
     async def agent_release(self, *, query_id: str, query_hash: str, result_hash: str) -> None:
-        row = self._agent_recalls.get(query_id)
-        if row is None or row["query_hash"] != query_hash or row["result_hash"] != result_hash:
+        matches = [
+            row
+            for (_deployment_id, stored_query_id), row in self._agent_recalls.items()
+            if stored_query_id == query_id
+            and row["query_hash"] == query_hash
+            and row["result_hash"] == result_hash
+        ]
+        if len(matches) != 1:
             raise MemoryIdempotencyConflict()
-        row["released"] = True
+        matches[0]["released"] = True
 
     async def agent_record_turn(
         self,
@@ -365,9 +386,7 @@ class MockMemoryBackend(BaseMemoryBackend):
             return "erased"
         if current["state"] == "applied":
             return "applied"
-        if current["state"] != "claimed" or current.get("lease_token") != job.get(
-            "lease_token"
-        ):
+        if current["state"] != "claimed" or current.get("lease_token") != job.get("lease_token"):
             return "lost_lease"
         principal = MemoryPrincipal(
             str(job["deployment_id"]),
@@ -507,6 +526,9 @@ class MockMemoryBackend(BaseMemoryBackend):
             == (principal.deployment_id, principal.household_id)
             and self._agent_fact_meta[fact.id][3:5] in allowed
         }
+        for receipt_key, receipt in tuple(self._explicit_fact_receipts.items()):
+            if receipt[3] in fact_ids:
+                self._explicit_fact_receipts[receipt_key] = (*receipt[:4], "forgotten")
         job_ids = [
             job_id
             for job_id, job in self._fact_jobs.items()
@@ -527,25 +549,13 @@ class MockMemoryBackend(BaseMemoryBackend):
             [
                 key
                 for key, row in self._agent_recalls.items()
-                if row["binding"]
-                == (
-                    principal.deployment_id,
-                    principal.household_id,
-                    principal.actor_id,
-                    principal.session_id,
-                )
+                if self._recall_owned(row, principal)
             ]
         )
         self._agent_recalls = {
             key: row
             for key, row in self._agent_recalls.items()
-            if row["binding"]
-            != (
-                principal.deployment_id,
-                principal.household_id,
-                principal.actor_id,
-                principal.session_id,
-            )
+            if not self._recall_owned(row, principal)
         }
         return {
             "messages": len(ids),
@@ -570,6 +580,9 @@ class MockMemoryBackend(BaseMemoryBackend):
             return False
         deterministic = meta[5]
         self._fact_tombstones.add(deterministic)
+        for key, receipt in tuple(self._explicit_fact_receipts.items()):
+            if receipt[3] == fact_id:
+                self._explicit_fact_receipts[key] = (*receipt[:4], "forgotten")
         remove_ids = {
             stored_id
             for stored_id, stored in self._agent_fact_meta.items()
@@ -579,6 +592,125 @@ class MockMemoryBackend(BaseMemoryBackend):
         for stored_id in remove_ids:
             del self._agent_fact_meta[stored_id]
         return True
+
+    async def agent_remember_fact(
+        self,
+        principal: MemoryPrincipal,
+        content: str,
+        *,
+        source_event_id: str,
+        payload_hash: str | None,
+        salience: float,
+        pinned: bool,
+        tier: str,
+    ) -> int:
+        content = self._check_content(canonicalize_memory_text(content))
+        source_event_id = validate_identity(source_event_id, "source_event_id")
+        expected_hash, salience, pinned, tier = canonical_explicit_fact_payload(
+            principal=principal,
+            source_event_id=source_event_id,
+            content=content,
+            salience=salience,
+            pinned=pinned,
+            tier=tier,
+        )
+        if (
+            payload_hash is not None
+            and validate_digest(payload_hash, "payload_hash") != expected_hash
+        ):
+            raise MemoryIdempotencyConflict()
+        self._bind_agent(principal)
+        key = (principal.deployment_id, source_event_id)
+        prior = self._explicit_fact_receipts.get(key)
+        if prior is not None:
+            if prior[:2] != (principal.household_id, principal.actor_id):
+                raise MemoryOwnershipConflict()
+            if prior[2] != expected_hash:
+                raise MemoryIdempotencyConflict()
+            return prior[3]
+        message_id = self._next_msg_id
+        self._next_msg_id += 1
+        source_key = (
+            "explicit-memory-source/v1/"
+            + hashlib.sha256(f"{principal.deployment_id}\x1f{source_event_id}".encode()).hexdigest()
+        )
+        user_id = self._agent_user(principal)
+        self._messages.append(
+            Message(
+                message_id,
+                user_id,
+                principal.session_id,
+                "user",
+                content,
+                time.time(),
+                salience=salience,
+                decay_rate=0.0,
+                source_event_id=source_key,
+                payload_hash=expected_hash,
+            )
+        )
+        self._agent_meta[message_id] = (
+            principal.deployment_id,
+            principal.household_id,
+            principal.actor_id,
+            "personal",
+            principal.actor_id,
+        )
+        fact_id = self._next_fact_id
+        self._next_fact_id += 1
+        category = {
+            "auto": "explicit",
+            "working": "event",
+            "long_term": "learning",
+            "identity": "profile",
+        }[tier]
+        fact = Fact(
+            fact_id,
+            user_id,
+            principal.actor_id,
+            "memory",
+            content,
+            category,
+            1.0,
+            content,
+            message_id,
+            time.time(),
+            pinned=pinned,
+        )
+        self._facts.append(fact)
+        deterministic = hashlib.sha256(
+            f"explicit-fact/v1\x1f{principal.deployment_id}\x1f{source_event_id}".encode()
+        ).hexdigest()
+        self._agent_fact_meta[fact_id] = (
+            principal.deployment_id,
+            principal.household_id,
+            principal.actor_id,
+            "personal",
+            principal.actor_id,
+            deterministic,
+            None,
+        )
+        self._explicit_fact_receipts[key] = (
+            principal.household_id,
+            principal.actor_id,
+            expected_hash,
+            fact_id,
+            "applied",
+        )
+        return fact_id
+
+    async def agent_read_fact(self, principal: MemoryPrincipal, fact_id: int) -> Fact | None:
+        self._bind_agent(principal)
+        meta = self._agent_fact_meta.get(fact_id)
+        if meta is None or meta[:5] != (
+            principal.deployment_id,
+            principal.household_id,
+            principal.actor_id,
+            "personal",
+            principal.actor_id,
+        ):
+            return None
+        return next((fact for fact in self._facts if fact.id == fact_id and fact.is_active), None)
 
     async def agent_share_fact(self, principal: MemoryPrincipal, fact_id: int) -> str:
         meta = self._agent_fact_meta.get(fact_id)

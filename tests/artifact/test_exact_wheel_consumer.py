@@ -49,7 +49,10 @@ def test_exact_wheel_in_clean_consumer(tmp_path: Path, exact_wheel: Path) -> Non
                 MemoryPrincipal,
                 __version__,
             )
-            from simple_harness_memory.core.errors import HarnessIntegrationExtraRequired
+            from simple_harness_memory.core.errors import (
+                HarnessIntegrationExtraRequired,
+                MemoryIdempotencyConflict,
+            )
 
             class HarnessFreeFutureConsumerFixture:
                 def __init__(self, manager, path):
@@ -102,6 +105,40 @@ def test_exact_wheel_in_clean_consumer(tmp_path: Path, exact_wheel: Path) -> Non
                             (origin,),
                         ).fetchone()[0] == 1
 
+                async def verify_explicit_fact(self):
+                    principal = MemoryPrincipal("deployment-a", "house-a", "actor-a", "explicit")
+                    fact_id = await self.manager.remember_fact(
+                        principal, "Prefer concise replies", source_event_id="write-call-1",
+                        salience=0.75, pinned=True, tier="long_term",
+                    )
+                    assert await self.manager.remember_fact(
+                        principal, "Prefer concise replies", source_event_id="write-call-1",
+                        salience=0.75, pinned=True, tier="long_term",
+                    ) == fact_id
+                    fact = await self.manager.read_fact(principal, fact_id)
+                    assert fact is not None
+                    assert (fact.id, fact.value, fact.category, fact.pinned) == (
+                        fact_id, "Prefer concise replies", "learning", True,
+                    )
+                    other = MemoryPrincipal("deployment-a", "house-a", "actor-b", "other")
+                    assert await self.manager.read_fact(other, fact_id) is None
+                    try:
+                        await self.manager.remember_fact(
+                            principal, "Different", source_event_id="write-call-1",
+                            salience=0.75, pinned=True, tier="long_term",
+                        )
+                    except MemoryIdempotencyConflict:
+                        pass
+                    else:
+                        raise AssertionError("changed explicit fact replay did not conflict")
+                    assert await self.manager.forget_fact(fact_id, principal=principal)
+                    assert await self.manager.read_fact(principal, fact_id) is None
+                    assert await self.manager.remember_fact(
+                        principal, "Prefer concise replies", source_event_id="write-call-1",
+                        salience=0.75, pinned=True, tier="long_term",
+                    ) == fact_id
+                    assert await self.manager.read_fact(principal, fact_id) is None
+
             async def main():
                 assert __version__ == "0.4.0"
                 assert not hasattr(simple_harness_memory, "ConversationMemoryAdapter")
@@ -117,6 +154,7 @@ def test_exact_wheel_in_clean_consumer(tmp_path: Path, exact_wheel: Path) -> Non
                 )
                 assert replay.message_id == first.message_id
                 assert await manager.recall("line1", user_id="user-1")
+                await HarnessFreeFutureConsumerFixture(manager, path).verify_explicit_fact()
                 await HarnessFreeFutureConsumerFixture(manager, path).verify_authorized_share()
                 try:
                     await manager.recall_for_turn(object())

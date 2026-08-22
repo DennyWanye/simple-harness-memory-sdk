@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import hashlib
+import importlib
 import json
 import os
 import re
@@ -27,6 +28,12 @@ from simple_harness_memory.backends.storage import (
     verify_sqlite_path,
 )
 from simple_harness_memory.config import MemoryResourceBounds
+from simple_harness_memory.core.conversation import (
+    canonical_explicit_fact_payload,
+    canonicalize_memory_text,
+    validate_digest,
+    validate_identity,
+)
 from simple_harness_memory.core.errors import (
     MemoryBackupError,
     MemoryCorruptionError,
@@ -157,7 +164,7 @@ CREATE TABLE workspace_actions (
         REFERENCES sessions(user_id, session_id) ON DELETE CASCADE
 );
 CREATE TABLE recall_result_snapshots (
-    context_query_id TEXT PRIMARY KEY,
+    context_query_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
     deployment_id TEXT NOT NULL,
     household_id TEXT NOT NULL,
@@ -171,6 +178,7 @@ CREATE TABLE recall_result_snapshots (
     state TEXT NOT NULL CHECK (state IN ('retained', 'released')),
     created_at REAL NOT NULL,
     released_at REAL,
+    PRIMARY KEY (deployment_id, context_query_id),
     FOREIGN KEY (user_id, session_id)
         REFERENCES sessions(user_id, session_id) ON DELETE CASCADE
 );
@@ -241,6 +249,21 @@ CREATE TABLE suppression_receipts (
         'SUPPRESS_TENTATIVE', 'SUPPRESS_TERMINAL', 'DEFERRED_TURN'
     )),
     created_at REAL NOT NULL
+);
+CREATE TABLE explicit_fact_receipts (
+    deployment_id TEXT NOT NULL,
+    household_id TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    source_event_id TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    fact_id INTEGER NOT NULL,
+    salience REAL NOT NULL,
+    pinned INTEGER NOT NULL CHECK (pinned IN (0, 1)),
+    tier TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('applied', 'forgotten')),
+    created_at REAL NOT NULL,
+    PRIMARY KEY (deployment_id, source_event_id),
+    UNIQUE (deployment_id, fact_id)
 );
 CREATE INDEX idx_messages_user_created
     ON messages(user_id, created_at DESC, id DESC);
@@ -354,6 +377,9 @@ CREATE TABLE schema_meta (
 
 SCHEMA_VERSION = 4
 SCHEMA_CHECKSUM = hashlib.sha256(_DDL.encode("utf-8")).hexdigest()
+_LEGACY_V4_CHECKSUMS = frozenset(
+    {"4e66bbfe712e479ef1e6ac5cbc0e720235b9ae6512a0668ddb18bb9cbf29e461"}
+)
 
 
 def _ddl_statements(script: str) -> tuple[str, ...]:
@@ -470,11 +496,9 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         assert self._secure_path is not None
         lock_path = self._secure_path.with_name(self._secure_path.name + ".writer.lock")
         lock_path.touch(mode=0o600, exist_ok=True)
-        handle = lock_path.open("r+")
+        handle = lock_path.open("r+b")
         try:
-            import fcntl
-
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self._platform_writer_lock(handle, acquire=True)
         except (BlockingIOError, OSError) as exc:
             handle.close()
             raise MemoryWriterConflict() from exc
@@ -485,12 +509,36 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         if handle is None:
             return
         try:
-            import fcntl
-
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            self._platform_writer_lock(handle, acquire=False)
         finally:
             handle.close()
             self._writer_lock_file = None
+
+    @staticmethod
+    def _platform_writer_lock(
+        handle: Any,
+        *,
+        acquire: bool,
+        platform_name: str | None = None,
+        windows_api: Any | None = None,
+    ) -> None:
+        """Hold one portable byte-range lease without importing POSIX modules on Windows."""
+
+        if (platform_name or os.name) == "nt":
+            msvcrt: Any = windows_api or importlib.import_module("msvcrt")
+
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b"\0")
+                handle.flush()
+            handle.seek(0)
+            mode = msvcrt.LK_NBLCK if acquire else msvcrt.LK_UNLCK
+            msvcrt.locking(handle.fileno(), mode, 1)
+            return
+        import fcntl
+
+        mode = fcntl.LOCK_EX | fcntl.LOCK_NB if acquire else fcntl.LOCK_UN
+        fcntl.flock(handle.fileno(), mode)
 
     async def _initialize_fresh_or_validate(self) -> None:
         tables = await self._table_names()
@@ -509,6 +557,10 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             raise MemorySchemaIncompatible()
         version = await self._read_meta("schema_version")
         checksum = await self._read_meta("schema_checksum")
+        if version == str(SCHEMA_VERSION) and checksum in _LEGACY_V4_CHECKSUMS:
+            await self._upgrade_legacy_v4_snapshot_identity()
+            checksum = SCHEMA_CHECKSUM
+            tables = await self._table_names()
         if version != str(SCHEMA_VERSION) or checksum != SCHEMA_CHECKSUM:
             raise MemorySchemaIncompatible()
         expected = {
@@ -524,6 +576,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             "fact_jobs",
             "fact_tombstones",
             "suppression_receipts",
+            "explicit_fact_receipts",
             "messages_fts",
             "facts_fts",
             "embedding_lineages",
@@ -533,6 +586,61 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         }
         if not expected.issubset(tables):
             raise MemorySchemaIncompatible()
+
+    async def _upgrade_legacy_v4_snapshot_identity(self) -> None:
+        """Transactionally repair the audited v4 snapshot key and add explicit receipts."""
+
+        await self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            await self._conn.execute(
+                "CREATE TABLE recall_result_snapshots_next ("
+                "context_query_id TEXT NOT NULL, user_id TEXT NOT NULL, "
+                "deployment_id TEXT NOT NULL, household_id TEXT NOT NULL, actor_id TEXT NOT NULL, "
+                "scope_set_hash TEXT NOT NULL, write_fence TEXT NOT NULL, "
+                "session_id TEXT NOT NULL, query_hash TEXT NOT NULL, "
+                "result_payload TEXT NOT NULL, result_hash TEXT NOT NULL, "
+                "state TEXT NOT NULL CHECK (state IN ('retained', 'released')), "
+                "created_at REAL NOT NULL, "
+                "released_at REAL, PRIMARY KEY (deployment_id, context_query_id), "
+                "FOREIGN KEY (user_id, session_id) REFERENCES sessions(user_id, session_id) "
+                "ON DELETE CASCADE)"
+            )
+            await self._conn.execute(
+                "INSERT INTO recall_result_snapshots_next SELECT context_query_id, user_id, "
+                "CASE WHEN deployment_id = 'standalone' THEN user_id ELSE deployment_id END, "
+                "household_id, actor_id, scope_set_hash, write_fence, session_id, query_hash, "
+                "result_payload, result_hash, state, created_at, released_at "
+                "FROM recall_result_snapshots"
+            )
+            await self._conn.execute("DROP TABLE recall_result_snapshots")
+            await self._conn.execute(
+                "ALTER TABLE recall_result_snapshots_next RENAME TO recall_result_snapshots"
+            )
+            await self._conn.execute(
+                "CREATE INDEX idx_recall_release ON "
+                "recall_result_snapshots(user_id, state, released_at)"
+            )
+            await self._conn.execute(
+                "CREATE INDEX idx_recall_created ON "
+                "recall_result_snapshots(user_id, state, created_at)"
+            )
+            await self._conn.execute(
+                "CREATE TABLE explicit_fact_receipts ("
+                "deployment_id TEXT NOT NULL, household_id TEXT NOT NULL, actor_id TEXT NOT NULL, "
+                "source_event_id TEXT NOT NULL, payload_hash TEXT NOT NULL, "
+                "fact_id INTEGER NOT NULL, salience REAL NOT NULL, "
+                "pinned INTEGER NOT NULL CHECK (pinned IN (0, 1)), tier TEXT NOT NULL, "
+                "state TEXT NOT NULL CHECK (state IN ('applied', 'forgotten')), "
+                "created_at REAL NOT NULL, "
+                "PRIMARY KEY (deployment_id, source_event_id), UNIQUE (deployment_id, fact_id))"
+            )
+            await self._conn.execute(
+                "UPDATE schema_meta SET value = ? WHERE key = 'schema_checksum'", (SCHEMA_CHECKSUM,)
+            )
+            await self._conn.execute("COMMIT")
+        except Exception:
+            await self._conn.execute("ROLLBACK")
+            raise
 
     async def _table_names(self) -> set[str]:
         async with self._conn.execute(
@@ -679,8 +787,8 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             async with self._conn.execute(
                 "SELECT query_hash, result_payload, write_fence, deployment_id, "
                 "household_id, actor_id, session_id FROM recall_result_snapshots "
-                "WHERE context_query_id = ?",
-                (query_id,),
+                "WHERE deployment_id = ? AND context_query_id = ?",
+                (principal.deployment_id, query_id),
             ) as cursor:
                 prior = await cursor.fetchone()
             if prior is not None:
@@ -711,6 +819,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         async with self._transaction():
             user_id = await self._bind_agent_session(principal)
             message_predicate, message_params = scope_predicate(principal, scopes, table_alias="m")
+            message_predicate += " AND m.source_event_id NOT LIKE 'explicit-memory-source/v1/%'"
             fact_predicate, fact_params = scope_predicate(principal, scopes, table_alias="f")
             candidate_limit = min(
                 self._bounds.recall_candidate_messages, max(max_items * 8, max_items + 1)
@@ -910,22 +1019,23 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
     ) -> None:
         async with self._transaction():
             async with self._conn.execute(
-                "SELECT query_hash, result_hash FROM recall_result_snapshots "
-                "WHERE context_query_id = ?",
-                (query_id,),
+                "SELECT deployment_id, query_hash, result_hash FROM recall_result_snapshots "
+                "WHERE context_query_id = ? AND query_hash = ? AND result_hash = ?",
+                (query_id, query_hash, result_hash),
             ) as cursor:
-                row = await cursor.fetchone()
-            if row is None or str(row[0]) != query_hash or str(row[1]) != result_hash:
+                rows = list(await cursor.fetchall())
+            if len(rows) != 1:
                 raise MemoryIdempotencyConflict()
             await self._conn.execute(
                 "UPDATE recall_result_snapshots SET state = 'released', "
-                "released_at = COALESCE(released_at, ?) WHERE context_query_id = ?",
-                (time.time(), query_id),
+                "released_at = COALESCE(released_at, ?) WHERE deployment_id = ? "
+                "AND context_query_id = ? AND query_hash = ? AND result_hash = ?",
+                (time.time(), str(rows[0][0]), query_id, query_hash, result_hash),
             )
             expired_before = time.time() - self._bounds.context_result_dedupe_seconds
             await self._conn.execute(
-                "DELETE FROM recall_result_snapshots WHERE context_query_id IN ("
-                "SELECT context_query_id FROM recall_result_snapshots "
+                "DELETE FROM recall_result_snapshots WHERE (deployment_id, context_query_id) IN ("
+                "SELECT deployment_id, context_query_id FROM recall_result_snapshots "
                 "WHERE state = 'released' AND released_at <= ? "
                 "ORDER BY released_at, context_query_id LIMIT 100)",
                 (expired_before,),
@@ -1318,6 +1428,12 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                 (principal.deployment_id, principal.household_id, principal.actor_id),
             )
             counts["snapshots"] = max(0, cursor_result.rowcount)
+            if MemoryScope.personal(principal.actor_id) in scopes:
+                await self._conn.execute(
+                    "UPDATE explicit_fact_receipts SET state = 'forgotten' "
+                    "WHERE deployment_id = ? AND household_id = ? AND actor_id = ?",
+                    (principal.deployment_id, principal.household_id, principal.actor_id),
+                )
             await self._conn.execute(
                 f"DELETE FROM messages WHERE id IN (SELECT id FROM messages WHERE {predicate})",
                 params,
@@ -1358,10 +1474,156 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                 ),
             )
             await self._conn.execute(
+                "UPDATE explicit_fact_receipts SET state = 'forgotten' "
+                "WHERE deployment_id = ? AND household_id = ? AND actor_id = ? AND fact_id = ?",
+                (
+                    principal.deployment_id,
+                    principal.household_id,
+                    principal.actor_id,
+                    fact_id,
+                ),
+            )
+            await self._conn.execute(
                 "DELETE FROM facts WHERE deterministic_id = ? OR projection_of = ?",
                 (deterministic_id, deterministic_id),
             )
             return True
+
+    async def agent_remember_fact(
+        self,
+        principal: MemoryPrincipal,
+        content: str,
+        *,
+        source_event_id: str,
+        payload_hash: str | None,
+        salience: float,
+        pinned: bool,
+        tier: str,
+    ) -> int:
+        content = self._check_content(canonicalize_memory_text(content))
+        source_event_id = validate_identity(source_event_id, "source_event_id")
+        expected_hash, salience, pinned, tier = canonical_explicit_fact_payload(
+            principal=principal,
+            source_event_id=source_event_id,
+            content=content,
+            salience=salience,
+            pinned=pinned,
+            tier=tier,
+        )
+        if (
+            payload_hash is not None
+            and validate_digest(payload_hash, "payload_hash") != expected_hash
+        ):
+            raise MemoryIdempotencyConflict()
+        category = {
+            "auto": "explicit",
+            "working": "event",
+            "long_term": "learning",
+            "identity": "profile",
+        }[tier]
+        async with self._transaction():
+            user_id = await self._bind_agent_session(principal)
+            async with self._conn.execute(
+                "SELECT household_id, actor_id, payload_hash, fact_id FROM explicit_fact_receipts "
+                "WHERE deployment_id = ? AND source_event_id = ?",
+                (principal.deployment_id, source_event_id),
+            ) as cursor:
+                prior = await cursor.fetchone()
+            if prior is not None:
+                if (str(prior[0]), str(prior[1])) != (
+                    principal.household_id,
+                    principal.actor_id,
+                ):
+                    raise MemoryOwnershipConflict()
+                if str(prior[2]) != expected_hash:
+                    raise MemoryIdempotencyConflict()
+                return int(prior[3])
+            now = time.time()
+            internal_source_event = (
+                "explicit-memory-source/v1/"
+                + hashlib.sha256(
+                    f"{principal.deployment_id}\x1f{source_event_id}".encode()
+                ).hexdigest()
+            )
+            cursor = await self._conn.execute(
+                "INSERT INTO messages (user_id, deployment_id, household_id, actor_id, "
+                "scope_kind, scope_owner, session_id, role, content, created_at, salience, "
+                "decay_rate, source_event_id, payload_hash) "
+                "VALUES (?, ?, ?, ?, 'personal', ?, ?, 'user', ?, ?, ?, 0.0, ?, ?)",
+                (
+                    user_id,
+                    principal.deployment_id,
+                    principal.household_id,
+                    principal.actor_id,
+                    principal.actor_id,
+                    principal.session_id,
+                    content,
+                    now,
+                    salience,
+                    internal_source_event,
+                    expected_hash,
+                ),
+            )
+            source_msg_id = int(cursor.lastrowid or 0)
+            deterministic_id = hashlib.sha256(
+                f"explicit-fact/v1\x1f{principal.deployment_id}\x1f{source_event_id}".encode()
+            ).hexdigest()
+            cursor = await self._conn.execute(
+                "INSERT INTO facts (user_id, deployment_id, household_id, actor_id, scope_kind, "
+                "scope_owner, deterministic_id, extractor_lineage, subject, key, value, category, "
+                "confidence, evidence, source_msg_id, created_at, decay_rate, pinned) "
+                "VALUES (?, ?, ?, ?, 'personal', ?, ?, 'explicit-memory/v1', ?, 'memory', ?, ?, "
+                "1.0, ?, ?, ?, ?, ?)",
+                (
+                    user_id,
+                    principal.deployment_id,
+                    principal.household_id,
+                    principal.actor_id,
+                    principal.actor_id,
+                    deterministic_id,
+                    principal.actor_id,
+                    content,
+                    category,
+                    content,
+                    source_msg_id,
+                    now,
+                    0.0 if pinned else 0.01,
+                    int(pinned),
+                ),
+            )
+            fact_id = int(cursor.lastrowid or 0)
+            await self._conn.execute(
+                "INSERT INTO explicit_fact_receipts (deployment_id, household_id, actor_id, "
+                "source_event_id, payload_hash, fact_id, salience, pinned, tier, state, "
+                "created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'applied', ?)",
+                (
+                    principal.deployment_id,
+                    principal.household_id,
+                    principal.actor_id,
+                    source_event_id,
+                    expected_hash,
+                    fact_id,
+                    salience,
+                    int(pinned),
+                    tier,
+                    now,
+                ),
+            )
+            return fact_id
+
+    async def agent_read_fact(self, principal: MemoryPrincipal, fact_id: int) -> Fact | None:
+        personal = MemoryScope.personal(principal.actor_id)
+        predicate, params = scope_predicate(principal, (personal,))
+        async with self._operation():
+            await self._bind_agent_session(principal)
+            async with self._conn.execute(
+                "SELECT * FROM facts WHERE " + predicate + " AND actor_id = ? AND id = ? "
+                "AND forgotten_at IS NULL",
+                (*params, principal.actor_id, fact_id),
+            ) as cursor:
+                row = await cursor.fetchone()
+        return None if row is None else self._row_to_fact(row)
 
     async def agent_share_fact(self, principal: MemoryPrincipal, fact_id: int) -> str:
         personal = MemoryScope.personal(principal.actor_id)
@@ -2151,8 +2413,8 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         async with self._conn.execute(
             "SELECT user_id, session_id, query_hash, result_payload, result_hash "
             "FROM recall_result_snapshots "
-            "WHERE user_id = ? AND context_query_id = ?",
-            (user_id, context_query_id),
+            "WHERE deployment_id = ? AND user_id = ? AND context_query_id = ?",
+            (user_id, user_id, context_query_id),
         ) as cursor:
             row = await cursor.fetchone()
         if row is None:
@@ -2221,13 +2483,13 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         self, *, user_id: str, expired_before: float, limit: int
     ) -> int:
         cursor = await self._conn.execute(
-            "DELETE FROM recall_result_snapshots WHERE context_query_id IN ("
-            "SELECT context_query_id FROM ("
-            "SELECT context_query_id, released_at AS expired_at "
+            "DELETE FROM recall_result_snapshots WHERE (deployment_id, context_query_id) IN ("
+            "SELECT deployment_id, context_query_id FROM ("
+            "SELECT deployment_id, context_query_id, released_at AS expired_at "
             "FROM recall_result_snapshots "
             "WHERE user_id = ? AND state = 'released' AND released_at <= ? "
             "UNION ALL "
-            "SELECT context_query_id, created_at AS expired_at "
+            "SELECT deployment_id, context_query_id, created_at AS expired_at "
             "FROM recall_result_snapshots "
             "WHERE user_id = ? AND state = 'retained' AND created_at <= ?"
             ") ORDER BY expired_at, context_query_id LIMIT ?"

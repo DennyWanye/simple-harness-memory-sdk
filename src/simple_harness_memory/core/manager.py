@@ -24,6 +24,7 @@ from simple_harness_memory.core.identity import (
     PrivacyReceipt,
     ScopeKind,
 )
+from simple_harness_memory.core.models import Fact
 from simple_harness_memory.core.port import MemoryBackend
 from simple_harness_memory.world.port import WorldModelPort
 
@@ -363,6 +364,34 @@ class MemoryManager:
 
     async def share_fact(self, principal: MemoryPrincipal, fact_id: int) -> str:
         return await getattr(self._backend, "agent_share_fact")(principal, fact_id)
+
+    async def remember_fact(
+        self,
+        principal: MemoryPrincipal,
+        content: str,
+        *,
+        source_event_id: str,
+        payload_hash: str | None = None,
+        salience: float = 0.5,
+        pinned: bool = False,
+        tier: str = "auto",
+    ) -> int:
+        """Idempotently persist an explicit personal fact and return its exact fact ID."""
+
+        return await getattr(self._backend, "agent_remember_fact")(
+            principal,
+            content,
+            source_event_id=source_event_id,
+            payload_hash=payload_hash,
+            salience=salience,
+            pinned=pinned,
+            tier=tier,
+        )
+
+    async def read_fact(self, principal: MemoryPrincipal, fact_id: int) -> Fact | None:
+        """Read an active personal fact only when it belongs to the trusted principal."""
+
+        return await getattr(self._backend, "agent_read_fact")(principal, fact_id)
 
     async def append_message(
         self,
