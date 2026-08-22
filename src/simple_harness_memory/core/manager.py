@@ -546,7 +546,7 @@ class MemoryManager:
         if self._closed:
             return {
                 "schema_version": 1,
-                "sdk_version": "0.4.0",
+                "sdk_version": "0.5.0",
                 "component": "memory",
                 "lifecycle": "closed",
                 "health": "closed",
@@ -567,7 +567,7 @@ class MemoryManager:
         )
         return {
             "schema_version": 1,
-            "sdk_version": "0.4.0",
+            "sdk_version": "0.5.0",
             "component": "memory",
             "lifecycle": "open",
             "health": health,

@@ -28,16 +28,17 @@ bytes for AIPhone and other consumers, but must never rebuild them.
 
 ## 1. Freeze the candidate
 
-The values below are the current 0.4.0 example. Future releases must replace every value.
+The values below prepare the current 0.5.0 candidate. Freeze `CANDIDATE_COMMIT` from the reviewed,
+clean release-identity commit before creating the tag.
 
 ```bash
 MEMORY_REPO=/Users/denny/projects/simple-harness-memory-sdk
 HARNESS_REPO=/Users/denny/projects/simple-harness-sdk
-RELEASE_TAG=v0.4.0
-CANDIDATE_COMMIT=3d4247b1c01eb9f5fe03aaee036d3fa3644ce8b8
+RELEASE_TAG=v0.5.0
+CANDIDATE_COMMIT="$(git -C "$MEMORY_REPO" rev-parse main)"
 
 git -C "$MEMORY_REPO" status --short
-test "$(git -C "$MEMORY_REPO" rev-parse "$RELEASE_TAG^{}")" = "$CANDIDATE_COMMIT"
+test -z "$(git -C "$MEMORY_REPO" status --short)"
 git -C "$MEMORY_REPO" merge-base --is-ancestor "$CANDIDATE_COMMIT" main
 ```
 
@@ -49,6 +50,12 @@ git -C "$MEMORY_REPO" tag -a "$RELEASE_TAG" "$CANDIDATE_COMMIT" \
 ```
 
 Do not move an existing tag.
+
+After creating the local tag, verify it before building:
+
+```bash
+test "$(git -C "$MEMORY_REPO" rev-parse "$RELEASE_TAG^{}")" = "$CANDIDATE_COMMIT"
+```
 
 ## 2. Build once in a clean worktree
 

@@ -57,19 +57,22 @@ def _fake_harness_wheel(directory: Path, version: str) -> Path:
     return wheel
 
 
-def test_base_metadata_keeps_harness_optional(exact_wheel: Path) -> None:
+def test_base_metadata_requires_harness_0_4(exact_wheel: Path) -> None:
     metadata = _wheel_metadata(exact_wheel)
     requirements = metadata.get_all("Requires-Dist") or []
     harness_requirements = [item for item in requirements if item.startswith("simple-harness-sdk")]
     assert harness_requirements
-    assert all("extra ==" in item for item in harness_requirements)
     assert any(
-        "simple-harness-sdk<0.4,>=0.3" in item and "extra == 'harness'" in item
+        "simple-harness-sdk<0.5,>=0.4" in item and "extra ==" not in item
+        for item in harness_requirements
+    )
+    assert any(
+        "simple-harness-sdk<0.5,>=0.4" in item and "extra == 'harness'" in item
         for item in harness_requirements
     )
 
 
-def test_harness_extra_accepts_only_real_0_3_candidate(
+def test_base_requirement_accepts_only_real_0_4_candidate(
     tmp_path: Path,
     exact_wheel: Path,
     exact_harness_wheel: Path,
@@ -86,27 +89,10 @@ def test_harness_extra_accepts_only_real_0_3_candidate(
         text=True,
     )
     python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    subprocess.run(
-        (
-            "uv",
-            "pip",
-            "install",
-            "--python",
-            str(python),
-            str(exact_wheel),
-            "httpx>=0.27,<1",
-            "mypy==1.20.2",
-        ),
-        check=True,
-        cwd=tmp_path,
-        env=environment,
-        capture_output=True,
-        text=True,
-    )
-    for version in ("0.2.999", "0.4.0"):
+    for version in ("0.3.999", "0.5.0"):
         invalid = tmp_path / f"invalid-{version}"
         invalid.mkdir()
-        _fake_harness_wheel(invalid, version)
+        invalid_wheel = _fake_harness_wheel(invalid, version)
         rejected = subprocess.run(
             (
                 "uv",
@@ -114,10 +100,8 @@ def test_harness_extra_accepts_only_real_0_3_candidate(
                 "install",
                 "--python",
                 str(python),
-                "--no-index",
-                "--find-links",
-                str(invalid),
-                "simple-harness-memory-sdk[harness]==0.4.0",
+                str(exact_wheel),
+                str(invalid_wheel),
             ),
             check=False,
             cwd=tmp_path,
@@ -126,7 +110,7 @@ def test_harness_extra_accepts_only_real_0_3_candidate(
             text=True,
         )
         assert rejected.returncode != 0
-        assert "No solution found" in rejected.stderr
+        assert "No solution found" in rejected.stderr or "conflict" in rejected.stderr.lower()
     subprocess.run(
         (
             "uv",
@@ -134,10 +118,10 @@ def test_harness_extra_accepts_only_real_0_3_candidate(
             "install",
             "--python",
             str(python),
-            "--no-index",
-            "--find-links",
-            str(exact_harness_wheel.parent),
-            "simple-harness-memory-sdk[harness]==0.4.0",
+            str(exact_harness_wheel),
+            str(exact_wheel),
+            "httpx>=0.27,<1",
+            "mypy==1.20.2",
         ),
         check=True,
         cwd=tmp_path,
@@ -174,7 +158,7 @@ def test_harness_extra_accepts_only_real_0_3_candidate(
             "-c",
             (
                 "import importlib.metadata as m; import simple_harness; "
-                "assert m.version('simple-harness-sdk').startswith('0.3.'); "
+                "assert m.version('simple-harness-sdk').startswith('0.4.'); "
                 "assert 'site-packages' in simple_harness.__file__"
             ),
         ),

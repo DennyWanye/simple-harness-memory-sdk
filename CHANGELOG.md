@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-23
+
+### Observability
+
+- Added optional shared Harness observability sinks and correlation to `MemoryManager` direct
+  construction, all builders, and direct Mock/SQLite backends without changing business authority.
+- Added privacy-safe structured lifecycle events for recall, committed turns, durable fact jobs and
+  restart recovery, including replay, degradation, retry, dead-letter, erasure and lost-lease outcomes.
+- Added bounded aggregate `diagnostics_snapshot()` health for recall stages, turn receipts, fact-job
+  queues and sink counters. SQLite diagnostics select status/time/error-code aggregates only and never
+  query content, payload or embedding columns.
+
+### Packaging
+
+- Promoted `simple-harness-sdk>=0.4,<0.5` to a base dependency so both SDKs consume the same
+  import-pure observability envelope; the local sibling path source remains available for development.
+- Froze the 0.5.0 public API and candidate metadata identity while retaining the 0.4.0 release record.
+
 ## [0.4.0] - 2026-08-22
 
 ### Breaking changes

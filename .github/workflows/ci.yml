@@ -93,7 +93,7 @@ jobs:
               )
               assert applied.status.value == "applied"
               await backend.close()
-              assert __version__ == "0.4.0"
+              assert __version__ == "0.5.0"
               assert os.stat(path).st_mode & 0o777 == 0o600
               with sqlite3.connect(path) as connection:
                   assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
@@ -166,9 +166,9 @@ jobs:
           import simple_harness_memory
           from simple_harness_memory import MemoryManager
 
-          assert metadata.version("simple-harness-memory-sdk") == "0.4.0"
+          assert metadata.version("simple-harness-memory-sdk") == "0.5.0"
           assert "site-packages" in simple_harness_memory.__file__
-          assert importlib.util.find_spec("simple_harness") is None
+          assert importlib.util.find_spec("simple_harness.observability") is not None
           assert sqlite3.sqlite_version_info >= (3, 35)
 
           async def verify() -> None:

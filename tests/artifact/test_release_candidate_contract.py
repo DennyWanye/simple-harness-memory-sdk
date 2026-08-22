@@ -45,10 +45,10 @@ def _read_build_info(path: Path) -> dict[str, str]:
 def _assert_ci_metadata(dist: Path) -> None:
     info = _read_build_info(dist / "BUILD_INFO.txt")
     assert info["package"] == "simple-harness-memory-sdk"
-    assert info["version"] == "0.4.0"
+    assert info["version"] == "0.5.0"
     assert re.fullmatch(r"[0-9a-f]{40}", info["source_commit"])
     assert info["requires_python"] == "<3.14,>=3.11"
-    assert info["harness_requires"] == "simple-harness-sdk<0.4,>=0.3"
+    assert info["harness_requires"] == "simple-harness-sdk<0.5,>=0.4"
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", info["build_utc"])
     wheels = sorted(dist.glob("*.whl"))
     sdists = sorted((*dist.glob("*.tar.gz"), *dist.glob("*.zip")))
@@ -105,6 +105,7 @@ def test_ci_covers_full_matrix_clean_wheel_and_arm64() -> None:
     assert "windows-latest" in workflow
     assert "macos-14" in workflow
     assert "exact-wheel-platform-matrix" in workflow
+    assert 'find_spec("simple_harness.observability") is not None' in workflow
     assert "uv pip install --system" in workflow
     assert 'test "$(uname -m)" = "aarch64"' in workflow
     assert "agent_record_turn" in workflow
@@ -128,7 +129,8 @@ def test_release_only_verifies_for_the_task_10_single_publisher() -> None:
     assert "sha256sum --check SHA256SUMS" in workflow
     assert "source_commit=$EXPECTED_COMMIT" in workflow
     assert "requires_python=<3.14,>=3.11" in workflow
-    assert "harness_requires=simple-harness-sdk<0.4,>=0.3" in workflow
+    assert "version=0.5.0" in workflow
+    assert "harness_requires=simple-harness-sdk<0.5,>=0.4" in workflow
     assert "contents: read" in workflow
     assert "contents: write" not in workflow
     assert "actions/upload-artifact@v4" in workflow

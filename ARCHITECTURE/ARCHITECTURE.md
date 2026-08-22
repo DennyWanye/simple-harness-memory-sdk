@@ -1,6 +1,6 @@
-<!-- last-calibrated: pending-observability-s1-s2 -->
+<!-- last-calibrated: pending-0.5.0-release-identity -->
 
-# ARCHITECTURE — simple-harness-memory-sdk（v0.4.0）
+# ARCHITECTURE — simple-harness-memory-sdk（v0.5.0）
 
 > 最后更新：2026-08-23
 > 当前事实：S3 runtime、四类 taxonomy offline migration、S4 storage/embedding、S5 candidate packaging
@@ -142,7 +142,7 @@ src/simple_harness_memory/
 
 ## Release candidate identity
 
-- 唯一版本事实源为`src/simple_harness_memory/__init__.py`，当前为0.4.0；wheel metadata、README、公开API
+- 唯一版本事实源为`src/simple_harness_memory/__init__.py`，当前为0.5.0；wheel metadata、README、公开API
   snapshot、changelog与candidate `BUILD_INFO.txt`必须一致。
 - base wheel metadata 直接要求 `simple-harness-sdk>=0.4,<0.5`，`[harness]` 保持同一范围；clean
   resolver gate 使用真实 Harness 0.4 candidate，0.3.x 与 0.5.x 均必须拒绝。
@@ -150,6 +150,9 @@ src/simple_harness_memory/
   macOS ARM64、Linux ARM64 downstream只下载/验证同一artifact，不允许重建。release workflow仍只验证并
   交接冻结bytes。Memory tag `v0.4.0` 指向 `3d4247b` 的同一冻结 candidate；2026-08-23 source、`main`
   与 tag 已推送；本地冻结 wheel/sdist 已正式发布到 GitHub Release，并通过公开稳定 URL 下载回验。
+- 0.5.0 release identity 已准备：candidate metadata/workflow/public API snapshot 均要求 0.5.0，base 与
+  `[harness]` metadata 均要求 `simple-harness-sdk>=0.4,<0.5`。当前尚未创建 tag、push 或 publication；
+  上一条 0.4.0 tag/commit/SHA 继续作为历史发布事实。
 
 ## 验证状态
 
@@ -157,6 +160,9 @@ src/simple_harness_memory/
   receipt/fact-job 状态矩阵、snapshot schema/bounds/SQL denylist、close/reopen recovery correlation 均通过；
   `tests/integration/test_observability.py` 13 passed。Harness candidate `bc6ae8d` 声明 0.4.0，Memory installed
   metadata 确认 base/extra 均解析 `simple-harness-sdk>=0.4,<0.5`。
+- 0.5.0 release-identity gate：源码 full `213 passed, 7 skipped`，Ruff 全绿，mypy 对 src/tests
+  `83 source files` 全绿；本地临时 0.5.0 wheel/sdist 通过 Twine，联合 Harness 0.4 exact-wheel
+  artifact suite `10 passed`。这些制品仅为 ignored 本地验证证据，尚未 tag/push/publish。
 
 - S3 targeted：Agent direct port、Mock/SQLite、atomic fault、fact recovery、identity rebind、scope matrix、
   export/delete/forget、erasure replay、日志 canary均通过。

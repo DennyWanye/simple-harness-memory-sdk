@@ -1,6 +1,13 @@
 # Integration status
 
-Status as of 2026-08-23 for `simple-harness-memory-sdk` 0.4.0:
+Status as of 2026-08-23: `simple-harness-memory-sdk` 0.5.0 release identity is prepared locally but
+is not tagged, pushed, or published. It requires Harness `>=0.4,<0.5` as a base dependency and adds
+the reviewed observability S1+S2 implementation. The following 0.4.0 publication facts remain the
+historical production record:
+
+Release-identity verification: source full suite `213 passed, 7 skipped`; Ruff and strict mypy
+passed; a local temporary 0.5.0 wheel/sdist passed Twine and the 10-test joint Harness 0.4 artifact
+suite. These bytes are validation evidence only, not published release artifacts.
 
 Local promotion is complete: tag `v0.4.0` points to source commit `3d4247b`, and
 `candidate-dist/BUILD_INFO.txt` plus `SHA256SUMS` identify wheel `bfcd2506…`. The source branch,

@@ -12,7 +12,9 @@ def test_exact_wheel_declares_typed_package(exact_wheel: Path) -> None:
         assert "simple_harness_memory/py.typed" in archive.namelist()
 
 
-def test_exact_wheel_in_clean_consumer(tmp_path: Path, exact_wheel: Path) -> None:
+def test_exact_wheel_in_clean_consumer(
+    tmp_path: Path, exact_wheel: Path, exact_harness_wheel: Path
+) -> None:
     environment = os.environ.copy()
     environment.pop("PYTHONPATH", None)
     venv = tmp_path / "consumer-venv"
@@ -26,7 +28,15 @@ def test_exact_wheel_in_clean_consumer(tmp_path: Path, exact_wheel: Path) -> Non
     )
     python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     subprocess.run(
-        ("uv", "pip", "install", "--python", str(python), str(exact_wheel)),
+        (
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            str(python),
+            str(exact_harness_wheel),
+            str(exact_wheel),
+        ),
         check=True,
         cwd=tmp_path,
         env=environment,
@@ -168,7 +178,7 @@ def test_exact_wheel_in_clean_consumer(tmp_path: Path, exact_wheel: Path) -> Non
                     assert await self.manager.read_fact(principal, fact_id) is None
 
             async def main():
-                assert __version__ == "0.4.0"
+                assert __version__ == "0.5.0"
                 assert not hasattr(simple_harness_memory, "ConversationMemoryAdapter")
                 path = Path("memory.db").resolve()
                 manager = await MemoryManager.build(str(path), enable_facts=True)
@@ -184,12 +194,8 @@ def test_exact_wheel_in_clean_consumer(tmp_path: Path, exact_wheel: Path) -> Non
                 assert await manager.recall("line1", user_id="user-1")
                 await HarnessFreeFutureConsumerFixture(manager, path).verify_explicit_fact()
                 await HarnessFreeFutureConsumerFixture(manager, path).verify_authorized_share()
-                try:
-                    await manager.recall_for_turn(object())
-                except HarnessIntegrationExtraRequired as error:
-                    assert str(error) == "harness_integration_extra_required"
-                else:
-                    raise AssertionError("base wheel unexpectedly imported Harness")
+                import simple_harness.observability
+                assert simple_harness.observability.SCHEMA_VERSION == 1
                 await manager.close()
                 assert os.stat(path).st_mode & 0o777 == 0o600
                 with sqlite3.connect(path) as connection:

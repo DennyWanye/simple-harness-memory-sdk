@@ -11,8 +11,8 @@ from email.parser import BytesParser
 from pathlib import Path
 
 PACKAGE = "simple-harness-memory-sdk"
-VERSION = "0.4.0"
-HARNESS_REQUIRES = "simple-harness-sdk<0.4,>=0.3"
+VERSION = "0.5.0"
+HARNESS_REQUIRES = "simple-harness-sdk<0.5,>=0.4"
 
 
 class CandidateMetadataError(RuntimeError):
@@ -66,8 +66,8 @@ def write_metadata(dist: Path, source_commit: str, build_utc: str) -> None:
         for value in requirements
     ):
         raise CandidateMetadataError("candidate-harness-extra-invalid")
-    if any(
-        value.startswith("simple-harness-sdk") and "extra ==" not in value
+    if not any(
+        value.startswith(HARNESS_REQUIRES) and "extra ==" not in value
         for value in requirements
     ):
         raise CandidateMetadataError("candidate-harness-base-dependency-invalid")
