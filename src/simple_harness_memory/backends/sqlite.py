@@ -231,7 +231,9 @@ CREATE TABLE fact_tombstones (
 CREATE TABLE suppression_receipts (
     source_event_id TEXT PRIMARY KEY,
     payload_hash TEXT NOT NULL,
-    decision TEXT NOT NULL CHECK (decision IN ('SUPPRESS_TERMINAL', 'DEFERRED_TURN')),
+    decision TEXT NOT NULL CHECK (decision IN (
+        'SUPPRESS_TENTATIVE', 'SUPPRESS_TERMINAL', 'DEFERRED_TURN'
+    )),
     created_at REAL NOT NULL
 );
 CREATE INDEX idx_messages_user_created

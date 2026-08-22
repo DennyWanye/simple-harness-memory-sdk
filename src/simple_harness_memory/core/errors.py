@@ -83,3 +83,21 @@ class MemoryProductionConfigurationError(MemoryErrorBase):
     """A production manager was requested without pinned embedding resources."""
 
     code = "memory_production_embedder_required"
+
+
+class MemoryMigrationError(MemoryErrorBase):
+    """An offline migration failed without publishing a partial database."""
+
+    code = "memory_migration_failed"
+
+
+class MemoryMigrationManifestError(MemoryMigrationError):
+    """A hash-protected migration input was incomplete, ambiguous, or tampered."""
+
+    code = "memory_migration_manifest_invalid"
+
+
+class MemoryMigrationSourceBusy(MemoryMigrationError):
+    """The legacy database still has an active writer."""
+
+    code = "memory_migration_source_busy"

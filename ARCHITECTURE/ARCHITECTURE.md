@@ -3,7 +3,7 @@
 # ARCHITECTURE — simple-harness-memory-sdk（v0.4.0）
 
 > 最后更新：2026-08-22
-> 当前事实：S3 runtime 与 S4 storage/embedding 已实现；offline migration 因 A2 taxonomy 冻结问题暂停。
+> 当前事实：S3 runtime、四类 taxonomy offline migration 与 S4 storage/embedding 已实现。
 
 ## 分层
 
@@ -61,6 +61,19 @@ src/simple_harness_memory/
 - restore 仅在 manager关闭后开放；先校验 manifest/hash、WAL残留、integrity/FK/schema/lineage，再写临时库并
   原子替换。任一校验失败保留原库。
 
+## v3 → v4 显式迁移
+
+- runtime loader仍只接受fresh v4；升级入口独立位于`simple_harness_memory.migrations`，不进入
+  `AgentMemoryPort`。Memory结构化读取Harness公开manifest，不反向import Harness package。
+- backup-first migrator要求closed source及可信一对一identity map；execution manifest与独立non-Harness
+  provenance manifest对每个v3 source event恰好覆盖一次。未知版本、重复/缺失归属、identity歧义、digest或
+  payload hash漂移均fail closed。
+- `KEEP_COMPLETED_PAIR`保留完整user/assistant pair，缺失半边只能由hash-verified canonical turn补齐；
+  `SUPPRESS_TENTATIVE`、`SUPPRESS_TERMINAL`、`DEFERRED_TURN`均不复制message/inline embedding/source facts，
+  并写`legacy-source:` namespaced hash-only receipt。recall stage丢弃，digital twin只从保留facts重建。
+- 临时v4经count/FK/integrity验证后原子替换；swap后故障从已验证backup恢复。公开runtime import只接受KEEP、
+  遵守erasure、整manifest事务幂等，Harness outbox重放命中同canonical turn receipt而不重复写pair。
+
 ## Durable recall 与 committed turn
 
 - 每个 query id 保存 canonical payload/result hash、identity binding、scope-set hash 与 personal erasure
@@ -94,9 +107,6 @@ src/simple_harness_memory/
 
 ## 当前明确限制 / 后续 Slice
 
-- 显式 offline v3→v4 migrator与公开 migration manifest API 尚未实现。原因是已冻结三类 decision 无法
-  唯一覆盖 continuation completed run 的早期 tentative user events（A2 `a2-001`）；在新增 taxonomy
-  获批前必须暂停，不能猜测导入、丢弃或复制。
 - AIPhone、K6/AgentOS、NovelTagSystem 未修改；它们只通过后续 joint wheel fixture验证未来接口。
 
 ## 验证状态
@@ -105,6 +115,8 @@ src/simple_harness_memory/
   export/delete/forget、erasure replay、日志 canary均通过。
 - S4 targeted：20k/100k FTS query plan与有界 recall、generation restart/switch/failure、production embedder、
   second-writer reject、checkpoint、backup/restore/corruption preserve均通过。
+- S3 migration targeted：四类完整覆盖、canonical pair补齐、derived cascade、non-Harness provenance、
+  identity/digest tamper、三阶段fault rollback及Harness公开manifest/runtime replay均通过。
 - 当前本仓 full 以最终 gate 重跑数字为准；Ruff 与 mypy全绿。
 - exact wheel、Python 3.11/3.12/3.13联合 Harness candidate 与 release metadata 属 S5 gate，不能由 editable
   开发安装替代。

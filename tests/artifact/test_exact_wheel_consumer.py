@@ -3,7 +3,13 @@ from __future__ import annotations
 import os
 import subprocess
 import textwrap
+import zipfile
 from pathlib import Path
+
+
+def test_exact_wheel_declares_typed_package(exact_wheel: Path) -> None:
+    with zipfile.ZipFile(exact_wheel) as archive:
+        assert "simple_harness_memory/py.typed" in archive.namelist()
 
 
 def test_exact_wheel_in_clean_consumer(tmp_path: Path, exact_wheel: Path) -> None:

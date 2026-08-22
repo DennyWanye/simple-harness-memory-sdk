@@ -31,8 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Deletion advances the erasure epoch before cascading content and prevents late replay/job
   resurrection.
 - Structured Agent Memory events emit opaque principal identifiers and counts/hashes only.
-- The explicit v3→v4 migrator remains blocked pending a frozen manifest category for early
-  tentative continuation events; runtime opening of v3 databases remains fail-closed.
+- Added an explicit backup-first v3→v4 migrator and public manifest import API. The approved
+  four-way taxonomy suppresses tentative, terminal and deferred legacy sources with hash-only
+  receipts, cascades their embeddings/facts, rebuilds aggregates from retained facts, and restores
+  the verified backup on any publication fault. Runtime opening of v3 remains fail-closed.
 
 ### Changed
 - `recall()` is now read-only: it no longer bumps salience or writes `last_recalled`.

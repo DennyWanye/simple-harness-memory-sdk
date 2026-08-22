@@ -98,9 +98,10 @@ SQLite 事务创建；事实提取在事务外执行，结果与 job ack 再原�
 - v4 全链路保存 deployment/household/actor/session 与 personal/family scope；session 首次绑定后不可换绑。
 - `export_principal`、`delete_scope`、`forget_fact` 和 `share_fact` 共用同一 scope predicate；删除先推进
   erasure epoch，再级联 content/vector/stage/job，并保留 hash-only tombstone，旧 outbox/job 不会复活内容。
-- v3→v4 offline migrator 暂未发布：continuation 的早期 tentative event 尚需冻结新增 manifest taxonomy；
-  在该契约获批前，0.4 runtime 坚持 fail-closed，不猜测迁移。
-  迁移状态与操作边界见 [`docs/migration-v4.md`](docs/migration-v4.md)。
+- v3→v4 只通过显式、closed-runtime、backup-first migrator执行，runtime仍不会隐式升级。迁移接收 Harness
+  四类 execution manifest、可信 identity map和独立 non-Harness provenance manifest；全 source-event 唯一
+  覆盖、hash、pair、FK或identity任一不一致都不会发布临时库。操作说明见
+  [`docs/migration-v4.md`](docs/migration-v4.md)。
 - 数据库必须是当前用户拥有的 regular file，拒绝 symlink，并以 `0600` 创建和回读校验。
 - 同一数据库只允许一个 live `MemoryManager` 持有 writer lease；第二个 writer 稳定报
   `memory_second_writer_rejected`。writer、checkpoint 与 online backup 共用同一串行边界。
