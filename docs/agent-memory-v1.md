@@ -72,6 +72,11 @@ actor identity and all visible metadata participate in the canonical idempotency
 receipt, so exact replay returns the original ID without resurrecting content. These APIs are also outside
 `AgentMemoryPort` and require no Harness import.
 
+For principal-scoped `forget_fact`, the compatibility `reason` argument is the official action
+`source_event_id`; callers may instead pass the explicit keyword plus an optional canonical `payload_hash`.
+The durable hash-only action receipt binds deployment/household/actor/fact and preserves the original boolean
+result across replay. A later distinct action against an already-forgotten fact records a stable false no-op.
+
 ## Consumer migration map
 
 | Previous consumer responsibility | Official path |

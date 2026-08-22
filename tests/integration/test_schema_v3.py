@@ -34,6 +34,7 @@ async def test_fresh_v4_schema_has_complete_ownership_graph(tmp_path):
         "fact_tombstones",
         "suppression_receipts",
         "explicit_fact_receipts",
+        "explicit_forget_receipts",
         "schema_meta",
     }.issubset(tables)
     async with backend._conn.execute("PRAGMA foreign_key_check") as cursor:
@@ -89,6 +90,7 @@ async def test_known_v4_snapshot_schema_is_repaired_transactionally(tmp_path):
     await backend.initialize()
     await backend.close()
     connection = sqlite3.connect(path)
+    connection.execute("DROP TABLE explicit_forget_receipts")
     connection.execute("DROP TABLE explicit_fact_receipts")
     connection.execute("DROP TABLE recall_result_snapshots")
     connection.execute(
@@ -119,4 +121,28 @@ async def test_known_v4_snapshot_schema_is_repaired_transactionally(tmp_path):
     ) as cursor:
         row = await cursor.fetchone()
     assert row is not None and row[0] == SCHEMA_CHECKSUM
+    await repaired.close()
+
+
+@pytest.mark.asyncio
+async def test_known_v4_explicit_fact_schema_adds_forget_receipts(tmp_path):
+    path = tmp_path / "known-v4-explicit.db"
+    backend = SQLiteMemoryBackend(str(path))
+    await backend.initialize()
+    await backend.close()
+    connection = sqlite3.connect(path)
+    connection.execute("DROP TABLE explicit_forget_receipts")
+    connection.execute(
+        "UPDATE schema_meta SET value = ? WHERE key = 'schema_checksum'",
+        ("59cb21710dcf4272231225fe93e9ab5015103aa810e842b356fc1b45faf7a8f6",),
+    )
+    connection.commit()
+    connection.close()
+
+    repaired = SQLiteMemoryBackend(str(path))
+    await repaired.initialize()
+    async with repaired._conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'explicit_forget_receipts'"
+    ) as cursor:
+        assert await cursor.fetchone() is not None
     await repaired.close()

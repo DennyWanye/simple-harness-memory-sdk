@@ -369,6 +369,63 @@ async def test_principal_explicit_fact_is_exact_idempotent_and_forgotten(tmp_pat
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("backend_kind", ["mock", "sqlite"])
+async def test_explicit_forget_action_is_durable_idempotent_and_owned(tmp_path, backend_kind):
+    path = tmp_path / "forget-action.db"
+    backend = MockMemoryBackend() if backend_kind == "mock" else SQLiteMemoryBackend(str(path))
+    manager = await MemoryManager.build(backend=backend)
+    principal = MemoryPrincipal("deployment-a", "house-a", "actor-a", "session-a")
+    other = MemoryPrincipal("deployment-a", "house-a", "actor-b", "session-b")
+    first_id = await manager.remember_fact(principal, "first", source_event_id="write-1")
+    second_id = await manager.remember_fact(principal, "second", source_event_id="write-2")
+    action = "explicit-memory-action/v1/root/call"
+
+    assert await manager.forget_fact(first_id, action, principal=principal) is True
+    assert await manager.forget_fact(first_id, action, principal=principal) is True
+    with pytest.raises(MemoryIdempotencyConflict):
+        await manager.forget_fact(second_id, action, principal=principal)
+    with pytest.raises(MemoryOwnershipConflict):
+        await manager.forget_fact(first_id, action, principal=other)
+
+    later = "explicit-memory-action/v1/root/later-call"
+    assert await manager.forget_fact(first_id, later, principal=principal) is False
+    assert await manager.forget_fact(first_id, later, principal=principal) is False
+    if isinstance(backend, SQLiteMemoryBackend):
+        async with backend._conn.execute(
+            "SELECT source_event_id, fact_id, result, length(payload_hash) "
+            "FROM explicit_forget_receipts ORDER BY source_event_id"
+        ) as cursor:
+            rows = [tuple(row) for row in await cursor.fetchall()]
+        assert rows == [(action, first_id, 1, 64), (later, first_id, 0, 64)]
+    else:
+        assert len(backend._explicit_forget_receipts) == 2
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_explicit_forget_action_replays_after_sqlite_restart(tmp_path):
+    path = tmp_path / "forget-restart.db"
+    principal = MemoryPrincipal("deployment-a", "house-a", "actor-a", "session-a")
+    first = await MemoryManager.build(db_path=str(path))
+    fact_id = await first.remember_fact(principal, "restart", source_event_id="write-restart")
+    action = "explicit-memory-action/v1/root/restart-call"
+    assert await first.forget_fact(fact_id, action, principal=principal) is True
+    await first.close()
+
+    reopened = await MemoryManager.build(db_path=str(path))
+    assert await reopened.forget_fact(fact_id, action, principal=principal) is True
+    assert (
+        await reopened.forget_fact(
+            fact_id,
+            principal=principal,
+            source_event_id="explicit-memory-action/v1/root/no-op",
+        )
+        is False
+    )
+    await reopened.close()
+
+
+@pytest.mark.asyncio
 async def test_erasure_fence_blocks_old_turn_and_allows_new_degraded_turn(tmp_path):
     manager = await MemoryManager.build(db_path=str(tmp_path / "memory.db"))
     old_started = time.time()

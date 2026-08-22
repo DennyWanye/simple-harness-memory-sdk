@@ -449,9 +449,19 @@ class MemoryManager:
         *,
         user_id=None,
         principal: MemoryPrincipal | None = None,
+        source_event_id: str | None = None,
+        payload_hash: str | None = None,
     ):
         if principal is not None:
-            return await getattr(self._backend, "agent_forget_fact")(principal, fact_id)
+            if source_event_id is not None and reason and source_event_id != reason:
+                raise MemoryIdempotencyConflict()
+            action_id = source_event_id or reason or f"forget-fact/v1/{fact_id}"
+            return await getattr(self._backend, "agent_forget_fact")(
+                principal,
+                fact_id,
+                source_event_id=action_id,
+                payload_hash=payload_hash,
+            )
         if user_id is None:
             raise TypeError("user_id or principal is required")
         return await self._backend.forget_fact(fact_id, reason, user_id=user_id)

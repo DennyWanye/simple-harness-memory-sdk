@@ -52,6 +52,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   source-event replay, persisted salience/pinned/tier metadata, ownership isolation, and no-resurrection forget.
 - Scoped recall snapshot identity by deployment, including checksum-gated transactional repair of the known
   early-v4 global-key schema, and added portable POSIX/Windows fail-fast writer leases.
+- Persisted principal explicit-forget action receipts keyed by deployment/source event, preserving first-result
+  replay semantics, ownership/payload conflicts, restart safety, and distinct no-op provenance without content.
 - Structured Agent Memory events emit opaque principal identifiers and counts/hashes only.
 - Added an explicit backup-first v3→v4 migrator and public manifest import API. The approved
   four-way taxonomy suppresses tentative, terminal and deferred legacy sources with hash-only

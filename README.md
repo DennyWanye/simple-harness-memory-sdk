@@ -129,6 +129,10 @@ fact = await memory.read_fact(principal, fact_id)
 `salience`、`pinned` 或 `tier` 变化均抛 `MemoryIdempotencyConflict`。`tier` 只接受
 `auto|working|long_term|identity`，分别稳定映射为 `explicit|event|learning|profile` category。
 跨 principal 读取返回 `None`；遗忘后 receipt 保留且重放不会复活 fact。
+principal 遗忘动作把现有 `reason` 正式解释为 action `source_event_id`，也可显式传
+`source_event_id=` 与可选 `payload_hash=`。首次成功返回 `True`，同 action 重放返回相同结果；新的
+action 遗忘已删除 fact 返回并持久化稳定 `False` no-op。同 action 换 fact/payload 会抛
+`MemoryIdempotencyConflict`，receipt 只保存 identity、fact ID、hash 与结果，不保存内容。
 
 ### 持久化边界
 

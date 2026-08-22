@@ -126,6 +126,22 @@ def canonical_explicit_fact_payload(
     )
 
 
+def canonical_explicit_forget_payload_hash(
+    *, principal: object, source_event_id: str, fact_id: int
+) -> str:
+    if isinstance(fact_id, bool) or not isinstance(fact_id, int) or fact_id < 1:
+        raise MemoryValidationError("fact_id must be a positive integer")
+    payload = {
+        "protocol": "simple-harness-memory/explicit-forget/v1",
+        "deployment_id": validate_identity(getattr(principal, "deployment_id"), "deployment_id"),
+        "household_id": validate_identity(getattr(principal, "household_id"), "household_id"),
+        "actor_id": validate_identity(getattr(principal, "actor_id"), "actor_id"),
+        "source_event_id": validate_identity(source_event_id, "source_event_id"),
+        "fact_id": fact_id,
+    }
+    return hashlib.sha256(canonical_json(payload).encode()).hexdigest()
+
+
 def canonical_recall_query_hash(
     *,
     user_id: str,

@@ -11,6 +11,7 @@ from simple_harness_memory.backends.base import BaseMemoryBackend
 from simple_harness_memory.config import MemoryResourceBounds
 from simple_harness_memory.core.conversation import (
     canonical_explicit_fact_payload,
+    canonical_explicit_forget_payload_hash,
     canonicalize_memory_text,
     validate_digest,
     validate_identity,
@@ -82,6 +83,7 @@ class MockMemoryBackend(BaseMemoryBackend):
         self._fact_tombstones: set[str] = set()
         self._agent_fact_meta: dict[int, tuple[str, str, str, str, str, str, str | None]] = {}
         self._explicit_fact_receipts: dict[tuple[str, str], tuple[str, str, str, int, str]] = {}
+        self._explicit_forget_receipts: dict[tuple[str, str], tuple[str, str, int, str, bool]] = {}
 
     @staticmethod
     def _agent_user(principal: MemoryPrincipal) -> str:
@@ -546,11 +548,7 @@ class MockMemoryBackend(BaseMemoryBackend):
             if fact_id is not None:
                 self._agent_fact_meta.pop(fact_id, None)
         snapshots = len(
-            [
-                key
-                for key, row in self._agent_recalls.items()
-                if self._recall_owned(row, principal)
-            ]
+            [key for key, row in self._agent_recalls.items() if self._recall_owned(row, principal)]
         )
         self._agent_recalls = {
             key: row
@@ -565,7 +563,32 @@ class MockMemoryBackend(BaseMemoryBackend):
             "receipt_id": uuid.uuid4().hex,
         }
 
-    async def agent_forget_fact(self, principal: MemoryPrincipal, fact_id: int) -> bool:
+    async def agent_forget_fact(
+        self,
+        principal: MemoryPrincipal,
+        fact_id: int,
+        *,
+        source_event_id: str,
+        payload_hash: str | None,
+    ) -> bool:
+        source_event_id = validate_identity(source_event_id, "source_event_id")
+        expected_hash = canonical_explicit_forget_payload_hash(
+            principal=principal, source_event_id=source_event_id, fact_id=fact_id
+        )
+        if (
+            payload_hash is not None
+            and validate_digest(payload_hash, "payload_hash") != expected_hash
+        ):
+            raise MemoryIdempotencyConflict()
+        self._bind_agent(principal)
+        receipt_key = (principal.deployment_id, source_event_id)
+        replay = self._explicit_forget_receipts.get(receipt_key)
+        if replay is not None:
+            if replay[:2] != (principal.household_id, principal.actor_id):
+                raise MemoryOwnershipConflict()
+            if replay[2] != fact_id or replay[3] != expected_hash:
+                raise MemoryIdempotencyConflict()
+            return replay[4]
         meta = self._agent_fact_meta.get(fact_id)
         if (
             meta is None
@@ -577,6 +600,38 @@ class MockMemoryBackend(BaseMemoryBackend):
             )
             or meta[3:5] != ("personal", principal.actor_id)
         ):
+            provenance = next(
+                (
+                    receipt[:2]
+                    for (deployment_id, _event_id), receipt in self._explicit_fact_receipts.items()
+                    if deployment_id == principal.deployment_id and receipt[3] == fact_id
+                ),
+                None,
+            )
+            if provenance is None:
+                provenance = next(
+                    (
+                        receipt[:2]
+                        for (
+                            deployment_id,
+                            _event_id,
+                        ), receipt in self._explicit_forget_receipts.items()
+                        if deployment_id == principal.deployment_id and receipt[2] == fact_id
+                    ),
+                    None,
+                )
+            if provenance is not None and provenance != (
+                principal.household_id,
+                principal.actor_id,
+            ):
+                raise MemoryOwnershipConflict()
+            self._explicit_forget_receipts[receipt_key] = (
+                principal.household_id,
+                principal.actor_id,
+                fact_id,
+                expected_hash,
+                False,
+            )
             return False
         deterministic = meta[5]
         self._fact_tombstones.add(deterministic)
@@ -591,6 +646,13 @@ class MockMemoryBackend(BaseMemoryBackend):
         self._facts = [fact for fact in self._facts if fact.id not in remove_ids]
         for stored_id in remove_ids:
             del self._agent_fact_meta[stored_id]
+        self._explicit_forget_receipts[receipt_key] = (
+            principal.household_id,
+            principal.actor_id,
+            fact_id,
+            expected_hash,
+            True,
+        )
         return True
 
     async def agent_remember_fact(

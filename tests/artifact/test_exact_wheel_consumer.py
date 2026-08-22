@@ -93,7 +93,18 @@ def test_exact_wheel_in_clean_consumer(tmp_path: Path, exact_wheel: Path) -> Non
                             "family",
                             "user-1",
                         )
-                    assert await self.manager.forget_fact(fact_id, principal=principal)
+                    forget_event = "explicit-memory-action/v1/root/call-forget"
+                    assert await self.manager.forget_fact(
+                        fact_id, forget_event, principal=principal
+                    )
+                    assert await self.manager.forget_fact(
+                        fact_id, forget_event, principal=principal
+                    )
+                    assert not await self.manager.forget_fact(
+                        fact_id,
+                        principal=principal,
+                        source_event_id="explicit-memory-action/v1/root/later-forget",
+                    )
                     with sqlite3.connect(self.path) as connection:
                         assert connection.execute(
                             "SELECT COUNT(*) FROM facts WHERE deterministic_id=? "
@@ -131,8 +142,25 @@ def test_exact_wheel_in_clean_consumer(tmp_path: Path, exact_wheel: Path) -> Non
                         pass
                     else:
                         raise AssertionError("changed explicit fact replay did not conflict")
-                    assert await self.manager.forget_fact(fact_id, principal=principal)
+                    explicit_forget = "explicit-memory-action/v1/root/explicit-forget"
+                    assert await self.manager.forget_fact(
+                        fact_id, explicit_forget, principal=principal
+                    )
+                    assert await self.manager.forget_fact(
+                        fact_id, explicit_forget, principal=principal
+                    )
+                    assert not await self.manager.forget_fact(
+                        fact_id,
+                        principal=principal,
+                        source_event_id="explicit-memory-action/v1/root/explicit-no-op",
+                    )
                     assert await self.manager.read_fact(principal, fact_id) is None
+                    with sqlite3.connect(self.path) as connection:
+                        assert connection.execute(
+                            "SELECT COUNT(*), SUM(result) FROM explicit_forget_receipts "
+                            "WHERE fact_id=?",
+                            (fact_id,),
+                        ).fetchone() == (2, 1)
                     assert await self.manager.remember_fact(
                         principal, "Prefer concise replies", source_event_id="write-call-1",
                         salience=0.75, pinned=True, tier="long_term",

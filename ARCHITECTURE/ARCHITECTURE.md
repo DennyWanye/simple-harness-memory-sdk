@@ -112,6 +112,8 @@ src/simple_harness_memory/
   保留来源。forget source级联删除projection并留source tombstone，applied/late job replay不会复活。
 - `remember_fact/read_fact` 是Harness-free principal显式写读能力，返回exact fact ID；完整identity、content、
   salience/pinned/tier进入canonical replay hash，forget保留receipt且不复活。
+- principal `forget_fact`将reason/source_event_id持久绑定到deployment/household/actor/fact/hash；同动作重放
+  返回原bool，不同动作对已遗忘fact记录false no-op，receipt不含content。
 - Agent Memory structured events只记录 opaque principal、ID/hash、count/bytes/stable code；不记录 content、
   token、embedding、数据库路径或 exception repr。legacy standalone日志中的 user/session/source id也已哈希。
 

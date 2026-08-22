@@ -5,7 +5,8 @@
 durable fact worker、privacy tombstone、有界 FTS5/vector recall、完整 embedding lineage、双 generation
 reindex、单写者、SQLite backup/restore、四类 taxonomy 驱动的显式 backup-first v3→v4 migrator、
 deployment-scoped recall snapshot、跨平台 writer lease、principal-scoped explicit fact write/read，以及
-0.4.0 exact-wheel candidate identity/provenance门禁。产品集成状态单独记录，不把接口就绪误报为已接入。
+durable explicit forget action receipt、0.4.0 exact-wheel candidate identity/provenance门禁。产品集成状态
+单独记录，不把接口就绪误报为已接入。
 
 | 文档 | 范围 |
 |---|---|

@@ -30,6 +30,7 @@ from simple_harness_memory.backends.storage import (
 from simple_harness_memory.config import MemoryResourceBounds
 from simple_harness_memory.core.conversation import (
     canonical_explicit_fact_payload,
+    canonical_explicit_forget_payload_hash,
     canonicalize_memory_text,
     validate_digest,
     validate_identity,
@@ -265,6 +266,17 @@ CREATE TABLE explicit_fact_receipts (
     PRIMARY KEY (deployment_id, source_event_id),
     UNIQUE (deployment_id, fact_id)
 );
+CREATE TABLE explicit_forget_receipts (
+    deployment_id TEXT NOT NULL,
+    household_id TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    source_event_id TEXT NOT NULL,
+    fact_id INTEGER NOT NULL,
+    payload_hash TEXT NOT NULL,
+    result INTEGER NOT NULL CHECK (result IN (0, 1)),
+    created_at REAL NOT NULL,
+    PRIMARY KEY (deployment_id, source_event_id)
+);
 CREATE INDEX idx_messages_user_created
     ON messages(user_id, created_at DESC, id DESC);
 CREATE INDEX idx_messages_user_session_created
@@ -378,7 +390,10 @@ CREATE TABLE schema_meta (
 SCHEMA_VERSION = 4
 SCHEMA_CHECKSUM = hashlib.sha256(_DDL.encode("utf-8")).hexdigest()
 _LEGACY_V4_CHECKSUMS = frozenset(
-    {"4e66bbfe712e479ef1e6ac5cbc0e720235b9ae6512a0668ddb18bb9cbf29e461"}
+    {
+        "4e66bbfe712e479ef1e6ac5cbc0e720235b9ae6512a0668ddb18bb9cbf29e461",
+        "59cb21710dcf4272231225fe93e9ab5015103aa810e842b356fc1b45faf7a8f6",
+    }
 )
 
 
@@ -558,7 +573,10 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         version = await self._read_meta("schema_version")
         checksum = await self._read_meta("schema_checksum")
         if version == str(SCHEMA_VERSION) and checksum in _LEGACY_V4_CHECKSUMS:
-            await self._upgrade_legacy_v4_snapshot_identity()
+            if checksum == "4e66bbfe712e479ef1e6ac5cbc0e720235b9ae6512a0668ddb18bb9cbf29e461":
+                await self._upgrade_legacy_v4_snapshot_identity()
+            else:
+                await self._upgrade_legacy_v4_forget_receipts()
             checksum = SCHEMA_CHECKSUM
             tables = await self._table_names()
         if version != str(SCHEMA_VERSION) or checksum != SCHEMA_CHECKSUM:
@@ -577,6 +595,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             "fact_tombstones",
             "suppression_receipts",
             "explicit_fact_receipts",
+            "explicit_forget_receipts",
             "messages_fts",
             "facts_fts",
             "embedding_lineages",
@@ -634,6 +653,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                 "created_at REAL NOT NULL, "
                 "PRIMARY KEY (deployment_id, source_event_id), UNIQUE (deployment_id, fact_id))"
             )
+            await self._create_explicit_forget_receipts()
             await self._conn.execute(
                 "UPDATE schema_meta SET value = ? WHERE key = 'schema_checksum'", (SCHEMA_CHECKSUM,)
             )
@@ -641,6 +661,27 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         except Exception:
             await self._conn.execute("ROLLBACK")
             raise
+
+    async def _upgrade_legacy_v4_forget_receipts(self) -> None:
+        await self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            await self._create_explicit_forget_receipts()
+            await self._conn.execute(
+                "UPDATE schema_meta SET value = ? WHERE key = 'schema_checksum'", (SCHEMA_CHECKSUM,)
+            )
+            await self._conn.execute("COMMIT")
+        except Exception:
+            await self._conn.execute("ROLLBACK")
+            raise
+
+    async def _create_explicit_forget_receipts(self) -> None:
+        await self._conn.execute(
+            "CREATE TABLE explicit_forget_receipts ("
+            "deployment_id TEXT NOT NULL, household_id TEXT NOT NULL, actor_id TEXT NOT NULL, "
+            "source_event_id TEXT NOT NULL, fact_id INTEGER NOT NULL, payload_hash TEXT NOT NULL, "
+            "result INTEGER NOT NULL CHECK (result IN (0, 1)), created_at REAL NOT NULL, "
+            "PRIMARY KEY (deployment_id, source_event_id))"
+        )
 
     async def _table_names(self) -> set[str]:
         async with self._conn.execute(
@@ -1444,11 +1485,43 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         ).hexdigest()
         return counts
 
-    async def agent_forget_fact(self, principal: MemoryPrincipal, fact_id: int) -> bool:
+    async def agent_forget_fact(
+        self,
+        principal: MemoryPrincipal,
+        fact_id: int,
+        *,
+        source_event_id: str,
+        payload_hash: str | None,
+    ) -> bool:
+        source_event_id = validate_identity(source_event_id, "source_event_id")
+        expected_hash = canonical_explicit_forget_payload_hash(
+            principal=principal, source_event_id=source_event_id, fact_id=fact_id
+        )
+        if (
+            payload_hash is not None
+            and validate_digest(payload_hash, "payload_hash") != expected_hash
+        ):
+            raise MemoryIdempotencyConflict()
         personal = MemoryScope.personal(principal.actor_id)
         predicate, params = scope_predicate(principal, (personal,))
         now = time.time()
         async with self._transaction():
+            await self._bind_agent_session(principal)
+            async with self._conn.execute(
+                "SELECT household_id, actor_id, fact_id, payload_hash, result "
+                "FROM explicit_forget_receipts WHERE deployment_id = ? AND source_event_id = ?",
+                (principal.deployment_id, source_event_id),
+            ) as cursor:
+                replay = await cursor.fetchone()
+            if replay is not None:
+                if (str(replay[0]), str(replay[1])) != (
+                    principal.household_id,
+                    principal.actor_id,
+                ):
+                    raise MemoryOwnershipConflict()
+                if int(replay[2]) != fact_id or str(replay[3]) != expected_hash:
+                    raise MemoryIdempotencyConflict()
+                return bool(replay[4])
             async with self._conn.execute(
                 "SELECT deterministic_id, payload_hash FROM ("
                 "SELECT deterministic_id, '' AS payload_hash, id, deployment_id, household_id, "
@@ -1458,36 +1531,67 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             ) as cursor:
                 row = await cursor.fetchone()
             if row is None:
-                return False
-            deterministic_id = str(row[0] or f"legacy-fact:{fact_id}")
+                async with self._conn.execute(
+                    "SELECT household_id, actor_id FROM explicit_fact_receipts "
+                    "WHERE deployment_id = ? AND fact_id = ? UNION ALL "
+                    "SELECT household_id, actor_id FROM explicit_forget_receipts "
+                    "WHERE deployment_id = ? AND fact_id = ? LIMIT 1",
+                    (principal.deployment_id, fact_id, principal.deployment_id, fact_id),
+                ) as cursor:
+                    provenance = await cursor.fetchone()
+                if provenance is not None and (str(provenance[0]), str(provenance[1])) != (
+                    principal.household_id,
+                    principal.actor_id,
+                ):
+                    raise MemoryOwnershipConflict()
+                result = False
+            else:
+                deterministic_id = str(row[0] or f"legacy-fact:{fact_id}")
+                await self._conn.execute(
+                    "INSERT OR IGNORE INTO fact_tombstones "
+                    "(deterministic_id, deployment_id, household_id, scope_kind, scope_owner, "
+                    "payload_hash, erased_at) VALUES (?, ?, ?, 'personal', ?, ?, ?)",
+                    (
+                        deterministic_id,
+                        principal.deployment_id,
+                        principal.household_id,
+                        principal.actor_id,
+                        hashlib.sha256(deterministic_id.encode()).hexdigest(),
+                        now,
+                    ),
+                )
+                await self._conn.execute(
+                    "UPDATE explicit_fact_receipts SET state = 'forgotten' "
+                    "WHERE deployment_id = ? AND household_id = ? AND actor_id = ? "
+                    "AND fact_id = ?",
+                    (
+                        principal.deployment_id,
+                        principal.household_id,
+                        principal.actor_id,
+                        fact_id,
+                    ),
+                )
+                await self._conn.execute(
+                    "DELETE FROM facts WHERE deterministic_id = ? OR projection_of = ?",
+                    (deterministic_id, deterministic_id),
+                )
+                result = True
             await self._conn.execute(
-                "INSERT OR IGNORE INTO fact_tombstones "
-                "(deterministic_id, deployment_id, household_id, scope_kind, scope_owner, "
-                "payload_hash, erased_at) VALUES (?, ?, ?, 'personal', ?, ?, ?)",
+                "INSERT INTO explicit_forget_receipts (deployment_id, household_id, actor_id, "
+                "source_event_id, fact_id, payload_hash, result, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    deterministic_id,
                     principal.deployment_id,
                     principal.household_id,
                     principal.actor_id,
-                    hashlib.sha256(deterministic_id.encode()).hexdigest(),
+                    source_event_id,
+                    fact_id,
+                    expected_hash,
+                    int(result),
                     now,
                 ),
             )
-            await self._conn.execute(
-                "UPDATE explicit_fact_receipts SET state = 'forgotten' "
-                "WHERE deployment_id = ? AND household_id = ? AND actor_id = ? AND fact_id = ?",
-                (
-                    principal.deployment_id,
-                    principal.household_id,
-                    principal.actor_id,
-                    fact_id,
-                ),
-            )
-            await self._conn.execute(
-                "DELETE FROM facts WHERE deterministic_id = ? OR projection_of = ?",
-                (deterministic_id, deterministic_id),
-            )
-            return True
+            return result
 
     async def agent_remember_fact(
         self,
