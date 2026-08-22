@@ -98,6 +98,7 @@ SQLite 事务创建；事实提取在事务外执行，结果与 job ack 再原�
 
 截至 2026-08-22，`simple_harness` 已完成 0.4.0 exact-wheel 产品接线、自动化和真实 macOS UI 验收；
 AIPhone、K6/AgentOS、NovelTagSystem 仍未修改或测试，仅保留 SDK 接口就绪状态。
+本地 tag `v0.4.0` 指向验证过的 `3d4247b` candidate，wheel SHA 为 `bfcd2506…`；未 push/upload。
 
 未来消费者可在不安装 Harness 的基础 wheel 中显式分享一条已授权的 personal fact：
 

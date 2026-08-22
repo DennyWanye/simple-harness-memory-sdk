@@ -2,6 +2,9 @@
 
 Status as of 2026-08-22 for `simple-harness-memory-sdk` 0.4.0:
 
+Local promotion is complete: tag `v0.4.0` points to source commit `3d4247b`, and
+`candidate-dist/BUILD_INFO.txt` plus `SHA256SUMS` identify wheel `bfcd2506…`. Nothing was pushed or uploaded.
+
 | Consumer | Interface status | Product integration / testing |
 |---|---|---|
 | `simple_harness` | Exact-wheel 0.4.0 integrated | Product cutover, automated regression, and real macOS UI testing passed on `4e797ccd` with Memory `3d4247b`; includes cold restart and recall/record fault recovery. |

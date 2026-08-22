@@ -130,7 +130,7 @@ src/simple_harness_memory/
   使用真实Harness 0.3 candidate，0.2.x和0.4.x均必须拒绝。
 - CI只build一次candidate wheel/sdist并记录source commit与SHA-256；Python 3.11/3.12/3.13及Windows x64、
   macOS ARM64、Linux ARM64 downstream只下载/验证同一artifact，不允许重建。release workflow仍只验证并
-  交接冻结bytes，不upload、不tag。
+  交接冻结bytes。Memory local tag `v0.4.0` 指向 `3d4247b` 的同一冻结 candidate；未 push/upload。
 
 ## 验证状态
 
