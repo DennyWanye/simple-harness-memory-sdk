@@ -110,11 +110,11 @@ SQLite 事务创建；事实提取在事务外执行，结果与 job ack 再原�
 [`docs/agent-memory-v1.md`](docs/agent-memory-v1.md)。当前消费者验证状态见
 [`docs/integration-status.md`](docs/integration-status.md)。
 
-截至 2026-08-22，`simple_harness` 已完成 0.4.0 exact-wheel 产品接线、自动化和真实 macOS UI 验收；
+截至 2026-08-23，`simple_harness` 已换入 Harness 0.4.0 / Memory 0.5.0 exact-wheel 版本对；
 AIPhone、K6/AgentOS、NovelTagSystem 仍未修改或测试，仅保留 SDK 接口就绪状态。
-tag `v0.4.0` 指向验证过的 `3d4247b` candidate，wheel SHA 为 `bfcd2506…`。截至 2026-08-23，
-source、`main` 与 tag 已推送；本地冻结 wheel/sdist 已正式发布到
-[`v0.4.0` GitHub Release](https://github.com/DennyWanye/simple-harness-memory-sdk/releases/tag/v0.4.0)，
+tag `v0.5.0` 指向验证过的 `9c92ede` candidate，wheel SHA 为 `c274fa6b…`；
+source、`main` 与 tag 已推送，冻结 wheel/sdist 已正式发布到
+[`v0.5.0` GitHub Release](https://github.com/DennyWanye/simple-harness-memory-sdk/releases/tag/v0.5.0)，
 并通过公开稳定 URL 下载回验。
 
 未来消费者可在不安装 Harness 的基础 wheel 中显式分享一条已授权的 personal fact：

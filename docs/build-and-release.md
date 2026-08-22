@@ -60,7 +60,7 @@ test "$(git -C "$MEMORY_REPO" rev-parse "$RELEASE_TAG^{}")" = "$CANDIDATE_COMMIT
 ## 2. Build once in a clean worktree
 
 ```bash
-RELEASE_DIR="$(mktemp -d /tmp/simple-harness-memory-release.XXXXXX)"
+RELEASE_DIR="$(mktemp -d /Users/denny/projects/simple-harness-memory-release.XXXXXX)"
 git -C "$MEMORY_REPO" worktree add --detach "$RELEASE_DIR" "$CANDIDATE_COMMIT"
 cd "$RELEASE_DIR"
 

@@ -1,4 +1,4 @@
-<!-- last-calibrated: pending-0.5.0-release-identity -->
+<!-- last-calibrated: 9c92edeaf028d332b59a1e096307032fa2a31e70 -->
 
 # ARCHITECTURE — simple-harness-memory-sdk（v0.5.0）
 
@@ -150,9 +150,9 @@ src/simple_harness_memory/
   macOS ARM64、Linux ARM64 downstream只下载/验证同一artifact，不允许重建。release workflow仍只验证并
   交接冻结bytes。Memory tag `v0.4.0` 指向 `3d4247b` 的同一冻结 candidate；2026-08-23 source、`main`
   与 tag 已推送；本地冻结 wheel/sdist 已正式发布到 GitHub Release，并通过公开稳定 URL 下载回验。
-- 0.5.0 release identity 已准备：candidate metadata/workflow/public API snapshot 均要求 0.5.0，base 与
-  `[harness]` metadata 均要求 `simple-harness-sdk>=0.4,<0.5`。当前尚未创建 tag、push 或 publication；
-  上一条 0.4.0 tag/commit/SHA 继续作为历史发布事实。
+- 0.5.0 已发布：tag 指向 `9c92ede`，wheel SHA-256 为
+  `c274fa6b2db538c29897f684b3f2f85775cb4b3a6870018e83792ff90b51ea46`；公开下载回验通过。
+  base 与 `[harness]` metadata 均要求 `simple-harness-sdk>=0.4,<0.5`。
 
 ## 验证状态
 
@@ -162,7 +162,7 @@ src/simple_harness_memory/
   metadata 确认 base/extra 均解析 `simple-harness-sdk>=0.4,<0.5`。
 - 0.5.0 release-identity gate：源码 full `213 passed, 7 skipped`，Ruff 全绿，mypy 对 src/tests
   `83 source files` 全绿；本地临时 0.5.0 wheel/sdist 通过 Twine，联合 Harness 0.4 exact-wheel
-  artifact suite `10 passed`。这些制品仅为 ignored 本地验证证据，尚未 tag/push/publish。
+  artifact suite `10 passed`；发布制品与下载回验字节一致。
 
 - S3 targeted：Agent direct port、Mock/SQLite、atomic fault、fact recovery、identity rebind、scope matrix、
   export/delete/forget、erasure replay、日志 canary均通过。
