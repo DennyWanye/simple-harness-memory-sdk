@@ -4,7 +4,7 @@ Status as of 2026-08-22 for `simple-harness-memory-sdk` 0.4.0:
 
 | Consumer | Interface status | Product integration / testing |
 |---|---|---|
-| `simple_harness` | Exact-wheel candidate interface ready | S6 product cutover and MCP-driven real UI testing are pending; this document does not claim completion early. |
+| `simple_harness` | Exact-wheel 0.4.0 integrated | Product cutover, automated regression, and real macOS UI testing passed on `4e797ccd` with Memory `3d4247b`; includes cold restart and recall/record fault recovery. |
 | AIPhone | Agent Memory v1 interface ready | Not integrated, modified or tested in this Program. |
 | K6/AgentOS | Agent Memory v1 interface ready | Not integrated, modified or tested in this Program. Existing product data is untouched. |
 | NovelTagSystem | Outside this integration | Not modified, migrated or tested. |
@@ -12,3 +12,6 @@ Status as of 2026-08-22 for `simple-harness-memory-sdk` 0.4.0:
 The SDK conformance boundary covers trusted deployment/household/actor/session identity, personal/family
 scope, automatic recall and committed-turn delivery. It does not claim product-specific authentication,
 deployment, database migration, UI behavior or cross-device synchronization for future consumers.
+
+The simple_harness result does not change the future-consumer boundary: AIPhone, K6/AgentOS, and
+NovelTagSystem received no code change and no product validation in this program.

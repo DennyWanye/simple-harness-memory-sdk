@@ -1,10 +1,10 @@
-<!-- last-calibrated: working-tree-after-87820fe2c4cdde21c3a9356ca461b93fe00aadcb -->
+<!-- last-calibrated: 3d4247b -->
 
 # ARCHITECTURE — simple-harness-memory-sdk（v0.4.0）
 
 > 最后更新：2026-08-22
-> 当前事实：S3 runtime、四类 taxonomy offline migration、S4 storage/embedding 与 S5 Memory
-> candidate packaging 已实现；simple_harness 产品接线和真人测试仍属于 S6。
+> 当前事实：S3 runtime、四类 taxonomy offline migration、S4 storage/embedding、S5 candidate packaging
+> 与 S6 simple_harness 产品接线/真人测试均已完成。
 
 ## 分层
 
@@ -119,7 +119,7 @@ src/simple_harness_memory/
 
 ## 当前明确限制 / 后续 Slice
 
-- simple_harness 的 exact-wheel 产品接线与 MCP 真人 UI 尚未执行，不能把 SDK conformance 写成产品实测。
+- simple_harness 已完成 exact-wheel 产品接线与真实 macOS UI；该结论不外推到其他消费者。
 - AIPhone、K6/AgentOS、NovelTagSystem 未修改、未集成、未测试；前两者仅为 Agent Memory v1 接口就绪。
 
 ## Release candidate identity
@@ -142,5 +142,7 @@ src/simple_harness_memory/
   identity/digest tamper、三阶段fault rollback及Harness公开manifest/runtime replay均通过。
 - S5 Memory candidate：0.4.0 public snapshot、base import blocker、真实`[harness]` resolver、错误版本拒绝、
   installed-wheel strict typing、candidate metadata/SHA与跨Python/平台消费门禁已定义。
-- 当前本仓 full 以最终 gate 重跑数字为准；Ruff 与 mypy全绿。
-- simple_harness 产品接线、真实UI与最终promotion仍属S6，不能由SDK自动化替代。
+- 最终本仓 full：`200 passed, 7 skipped`；Ruff 与 mypy 全绿。
+- Memory `3d4247b` / 0.4.0 wheel `bfcd2506…` 由 simple_harness `4e797ccd` exact installed-origin
+  消费；产品 Gate r4 的 21/21 required 场景达到 `READY_FOR_AUDIT`。SH-M5 跨进程新 Session 召回，
+  SH-M6 recall timeout 与 record transient/startup recovery 均由真实 UI + DeepSeek 验证。

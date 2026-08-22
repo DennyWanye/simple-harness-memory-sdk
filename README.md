@@ -96,6 +96,9 @@ SQLite 事务创建；事实提取在事务外执行，结果与 job ack 再原�
 [`docs/agent-memory-v1.md`](docs/agent-memory-v1.md)。当前消费者验证状态见
 [`docs/integration-status.md`](docs/integration-status.md)。
 
+截至 2026-08-22，`simple_harness` 已完成 0.4.0 exact-wheel 产品接线、自动化和真实 macOS UI 验收；
+AIPhone、K6/AgentOS、NovelTagSystem 仍未修改或测试，仅保留 SDK 接口就绪状态。
+
 未来消费者可在不安装 Harness 的基础 wheel 中显式分享一条已授权的 personal fact：
 
 ```python fragment
