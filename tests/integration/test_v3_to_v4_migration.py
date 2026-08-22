@@ -139,6 +139,7 @@ def _create_v3(path: Path) -> dict[str, str]:
             "('legacy-user', 'legacy-session', ?, ?, ?, ?, ?, ?, 'hash', 2, 1)",
             (role, content, now + index, b"[0.1,0.2]", source, payload_hash),
         )
+        assert cursor.lastrowid is not None
         fact_key = {
             "tentative-user": "name",
             "keep-user": "pet_name",
@@ -148,7 +149,7 @@ def _create_v3(path: Path) -> dict[str, str]:
             "INSERT INTO facts(user_id, subject, key, value, category, confidence, evidence, "
             "source_msg_id, created_at) VALUES "
             "('legacy-user', 'user', ?, ?, 'profile', 1, ?, ?, ?)",
-            (fact_key, content, content, int(cursor.lastrowid), now + index),
+            (fact_key, content, content, cursor.lastrowid, now + index),
         )
     connection.commit()
     connection.close()

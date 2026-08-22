@@ -12,6 +12,7 @@ from pathlib import Path
 
 PACKAGE = "simple-harness-memory-sdk"
 VERSION = "0.4.0"
+HARNESS_REQUIRES = "simple-harness-sdk<0.4,>=0.3"
 
 
 class CandidateMetadataError(RuntimeError):
@@ -26,7 +27,7 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _wheel_identity(path: Path) -> tuple[str, str, str]:
+def _wheel_identity(path: Path) -> tuple[str, str, str, tuple[str, ...]]:
     try:
         with zipfile.ZipFile(path) as archive:
             names = [name for name in archive.namelist() if name.endswith(".dist-info/METADATA")]
@@ -39,6 +40,7 @@ def _wheel_identity(path: Path) -> tuple[str, str, str]:
         str(metadata.get("Name", "")),
         str(metadata.get("Version", "")),
         str(metadata.get("Requires-Python", "")),
+        tuple(str(value) for value in metadata.get_all("Requires-Dist", [])),
     )
 
 
@@ -56,9 +58,19 @@ def write_metadata(dist: Path, source_commit: str, build_utc: str) -> None:
     if any(path.is_symlink() or not path.is_file() for path in (*wheel_files, *sdist_files)):
         raise CandidateMetadataError("candidate-artifact-invalid")
     wheel = wheel_files[0]
-    name, version, requires_python = _wheel_identity(wheel)
+    name, version, requires_python, requirements = _wheel_identity(wheel)
     if (name, version) != (PACKAGE, VERSION) or requires_python != "<3.14,>=3.11":
         raise CandidateMetadataError("candidate-wheel-identity-invalid")
+    if not any(
+        value.startswith(HARNESS_REQUIRES) and "extra == 'harness'" in value
+        for value in requirements
+    ):
+        raise CandidateMetadataError("candidate-harness-extra-invalid")
+    if any(
+        value.startswith("simple-harness-sdk") and "extra ==" not in value
+        for value in requirements
+    ):
+        raise CandidateMetadataError("candidate-harness-base-dependency-invalid")
     outputs = (dist / "SHA256SUMS", dist / "BUILD_INFO.txt")
     if any(path.exists() for path in outputs):
         raise CandidateMetadataError("candidate-metadata-already-exists")
@@ -75,6 +87,7 @@ def write_metadata(dist: Path, source_commit: str, build_utc: str) -> None:
                 f"version={VERSION}",
                 f"source_commit={source_commit}",
                 f"requires_python={requires_python}",
+                f"harness_requires={HARNESS_REQUIRES}",
                 f"build_utc={build_utc}",
                 f"wheel_sha256={digests[wheel.name]}",
                 f"sdist_sha256={digests[sdist_files[0].name]}",

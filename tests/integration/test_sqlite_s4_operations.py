@@ -100,7 +100,9 @@ async def test_fts_query_plan_and_recall_remain_bounded(tmp_path, row_count):
         max_items=20,
         max_bytes=16_384,
     )
-    assert len(payload["items"]) <= 20
+    items = payload["items"]
+    assert isinstance(items, list)
+    assert len(items) <= 20
     await backend.close()
 
 
@@ -184,14 +186,18 @@ async def test_two_generation_reindex_switch_and_failure_preserve_active(tmp_pat
     async with backend._conn.execute(
         "SELECT generation_id FROM embedding_generations WHERE state = 'active'"
     ) as cursor:
-        before = str((await cursor.fetchone())[0])
+        before_row = await cursor.fetchone()
+        assert before_row is not None
+        before = str(before_row[0])
 
     with pytest.raises(RuntimeError, match="deterministic reindex fault"):
         await manager.reindex_generation(_FailingEmbedder(dim=64), page_size=1)
     async with backend._conn.execute(
         "SELECT generation_id FROM embedding_generations WHERE state = 'active'"
     ) as cursor:
-        after = str((await cursor.fetchone())[0])
+        after_row = await cursor.fetchone()
+        assert after_row is not None
+        after = str(after_row[0])
     assert after == before
     await manager.close()
 

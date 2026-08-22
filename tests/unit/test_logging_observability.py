@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 """Observability regression for memory-sdk (L-AC-5 / L-AC-6).
 

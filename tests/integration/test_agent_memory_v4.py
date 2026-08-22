@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Mapping
 
 import pytest
 from simple_harness import (
@@ -87,7 +88,13 @@ async def test_direct_port_committed_pair_recall_release_and_conflict(tmp_path, 
 
     recalled = await typed.recall_for_turn(recall_request(query_id="query-2"))
     assert recalled.item_count == 2
-    assert all(item["scope"]["owner_id"] == "actor-a" for item in recalled.payload["items"])
+    items = recalled.payload["items"]
+    assert isinstance(items, (list, tuple))
+    for item in items:
+        assert isinstance(item, Mapping)
+        scope = item["scope"]
+        assert isinstance(scope, Mapping)
+        assert scope["owner_id"] == "actor-a"
     await typed.release_recall(
         MemoryReleaseRequest(
             recalled.query_id,

@@ -54,6 +54,7 @@ jobs:
           grep -Fx "version=0.4.0" BUILD_INFO.txt
           grep -Fx "source_commit=$EXPECTED_COMMIT" BUILD_INFO.txt
           grep -Fx "requires_python=<3.14,>=3.11" BUILD_INFO.txt
+          grep -Fx "harness_requires=simple-harness-sdk<0.4,>=0.3" BUILD_INFO.txt
           grep -Ex 'build_utc=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z' BUILD_INFO.txt
           grep -Fx "wheel_sha256=$EXPECTED_SHA256" BUILD_INFO.txt
       - name: Upload verified bytes for the Task 10 single publisher

@@ -1,0 +1,52 @@
+# Agent Memory v1 API and ownership
+
+`MemoryManager` is the production `AgentMemoryPort`. A consumer supplies one borrowed manager through
+`ConsumerRuntimePorts(memory=memory)`; Harness owns automatic recall, frozen context, committed-turn
+delivery and retry. Consumers do not create an adapter or manually call `recall()`/`append_message()` for
+the automatic conversation lifecycle.
+
+## Trusted identity and scope
+
+Each production operation is bound to an `AgentIdentity` containing deployment, household, actor and
+session. The consumer authentication boundary supplies that identity; model text, ordinary request data,
+Memory content and tool output cannot replace it. A session is immutable after its first identity binding.
+
+- Personal scope owner is the authenticated actor. Only that actor can read, export, forget or delete it.
+- Family scope owner is the authenticated household. Actors in the same household may recall authorized
+  family projections; another household cannot.
+- `MemoryManager` is borrowed by default. Only a runtime explicitly configured as owner may close it.
+
+## Stable lifecycle and failures
+
+`recall_for_turn()` creates one bounded, hash-addressed recall snapshot. `release_recall()` releases that
+same snapshot. `record_committed_turn()` atomically writes one receipt, the committed user/assistant pair
+and an optional durable fact job. Replaying the same canonical turn returns `already_applied`; reusing an
+identifier with a different canonical payload raises `memory_idempotency_conflict`.
+
+Recall failure may degrade a turn to empty Memory context. A committed response is not rolled back when
+Memory delivery fails: Harness retries its durable outbox and Memory deduplicates by turn receipt. Erasure
+epochs and write fences reject late recall, outbox and fact-worker replay with `rejected_erased` rather than
+resurrecting deleted content.
+
+Important stable configuration failures include:
+
+| Code | Meaning |
+|---|---|
+| `harness_integration_extra_required` | The optional `[harness]` dependency is absent. |
+| `memory_schema_incompatible` | Runtime storage is not an exact fresh-v4 database. |
+| `memory_ownership_conflict` | A session or durable record is bound to another identity. |
+| `memory_second_writer_rejected` | Another live manager owns the SQLite writer lease. |
+| `memory_production_embedder_required` | Production mode lacks pinned local/remote embedding resources. |
+
+The explicit offline migration and runtime manifest-import APIs remain in
+`simple_harness_memory.migrations`; they are deliberately not members of `AgentMemoryPort`.
+
+## Consumer migration map
+
+| Previous consumer responsibility | Official path |
+|---|---|
+| `MemoryQueryPort` / manual prepare | Harness calls `MemoryManager.recall_for_turn()` and freezes the result. |
+| `MemoryWritePort` / manual append | Harness terminal commit creates a durable outbox intent; Memory records the pair. |
+| Public conversation Adapter | Pass `MemoryManager` directly as `ConsumerRuntimePorts.memory`. |
+| Product-owned retry/idempotency | Harness outbox retries; Memory turn receipts deduplicate and detect conflicts. |
+| Runtime opening an old database | Stop runtimes and invoke the explicit backup-first migration coordinator. |

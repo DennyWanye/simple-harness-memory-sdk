@@ -1,0 +1,10 @@
+version = 1
+SPDX-PackageName = "simple-harness-memory-sdk"
+SPDX-PackageSupplier = "DennyWanye"
+SPDX-PackageDownloadLocation = "NOASSERTION"
+
+[[annotations]]
+path = ["**"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 DennyWanye"
+SPDX-License-Identifier = "BUSL-1.1"

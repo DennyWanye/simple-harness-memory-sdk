@@ -16,13 +16,12 @@
 ## 安装
 
 ```bash
-pip install -e .                 # 基础（仅核心）
-pip install -e ".[embeddings]"   # BGE-M3 语义嵌入 + CrossEncoder 重排
-pip install -e ".[world]"        # 联网新闻/天气 provider
-pip install -e ".[openai]"       # LLM 事实提取
-pip install -e ".[harness]"      # Simple Harness Agent Memory v1 一等集成
-pip install -e ".[dev]"          # 开发依赖
-pip install -e ".[all]"          # 以上全部
+pip install simple-harness-memory-sdk                 # 基础（仅核心）
+pip install "simple-harness-memory-sdk[embeddings]"   # BGE-M3 语义嵌入 + CrossEncoder 重排
+pip install "simple-harness-memory-sdk[world]"        # 联网新闻/天气 provider
+pip install "simple-harness-memory-sdk[openai]"       # LLM 事实提取
+pip install "simple-harness-memory-sdk[harness]"      # Simple Harness Agent Memory v1 一等集成
+pip install "simple-harness-memory-sdk[all]"          # 以上全部
 ```
 
 extras 与功能的对应关系（与 `pyproject.toml` 的 `[project.optional-dependencies]`
@@ -35,11 +34,11 @@ extras 与功能的对应关系（与 `pyproject.toml` 的 `[project.optional-de
 | `openai`     | `openai`                        | LLM 事实提取（需自备 OpenAI 客户端，见 `features/facts.py` 的 `LLMFactExtractor`） |
 | `harness`    | `simple-harness-sdk>=0.3,<0.4` | `MemoryManager` 直接实现 Harness `AgentMemoryPort` |
 | `dev`        | `pytest` 等                     | 开发 / 测试 |
-| `all`        | 上述三者之和                    | 完整功能 |
+| `all`        | 上述四个运行时 extra            | 完整功能 |
 
 ## 快速上手
 
-以下示例仅依赖**基础安装**（`pip install -e .`），逐字运行即可：
+以下示例仅依赖**基础安装**（`pip install simple-harness-memory-sdk`），逐字运行即可：
 
 ```python
 import asyncio
@@ -91,6 +90,10 @@ ports = ConsumerRuntimePorts(memory=memory)  # direct AgentMemoryPort
 
 官方路径以 committed user→assistant Turn 为写入单位：receipt、两条消息和 durable fact job 在同一
 SQLite 事务创建；事实提取在事务外执行，结果与 job ack 再原子提交。
+
+完整的 identity/scope ownership、稳定失败码和生命周期边界见
+[`docs/agent-memory-v1.md`](docs/agent-memory-v1.md)。当前消费者验证状态见
+[`docs/integration-status.md`](docs/integration-status.md)。
 
 ### 持久化边界
 

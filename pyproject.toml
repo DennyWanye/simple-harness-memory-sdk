@@ -8,7 +8,8 @@ dynamic = ["version"]
 description = "Cognitive memory SDK for Simple Harness — three-tier model, Digital Twin, World Model, RRF recall"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
-license = { text = "BUSL-1.1" }
+license = "BUSL-1.1"
+license-files = ["LICENSES/BUSL-1.1.txt"]
 authors = [{ name = "Denny" }]
 
 dependencies = [
@@ -60,6 +61,10 @@ simple-harness-sdk = { path = "../simple-harness-sdk" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/simple_harness_memory"]
+core-metadata-version = "2.4"
+
+[tool.hatch.build.targets.sdist]
+core-metadata-version = "2.4"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

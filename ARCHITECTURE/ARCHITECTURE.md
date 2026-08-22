@@ -3,7 +3,8 @@
 # ARCHITECTURE — simple-harness-memory-sdk（v0.4.0）
 
 > 最后更新：2026-08-22
-> 当前事实：S3 runtime、四类 taxonomy offline migration 与 S4 storage/embedding 已实现。
+> 当前事实：S3 runtime、四类 taxonomy offline migration、S4 storage/embedding 与 S5 Memory
+> candidate packaging 已实现；simple_harness 产品接线和真人测试仍属于 S6。
 
 ## 分层
 
@@ -107,7 +108,18 @@ src/simple_harness_memory/
 
 ## 当前明确限制 / 后续 Slice
 
-- AIPhone、K6/AgentOS、NovelTagSystem 未修改；它们只通过后续 joint wheel fixture验证未来接口。
+- simple_harness 的 exact-wheel 产品接线与 MCP 真人 UI 尚未执行，不能把 SDK conformance 写成产品实测。
+- AIPhone、K6/AgentOS、NovelTagSystem 未修改、未集成、未测试；前两者仅为 Agent Memory v1 接口就绪。
+
+## Release candidate identity
+
+- 唯一版本事实源为`src/simple_harness_memory/__init__.py`，当前为0.4.0；wheel metadata、README、公开API
+  snapshot、changelog与candidate `BUILD_INFO.txt`必须一致。
+- base wheel metadata不必选Harness；`[harness]`严格要求`simple-harness-sdk>=0.3,<0.4`。clean resolver gate
+  使用真实Harness 0.3 candidate，0.2.x和0.4.x均必须拒绝。
+- CI只build一次candidate wheel/sdist并记录source commit与SHA-256；Python 3.11/3.12/3.13及Windows x64、
+  macOS ARM64、Linux ARM64 downstream只下载/验证同一artifact，不允许重建。release workflow仍只验证并
+  交接冻结bytes，不upload、不tag。
 
 ## 验证状态
 
@@ -117,6 +129,7 @@ src/simple_harness_memory/
   second-writer reject、checkpoint、backup/restore/corruption preserve均通过。
 - S3 migration targeted：四类完整覆盖、canonical pair补齐、derived cascade、non-Harness provenance、
   identity/digest tamper、三阶段fault rollback及Harness公开manifest/runtime replay均通过。
+- S5 Memory candidate：0.4.0 public snapshot、base import blocker、真实`[harness]` resolver、错误版本拒绝、
+  installed-wheel strict typing、candidate metadata/SHA与跨Python/平台消费门禁已定义。
 - 当前本仓 full 以最终 gate 重跑数字为准；Ruff 与 mypy全绿。
-- exact wheel、Python 3.11/3.12/3.13联合 Harness candidate 与 release metadata 属 S5 gate，不能由 editable
-  开发安装替代。
+- simple_harness 产品接线、真实UI与最终promotion仍属S6，不能由SDK自动化替代。

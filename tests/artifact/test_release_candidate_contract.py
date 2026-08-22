@@ -15,6 +15,7 @@ BUILD_INFO_KEYS = (
     "version",
     "source_commit",
     "requires_python",
+    "harness_requires",
     "build_utc",
     "wheel_sha256",
     "sdist_sha256",
@@ -47,6 +48,7 @@ def _assert_ci_metadata(dist: Path) -> None:
     assert info["version"] == "0.4.0"
     assert re.fullmatch(r"[0-9a-f]{40}", info["source_commit"])
     assert info["requires_python"] == "<3.14,>=3.11"
+    assert info["harness_requires"] == "simple-harness-sdk<0.4,>=0.3"
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", info["build_utc"])
     wheels = sorted(dist.glob("*.whl"))
     sdists = sorted((*dist.glob("*.tar.gz"), *dist.glob("*.zip")))
@@ -91,15 +93,22 @@ def test_ci_covers_full_matrix_clean_wheel_and_arm64() -> None:
         assert version in workflow
     assert "uv run --frozen --group dev pytest -q" in workflow
     assert "uv run --frozen --group dev ruff check src tests" in workflow
-    assert "uv run --frozen --group dev mypy src/simple_harness_memory" in workflow
+    assert "uv run --frozen --group dev mypy src tests" in workflow
     assert "Build candidate bytes once" in workflow
+    assert "twine check candidate-dist/*" in workflow
     assert "SOURCE_DATE_EPOCH" not in workflow
     assert "scripts/write_candidate_metadata.py" in workflow
     assert "MEMORY_SDK_ARTIFACT_DIST: candidate-dist" in workflow
     assert 'MEMORY_SDK_CI_CANDIDATE: "1"' in workflow
     assert "retention-days: 30" in workflow
     assert "ubuntu-24.04-arm" in workflow
+    assert "windows-latest" in workflow
+    assert "macos-14" in workflow
+    assert "exact-wheel-platform-matrix" in workflow
+    assert "uv pip install --system" in workflow
     assert 'test "$(uname -m)" = "aarch64"' in workflow
+    assert "agent_record_turn" in workflow
+    assert "FROM turn_receipts WHERE turn_id='turn-a'" in workflow
     assert "PRAGMA journal_mode" in workflow
     assert "PRAGMA foreign_key_check" in workflow
 
@@ -116,6 +125,7 @@ def test_release_only_verifies_for_the_task_10_single_publisher() -> None:
     assert "sha256sum --check SHA256SUMS" in workflow
     assert "source_commit=$EXPECTED_COMMIT" in workflow
     assert "requires_python=<3.14,>=3.11" in workflow
+    assert "harness_requires=simple-harness-sdk<0.4,>=0.3" in workflow
     assert "contents: read" in workflow
     assert "contents: write" not in workflow
     assert "actions/upload-artifact@v4" in workflow

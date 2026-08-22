@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-22
+
+### Breaking changes
+
+- Fresh schema v4 replaces the earlier runtime schemas. Normal runtime startup never upgrades an old
+  database; operators must use the explicit backup-first v3→v4 migration API.
+- The public conversation adapter and duplicate Harness DTOs are retired. Consumers pass
+  `MemoryManager` directly as the Harness `AgentMemoryPort`.
+- Global `delete_all()` mutation is disabled; privacy operations require an explicit trusted principal
+  and scope.
+
 ### Bounded retrieval and SQLite operations
 
 - Added identity/scope-filtered external-content FTS5 indexes and bounded lexical/recent vector
@@ -47,19 +58,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returning an empty DigitalTwin.
 
 ### Persistence
-- Added a schema version + migration mechanism (`schema_meta` table with `schema_version`
-  and `schema_checksum`). A fresh database is stamped version 1; a legacy 0.1.0 database
-  is migrated in place (adding `source_event_id`); a newer or checksum-mismatched schema
-  fails closed with `MemoryCorruptionError`.
+- Fresh databases are stamped with the exact v4 schema descriptor and checksum; missing, older, newer,
+  or checksum-mismatched runtime databases fail closed.
 - `append_message` (including fact extraction/insert/supersede) is now atomic — a single
   transaction rolls back the message and any partially-written facts on failure.
 - Added an optional `source_event_id` idempotency key on messages (partial unique index);
   re-appending the same event returns the existing message id without a duplicate row.
 
 ### Deletion & Limits
-- Added `delete_session` / `delete_all` / `delete_old_sessions` (cascade delete of
-  messages + source facts + workspace actions, with transitive dangling-supersede
-  re-pointing and a digital-twin rebuild).
+- Principal/scope privacy deletion cascades messages, source facts, vectors and pending jobs, repairs
+  supersession lineage, and rebuilds the digital twin from retained facts.
 - Added embedding lineage columns (`embedder_kind` / `embedding_dim` /
   `embedding_format_version`) plus a `reindex(embedder)` method that re-embeds every
   message and swaps the active embedder/retriever.
