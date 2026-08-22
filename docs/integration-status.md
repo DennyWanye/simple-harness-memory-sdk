@@ -1,9 +1,11 @@
 # Integration status
 
-Status as of 2026-08-22 for `simple-harness-memory-sdk` 0.4.0:
+Status as of 2026-08-23 for `simple-harness-memory-sdk` 0.4.0:
 
 Local promotion is complete: tag `v0.4.0` points to source commit `3d4247b`, and
-`candidate-dist/BUILD_INFO.txt` plus `SHA256SUMS` identify wheel `bfcd2506…`. Nothing was pushed or uploaded.
+`candidate-dist/BUILD_INFO.txt` plus `SHA256SUMS` identify wheel `bfcd2506…`. The source branch,
+`main`, and tag have been pushed; the frozen wheel/sdist remain under the local publication flow,
+with no GitHub Release created or artifact uploaded.
 
 | Consumer | Interface status | Product integration / testing |
 |---|---|---|

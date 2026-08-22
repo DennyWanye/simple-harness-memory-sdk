@@ -2,7 +2,7 @@
 
 # ARCHITECTURE — simple-harness-memory-sdk（v0.4.0）
 
-> 最后更新：2026-08-22
+> 最后更新：2026-08-23
 > 当前事实：S3 runtime、四类 taxonomy offline migration、S4 storage/embedding、S5 candidate packaging
 > 与 S6 simple_harness 产品接线/真人测试均已完成。
 
@@ -130,7 +130,8 @@ src/simple_harness_memory/
   使用真实Harness 0.3 candidate，0.2.x和0.4.x均必须拒绝。
 - CI只build一次candidate wheel/sdist并记录source commit与SHA-256；Python 3.11/3.12/3.13及Windows x64、
   macOS ARM64、Linux ARM64 downstream只下载/验证同一artifact，不允许重建。release workflow仍只验证并
-  交接冻结bytes。Memory local tag `v0.4.0` 指向 `3d4247b` 的同一冻结 candidate；未 push/upload。
+  交接冻结bytes。Memory tag `v0.4.0` 指向 `3d4247b` 的同一冻结 candidate；2026-08-23 source、`main`
+  与 tag 已推送，冻结 wheel/sdist 继续由本地发布流程保管，未创建或上传 GitHub Release。
 
 ## 验证状态
 
