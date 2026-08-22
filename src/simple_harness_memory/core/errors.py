@@ -38,7 +38,7 @@ class MemorySchemaIncompatible(MemoryCorruptionError):
 
 
 class MemoryOwnershipConflict(MemoryErrorBase):
-    """A session or record is already owned by another user."""
+    """A session or record is not owned by the supplied trusted principal."""
 
     code = "memory_ownership_conflict"
 

@@ -43,24 +43,81 @@ def test_exact_wheel_in_clean_consumer(tmp_path: Path, exact_wheel: Path) -> Non
             from pathlib import Path
 
             import simple_harness_memory
-            from simple_harness_memory import MemoryManager, __version__
+            from simple_harness_memory import (
+                MemoryManager,
+                MemoryOwnershipConflict,
+                MemoryPrincipal,
+                __version__,
+            )
             from simple_harness_memory.core.errors import HarnessIntegrationExtraRequired
+
+            class HarnessFreeFutureConsumerFixture:
+                def __init__(self, manager, path):
+                    self.manager = manager
+                    self.path = path
+
+                async def verify_authorized_share(self):
+                    facts = await self.manager.get_facts(user_id="user-1")
+                    assert facts and facts[0].id is not None
+                    fact_id = facts[0].id
+                    with sqlite3.connect(self.path) as connection:
+                        stored_origin = connection.execute(
+                            "SELECT deterministic_id FROM facts WHERE id=?", (fact_id,)
+                        ).fetchone()[0]
+                    origin = stored_origin or f"legacy-fact:{fact_id}"
+                    principal = MemoryPrincipal("user-1", "user-1", "user-1", "session-1")
+                    projection = await self.manager.share_fact(principal, fact_id)
+                    assert await self.manager.share_fact(principal, fact_id) == projection
+                    for unauthorized in (
+                        MemoryPrincipal("user-1", "user-1", "actor-b", "session-b"),
+                        MemoryPrincipal("user-1", "house-b", "user-1", "session-b"),
+                    ):
+                        try:
+                            await self.manager.share_fact(unauthorized, fact_id)
+                        except MemoryOwnershipConflict as error:
+                            assert error.code == "memory_ownership_conflict"
+                        else:
+                            raise AssertionError("unauthorized share unexpectedly succeeded")
+                    with sqlite3.connect(self.path) as connection:
+                        rows = connection.execute(
+                            "SELECT deterministic_id, projection_of, scope_kind, scope_owner "
+                            "FROM facts WHERE deterministic_id=?",
+                            (projection,),
+                        ).fetchall()
+                        assert len(rows) == 1
+                        assert rows[0][1:] == (
+                            origin,
+                            "family",
+                            "user-1",
+                        )
+                    assert await self.manager.forget_fact(fact_id, principal=principal)
+                    with sqlite3.connect(self.path) as connection:
+                        assert connection.execute(
+                            "SELECT COUNT(*) FROM facts WHERE deterministic_id=? "
+                            "OR projection_of=?",
+                            (origin, origin),
+                        ).fetchone()[0] == 0
+                        assert connection.execute(
+                            "SELECT COUNT(*) FROM fact_tombstones WHERE deterministic_id=?",
+                            (origin,),
+                        ).fetchone()[0] == 1
 
             async def main():
                 assert __version__ == "0.4.0"
                 assert not hasattr(simple_harness_memory, "ConversationMemoryAdapter")
                 path = Path("memory.db").resolve()
-                manager = await MemoryManager.build(str(path))
+                manager = await MemoryManager.build(str(path), enable_facts=True)
                 first = await manager.append_message(
-                    "session-1", "user", "line1\\r\\nline2",
+                    "session-1", "user", "line1\\r\\n我叫Max",
                     user_id="user-1", source_event_id="event-1",
                 )
                 replay = await manager.append_message(
-                    "session-1", "user", "line1\\r\\nline2",
+                    "session-1", "user", "line1\\r\\n我叫Max",
                     user_id="user-1", source_event_id="event-1",
                 )
                 assert replay.message_id == first.message_id
                 assert await manager.recall("line1", user_id="user-1")
+                await HarnessFreeFutureConsumerFixture(manager, path).verify_authorized_share()
                 try:
                     await manager.recall_for_turn(object())
                 except HarnessIntegrationExtraRequired as error:

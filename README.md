@@ -96,6 +96,21 @@ SQLite 事务创建；事实提取在事务外执行，结果与 job ack 再原�
 [`docs/agent-memory-v1.md`](docs/agent-memory-v1.md)。当前消费者验证状态见
 [`docs/integration-status.md`](docs/integration-status.md)。
 
+未来消费者可在不安装 Harness 的基础 wheel 中显式分享一条已授权的 personal fact：
+
+```python fragment
+from simple_harness_memory import MemoryOwnershipConflict, MemoryPrincipal
+
+principal = MemoryPrincipal(deployment_id, household_id, actor_id, session_id)
+projection_id = await memory.share_fact(principal, fact_id)
+```
+
+`share_fact()` 只接受属于该 trusted principal 的 personal source fact；跨 actor/household 稳定抛
+`MemoryOwnershipConflict`。同一 source/household 重放返回相同 projection ID 且只保留一行，family row
+通过 `projection_of` 保留来源；`forget_fact(..., principal=principal)` 会级联删除 source 与 projection，
+并留下 tombstone 阻止 late fact job 重建。该 SDK-only API 不属于 Harness `AgentMemoryPort`，也不接受模型
+选择 scope。
+
 ### 持久化边界
 
 - SQLite 只接受 fresh schema v4；旧 schema/version/checksum 一律 fail-fast，不做隐式迁移。

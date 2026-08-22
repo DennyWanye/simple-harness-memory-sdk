@@ -1964,7 +1964,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 user_id,
-                "standalone",
+                user_id,
                 user_id,
                 user_id,
                 "personal",
@@ -2182,9 +2182,10 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                 "(context_query_id, user_id, deployment_id, household_id, actor_id, "
                 "scope_set_hash, write_fence, session_id, query_hash, result_payload, "
                 "result_hash, state, created_at) "
-                "VALUES (?, ?, 'standalone', ?, ?, ?, ?, ?, ?, ?, ?, 'retained', ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'retained', ?)",
                 (
                     context_query_id,
+                    user_id,
                     user_id,
                     user_id,
                     user_id,

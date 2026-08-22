@@ -105,7 +105,9 @@ src/simple_harness_memory/
 - `delete_scope/delete_principal` 先推进 erasure epoch，再级联 messages/facts/recall stages/job payload；
   turn receipt 与 hash-only tombstone保留以拦截旧 outbox/job。
 - `forget_fact` 保存 deterministic provenance tombstone，并删除该 personal fact 及 family projections；
-  `share_fact` 以 deterministic projection id投影到 household family scope，重复调用幂等。
+  `share_fact` 是Harness-free顶层公共能力，以source provenance+household生成deterministic projection id，
+  重复调用幂等且只保留一行；跨actor/household抛`MemoryOwnershipConflict`，family row以`projection_of`
+  保留来源。forget source级联删除projection并留source tombstone，applied/late job replay不会复活。
 - Agent Memory structured events只记录 opaque principal、ID/hash、count/bytes/stable code；不记录 content、
   token、embedding、数据库路径或 exception repr。legacy standalone日志中的 user/session/source id也已哈希。
 

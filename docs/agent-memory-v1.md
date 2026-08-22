@@ -48,6 +48,20 @@ Important stable configuration failures include:
 The explicit offline migration and runtime manifest-import APIs remain in
 `simple_harness_memory.migrations`; they are deliberately not members of `AgentMemoryPort`.
 
+## SDK-only authorized family sharing
+
+`await MemoryManager.share_fact(principal: MemoryPrincipal, fact_id: int) -> str` is a standalone
+public API and does not require Harness. `MemoryPrincipal` must come from the consumer's trusted identity
+boundary. The source must be that actor's personal fact in the same deployment and household; otherwise
+the method raises the top-level public `MemoryOwnershipConflict` with code
+`memory_ownership_conflict`.
+
+The returned family projection ID is deterministic from source provenance and household. Replaying the
+same call returns the same ID without another row, and the family row records `projection_of`. Forgetting
+the personal source cascades to its projections and keeps the source tombstone, so a late fact-job replay
+cannot recreate either record. Sharing is intentionally outside `AgentMemoryPort`; model content cannot
+select or authorize a family scope.
+
 ## Consumer migration map
 
 | Previous consumer responsibility | Official path |

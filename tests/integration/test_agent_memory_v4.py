@@ -18,7 +18,12 @@ from simple_harness import (
     MemoryScopeRef,
 )
 
-from simple_harness_memory import MemoryManager, MemoryPrincipal, MemoryScope
+from simple_harness_memory import (
+    MemoryManager,
+    MemoryOwnershipConflict,
+    MemoryPrincipal,
+    MemoryScope,
+)
 from simple_harness_memory.backends.mock import MockMemoryBackend
 from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
 from simple_harness_memory.embedders.mock import HashEmbedder
@@ -438,6 +443,89 @@ async def test_forget_fact_removes_family_projection_and_leaves_tombstone(tmp_pa
         counts = await cursor.fetchone()
     assert counts is not None and tuple(counts) == (1, 1)
     # The second extracted fact remains; the personal fact and its family projection are gone.
+    await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backend_kind", ["mock", "sqlite"])
+async def test_public_share_is_idempotent_owned_and_forget_cascades(tmp_path, backend_kind):
+    backend = (
+        MockMemoryBackend(auto_extract_facts=True)
+        if backend_kind == "mock"
+        else SQLiteMemoryBackend(str(tmp_path / "share.db"), auto_extract_facts=True)
+    )
+    manager = await MemoryManager.build(backend=backend, enable_facts=True)
+    recall = await manager.recall_for_turn(recall_request(query_id=f"share-{backend_kind}"))
+    await manager.record_committed_turn(
+        committed_turn(f"share-{backend_kind}", fence=recall.write_fence)
+    )
+    await manager.drain_fact_jobs()
+    principal = MemoryPrincipal("deployment-a", "house-a", "actor-a", "session-a")
+
+    if isinstance(backend, SQLiteMemoryBackend):
+        async with backend._conn.execute(
+            "SELECT id, deterministic_id FROM facts WHERE scope_kind='personal' "
+            "ORDER BY id LIMIT 1"
+        ) as cursor:
+            source_row = await cursor.fetchone()
+        assert source_row is not None
+        fact_id, origin = int(source_row[0]), str(source_row[1])
+        async with backend._conn.execute("SELECT job_id FROM fact_jobs LIMIT 1") as cursor:
+            job_row = await cursor.fetchone()
+        assert job_row is not None
+        late_job: dict[str, object] = {"job_id": str(job_row[0])}
+        late_facts = []
+    else:
+        fact_id, meta = next(
+            (fact_id, meta)
+            for fact_id, meta in backend._agent_fact_meta.items()
+            if meta[3:5] == ("personal", "actor-a")
+        )
+        origin = meta[5]
+        late_job = dict(next(iter(backend._fact_jobs.values())))
+        source = next(fact for fact in backend._facts if fact.id == fact_id)
+        late_facts = [source]
+
+    first = await manager.share_fact(principal, fact_id)
+    assert await manager.share_fact(principal, fact_id) == first
+    for unauthorized in (
+        MemoryPrincipal("deployment-a", "house-a", "actor-b", "session-b"),
+        MemoryPrincipal("deployment-a", "house-b", "actor-a", "session-b"),
+    ):
+        with pytest.raises(MemoryOwnershipConflict) as error:
+            await manager.share_fact(unauthorized, fact_id)
+        assert error.value.code == "memory_ownership_conflict"
+
+    if isinstance(backend, SQLiteMemoryBackend):
+        async with backend._conn.execute(
+            "SELECT COUNT(*), MIN(projection_of), MIN(scope_kind), MIN(scope_owner) "
+            "FROM facts WHERE deterministic_id = ?",
+            (first,),
+        ) as cursor:
+            projection_row = await cursor.fetchone()
+        assert projection_row is not None
+        assert tuple(projection_row) == (1, origin, "family", "house-a")
+    else:
+        projections = [meta for meta in backend._agent_fact_meta.values() if meta[5] == first]
+        assert len(projections) == 1
+        assert projections[0][3:7] == ("family", "house-a", first, origin)
+
+    assert await manager.forget_fact(fact_id, principal=principal)
+    assert (
+        await backend.apply_fact_job(late_job, late_facts, extractor_lineage="late-replay")
+        == "applied"
+    )
+    if isinstance(backend, SQLiteMemoryBackend):
+        async with backend._conn.execute(
+            "SELECT (SELECT COUNT(*) FROM facts WHERE deterministic_id = ? OR projection_of = ?), "
+            "(SELECT COUNT(*) FROM fact_tombstones WHERE deterministic_id = ?)",
+            (origin, origin, origin),
+        ) as cursor:
+            remaining = await cursor.fetchone()
+        assert remaining is not None and tuple(remaining) == (0, 1)
+    else:
+        assert origin in backend._fact_tombstones
+        assert not any(meta[5] in (origin, first) for meta in backend._agent_fact_meta.values())
     await manager.close()
 
 

@@ -363,6 +363,12 @@ class MockMemoryBackend(BaseMemoryBackend):
         current = self._fact_jobs.get(str(job["job_id"]))
         if current is None:
             return "erased"
+        if current["state"] == "applied":
+            return "applied"
+        if current["state"] != "claimed" or current.get("lease_token") != job.get(
+            "lease_token"
+        ):
+            return "lost_lease"
         principal = MemoryPrincipal(
             str(job["deployment_id"]),
             str(job["household_id"]),
@@ -586,6 +592,7 @@ class MockMemoryBackend(BaseMemoryBackend):
                 principal.household_id,
                 principal.actor_id,
             )
+            or meta[3:5] != ("personal", principal.actor_id)
         ):
             raise MemoryOwnershipConflict()
         projection = hashlib.sha256(

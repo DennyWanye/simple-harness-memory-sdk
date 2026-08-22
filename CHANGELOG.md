@@ -45,6 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added principal export, scope deletion, fact forgetting and authorized family projection APIs.
   Deletion advances the erasure epoch before cascading content and prevents late replay/job
   resurrection.
+- Froze the Harness-free public `share_fact(MemoryPrincipal, fact_id)` contract: deterministic replay,
+  cross-principal ownership conflicts, `projection_of` provenance, and source-forget tombstone cascade;
+  `MemoryOwnershipConflict` is exported at package top level for future consumers.
 - Structured Agent Memory events emit opaque principal identifiers and counts/hashes only.
 - Added an explicit backup-first v3→v4 migrator and public manifest import API. The approved
   four-way taxonomy suppresses tentative, terminal and deferred legacy sources with hash-only

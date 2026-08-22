@@ -10,6 +10,7 @@
 """
 
 from simple_harness_memory.config import MemoryResourceBounds
+from simple_harness_memory.core.errors import MemoryOwnershipConflict
 from simple_harness_memory.core.identity import (
     ExportPage,
     MemoryPrincipal,
@@ -45,6 +46,7 @@ __all__ = [
     "ScopeKind",
     "ExportPage",
     "PrivacyReceipt",
+    "MemoryOwnershipConflict",
 ]
 
 __version__ = "0.4.0"

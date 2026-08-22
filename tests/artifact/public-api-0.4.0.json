@@ -10,6 +10,7 @@
     "MemoryApplyResult",
     "MemoryBackend",
     "MemoryManager",
+    "MemoryOwnershipConflict",
     "MemoryPrincipal",
     "MemoryResourceBounds",
     "MemoryScope",
