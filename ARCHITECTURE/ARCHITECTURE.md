@@ -131,7 +131,7 @@ src/simple_harness_memory/
 - CI只build一次candidate wheel/sdist并记录source commit与SHA-256；Python 3.11/3.12/3.13及Windows x64、
   macOS ARM64、Linux ARM64 downstream只下载/验证同一artifact，不允许重建。release workflow仍只验证并
   交接冻结bytes。Memory tag `v0.4.0` 指向 `3d4247b` 的同一冻结 candidate；2026-08-23 source、`main`
-  与 tag 已推送，冻结 wheel/sdist 继续由本地发布流程保管，未创建或上传 GitHub Release。
+  与 tag 已推送；本地冻结 wheel/sdist 已上传到 draft GitHub Release 并完成下载回验，Release 尚未正式发布。
 
 ## 验证状态
 
