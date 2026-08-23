@@ -11,8 +11,9 @@ The current H0.5 candidate cell passed against Harness source commit `ac2e2add` 
 `d5ac29760304b0eeebd40dd26bac7f8e65d0700a4066699a9f0d5fca6ec3f94c`; the privacy-safe receipt is
 [`harness-compatibility-candidate-0.5.1-ac2e2add.json`](harness-compatibility-candidate-0.5.1-ac2e2add.json).
 The earlier receipt committed at `e44d619` and its `7d70b9fa…` Harness candidate are explicitly
-superseded and carry no promotion authority. The final Harness release/download-back cell remains
-pending. Memory 0.5.1 must not be published before it passes.
+superseded and carry no promotion authority. Harness v0.5.0 is now Latest/non-draft/non-prerelease;
+its public wheel is byte-identical to the accepted candidate and the H0.4/H0.5 formal matrix passed.
+The formal receipt is [`harness-compatibility-release-0.5.1.json`](harness-compatibility-release-0.5.1.json).
 
 Release verification: source full suite `213 passed, 7 skipped`; Ruff and strict mypy passed;
 the frozen 0.5.0 wheel/sdist passed Twine and the 10-test joint Harness 0.4 artifact suite.

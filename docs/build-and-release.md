@@ -101,6 +101,10 @@ The current successful Harness 0.5 candidate run is recorded in
 authority. Neither receipt replaces the final Harness release/download-back cell; both contain no
 local paths or Memory content.
 
+The final Harness v0.5.0 public download-back matrix is complete and recorded in
+`docs/harness-compatibility-release-0.5.1.json`; its wheel bytes match the accepted candidate. This
+formal receipt, together with the released H0.4 cell, closes the Harness prerequisite for Memory 0.5.1.
+
 `candidate-dist/` is now the frozen local publication set. Preserve these exact bytes and do not
 rebuild the same version at upload time.
 

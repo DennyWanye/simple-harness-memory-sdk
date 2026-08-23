@@ -121,7 +121,8 @@ source、`main` 与 tag 已推送，冻结 wheel/sdist 已正式发布到
 scope、cloud embedding lineage、receipt/outbox/message 语义不变。Harness 0.4.0 released wheel 格必须
 通过；当前 Harness 0.5.0 candidate（source `ac2e2add`）exact-wheel 格也已通过并保存 privacy-safe
 superseding receipt。先前 `e44d619` / `7d70b9fa…` receipt 已 superseded，不具 promotion authority。
-Harness 正式 release wheel 的 download-back 格仍为 pending，在它通过前不得发布 0.5.1。
+Harness 正式 v0.5.0 release wheel 已从公开 URL 下载回验，字节与 accepted candidate 一致；H0.4/H0.5
+正式格均已通过并保存 formal receipt。
 
 未来消费者可在不安装 Harness 的基础 wheel 中显式分享一条已授权的 personal fact：
 

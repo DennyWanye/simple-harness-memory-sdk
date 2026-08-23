@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import cast
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -104,3 +105,29 @@ def test_legacy_receipt_retains_original_exact_identity() -> None:
         "wheel_sha256": "7821e895dd4adac5b98aa42c6f0fadc0362ee983e4531f7d75892107209939cc",
         "artifact_status": "candidate",
     }
+
+
+def test_formal_harness_release_receipt_closes_both_matrix_cells() -> None:
+    receipt = _read_receipt("harness-compatibility-release-0.5.1.json")
+    assert receipt["result"] == "pass"
+    assert receipt["promotion_status"] == "harness-release-matrix-complete"
+    assert receipt["memory_tested_wheel"] == {
+        "version": "0.5.1",
+        "source_commit": "e28299108ade9275776b280fd008e349139f65e8",
+        "wheel_sha256": "7821e895dd4adac5b98aa42c6f0fadc0362ee983e4531f7d75892107209939cc",
+    }
+    harness_0_4, harness_0_5 = cast(list[dict[str, object]], receipt["harness_releases"])
+    assert harness_0_4 == {
+        "version": "0.4.0",
+        "wheel_sha256": "aaf8d79a71b75bde0d71157a635b841eb557ea8889e2824571cacd7d8a58ecb6",
+        "result": "pass",
+    }
+    assert harness_0_5["source_commit"] == "ac2e2add7e6f5efb5d4dd7b26fb138f9d750d334"
+    assert harness_0_5["wheel_sha256"] == (
+        "d5ac29760304b0eeebd40dd26bac7f8e65d0700a4066699a9f0d5fca6ec3f94c"
+    )
+    assert harness_0_5["byte_identical_to_candidate"] is True
+    assert harness_0_5["latest"] is True
+    assert harness_0_5["draft"] is False
+    assert harness_0_5["prerelease"] is False
+    _assert_privacy_safe(receipt)

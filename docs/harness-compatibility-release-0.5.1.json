@@ -1,0 +1,48 @@
+{
+  "protocol": "simple-harness-memory/harness-compatibility-release-receipt/v1",
+  "result": "pass",
+  "promotion_status": "harness-release-matrix-complete",
+  "tested_at_utc": "2026-08-23T17:56:34Z",
+  "environment": {
+    "isolated_python": true,
+    "python_version": "3.11.15"
+  },
+  "memory_tested_wheel": {
+    "version": "0.5.1",
+    "source_commit": "e28299108ade9275776b280fd008e349139f65e8",
+    "wheel_sha256": "7821e895dd4adac5b98aa42c6f0fadc0362ee983e4531f7d75892107209939cc"
+  },
+  "harness_releases": [
+    {
+      "version": "0.4.0",
+      "wheel_sha256": "aaf8d79a71b75bde0d71157a635b841eb557ea8889e2824571cacd7d8a58ecb6",
+      "result": "pass"
+    },
+    {
+      "version": "0.5.0",
+      "source_commit": "ac2e2add7e6f5efb5d4dd7b26fb138f9d750d334",
+      "tag": "v0.5.0",
+      "wheel_sha256": "d5ac29760304b0eeebd40dd26bac7f8e65d0700a4066699a9f0d5fca6ec3f94c",
+      "candidate_manifest_sha256": "9cc8363c33ecfef2a0c446d17ca89a02e0b58fe1b6fe6e4ae77a0ac2b706d59f",
+      "release_url": "https://github.com/DennyWanye/simple-harness-sdk/releases/tag/v0.5.0",
+      "wheel_url": "https://github.com/DennyWanye/simple-harness-sdk/releases/download/v0.5.0/simple_harness_sdk-0.5.0-py3-none-any.whl",
+      "latest": true,
+      "draft": false,
+      "prerelease": false,
+      "byte_identical_to_candidate": true,
+      "result": "pass"
+    }
+  ],
+  "candidate_receipt": "harness-compatibility-candidate-0.5.1-ac2e2add.json",
+  "oracles": [
+    "agent-memory-v1-public-contract-golden",
+    "personal-family-scope-isolation",
+    "cloud-embedding-lineage",
+    "recall-release-lifecycle",
+    "committed-turn-receipt-idempotency",
+    "context-preparation-consumed",
+    "memory-outbox-applied",
+    "committed-turn-message-pair",
+    "restart-replay-no-duplicates"
+  ]
+}
