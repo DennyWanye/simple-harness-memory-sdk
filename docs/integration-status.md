@@ -7,10 +7,12 @@ personal/family scope, cloud embedding lineage, receipt, outbox, or message beha
 The exact-wheel matrix has two mandatory clean-venv cells: released Harness 0.4.0 and exact Harness
 0.5.0 candidate/release bytes. The H0.4 cell passed locally against released wheel SHA-256
 `aaf8d79a71b75bde0d71157a635b841eb557ea8889e2824571cacd7d8a58ecb6` and is automated in CI.
-The H0.5 candidate cell passed against Harness source commit `7fd6610` and exact wheel SHA-256
-`7d70b9fa2f5953ce8b2ba23cc0b9bc40fb101631964b25dcb047effda8f71167`; the privacy-safe receipt is
-[`harness-compatibility-candidate-0.5.1.json`](harness-compatibility-candidate-0.5.1.json). The final
-Harness release/download-back cell remains pending. Memory 0.5.1 must not be published before it passes.
+The current H0.5 candidate cell passed against Harness source commit `ac2e2add` and exact wheel SHA-256
+`d5ac29760304b0eeebd40dd26bac7f8e65d0700a4066699a9f0d5fca6ec3f94c`; the privacy-safe receipt is
+[`harness-compatibility-candidate-0.5.1-ac2e2add.json`](harness-compatibility-candidate-0.5.1-ac2e2add.json).
+The earlier receipt committed at `e44d619` and its `7d70b9fa…` Harness candidate are explicitly
+superseded and carry no promotion authority. The final Harness release/download-back cell remains
+pending. Memory 0.5.1 must not be published before it passes.
 
 Release verification: source full suite `213 passed, 7 skipped`; Ruff and strict mypy passed;
 the frozen 0.5.0 wheel/sdist passed Twine and the 10-test joint Harness 0.4 artifact suite.

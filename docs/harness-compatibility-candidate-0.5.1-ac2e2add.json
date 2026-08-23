@@ -1,18 +1,17 @@
 {
   "protocol": "simple-harness-memory/harness-compatibility-receipt/v1",
   "result": "pass",
-  "promotion_status": "superseded",
-  "superseded_by_harness_source_commit": "ac2e2add7e6f5efb5d4dd7b26fb138f9d750d334",
-  "superseded_reason_code": "harness-candidate-withdrawn-output-ownership",
-  "tested_at_utc": "2026-08-23T17:35:20Z",
+  "promotion_status": "candidate-pass-final-release-pending",
+  "tested_at_utc": "2026-08-23T17:48:31Z",
   "environment": {
     "isolated_python": true,
     "python_version": "3.11.15"
   },
   "harness": {
     "version": "0.5.0",
-    "source_commit": "7fd6610ffd5630a7d1f8f263637264bc95360d2c",
-    "wheel_sha256": "7d70b9fa2f5953ce8b2ba23cc0b9bc40fb101631964b25dcb047effda8f71167",
+    "source_commit": "ac2e2add7e6f5efb5d4dd7b26fb138f9d750d334",
+    "wheel_sha256": "d5ac29760304b0eeebd40dd26bac7f8e65d0700a4066699a9f0d5fca6ec3f94c",
+    "candidate_manifest_sha256": "9cc8363c33ecfef2a0c446d17ca89a02e0b58fe1b6fe6e4ae77a0ac2b706d59f",
     "artifact_status": "candidate"
   },
   "memory": {
@@ -20,6 +19,11 @@
     "source_commit": "e28299108ade9275776b280fd008e349139f65e8",
     "wheel_sha256": "7821e895dd4adac5b98aa42c6f0fadc0362ee983e4531f7d75892107209939cc",
     "artifact_status": "candidate"
+  },
+  "supersedes": {
+    "receipt_commit": "e44d619310ce09507a817517d7f69e8e42f0d7db",
+    "harness_wheel_sha256": "7d70b9fa2f5953ce8b2ba23cc0b9bc40fb101631964b25dcb047effda8f71167",
+    "status": "superseded"
   },
   "oracles": [
     "agent-memory-v1-public-contract-golden",

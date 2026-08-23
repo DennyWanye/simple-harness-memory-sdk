@@ -156,8 +156,9 @@ src/simple_harness_memory/
 - 0.5.1 尚未发布：仅扩大 Harness metadata 范围并增加真实 wheel 矩阵，不改变 Memory 业务模块行为。
   released Harness 0.4.0 与 Harness 0.5.0 candidate/release 是两个强制 clean-venv 格；H0.5 wheel 未就绪时
   必须保持 pending，两个格均通过前不得发布。H0.4.0 released wheel 本地 clean-venv 格已通过，CI 使用
-  固定 SHA-256 重跑同一 oracle；H0.5.0 candidate commit `7fd6610` / wheel `7d70b9fa…` 已通过同一
-  clean-venv aggregate 并保存 privacy-safe receipt，正式 release/download-back 格仍为 pending。
+  固定 SHA-256 重跑同一 oracle；当前 H0.5.0 candidate commit `ac2e2add` / wheel `d5ac2976…` 已通过同一
+  clean-venv aggregate 并保存 privacy-safe superseding receipt。旧 `e44d619` / `7d70b9fa…` receipt 已
+  superseded；正式 release/download-back 格仍为 pending。
 
 ## 验证状态
 
