@@ -92,8 +92,12 @@ For the official Agent Memory combinations, run `scripts/verify_harness_compatib
 against the released Harness 0.4.0 wheel and the exact Harness 0.5.0 candidate (then release) wheel.
 Pass each wheel path, expected version, and SHA-256 explicitly. The script creates a clean venv,
 installs only those wheel bytes, and runs the consumer with `python -I`; sibling editable source is
-not release proof. Harness 0.5.0 remains pending until exact bytes exist. Do not publish Memory 0.5.1
-until both cells pass; never record a missing cell as PASS.
+not release proof. The Harness 0.5.0 candidate cell is complete, but the exact final release/download-back
+cell remains pending. Do not publish Memory 0.5.1 until it passes; never record a missing cell as PASS.
+
+The successful Harness 0.5 candidate run is recorded in
+`docs/harness-compatibility-candidate-0.5.1.json`. This receipt does not replace the final Harness
+release/download-back cell and contains no local paths or Memory content.
 
 `candidate-dist/` is now the frozen local publication set. Preserve these exact bytes and do not
 rebuild the same version at upload time.

@@ -1,0 +1,32 @@
+{
+  "protocol": "simple-harness-memory/harness-compatibility-receipt/v1",
+  "result": "pass",
+  "tested_at_utc": "2026-08-23T17:35:20Z",
+  "environment": {
+    "isolated_python": true,
+    "python_version": "3.11.15"
+  },
+  "harness": {
+    "version": "0.5.0",
+    "source_commit": "7fd6610ffd5630a7d1f8f263637264bc95360d2c",
+    "wheel_sha256": "7d70b9fa2f5953ce8b2ba23cc0b9bc40fb101631964b25dcb047effda8f71167",
+    "artifact_status": "candidate"
+  },
+  "memory": {
+    "version": "0.5.1",
+    "source_commit": "e28299108ade9275776b280fd008e349139f65e8",
+    "wheel_sha256": "7821e895dd4adac5b98aa42c6f0fadc0362ee983e4531f7d75892107209939cc",
+    "artifact_status": "candidate"
+  },
+  "oracles": [
+    "agent-memory-v1-public-contract-golden",
+    "personal-family-scope-isolation",
+    "cloud-embedding-lineage",
+    "recall-release-lifecycle",
+    "committed-turn-receipt-idempotency",
+    "context-preparation-consumed",
+    "memory-outbox-applied",
+    "committed-turn-message-pair",
+    "restart-replay-no-duplicates"
+  ]
+}

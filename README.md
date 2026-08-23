@@ -119,7 +119,8 @@ source、`main` 与 tag 已推送，冻结 wheel/sdist 已正式发布到
 
 0.5.1 仅扩大 Harness metadata 兼容范围到 `>=0.4,<0.6` 并增加真实 wheel 矩阵门禁；personal/family
 scope、cloud embedding lineage、receipt/outbox/message 语义不变。Harness 0.4.0 released wheel 格必须
-通过；Harness 0.5.0 格在其候选或正式 wheel 可用前保持 pending，两个格均通过前不得发布 0.5.1。
+通过；Harness 0.5.0 candidate exact-wheel 格也已通过并保存 privacy-safe receipt。Harness 正式 release
+wheel 的 download-back 格仍为 pending，在它通过前不得发布 0.5.1。
 
 未来消费者可在不安装 Harness 的基础 wheel 中显式分享一条已授权的 personal fact：
 
