@@ -1,6 +1,6 @@
 <!-- last-calibrated: 9c92edeaf028d332b59a1e096307032fa2a31e70 -->
 
-# ARCHITECTURE — simple-harness-memory-sdk（v0.5.1 candidate）
+# ARCHITECTURE — simple-harness-memory-sdk（v0.5.1）
 
 > 最后更新：2026-08-24
 > 当前事实：S3 runtime、四类 taxonomy offline migration、S4 storage/embedding、S5 candidate packaging
@@ -153,13 +153,16 @@ src/simple_harness_memory/
 - 0.5.0 已发布：tag 指向 `9c92ede`，wheel SHA-256 为
   `c274fa6b2db538c29897f684b3f2f85775cb4b3a6870018e83792ff90b51ea46`；公开下载回验通过。
   base 与 `[harness]` metadata 均要求 `simple-harness-sdk>=0.4,<0.5`。
-- 0.5.1 尚未发布：仅扩大 Harness metadata 范围并增加真实 wheel 矩阵，不改变 Memory 业务模块行为。
+- 0.5.1 已发布：仅扩大 Harness metadata 范围并增加真实 wheel 矩阵，不改变 Memory 业务模块行为。
   released Harness 0.4.0 与 Harness 0.5.0 candidate/release 是两个强制 clean-venv 格；H0.5 wheel 未就绪时
   必须保持 pending，两个格均通过前不得发布。H0.4.0 released wheel 本地 clean-venv 格已通过，CI 使用
   固定 SHA-256 重跑同一 oracle；当前 H0.5.0 candidate commit `ac2e2add` / wheel `d5ac2976…` 已通过同一
   clean-venv aggregate 并保存 privacy-safe superseding receipt。旧 `e44d619` / `7d70b9fa…` receipt 已
   superseded；Harness v0.5.0 正式 wheel 与 accepted candidate 字节一致，H0.4/H0.5 release/download-back
   aggregate 均已通过并保存 formal receipt。
+- Memory annotated tag `v0.5.1` 解引用到 `da85fa2`；正式 wheel `314c1b89…`、sdist `63b01464…` 均与
+  clean-source 第二次构建逐字节一致，并通过公开 URL 下载回验。GitHub Release 为 Latest、非 Draft、
+  非 Prerelease。
 
 ## 验证状态
 

@@ -1,7 +1,7 @@
 # Integration status
 
-Status as of 2026-08-24: `simple-harness-memory-sdk` 0.5.1 is an unpublished compatibility
-candidate. It requires Harness `>=0.4,<0.6`; this metadata-only expansion does not change
+Status as of 2026-08-24: `simple-harness-memory-sdk` 0.5.1 is published. It requires Harness
+`>=0.4,<0.6`; this metadata-only expansion does not change
 personal/family scope, cloud embedding lineage, receipt, outbox, or message behavior.
 
 The exact-wheel matrix has two mandatory clean-venv cells: released Harness 0.4.0 and exact Harness
@@ -14,6 +14,14 @@ The earlier receipt committed at `e44d619` and its `7d70b9fa…` Harness candida
 superseded and carry no promotion authority. Harness v0.5.0 is now Latest/non-draft/non-prerelease;
 its public wheel is byte-identical to the accepted candidate and the H0.4/H0.5 formal matrix passed.
 The formal receipt is [`harness-compatibility-release-0.5.1.json`](harness-compatibility-release-0.5.1.json).
+
+Memory release verification is complete: annotated tag `v0.5.1` resolves to source commit
+`da85fa2f61f5df213e292c752c79317dc23d79c1`; the wheel SHA-256 is
+`314c1b89a1921abef3b9900a32b753cc0a0c89a3ce92b98822ec1cb45f7a9898` and the sdist SHA-256 is
+`63b01464890098bb83c341de79aad7a4dd07ef11f4df3003ac744ad7ca0f69b3`. The
+[`v0.5.1` Release](https://github.com/DennyWanye/simple-harness-memory-sdk/releases/tag/v0.5.1) is
+Latest/non-draft/non-prerelease; public URL download-back, checksums, METADATA, BUILD_INFO source,
+reproducible rebuild, and H0.4/H0.5 exact-wheel reruns passed.
 
 Release verification: source full suite `213 passed, 7 skipped`; Ruff and strict mypy passed;
 the frozen 0.5.0 wheel/sdist passed Twine and the 10-test joint Harness 0.4 artifact suite.

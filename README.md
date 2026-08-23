@@ -7,7 +7,7 @@
 
 认知记忆 SDK，为运行时 consumer 提供独立、product-neutral 的持久记忆系统。
 
-当前版本：**0.5.1**（Python 3.11–3.13；candidate 尚未发布）。
+当前版本：**0.5.1**（Python 3.11–3.13；已发布）。
 
 **基于认知科学三层模型 + 数字孪生体 + 世界对象，使用 RRF 混合召回。**
 
@@ -123,6 +123,10 @@ scope、cloud embedding lineage、receipt/outbox/message 语义不变。Harness 
 superseding receipt。先前 `e44d619` / `7d70b9fa…` receipt 已 superseded，不具 promotion authority。
 Harness 正式 v0.5.0 release wheel 已从公开 URL 下载回验，字节与 accepted candidate 一致；H0.4/H0.5
 正式格均已通过并保存 formal receipt。
+
+Memory tag `v0.5.1` 指向 release source `da85fa2`；冻结 wheel SHA-256 为 `314c1b89…7a9898`，
+sdist SHA-256 为 `63b01464…f69b3`。Release 为 Latest、非 Draft、非 Prerelease，公开制品见
+[`v0.5.1` GitHub Release](https://github.com/DennyWanye/simple-harness-memory-sdk/releases/tag/v0.5.1)。
 
 未来消费者可在不安装 Harness 的基础 wheel 中显式分享一条已授权的 personal fact：
 
