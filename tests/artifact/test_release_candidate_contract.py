@@ -45,10 +45,10 @@ def _read_build_info(path: Path) -> dict[str, str]:
 def _assert_ci_metadata(dist: Path) -> None:
     info = _read_build_info(dist / "BUILD_INFO.txt")
     assert info["package"] == "simple-harness-memory-sdk"
-    assert info["version"] == "0.5.0"
+    assert info["version"] == "0.5.1"
     assert re.fullmatch(r"[0-9a-f]{40}", info["source_commit"])
     assert info["requires_python"] == "<3.14,>=3.11"
-    assert info["harness_requires"] == "simple-harness-sdk<0.5,>=0.4"
+    assert info["harness_requires"] == "simple-harness-sdk<0.6,>=0.4"
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", info["build_utc"])
     wheels = sorted(dist.glob("*.whl"))
     sdists = sorted((*dist.glob("*.tar.gz"), *dist.glob("*.zip")))
@@ -109,6 +109,10 @@ def test_ci_covers_full_matrix_clean_wheel_and_arm64() -> None:
     assert "uv pip install --system" in workflow
     assert 'test "$(uname -m)" = "aarch64"' in workflow
     assert "agent_record_turn" in workflow
+    assert "harness-0-4-compatibility" in workflow
+    assert "scripts/verify_harness_compatibility.py" in workflow
+    assert "simple_harness_sdk-0.4.0-py3-none-any.whl" in workflow
+    assert "aaf8d79a71b75bde0d71157a635b841eb557ea8889e2824571cacd7d8a58ecb6" in workflow
     assert (
         "FROM turn_receipts WHERE deployment_id='deployment-a' AND turn_id='turn-a'"
         in workflow
@@ -129,8 +133,8 @@ def test_release_only_verifies_for_the_task_10_single_publisher() -> None:
     assert "sha256sum --check SHA256SUMS" in workflow
     assert "source_commit=$EXPECTED_COMMIT" in workflow
     assert "requires_python=<3.14,>=3.11" in workflow
-    assert "version=0.5.0" in workflow
-    assert "harness_requires=simple-harness-sdk<0.5,>=0.4" in workflow
+    assert "version=0.5.1" in workflow
+    assert "harness_requires=simple-harness-sdk<0.6,>=0.4" in workflow
     assert "contents: read" in workflow
     assert "contents: write" not in workflow
     assert "actions/upload-artifact@v4" in workflow

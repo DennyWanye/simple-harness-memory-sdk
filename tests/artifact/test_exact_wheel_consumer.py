@@ -178,7 +178,7 @@ def test_exact_wheel_in_clean_consumer(
                     assert await self.manager.read_fact(principal, fact_id) is None
 
             async def main():
-                assert __version__ == "0.5.0"
+                assert __version__ == "0.5.1"
                 assert not hasattr(simple_harness_memory, "ConversationMemoryAdapter")
                 path = Path("memory.db").resolve()
                 manager = await MemoryManager.build(str(path), enable_facts=True)

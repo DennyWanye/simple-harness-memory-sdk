@@ -11,7 +11,7 @@ bytes for AIPhone and other consumers, but must never rebuild them.
 
 ## Invariants
 
-- Release Harness SDK first; Memory requires Harness SDK `>=0.4,<0.5` as a base dependency and
+- Release Harness SDK first; Memory requires Harness SDK `>=0.4,<0.6` as a base dependency and
   keeps the same range for `[harness]`.
 - Build once from the exact candidate commit in a clean detached worktree.
 - The version tag, `BUILD_INFO.txt`, wheel metadata, and source commit must agree.
@@ -28,13 +28,13 @@ bytes for AIPhone and other consumers, but must never rebuild them.
 
 ## 1. Freeze the candidate
 
-The values below prepare the current 0.5.0 candidate. Freeze `CANDIDATE_COMMIT` from the reviewed,
+The values below prepare the current 0.5.1 candidate. Freeze `CANDIDATE_COMMIT` from the reviewed,
 clean release-identity commit before creating the tag.
 
 ```bash
 MEMORY_REPO=/Users/denny/projects/simple-harness-memory-sdk
 HARNESS_REPO=/Users/denny/projects/simple-harness-sdk
-RELEASE_TAG=v0.5.0
+RELEASE_TAG=v0.5.1
 CANDIDATE_COMMIT="$(git -C "$MEMORY_REPO" rev-parse main)"
 
 git -C "$MEMORY_REPO" status --short
@@ -88,9 +88,12 @@ uv pip install --python .candidate-venv/bin/python candidate-dist/*.whl
   'import simple_harness_memory; print(simple_harness_memory.__version__)'
 ```
 
-For the official Agent Memory combination, also install the frozen Harness wheel and Memory
-wheel together in a new environment and run the joint/future-consumer conformance suite. Do not
-use the sibling editable source as release proof.
+For the official Agent Memory combinations, run `scripts/verify_harness_compatibility.py` separately
+against the released Harness 0.4.0 wheel and the exact Harness 0.5.0 candidate (then release) wheel.
+Pass each wheel path, expected version, and SHA-256 explicitly. The script creates a clean venv,
+installs only those wheel bytes, and runs the consumer with `python -I`; sibling editable source is
+not release proof. Harness 0.5.0 remains pending until exact bytes exist. Do not publish Memory 0.5.1
+until both cells pass; never record a missing cell as PASS.
 
 `candidate-dist/` is now the frozen local publication set. Preserve these exact bytes and do not
 rebuild the same version at upload time.

@@ -18,6 +18,8 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -28,6 +30,12 @@ jobs:
       - run: uv run --frozen --group dev pytest -q
       - run: uv run --frozen --group dev ruff check src tests
       - run: uv run --frozen --group dev mypy src tests
+      - run: uv run --frozen --group dev ruff check scripts
+      - run: >-
+          uv run --frozen --group dev mypy --strict
+          scripts/harness_compatibility_consumer.py
+          scripts/verify_harness_compatibility.py
+          scripts/write_candidate_metadata.py
 
   reuse:
     runs-on: ubuntu-latest
@@ -42,6 +50,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -93,7 +103,7 @@ jobs:
               )
               assert applied.status.value == "applied"
               await backend.close()
-              assert __version__ == "0.5.0"
+              assert __version__ == "0.5.1"
               assert os.stat(path).st_mode & 0o777 == 0o600
               with sqlite3.connect(path) as connection:
                   assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
@@ -166,7 +176,7 @@ jobs:
           import simple_harness_memory
           from simple_harness_memory import MemoryManager
 
-          assert metadata.version("simple-harness-memory-sdk") == "0.5.0"
+          assert metadata.version("simple-harness-memory-sdk") == "0.5.1"
           assert "site-packages" in simple_harness_memory.__file__
           assert importlib.util.find_spec("simple_harness.observability") is not None
           assert sqlite3.sqlite_version_info >= (3, 35)
@@ -179,6 +189,43 @@ jobs:
           asyncio.run(verify())
           print(platform.python_version(), sqlite3.sqlite_version)
           PY
+
+  harness-0-4-compatibility:
+    name: Memory 0.5.1 / Harness 0.4.0 exact wheels
+    needs: candidate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.7"
+      - uses: actions/download-artifact@v4
+        with:
+          name: memory-sdk-candidate-${{ github.sha }}
+          path: candidate-dist
+      - name: Download and verify the released Harness 0.4.0 wheel
+        run: |
+          mkdir -p harness-dist
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            https://github.com/DennyWanye/simple-harness-sdk/releases/download/v0.4.0/simple_harness_sdk-0.4.0-py3-none-any.whl \
+            --output harness-dist/simple_harness_sdk-0.4.0-py3-none-any.whl
+          echo "aaf8d79a71b75bde0d71157a635b841eb557ea8889e2824571cacd7d8a58ecb6  harness-dist/simple_harness_sdk-0.4.0-py3-none-any.whl" \
+            | sha256sum --check
+      - name: Verify the H0.4 / Memory candidate cell in a clean environment
+        run: |
+          MEMORY_WHEEL="$(find candidate-dist -maxdepth 1 -name '*.whl' -print -quit)"
+          MEMORY_SHA256="$(sha256sum "$MEMORY_WHEEL" | awk '{print $1}')"
+          python scripts/verify_harness_compatibility.py \
+            --memory-wheel "$MEMORY_WHEEL" \
+            --memory-sha256 "$MEMORY_SHA256" \
+            --expected-memory-version 0.5.1 \
+            --harness-wheel harness-dist/simple_harness_sdk-0.4.0-py3-none-any.whl \
+            --harness-sha256 aaf8d79a71b75bde0d71157a635b841eb557ea8889e2824571cacd7d8a58ecb6 \
+            --expected-harness-version 0.4.0 \
+            --python 3.11
 
   linux-arm64-core:
     needs: candidate

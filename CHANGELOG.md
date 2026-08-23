@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-24
+
+### Compatibility
+
+- Expanded the Harness dependency metadata to `simple-harness-sdk>=0.4,<0.6` while preserving the
+  Agent Memory v1 public contracts and all personal/family scope, cloud embedding, receipt, outbox,
+  and message behavior.
+- Added an isolated exact-wheel compatibility runner and a pinned Harness 0.4.0 CI cell. Harness
+  0.5.0 remains a required pending cell until its candidate or release wheel is available; 0.5.1
+  must not be published before both cells pass.
+
 ## [0.5.0] - 2026-08-23
 
 ### Observability

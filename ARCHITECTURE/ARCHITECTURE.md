@@ -1,8 +1,8 @@
 <!-- last-calibrated: 9c92edeaf028d332b59a1e096307032fa2a31e70 -->
 
-# ARCHITECTURE — simple-harness-memory-sdk（v0.5.0）
+# ARCHITECTURE — simple-harness-memory-sdk（v0.5.1 candidate）
 
-> 最后更新：2026-08-23
+> 最后更新：2026-08-24
 > 当前事实：S3 runtime、四类 taxonomy offline migration、S4 storage/embedding、S5 candidate packaging
 > 与 S6 simple_harness 产品接线/真人测试均已完成；Memory observability S1+S2 已通过自动化验收。
 
@@ -31,7 +31,7 @@ src/simple_harness_memory/
 
 ## Observability S1+S2
 
-- 基础依赖为 `simple-harness-sdk>=0.4,<0.5`，本地开发仍由 `uv.sources` 指向 sibling checkout。
+- 基础依赖为 `simple-harness-sdk>=0.4,<0.6`，本地开发仍由 `uv.sources` 指向 sibling checkout。
   Memory 只复用 import-pure `simple_harness.observability` envelope、correlation、runtime 与 sinks；没有
   复制 wire schema，也不让 observability 成为授权、重试、CAS、事务或恢复 authority。
 - `MemoryManager` direct init、三个 builders，以及 Mock/SQLite direct backend constructors 接受可选
@@ -142,10 +142,10 @@ src/simple_harness_memory/
 
 ## Release candidate identity
 
-- 唯一版本事实源为`src/simple_harness_memory/__init__.py`，当前为0.5.0；wheel metadata、README、公开API
+- 唯一版本事实源为`src/simple_harness_memory/__init__.py`，当前为0.5.1；wheel metadata、README、公开API
   snapshot、changelog与candidate `BUILD_INFO.txt`必须一致。
-- base wheel metadata 直接要求 `simple-harness-sdk>=0.4,<0.5`，`[harness]` 保持同一范围；clean
-  resolver gate 使用真实 Harness 0.4 candidate，0.3.x 与 0.5.x 均必须拒绝。
+- base wheel metadata 直接要求 `simple-harness-sdk>=0.4,<0.6`，`[harness]` 保持同一范围；clean
+  resolver gate 接受真实 Harness 0.4.0 / 0.5.0 wheel，0.3.x 与 0.6.x 均必须拒绝。
 - CI只build一次candidate wheel/sdist并记录source commit与SHA-256；Python 3.11/3.12/3.13及Windows x64、
   macOS ARM64、Linux ARM64 downstream只下载/验证同一artifact，不允许重建。release workflow仍只验证并
   交接冻结bytes。Memory tag `v0.4.0` 指向 `3d4247b` 的同一冻结 candidate；2026-08-23 source、`main`
@@ -153,6 +153,10 @@ src/simple_harness_memory/
 - 0.5.0 已发布：tag 指向 `9c92ede`，wheel SHA-256 为
   `c274fa6b2db538c29897f684b3f2f85775cb4b3a6870018e83792ff90b51ea46`；公开下载回验通过。
   base 与 `[harness]` metadata 均要求 `simple-harness-sdk>=0.4,<0.5`。
+- 0.5.1 尚未发布：仅扩大 Harness metadata 范围并增加真实 wheel 矩阵，不改变 Memory 业务模块行为。
+  released Harness 0.4.0 与 Harness 0.5.0 candidate/release 是两个强制 clean-venv 格；H0.5 wheel 未就绪时
+  必须保持 pending，两个格均通过前不得发布。H0.4.0 released wheel 本地 clean-venv 格已通过，CI 使用
+  固定 SHA-256 重跑同一 oracle；H0.5.0 格仍为 pending。
 
 ## 验证状态
 

@@ -1,12 +1,18 @@
 # Integration status
 
-Status as of 2026-08-23: `simple-harness-memory-sdk` 0.5.0 is published. It requires Harness
-`>=0.4,<0.5` as a base dependency and includes the reviewed observability implementation.
+Status as of 2026-08-24: `simple-harness-memory-sdk` 0.5.1 is an unpublished compatibility
+candidate. It requires Harness `>=0.4,<0.6`; this metadata-only expansion does not change
+personal/family scope, cloud embedding lineage, receipt, outbox, or message behavior.
+
+The exact-wheel matrix has two mandatory clean-venv cells: released Harness 0.4.0 and exact Harness
+0.5.0 candidate/release bytes. The H0.4 cell passed locally against released wheel SHA-256
+`aaf8d79a71b75bde0d71157a635b841eb557ea8889e2824571cacd7d8a58ecb6` and is automated in CI.
+The H0.5 cell remains pending until exact bytes exist. Memory 0.5.1 must not be published before both pass.
 
 Release verification: source full suite `213 passed, 7 skipped`; Ruff and strict mypy passed;
 the frozen 0.5.0 wheel/sdist passed Twine and the 10-test joint Harness 0.4 artifact suite.
 
-Promotion is complete: tag `v0.5.0` points to source commit `9c92ede`, and
+The prior 0.5.0 promotion is complete: tag `v0.5.0` points to source commit `9c92ede`, and
 `candidate-dist/BUILD_INFO.txt` plus `SHA256SUMS` identify wheel `c274fa6b…`. The source branch,
 `main`, and tag have been pushed. The frozen wheel/sdist are published at the
 [`v0.5.0` Release](https://github.com/DennyWanye/simple-harness-memory-sdk/releases/tag/v0.5.0),

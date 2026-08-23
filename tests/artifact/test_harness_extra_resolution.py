@@ -57,22 +57,22 @@ def _fake_harness_wheel(directory: Path, version: str) -> Path:
     return wheel
 
 
-def test_base_metadata_requires_harness_0_4(exact_wheel: Path) -> None:
+def test_base_metadata_accepts_harness_0_4_and_0_5(exact_wheel: Path) -> None:
     metadata = _wheel_metadata(exact_wheel)
     requirements = metadata.get_all("Requires-Dist") or []
     harness_requirements = [item for item in requirements if item.startswith("simple-harness-sdk")]
     assert harness_requirements
     assert any(
-        "simple-harness-sdk<0.5,>=0.4" in item and "extra ==" not in item
+        "simple-harness-sdk<0.6,>=0.4" in item and "extra ==" not in item
         for item in harness_requirements
     )
     assert any(
-        "simple-harness-sdk<0.5,>=0.4" in item and "extra == 'harness'" in item
+        "simple-harness-sdk<0.6,>=0.4" in item and "extra == 'harness'" in item
         for item in harness_requirements
     )
 
 
-def test_base_requirement_accepts_only_real_0_4_candidate(
+def test_base_requirement_accepts_exact_supported_harness_wheel(
     tmp_path: Path,
     exact_wheel: Path,
     exact_harness_wheel: Path,
@@ -89,7 +89,7 @@ def test_base_requirement_accepts_only_real_0_4_candidate(
         text=True,
     )
     python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    for version in ("0.3.999", "0.5.0"):
+    for version in ("0.3.999", "0.6.0"):
         invalid = tmp_path / f"invalid-{version}"
         invalid.mkdir()
         invalid_wheel = _fake_harness_wheel(invalid, version)
@@ -111,6 +111,8 @@ def test_base_requirement_accepts_only_real_0_4_candidate(
         )
         assert rejected.returncode != 0
         assert "No solution found" in rejected.stderr or "conflict" in rejected.stderr.lower()
+    harness_version = str(_wheel_metadata(exact_harness_wheel)["Version"])
+    assert harness_version in {"0.4.0", "0.5.0"}
     subprocess.run(
         (
             "uv",
@@ -158,7 +160,7 @@ def test_base_requirement_accepts_only_real_0_4_candidate(
             "-c",
             (
                 "import importlib.metadata as m; import simple_harness; "
-                "assert m.version('simple-harness-sdk').startswith('0.4.'); "
+                f"assert m.version('simple-harness-sdk') == {harness_version!r}; "
                 "assert 'site-packages' in simple_harness.__file__"
             ),
         ),

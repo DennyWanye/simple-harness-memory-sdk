@@ -7,7 +7,7 @@
 
 认知记忆 SDK，为运行时 consumer 提供独立、product-neutral 的持久记忆系统。
 
-当前版本：**0.5.0**（Python 3.11–3.13）。
+当前版本：**0.5.1**（Python 3.11–3.13；candidate 尚未发布）。
 
 **基于认知科学三层模型 + 数字孪生体 + 世界对象，使用 RRF 混合召回。**
 
@@ -34,7 +34,7 @@ extras 与功能的对应关系（与 `pyproject.toml` 的 `[project.optional-de
 | `embeddings` | `torch`、`sentence-transformers` | BGE-M3 语义向量（`embedder="bge"`）、CrossEncoder 重排；运行时只读本地权重，不下载 |
 | `world`      | `httpx`、`python-dateutil`      | 联网的新闻/天气 provider（NewsAPI / OpenWeatherMap） |
 | `openai`     | `openai`                        | LLM 事实提取（需自备 OpenAI 客户端，见 `features/facts.py` 的 `LLMFactExtractor`） |
-| `harness`    | `simple-harness-sdk>=0.4,<0.5` | `MemoryManager` 直接实现 Harness `AgentMemoryPort` |
+| `harness`    | `simple-harness-sdk>=0.4,<0.6` | `MemoryManager` 直接实现 Harness `AgentMemoryPort` |
 | `dev`        | `pytest` 等                     | 开发 / 测试 |
 | `all`        | 上述四个运行时 extra            | 完整功能 |
 
@@ -116,6 +116,10 @@ tag `v0.5.0` 指向验证过的 `9c92ede` candidate，wheel SHA 为 `c274fa6b…
 source、`main` 与 tag 已推送，冻结 wheel/sdist 已正式发布到
 [`v0.5.0` GitHub Release](https://github.com/DennyWanye/simple-harness-memory-sdk/releases/tag/v0.5.0)，
 并通过公开稳定 URL 下载回验。
+
+0.5.1 仅扩大 Harness metadata 兼容范围到 `>=0.4,<0.6` 并增加真实 wheel 矩阵门禁；personal/family
+scope、cloud embedding lineage、receipt/outbox/message 语义不变。Harness 0.4.0 released wheel 格必须
+通过；Harness 0.5.0 格在其候选或正式 wheel 可用前保持 pending，两个格均通过前不得发布 0.5.1。
 
 未来消费者可在不安装 Harness 的基础 wheel 中显式分享一条已授权的 personal fact：
 

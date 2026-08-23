@@ -1,0 +1,43 @@
+{
+  "package": "simple-harness-memory-sdk",
+  "version": "0.5.1",
+  "root": [
+    "BoundedRecallResult",
+    "DigitalTwin",
+    "ExportPage",
+    "Fact",
+    "Hit",
+    "MemoryApplyResult",
+    "MemoryBackend",
+    "MemoryIdempotencyConflict",
+    "MemoryManager",
+    "MemoryOwnershipConflict",
+    "MemoryPrincipal",
+    "MemoryResourceBounds",
+    "MemoryScope",
+    "MemoryValidationError",
+    "Message",
+    "PrivacyReceipt",
+    "ScopeKind",
+    "WorldModelPort"
+  ],
+  "migrations": [
+    "EXECUTION_MANIFEST_PROTOCOL",
+    "IDENTITY_MAP_PROTOCOL",
+    "LEGACY_SCHEMA_CHECKSUM",
+    "LEGACY_SCHEMA_VERSION",
+    "LegacyIdentityBinding",
+    "LegacyIdentityMap",
+    "MIGRATION_RECEIPT_PROTOCOL",
+    "ManifestImportReceipt",
+    "MigrationDecision",
+    "MigrationReceipt",
+    "NonHarnessProvenanceEntry",
+    "NonHarnessProvenanceManifest",
+    "NormalizedExecutionEntry",
+    "PROVENANCE_MANIFEST_PROTOCOL",
+    "execution_manifest_digest",
+    "import_execution_manifest",
+    "migrate_v3_to_v4"
+  ]
+}
