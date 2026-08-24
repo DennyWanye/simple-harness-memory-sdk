@@ -17,7 +17,7 @@ def _baseline(path: str) -> str:
     ).stdout
 
 
-def test_0_5_1_changes_no_memory_business_module() -> None:
+def test_0_5_2_changes_no_memory_business_module() -> None:
     changed = subprocess.run(
         ("git", "diff", "--name-only", BEHAVIOR_BASELINE, "--", "src/simple_harness_memory"),
         check=True,
@@ -30,5 +30,5 @@ def test_0_5_1_changes_no_memory_business_module() -> None:
         "src/simple_harness_memory/core/manager.py",
     ]
     for path in changed:
-        expected = _baseline(path).replace('"0.5.0"', '"0.5.1"')
+        expected = _baseline(path).replace('"0.5.0"', '"0.5.2"')
         assert (ROOT / path).read_text(encoding="utf-8") == expected

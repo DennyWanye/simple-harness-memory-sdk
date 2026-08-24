@@ -57,17 +57,17 @@ def _fake_harness_wheel(directory: Path, version: str) -> Path:
     return wheel
 
 
-def test_base_metadata_accepts_harness_0_4_and_0_5(exact_wheel: Path) -> None:
+def test_base_metadata_accepts_harness_0_4_through_0_6(exact_wheel: Path) -> None:
     metadata = _wheel_metadata(exact_wheel)
     requirements = metadata.get_all("Requires-Dist") or []
     harness_requirements = [item for item in requirements if item.startswith("simple-harness-sdk")]
     assert harness_requirements
     assert any(
-        "simple-harness-sdk<0.6,>=0.4" in item and "extra ==" not in item
+        "simple-harness-sdk<0.7,>=0.4" in item and "extra ==" not in item
         for item in harness_requirements
     )
     assert any(
-        "simple-harness-sdk<0.6,>=0.4" in item and "extra == 'harness'" in item
+        "simple-harness-sdk<0.7,>=0.4" in item and "extra == 'harness'" in item
         for item in harness_requirements
     )
 

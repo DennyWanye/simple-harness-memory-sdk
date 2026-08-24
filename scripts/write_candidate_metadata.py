@@ -11,8 +11,8 @@ from email.parser import BytesParser
 from pathlib import Path
 
 PACKAGE = "simple-harness-memory-sdk"
-VERSION = "0.5.1"
-HARNESS_REQUIRES = "simple-harness-sdk<0.6,>=0.4"
+VERSION = "0.5.2"
+HARNESS_REQUIRES = "simple-harness-sdk<0.7,>=0.4"
 
 
 class CandidateMetadataError(RuntimeError):

@@ -45,10 +45,10 @@ def _read_build_info(path: Path) -> dict[str, str]:
 def _assert_ci_metadata(dist: Path) -> None:
     info = _read_build_info(dist / "BUILD_INFO.txt")
     assert info["package"] == "simple-harness-memory-sdk"
-    assert info["version"] == "0.5.1"
+    assert info["version"] == "0.5.2"
     assert re.fullmatch(r"[0-9a-f]{40}", info["source_commit"])
     assert info["requires_python"] == "<3.14,>=3.11"
-    assert info["harness_requires"] == "simple-harness-sdk<0.6,>=0.4"
+    assert info["harness_requires"] == "simple-harness-sdk<0.7,>=0.4"
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", info["build_utc"])
     wheels = sorted(dist.glob("*.whl"))
     sdists = sorted((*dist.glob("*.tar.gz"), *dist.glob("*.zip")))

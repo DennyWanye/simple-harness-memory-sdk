@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2] - 2026-08-25
+
+### Changed
+- Expanded the Harness dependency metadata to `simple-harness-sdk>=0.4,<0.7` after the retained
+  Agent Memory v1 contract passed against the exact Harness 0.6.1 prepublish wheel. No Memory
+  behavior or public API changed.
+
 All notable changes to `simple-harness-memory-sdk` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),

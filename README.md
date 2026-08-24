@@ -7,7 +7,7 @@
 
 认知记忆 SDK，为运行时 consumer 提供独立、product-neutral 的持久记忆系统。
 
-当前版本：**0.5.1**（Python 3.11–3.13；已发布）。
+当前 source candidate：**0.5.2**（Python 3.11–3.13；尚未发布；已发布 fallback 为 0.5.1）。
 
 **基于认知科学三层模型 + 数字孪生体 + 世界对象，使用 RRF 混合召回。**
 
@@ -34,7 +34,7 @@ extras 与功能的对应关系（与 `pyproject.toml` 的 `[project.optional-de
 | `embeddings` | `torch`、`sentence-transformers` | BGE-M3 语义向量（`embedder="bge"`）、CrossEncoder 重排；运行时只读本地权重，不下载 |
 | `world`      | `httpx`、`python-dateutil`      | 联网的新闻/天气 provider（NewsAPI / OpenWeatherMap） |
 | `openai`     | `openai`                        | LLM 事实提取（需自备 OpenAI 客户端，见 `features/facts.py` 的 `LLMFactExtractor`） |
-| `harness`    | `simple-harness-sdk>=0.4,<0.6` | `MemoryManager` 直接实现 Harness `AgentMemoryPort` |
+| `harness`    | `simple-harness-sdk>=0.4,<0.7` | `MemoryManager` 直接实现 Harness `AgentMemoryPort` |
 | `dev`        | `pytest` 等                     | 开发 / 测试 |
 | `all`        | 上述四个运行时 extra            | 完整功能 |
 

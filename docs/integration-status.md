@@ -1,6 +1,10 @@
 # Integration status
 
-Status as of 2026-08-24: `simple-harness-memory-sdk` 0.5.1 is published. It requires Harness
+Status as of 2026-08-25: 0.5.2 is a source candidate extending the same public contract to Harness
+`>=0.4,<0.7`; it is not a release until its exact-wheel Harness 0.6.1 and Host prepublish gates pass.
+The published fallback remains 0.5.1.
+
+Historical release fact as of 2026-08-24: `simple-harness-memory-sdk` 0.5.1 is published. It requires Harness
 `>=0.4,<0.6`; this metadata-only expansion does not change
 personal/family scope, cloud embedding lineage, receipt, outbox, or message behavior.
 
