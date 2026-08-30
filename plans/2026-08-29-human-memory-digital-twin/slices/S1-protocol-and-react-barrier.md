@@ -3,8 +3,9 @@
 > Release unit：S1（Harness SDK）  
 > 高风险子系统：公共 API、ReAct 状态机、effect authority（3）  
 > 覆盖：HM-AC-3/4/7/8
-> 状态：REOPENED FOR CONTRACT AMENDMENT — `a2-001`/`a2-002`；既有 candidate `9677cf948da9245b2aa4845f97dbc668e87f29ff` 未发布
-> 最终候选物：wheel `ef4e5a21128adede553ccd4fe8cfc726c37def329a2bc5217af0346466f23dad`；sdist `19f927708f456fb843127462e6ae09b5ecece0c02aecac5af2b42b63df7836a4`
+> 状态：COMPLETE — `a2-001`/`a2-002` 最小协议增量已闭合；Host/Memory consumer 集成仍分别接受验收，未 tag/publish
+> 最终 source：`8f1027d2d64ca3a7e7a4d161833507eadac9552b`
+> 最终候选物：wheel `b9421ddf2b1d5a4a4a0920a2e878c1d3cf098ff6ef0af8975b9eb5c516037d7b`；sdist `f9582decd48a195bd92dfd0f49cb2d726a0eedbf7f12143445758398f7ee4756`；manifest `fdc24acaababda1586afa965302be873f902240e1b943487e0e680258cbed097`
 
 ## 交付边界
 
@@ -111,3 +112,8 @@ delivery receipt/envelope，精确绑定 request/result/attempt/provider refs �
 - `ruff`, `mypy`, 全量 `pytest`；wheel build/install；public API/protocol snapshots。
 - Required fault cases：wrong run, stale receipt, same-batch effect, duplicate call, illegal schema, no-recall zero Memory query。
 - S1 完成时只证明协议与 Runtime 屏障；不声称真实 TaskScope/Memory 产品链可用。
+
+最终闭合证据（source `8f1027d2`）：聚焦协议/runtime `84 passed`，public/artifact `27 passed`，全仓
+`1596 passed, 2 skipped`；默认 CI mypy 覆盖 35 个文件，ruff 与 clean wheel install/import 均通过；第三方独立审计
+P0/P1/P2 均为 0。候选 wheel 使用固定 ZIP timestamp 重复构建，hash 与 manifest 自洽。`a2-001` 的 Host
+binding consumer 与 `a2-002` 的 Memory durable-delivery consumer 必须各自在所属 slice 通过后，才能关闭 program 集成缺口。

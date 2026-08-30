@@ -186,14 +186,14 @@ SDK 当前生产事实以本仓库的 `ARCHITECTURE/`、`src/simple_harness_memo
 ## 当前阶段
 
 初版本产品级核心设定、验收契约、跨仓架构基线和代码级 program plan 已冻结，用户已批准直接实施。
-V0 authority、旧 Session oracle lineage 和五项关键假设 spike 已闭合；S1 Harness SDK 0.7.0 既有协议
-candidate 已经三轮独立安全审计并以 P0/P1/P2=0 闭合；S4 Task 4 随后暴露 typed workspace binding
-authorization/Auto Run snapshot 契约缺口，S2 Task 5 又证明现有 analysis port 缺少 Host-durable result receipt；S1
-已按 `a2-001`/`a2-002` 重新打开最小协议增量，仍未 tag/publish 或被 Host
-正式 pin。S2 Memory
-SDK 已完成 fresh schema、evidence ingestion、suppression authority 与经独立攻击审计的 LLM audit ledger，durable
-worker/outbox 已完成本地 kernel，正等待 S1 Host delivery receipt 后完成 authority 适配；S4 Host 已完成 primary
-evidence、Canonical TaskScope Archive 和经路径竞态审计的目录
-provisioning；append-only multi-root binding authority 暂停等待 S1 typed authority 增量。
+V0 authority、旧 Session oracle lineage 和五项关键假设 spike 已闭合；S1 Harness SDK 0.7.0 最终 source
+`8f1027d2` 已完成 `a2-001` typed workspace binding authority 与 `a2-002` Host-durable analysis delivery
+协议，三轮独立安全审计 P0/P1/P2=0，exact candidate wheel SHA-256 为 `b9421ddf…`；仍未 tag/publish。
+S2 Memory SDK 已完成 fresh schema、永久 evidence ingestion、suppression authority 与 LLM audit ledger；Task 5
+`71066b69` 已使用 exact S1 wheel 验证正常 worker 的 delivery/validation receipt 分离和崩溃重放并关闭
+`a2-002`，但独立审计又证明公开 repository seam 可绕过 Host authority 持久化伪造 issuer，因此按 `a2-003`
+重新打开 Task 5 并暂停 0.6.0 candidate 收口，当前正在封闭底层 mutation authority。S4 Host 已完成 primary evidence、
+Canonical TaskScope Archive 和经路径竞态审计的目录 provisioning，正在接入 append-only multi-root binding authority；
+只有 Host consumer 通过后才关闭 `a2-001`。
 S3、S5、S6 未开始，program 的 15 个最终场景仍保持 `NOT_RUN`，只有全部实现、
 自动化、真实模型、桌面 UI 和 machine `finalize` 完成后才能宣称 program 完成。

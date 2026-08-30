@@ -3,7 +3,7 @@
 > Release unit：S2（Memory SDK）  
 > 高风险子系统：fresh SQLite schema、append-only privacy/audit、worker/outbox（3）  
 > 覆盖：HM-AC-1/2/7/8
-> 实施进度：Task 1—4 complete；Task 5 local kernel implemented but blocked on S1 `a2-002` Host delivery receipt。Task 4 最终提交 `1e1bb5c`，独立审计 P0/P1/P2=0。
+> 实施进度：Task 1—4 complete；Task 5 在独立审计发现 repository authority bypass 后按 `a2-003` 重新打开，Task 6 暂停。`71066b69` 已完成正常 worker 的 Host durable delivery 适配并关闭 `a2-002`，但尚不是 Task 5 最终提交。
 
 ## 交付边界
 
@@ -72,6 +72,10 @@ schema 明确拒绝。原始业务 evidence 从第一条起永久保留，所有
   与 `AnalysisBudget` 由调用方显式构造，真实 provider 成本值在 S5 composition 校准前不得宣称已冻结。
 - 验证：kill 在 job commit、claim、provider handoff、Host result commit、receipt 返回、Memory apply；覆盖 lease race、
   timeout/refusal/duplicate/divergent/out-of-order/oversize、target revision drift、clean shutdown/restart。
+- 独立审计附加门 `a2-003`：repository 的底层 commit/record seam 不得只凭 DTO/hash 自洽接受 delivery；直接伪造
+  issuer/attempt/hash、admission 跨 claim/重放必须 fail-closed。Host authority verification 必须仍在 SQLite transaction 外，
+  unsafe/oversize body 与 credential canary 在 DB/WAL/audit/export/log 中零落盘，同时保留安全公共
+  delivery/validation metadata；瞬时 verifier timeout/不可用按显式 taxonomy 重试，确定性 contract rejection 才 dead-letter。
 
 ### Task 6 — 移除旧默认行为并发布 candidate [HM-AC-2/8]
 
