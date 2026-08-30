@@ -3,6 +3,7 @@
 > Release unit：S4（Host）  
 > 高风险子系统：Host persistent state、filesystem authority、foreground scheduler（3）  
 > 覆盖：HM-AC-1/3/7/8
+> 实施进度：Task 1—3 complete；Task 4 in progress。Task 3 最终提交 `f509a475ea330dff13bfbeab143506de3408df4e`，独立审计 P0/P1/P2=0。
 
 ## 交付边界
 

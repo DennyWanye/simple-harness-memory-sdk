@@ -188,7 +188,8 @@ SDK 当前生产事实以本仓库的 `ARCHITECTURE/`、`src/simple_harness_memo
 初版本产品级核心设定、验收契约、跨仓架构基线和代码级 program plan 已冻结，用户已批准直接实施。
 V0 authority、旧 Session oracle lineage 和五项关键假设 spike 已闭合；S1 Harness SDK 0.7.0 source
 candidate 已经三轮独立安全审计并以 P0/P1/P2=0 闭合，尚未 tag/publish 或被 Host 正式 pin。S2 Memory
-SDK 已完成 fresh schema、evidence ingestion 与 suppression authority，审计 ledger/worker 等后续任务进行中；
-S4 Host 已完成 primary evidence 和 Canonical TaskScope Archive，目录 provision/binding/FIFO 等继续实施。
+SDK 已完成 fresh schema、evidence ingestion、suppression authority 与经独立攻击审计的 LLM audit ledger，durable
+worker/outbox 正在实施；S4 Host 已完成 primary evidence、Canonical TaskScope Archive 和经路径竞态审计的目录
+provisioning，append-only multi-root binding authority 正在实施。
 S3、S5、S6 未开始，program 的 15 个最终场景仍保持 `NOT_RUN`，只有全部实现、
 自动化、真实模型、桌面 UI 和 machine `finalize` 完成后才能宣称 program 完成。

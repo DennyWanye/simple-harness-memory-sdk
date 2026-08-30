@@ -3,6 +3,7 @@
 > Release unit：S2（Memory SDK）  
 > 高风险子系统：fresh SQLite schema、append-only privacy/audit、worker/outbox（3）  
 > 覆盖：HM-AC-1/2/7/8
+> 实施进度：Task 1—4 complete；Task 5 in progress。Task 4 最终提交 `1e1bb5c`，独立审计 P0/P1/P2=0。
 
 ## 交付边界
 
@@ -67,6 +68,8 @@ schema 明确拒绝。原始业务 evidence 从第一条起永久保留，所有
   result receipt 可重放；不确定调用可产生新 attempt，但 Memory 只 CAS apply 一次，后续 divergent response 只审计不应用。
 - 退出/崩溃后 reclaim；同 job replay 不重复 decision/state/outbox。后台 worker 不生成 Agent effect 或 TaskScope mutation。
 - batch size/idle/max-wait/cost 参数先留为显式 config，值由 Phase 2 spike 冻结。
+- 实施校准：现有 Phase 2 artifacts 未包含 worker/provider 成本常数，因此 S2 不提供隐式产品默认值；所有运行参数
+  与 `AnalysisBudget` 由调用方显式构造，真实 provider 成本值在 S5 composition 校准前不得宣称已冻结。
 - 验证：kill 在 job commit、claim、provider handoff、Host result commit、receipt 返回、Memory apply；覆盖 lease race、
   timeout/refusal/duplicate/divergent/out-of-order/oversize、target revision drift、clean shutdown/restart。
 
