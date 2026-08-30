@@ -22,6 +22,8 @@
   "compiled_manifest": {
     "case_sets": {
       "full": [
+        "HM-REG-GS-STATE",
+        "HM-REG-GS-UI",
         "HM-S1",
         "HM-S10",
         "HM-S11",
@@ -40,9 +42,9 @@
     "input_hashes": {
       "acceptance": "ab4dbe080e27ab4a29bf4be74b539363b489f9ad165eadf748fb3b8019cbc067",
       "assurance_contract": "d828f016110bd876c364c9b17fdf2c316557988a7be6f8195d25aa0eb1b3e6a8",
-      "reuse_report": "f02b868f45c0fd5d7b6c0ca53257ce7ce40f1b8eba96f31827980a543847cf3a",
-      "testcase_inventory": "00aae6715331e9e22a67ac0be1883239a33ba4791cd991223e3365a86b1d480d",
-      "verification_spec": "78c8da264b10d3175e75249d176b46411e616bb7de1e6ef64f64aed6074ec576"
+      "reuse_report": "2d65d1a702ae7166b5ed3cf18430da166b045a6acb2dfaa490cac8e50204fed9",
+      "testcase_inventory": "15713fb27d038ed48f5a34106ec7a1fc78a7c6a584b3fade50bcfccee8fa52ca",
+      "verification_spec": "a626a557ee15388582a43ae9f7fa0a6894997f49c4c160adc95c947a4eadbd27"
     },
     "input_paths": {
       "acceptance": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/acceptance.md",
@@ -51,8 +53,16 @@
       "testcase_inventory": "/Users/denny/projects/simple_harness-memory-plan/testcase/index.json",
       "verification_spec": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/verification/verification-spec.json"
     },
-    "seal_sha256": "ca332d32fed9a434764e5d0c13d30a01f6795b4fe99afb7823ca0afa5c1c4126",
+    "seal_sha256": "dd9ef30e1df054330250fd65f1afee756b0347c46e125f37e6e21b87b4f7e0ed",
     "selected_testcase_ids": [
+      "TC-GS-03",
+      "TC-GS-04",
+      "TC-GS-05",
+      "TC-GS-06",
+      "TC-GS-07",
+      "TC-GS-08",
+      "TC-GS-09",
+      "TC-GS-10",
       "TC-HM-01",
       "TC-HM-02",
       "TC-HM-03",
@@ -551,12 +561,23 @@
         ],
         "required_artifact_kinds": [
           "business-result",
-          "fault-recovery-log"
+          "fault-recovery-log",
+          "model-eval-predictions",
+          "benchmark-samples",
+          "provider-usage"
         ],
         "required_business_facts": [
           "business_terminal",
           "recovered_state",
-          "quality_thresholds_met"
+          "quality_thresholds_met",
+          "model_provider_identity",
+          "independent_root_run_count",
+          "primary_committed_turns",
+          "prediction_corpus_sha256",
+          "metric_numerators_denominators",
+          "provider_usage_samples",
+          "benchmark_samples",
+          "context_budget_assertions"
         ],
         "required_identity": [
           "root_run_id"
@@ -581,11 +602,102 @@
         "TC-HM-X01"
       ],
       "ui": false
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe",
+          "desktop-ui-driver"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "ui-capture"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "global_skill_tool_regression_passed",
+          "current_testcase_revisions"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "simple_harness_sdk/**",
+        "backend/**",
+        "src/**"
+      ],
+      "input_class": "global-skill-tool-primary-conversation-regression",
+      "manual_required": true,
+      "min_root_runs": 2,
+      "required": true,
+      "scenario_id": "HM-REG-GS-UI",
+      "testcase_ids": [
+        "TC-GS-03",
+        "TC-GS-04",
+        "TC-GS-05",
+        "TC-GS-07",
+        "TC-GS-09",
+        "TC-GS-10"
+      ],
+      "ui": true
+    },
+    {
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "recovered_state",
+          "global_skill_half_state_zero"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "simple_harness_sdk/**",
+        "backend/**"
+      ],
+      "input_class": "global-skill-atomicity-idempotency-regression",
+      "lanes": [
+        "temporal-fault"
+      ],
+      "manual_required": false,
+      "min_root_runs": 1,
+      "required": true,
+      "scenario_id": "HM-REG-GS-STATE",
+      "testcase_ids": [
+        "TC-GS-06",
+        "TC-GS-08"
+      ],
+      "ui": false
     }
   ],
   "source_request_text": "确认实施，记得同步一下主干分支的最新代码，如果其他sdk要修改的话",
   "structured_audit_required": true,
   "testcase_files": [
+    "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-03-global-install.md",
+    "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-04-cross-session-skill.md",
+    "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-05-cold-restart.md",
+    "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-06-atomic-failure.md",
+    "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-07-global-tool-catalog.md",
+    "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-08-concurrency-idempotency.md",
+    "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-09-auto-permission.md",
+    "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-10-install-run-convergence.md",
     "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-01-no-recall.md",
     "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-02-task-resume.md",
     "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-03-conflict-evolution.md",

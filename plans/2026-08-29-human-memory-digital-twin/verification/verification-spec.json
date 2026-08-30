@@ -257,10 +257,48 @@
       "impact_paths": ["src/**", "simple_harness_sdk/**", "backend/**"],
       "evidence_contract": {
         "producer_types": ["gate-exec", "runtime-probe"],
-        "required_artifact_kinds": ["business-result", "fault-recovery-log"],
+        "required_artifact_kinds": ["business-result", "fault-recovery-log", "model-eval-predictions", "benchmark-samples", "provider-usage"],
         "required_identity": ["root_run_id"],
         "required_timestamps": true,
-        "required_business_facts": ["business_terminal", "recovered_state", "quality_thresholds_met"]
+        "required_business_facts": ["business_terminal", "recovered_state", "quality_thresholds_met", "model_provider_identity", "independent_root_run_count", "primary_committed_turns", "prediction_corpus_sha256", "metric_numerators_denominators", "provider_usage_samples", "benchmark_samples", "context_budget_assertions"]
+      }
+    },
+    {
+      "scenario_id": "HM-REG-GS-UI",
+      "required": true,
+      "testcase_ids": ["TC-GS-03", "TC-GS-04", "TC-GS-05", "TC-GS-07", "TC-GS-09", "TC-GS-10"],
+      "gate_type": "positive-value",
+      "input_class": "global-skill-tool-primary-conversation-regression",
+      "ui": true,
+      "manual_required": true,
+      "min_root_runs": 2,
+      "cold_start": true,
+      "impact_paths": ["simple_harness_sdk/**", "backend/**", "src/**"],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe", "desktop-ui-driver"],
+        "required_artifact_kinds": ["business-result", "ui-capture"],
+        "required_identity": ["root_run_id", "session_id"],
+        "required_timestamps": true,
+        "required_business_facts": ["business_terminal", "global_skill_tool_regression_passed", "current_testcase_revisions"]
+      }
+    },
+    {
+      "scenario_id": "HM-REG-GS-STATE",
+      "required": true,
+      "testcase_ids": ["TC-GS-06", "TC-GS-08"],
+      "gate_type": "negative-safety",
+      "input_class": "global-skill-atomicity-idempotency-regression",
+      "ui": false,
+      "manual_required": false,
+      "min_root_runs": 1,
+      "lanes": ["temporal-fault"],
+      "impact_paths": ["simple_harness_sdk/**", "backend/**"],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe"],
+        "required_artifact_kinds": ["execution-log", "fault-recovery-log"],
+        "required_identity": ["root_run_id"],
+        "required_timestamps": true,
+        "required_business_facts": ["business_terminal", "recovered_state", "global_skill_half_state_zero"]
       }
     }
   ],

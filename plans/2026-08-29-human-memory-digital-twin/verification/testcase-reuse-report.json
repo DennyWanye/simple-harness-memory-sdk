@@ -1,6 +1,16 @@
 {
   "schema_version": "1.0",
   "historical_pass_inherited": false,
+  "legacy_testcase_dispositions": [
+    {"testcase_id": "TC-GS-03", "decision": "reuse-as-is", "reason": "用户级全局 Skill 发布不依赖多 Session 产品模型；当前 run 必须重新执行。"},
+    {"testcase_id": "TC-GS-04", "decision": "reuse-with-extension", "reason": "revision 2 已把跨 Session oracle 改为 standalone/managed/exact-root TaskScope Run，同时保留 immutable Skill snapshot 与 N/N+1。"},
+    {"testcase_id": "TC-GS-05", "decision": "reuse-with-extension", "reason": "revision 2 保留冷恢复 global catalog/Skill，移除原型范围外的删除式 legacy migration。"},
+    {"testcase_id": "TC-GS-06", "decision": "reuse-with-extension", "reason": "revision 2 把 Session 半绑定故障改为 TaskScope/binding-set 故障，保留 Skill publish 原子性。"},
+    {"testcase_id": "TC-GS-07", "decision": "reuse-with-extension", "reason": "revision 2 把全 Session catalog 改为全 Run catalog，保留 descriptor/availability/authorization 回归。"},
+    {"testcase_id": "TC-GS-08", "decision": "reuse-with-extension", "reason": "revision 2 只保留全局 Skill install 并发/lost-ACK，TaskScope 并发由 HM 用例独立证明。"},
+    {"testcase_id": "TC-GS-09", "decision": "reuse-with-extension", "reason": "revision 3 改为唯一主对话入口，保留 Auto receipt 与 deny/unavailable 强门。"},
+    {"testcase_id": "TC-GS-10", "decision": "reuse-with-extension", "reason": "revision 3 改为同一主对话 fresh root 恢复，保留 Skill saga 和 Run/UI 收敛。"}
+  ],
   "decisions": [
     {
       "obligation_id": "HM-TO-A1",
@@ -67,10 +77,10 @@
     },
     {
       "obligation_id": "HM-TO-R2",
-      "decision": "create-new",
-      "candidates": ["TC-GS-06"],
-      "selected_testcases": ["TC-HM-03@rev1", "TC-HM-04@rev1", "TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-11@rev1"],
-      "reason": "LLM 驱动多表 mutation 与 TaskScope/trigger/closure 需要逐事务 fault point 的原子幂等证明。"
+      "decision": "reuse-with-extension",
+      "candidates": ["TC-HM-03@rev1", "TC-HM-04@rev1", "TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-11@rev1", "TC-GS-06@rev2", "TC-GS-08@rev2", "TC-GS-10@rev3"],
+      "selected_testcases": ["TC-HM-03@rev1", "TC-HM-04@rev1", "TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-11@rev1", "TC-GS-06@rev2", "TC-GS-08@rev2", "TC-GS-10@rev3"],
+      "reason": "在 HM 状态机 fault lanes 外，复用并扩展全局 Skill publish、lost-ACK 和 Run/UI 收敛的原子幂等回归。"
     },
     {
       "obligation_id": "HM-TO-R3",
@@ -81,10 +91,10 @@
     },
     {
       "obligation_id": "HM-TO-R4",
-      "decision": "create-new",
-      "candidates": [],
-      "selected_testcases": ["TC-HM-01@rev1", "TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-X01@rev1"],
-      "reason": "新的 durable protocol 必须证明 recipient/environment/version 进入 canonical hash 且跨仓版本漂移 fail closed。"
+      "decision": "reuse-with-extension",
+      "candidates": ["TC-HM-01@rev1", "TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-X01@rev1", "TC-GS-03@rev1", "TC-GS-04@rev2", "TC-GS-05@rev2", "TC-GS-07@rev2", "TC-GS-08@rev2", "TC-GS-09@rev3", "TC-GS-10@rev3"],
+      "selected_testcases": ["TC-HM-01@rev1", "TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-X01@rev1", "TC-GS-03@rev1", "TC-GS-04@rev2", "TC-GS-05@rev2", "TC-GS-07@rev2", "TC-GS-08@rev2", "TC-GS-09@rev3", "TC-GS-10@rev3"],
+      "reason": "新的 durable protocol hash/version 之外，复用并扩展 global Skill/Tool snapshot、cold restart、authorization 与 convergence 回归。"
     },
     {
       "obligation_id": "HM-TO-R5",
