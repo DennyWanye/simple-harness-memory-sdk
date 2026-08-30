@@ -1,0 +1,118 @@
+{
+  "schema_version": "1.0",
+  "historical_pass_inherited": false,
+  "decisions": [
+    {
+      "obligation_id": "HM-TO-A1",
+      "decision": "create-new",
+      "candidates": ["TC-PS-08"],
+      "selected_testcases": ["TC-HM-07@rev1", "TC-HM-X01@rev1"],
+      "reason": "旧迁移用例以物理删除为成功标准；新用例共同证明永久 raw evidence、逻辑遗忘和 fresh init。"
+    },
+    {
+      "obligation_id": "HM-TO-A2",
+      "decision": "create-new",
+      "candidates": [],
+      "selected_testcases": ["TC-HM-03@rev1", "TC-HM-08@rev1", "TC-HM-X01@rev1"],
+      "reason": "现有 Fact 用例没有四认知系统、epistemic 状态和 schema 化 LLM proposal oracle。"
+    },
+    {
+      "obligation_id": "HM-TO-A3",
+      "decision": "create-new",
+      "candidates": ["TC-PS-02", "TC-PS-04", "TC-PS-06"],
+      "selected_testcases": ["TC-HM-02@rev1", "TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-10@rev1", "TC-HM-11@rev1"],
+      "reason": "旧用例以 Session 为任务与单根 authority；新用例覆盖 TaskScope、单 Run、多根和 semantic closure。"
+    },
+    {
+      "obligation_id": "HM-TO-A4",
+      "decision": "create-new",
+      "candidates": ["TC-PS-03", "TC-PS-05"],
+      "selected_testcases": ["TC-HM-01@rev1", "TC-HM-02@rev1", "TC-HM-03@rev1", "TC-HM-06@rev1", "TC-HM-08@rev1", "TC-HM-10@rev1"],
+      "reason": "必须证明五路 route、no-recall、候选 search 后 exact open 和类型化 recall，旧 Session 导航不能复用。"
+    },
+    {
+      "obligation_id": "HM-TO-A5",
+      "decision": "create-new",
+      "candidates": [],
+      "selected_testcases": ["TC-HM-04@rev1", "TC-HM-05@rev1"],
+      "reason": "现有资产没有 Procedure 激活证据阈值和 Prospective trigger lifecycle。"
+    },
+    {
+      "obligation_id": "HM-TO-A6",
+      "decision": "create-new",
+      "candidates": [],
+      "selected_testcases": ["TC-HM-02@rev1", "TC-HM-11@rev1", "TC-HM-12@rev1"],
+      "reason": "需要冻结最近十因果组、预算化 Context、可重建有界视图与 display-only twin 的联合 oracle。"
+    },
+    {
+      "obligation_id": "HM-TO-A7",
+      "decision": "create-new",
+      "candidates": [],
+      "selected_testcases": ["TC-HM-02@rev1", "TC-HM-07@rev1", "TC-HM-12@rev1"],
+      "reason": "旧日志用例未覆盖全部 LLM decision、受控审计读取和 canonical facts 到六视图的 lineage。"
+    },
+    {
+      "obligation_id": "HM-TO-A8",
+      "decision": "create-new",
+      "candidates": ["TC-GS-08"],
+      "selected_testcases": ["TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-11@rev1", "TC-HM-X01@rev1"],
+      "reason": "旧并发用例创建多个 Session，与唯一主对话冲突；新集合覆盖三仓契约、初始化、恢复、质量和性能。"
+    },
+    {
+      "obligation_id": "HM-TO-R1",
+      "decision": "create-new",
+      "candidates": ["TC-PS-08"],
+      "selected_testcases": ["TC-HM-07@rev1", "TC-HM-X01@rev1"],
+      "reason": "以 raw row count 和逐项 hash 对 retention、forget、maintenance、test cleanup 和 rebuild 做零物理删除断言。"
+    },
+    {
+      "obligation_id": "HM-TO-R2",
+      "decision": "create-new",
+      "candidates": ["TC-GS-06"],
+      "selected_testcases": ["TC-HM-03@rev1", "TC-HM-04@rev1", "TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-11@rev1"],
+      "reason": "LLM 驱动多表 mutation 与 TaskScope/trigger/closure 需要逐事务 fault point 的原子幂等证明。"
+    },
+    {
+      "obligation_id": "HM-TO-R3",
+      "decision": "create-new",
+      "candidates": [],
+      "selected_testcases": ["TC-HM-03@rev1", "TC-HM-06@rev1", "TC-HM-07@rev1", "TC-HM-10@rev1", "TC-HM-12@rev1"],
+      "reason": "跨 recipient、contested/superseded/suppressed、旧 checkpoint、Context 和图谱的 stale privacy 风险没有旧统一 oracle。"
+    },
+    {
+      "obligation_id": "HM-TO-R4",
+      "decision": "create-new",
+      "candidates": [],
+      "selected_testcases": ["TC-HM-01@rev1", "TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-X01@rev1"],
+      "reason": "新的 durable protocol 必须证明 recipient/environment/version 进入 canonical hash 且跨仓版本漂移 fail closed。"
+    },
+    {
+      "obligation_id": "HM-TO-R5",
+      "decision": "create-new",
+      "candidates": [],
+      "selected_testcases": ["TC-HM-06@rev1", "TC-HM-07@rev1", "TC-HM-12@rev1", "TC-HM-X01@rev1"],
+      "reason": "受控审计、普通导出与 credentials/hidden reasoning 全域零命中必须合并验证。"
+    },
+    {
+      "obligation_id": "HM-TO-R6",
+      "decision": "create-new",
+      "candidates": [],
+      "selected_testcases": ["TC-HM-04@rev1", "TC-HM-05@rev1", "TC-HM-08@rev1", "TC-HM-X01@rev1"],
+      "reason": "固定 LLM 乱序、重复、拒答、schema、超长、timeout 与 embedding/outbox 故障矩阵。"
+    },
+    {
+      "obligation_id": "HM-TO-R7",
+      "decision": "create-new",
+      "candidates": ["TC-GS-04", "TC-GS-05"],
+      "selected_testcases": ["TC-HM-02@rev1", "TC-HM-10@rev1", "TC-HM-11@rev1", "TC-HM-12@rev1"],
+      "reason": "取消 Session 边界后要专门证明多任务交错、最近窗口、短时域和 display projection 不串线。"
+    },
+    {
+      "obligation_id": "HM-TO-R8",
+      "decision": "create-new",
+      "candidates": [],
+      "selected_testcases": ["TC-HM-02@rev1", "TC-HM-08@rev1", "TC-HM-11@rev1"],
+      "reason": "客观事件、主模型 mutation/no-mutation closure、CAS/retry 和 view worker 失败需要完整恢复 oracle。"
+    }
+  ]
+}

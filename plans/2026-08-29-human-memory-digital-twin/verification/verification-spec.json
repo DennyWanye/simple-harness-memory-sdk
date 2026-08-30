@@ -1,0 +1,293 @@
+{
+  "acceptance_file": "plans/2026-08-29-human-memory-digital-twin/acceptance.md",
+  "assurance_contract": "plans/2026-08-29-human-memory-digital-twin/assurance-contract.json",
+  "testcase_inventory": "/Users/denny/projects/simple_harness-memory-plan/testcase/index.json",
+  "reuse_report": "plans/2026-08-29-human-memory-digital-twin/verification/testcase-reuse-report.json",
+  "obligations": [
+    {"obligation_id": "HM-TO-A1", "ac_ids": ["HM-AC-1"]},
+    {"obligation_id": "HM-TO-A2", "ac_ids": ["HM-AC-2"]},
+    {"obligation_id": "HM-TO-A3", "ac_ids": ["HM-AC-3"]},
+    {"obligation_id": "HM-TO-A4", "ac_ids": ["HM-AC-4"]},
+    {"obligation_id": "HM-TO-A5", "ac_ids": ["HM-AC-5"]},
+    {"obligation_id": "HM-TO-A6", "ac_ids": ["HM-AC-6"]},
+    {"obligation_id": "HM-TO-A7", "ac_ids": ["HM-AC-7"]},
+    {"obligation_id": "HM-TO-A8", "ac_ids": ["HM-AC-8"]},
+    {"obligation_id": "HM-TO-R1", "ac_ids": ["HM-AC-1", "HM-AC-8"]},
+    {"obligation_id": "HM-TO-R2", "ac_ids": ["HM-AC-2", "HM-AC-3"]},
+    {"obligation_id": "HM-TO-R3", "ac_ids": ["HM-AC-1", "HM-AC-4", "HM-AC-6"]},
+    {"obligation_id": "HM-TO-R4", "ac_ids": ["HM-AC-4", "HM-AC-8"]},
+    {"obligation_id": "HM-TO-R5", "ac_ids": ["HM-AC-1", "HM-AC-7"]},
+    {"obligation_id": "HM-TO-R6", "ac_ids": ["HM-AC-8"]},
+    {"obligation_id": "HM-TO-R7", "ac_ids": ["HM-AC-1", "HM-AC-3", "HM-AC-6"]},
+    {"obligation_id": "HM-TO-R8", "ac_ids": ["HM-AC-3", "HM-AC-7"]}
+  ],
+  "scenarios": [
+    {
+      "scenario_id": "HM-S1",
+      "required": true,
+      "testcase_ids": ["TC-HM-01"],
+      "gate_type": "positive-value",
+      "input_class": "context-sufficient-no-recall",
+      "ui": true,
+      "manual_required": true,
+      "min_root_runs": 2,
+      "impact_paths": ["simple_harness_sdk/**", "backend/**", "src/**"],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe", "desktop-ui-driver"],
+        "required_artifact_kinds": ["business-result", "ui-capture"],
+        "required_identity": ["root_run_id", "session_id"],
+        "required_timestamps": true,
+        "required_business_facts": ["business_terminal", "no_recall_zero_query"]
+      }
+    },
+    {
+      "scenario_id": "HM-S2",
+      "required": true,
+      "testcase_ids": ["TC-HM-02"],
+      "gate_type": "positive-value",
+      "input_class": "distant-task-resume",
+      "ui": true,
+      "manual_required": true,
+      "min_root_runs": 2,
+      "impact_paths": ["backend/**", "src/**"],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe", "desktop-ui-driver"],
+        "required_artifact_kinds": ["business-result", "ui-capture"],
+        "required_identity": ["root_run_id", "session_id"],
+        "required_timestamps": true,
+        "required_business_facts": ["business_terminal", "exact_task_scope_open"]
+      }
+    },
+    {
+      "scenario_id": "HM-S3",
+      "required": true,
+      "testcase_ids": ["TC-HM-03"],
+      "gate_type": "positive-value",
+      "input_class": "fact-evolution-conflict",
+      "ui": true,
+      "manual_required": true,
+      "min_root_runs": 2,
+      "impact_paths": ["src/**", "backend/**"],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe", "desktop-ui-driver"],
+        "required_artifact_kinds": ["business-result", "ui-capture"],
+        "required_identity": ["root_run_id", "session_id"],
+        "required_timestamps": true,
+        "required_business_facts": ["business_terminal", "active_revision"]
+      }
+    },
+    {
+      "scenario_id": "HM-S4",
+      "required": true,
+      "testcase_ids": ["TC-HM-04"],
+      "gate_type": "positive-value",
+      "input_class": "procedure-and-event-intention",
+      "ui": true,
+      "manual_required": true,
+      "min_root_runs": 2,
+      "impact_paths": ["src/**", "backend/**"],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe", "desktop-ui-driver"],
+        "required_artifact_kinds": ["business-result", "ui-capture"],
+        "required_identity": ["root_run_id", "session_id"],
+        "required_timestamps": true,
+        "required_business_facts": ["business_terminal", "single_occurrence"]
+      }
+    },
+    {
+      "scenario_id": "HM-S5",
+      "required": true,
+      "testcase_ids": ["TC-HM-05"],
+      "gate_type": "negative-safety",
+      "input_class": "ambiguous-wish-no-trigger",
+      "ui": true,
+      "manual_required": true,
+      "min_root_runs": 2,
+      "impact_paths": ["src/**", "backend/**"],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe", "desktop-ui-driver"],
+        "required_artifact_kinds": ["execution-log", "ui-capture"],
+        "required_identity": ["root_run_id", "session_id"],
+        "required_timestamps": true,
+        "required_business_facts": ["business_terminal", "scheduler_zero_delta"]
+      }
+    },
+    {
+      "scenario_id": "HM-S6",
+      "required": true,
+      "testcase_ids": ["TC-HM-06"],
+      "gate_type": "negative-safety",
+      "input_class": "third-party-recipient-privacy",
+      "ui": true,
+      "manual_required": true,
+      "min_root_runs": 2,
+      "impact_paths": ["src/**", "backend/**"],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe", "desktop-ui-driver"],
+        "required_artifact_kinds": ["execution-log", "ui-capture"],
+        "required_identity": ["root_run_id", "session_id"],
+        "required_timestamps": true,
+        "required_business_facts": ["business_terminal", "private_canary_zero_hits"]
+      }
+    },
+    {
+      "scenario_id": "HM-S7",
+      "required": true,
+      "testcase_ids": ["TC-HM-07"],
+      "gate_type": "positive-value",
+      "input_class": "logical-forgetting-controlled-audit",
+      "ui": true,
+      "manual_required": true,
+      "min_root_runs": 2,
+      "lanes": ["temporal-fault"],
+      "impact_paths": ["src/**", "backend/**"],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe", "desktop-ui-driver"],
+        "required_artifact_kinds": ["business-result", "ui-capture", "fault-recovery-log"],
+        "required_identity": ["root_run_id", "session_id"],
+        "required_timestamps": true,
+        "required_business_facts": ["business_terminal", "recovered_state", "raw_hash_unchanged"]
+      }
+    },
+    {
+      "scenario_id": "HM-S8",
+      "required": true,
+      "testcase_ids": ["TC-HM-08"],
+      "gate_type": "negative-safety",
+      "input_class": "invalid-llm-plan-fault-matrix",
+      "ui": false,
+      "manual_required": false,
+      "min_root_runs": 1,
+      "lanes": ["temporal-fault"],
+      "cold_start": true,
+      "impact_paths": ["src/**", "simple_harness_sdk/**", "backend/**"],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe"],
+        "required_artifact_kinds": ["execution-log", "fault-recovery-log"],
+        "required_identity": ["root_run_id"],
+        "required_timestamps": true,
+        "required_business_facts": ["business_terminal", "recovered_state", "half_state_zero"]
+      }
+    },
+    {
+      "scenario_id": "HM-S9",
+      "required": true,
+      "testcase_ids": ["TC-HM-09"],
+      "gate_type": "negative-safety",
+      "input_class": "taskscope-multi-root-authority",
+      "ui": true,
+      "manual_required": true,
+      "min_root_runs": 2,
+      "lanes": ["temporal-fault"],
+      "impact_paths": ["simple_harness_sdk/**", "backend/**", "src/**"],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe", "desktop-ui-driver"],
+        "required_artifact_kinds": ["execution-log", "ui-capture", "fault-recovery-log"],
+        "required_identity": ["root_run_id", "session_id"],
+        "required_timestamps": true,
+        "required_business_facts": ["business_terminal", "recovered_state", "unauthorized_write_zero"]
+      }
+    },
+    {
+      "scenario_id": "HM-S10",
+      "required": true,
+      "testcase_ids": ["TC-HM-10"],
+      "gate_type": "positive-value",
+      "input_class": "five-way-task-routing",
+      "ui": true,
+      "manual_required": true,
+      "min_root_runs": 2,
+      "impact_paths": ["simple_harness_sdk/**", "backend/**", "src/**"],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe", "desktop-ui-driver"],
+        "required_artifact_kinds": ["business-result", "ui-capture"],
+        "required_identity": ["root_run_id", "session_id"],
+        "required_timestamps": true,
+        "required_business_facts": ["business_terminal", "five_route_outcomes"]
+      }
+    },
+    {
+      "scenario_id": "HM-S11",
+      "required": true,
+      "testcase_ids": ["TC-HM-11"],
+      "gate_type": "negative-safety",
+      "input_class": "single-foreground-run-fifo",
+      "ui": true,
+      "manual_required": true,
+      "min_root_runs": 2,
+      "lanes": ["temporal-fault"],
+      "impact_paths": ["simple_harness_sdk/**", "backend/**", "src/**"],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe", "desktop-ui-driver"],
+        "required_artifact_kinds": ["execution-log", "ui-capture", "fault-recovery-log"],
+        "required_identity": ["root_run_id", "session_id"],
+        "required_timestamps": true,
+        "required_business_facts": ["business_terminal", "recovered_state", "max_foreground_runs"]
+      }
+    },
+    {
+      "scenario_id": "HM-S12",
+      "required": true,
+      "testcase_ids": ["TC-HM-12"],
+      "gate_type": "positive-value",
+      "input_class": "display-only-digital-twin",
+      "ui": true,
+      "manual_required": true,
+      "min_root_runs": 2,
+      "impact_paths": ["backend/**", "src/**"],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe", "desktop-ui-driver"],
+        "required_artifact_kinds": ["business-result", "ui-capture"],
+        "required_identity": ["root_run_id", "session_id"],
+        "required_timestamps": true,
+        "required_business_facts": ["business_terminal", "graph_influence_zero"]
+      }
+    },
+    {
+      "scenario_id": "HM-X01",
+      "required": true,
+      "testcase_ids": ["TC-HM-X01"],
+      "gate_type": "positive-value",
+      "input_class": "cross-repo-init-quality-benchmark",
+      "ui": false,
+      "manual_required": false,
+      "min_root_runs": 2,
+      "cold_start": true,
+      "lanes": ["temporal-fault"],
+      "impact_paths": ["src/**", "simple_harness_sdk/**", "backend/**"],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe"],
+        "required_artifact_kinds": ["business-result", "fault-recovery-log"],
+        "required_identity": ["root_run_id"],
+        "required_timestamps": true,
+        "required_business_facts": ["business_terminal", "recovered_state", "quality_thresholds_met"]
+      }
+    }
+  ],
+  "manifest": {
+    "repo_root": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan",
+    "source_request_text": "确认实施，记得同步一下主干分支的最新代码，如果其他sdk要修改的话",
+    "flow_tier": {
+      "value": "FULL",
+      "rationale": "包含语义敏感 LLM 决策、新持久化状态机、永久原始数据和跨仓公共协议",
+      "decided_by": "user"
+    },
+    "applicability": {
+      "input_sensitive": {"value": true, "rationale": "记忆召回和提取依赖自然语言语义", "decided_by": "user"},
+      "llm_payload_driven": {"value": true, "rationale": "LLM 结构化计划驱动确定性状态机", "decided_by": "user"},
+      "stateful_init": {"value": true, "rationale": "空数据目录需要原子初始化持久状态", "decided_by": "user"}
+    },
+    "release_unit": {
+      "slice_id": "V0",
+      "parent_program": "human-memory-digital-twin",
+      "scope_hash": "303f4086283cf24117a30af38ee9e4a7c2d15389ce5a663db06d076e140fc7dc",
+      "must_ac_count": 8,
+      "task_count": 7,
+      "plan_lines": 87,
+      "high_risk_subsystems": 3,
+      "concurrent_layer_kinds": 3
+    },
+    "executor_engine": "codex",
+    "auditor_engine": "independent-codex-agent"
+  }
+}

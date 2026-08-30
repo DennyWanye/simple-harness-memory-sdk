@@ -47,3 +47,11 @@ secrets/
 # plan-test gate ledger
 plans/*/verification/
 .local-test-evidence/
+
+# Human Memory Program keeps only reproducible V0 gate authority in Git.
+!plans/2026-08-29-human-memory-digital-twin/verification/
+plans/2026-08-29-human-memory-digital-twin/verification/*
+!plans/2026-08-29-human-memory-digital-twin/verification/verification-spec.json
+!plans/2026-08-29-human-memory-digital-twin/verification/testcase-reuse-report.json
+!plans/2026-08-29-human-memory-digital-twin/verification/manifest.json
+!plans/2026-08-29-human-memory-digital-twin/verification/v0-closure.md
