@@ -168,34 +168,126 @@ CREATE TRIGGER sealed_audit_access_events_immutable_delete
 BEFORE DELETE ON sealed_audit_access_events
 BEGIN SELECT RAISE(ABORT, 'immutable audit event'); END;
 CREATE TABLE llm_invocations (
-    invocation_id TEXT PRIMARY KEY,
+    invocation_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    invocation_id TEXT NOT NULL UNIQUE,
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
     run_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    job_id TEXT NOT NULL,
     request_hash TEXT NOT NULL,
     public_input_refs_json BLOB NOT NULL,
+    public_input_hash TEXT NOT NULL,
     public_output_json BLOB,
     public_output_hash TEXT,
+    output_storage_status TEXT NOT NULL
+        CHECK (output_storage_status IN ('public', 'rejected_unsafe')),
+    output_reason_code TEXT NOT NULL,
     provider_id TEXT NOT NULL,
     model_id TEXT NOT NULL,
     parameters_hash TEXT NOT NULL,
     prompt_version TEXT NOT NULL,
     schema_version TEXT NOT NULL,
     policy_version TEXT NOT NULL,
-    validator_version TEXT,
+    validator_version TEXT NOT NULL,
+    provider_request_id TEXT,
+    host_receipt_id TEXT NOT NULL UNIQUE,
+    host_receipt_json BLOB NOT NULL,
+    host_receipt_hash TEXT NOT NULL UNIQUE,
+    result_hash TEXT NOT NULL UNIQUE,
+    input_tokens INTEGER NOT NULL CHECK (input_tokens >= 0),
+    output_tokens INTEGER NOT NULL CHECK (output_tokens >= 0),
+    cost_microunits INTEGER NOT NULL CHECK (cost_microunits >= 0),
+    latency_ms INTEGER NOT NULL CHECK (latency_ms >= 0),
     started_at REAL NOT NULL CHECK (started_at >= 0),
-    completed_at REAL,
+    completed_at REAL NOT NULL CHECK (completed_at >= started_at),
+    invocation_hash TEXT NOT NULL UNIQUE,
     UNIQUE (principal_id, request_hash)
 );
+CREATE INDEX llm_invocation_trace_lookup
+    ON llm_invocations(principal_id, turn_id, invocation_sequence);
+CREATE TRIGGER llm_invocations_immutable_update
+BEFORE UPDATE ON llm_invocations BEGIN SELECT RAISE(ABORT, 'immutable audit'); END;
+CREATE TRIGGER llm_invocations_immutable_delete
+BEFORE DELETE ON llm_invocations BEGIN SELECT RAISE(ABORT, 'immutable audit'); END;
+CREATE TABLE llm_invocation_evidence_refs (
+    invocation_id TEXT NOT NULL REFERENCES llm_invocations(invocation_id),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 1),
+    evidence_id TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    PRIMARY KEY (invocation_id, ordinal),
+    UNIQUE (invocation_id, evidence_id)
+);
+CREATE INDEX llm_invocation_evidence_lookup
+    ON llm_invocation_evidence_refs(evidence_id, invocation_id);
+CREATE TRIGGER llm_invocation_evidence_refs_immutable_update
+BEFORE UPDATE ON llm_invocation_evidence_refs BEGIN SELECT RAISE(ABORT, 'immutable audit'); END;
+CREATE TRIGGER llm_invocation_evidence_refs_immutable_delete
+BEFORE DELETE ON llm_invocation_evidence_refs BEGIN SELECT RAISE(ABORT, 'immutable audit'); END;
+CREATE TABLE llm_reasoning_refs (
+    invocation_id TEXT NOT NULL REFERENCES llm_invocations(invocation_id),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 1),
+    provider_item_id TEXT NOT NULL,
+    item_type TEXT NOT NULL,
+    item_hash TEXT NOT NULL,
+    opaque_ref TEXT,
+    PRIMARY KEY (invocation_id, ordinal),
+    UNIQUE (invocation_id, provider_item_id)
+);
+CREATE TRIGGER llm_reasoning_refs_immutable_update
+BEFORE UPDATE ON llm_reasoning_refs BEGIN SELECT RAISE(ABORT, 'immutable audit'); END;
+CREATE TRIGGER llm_reasoning_refs_immutable_delete
+BEFORE DELETE ON llm_reasoning_refs BEGIN SELECT RAISE(ABORT, 'immutable audit'); END;
 CREATE TABLE decision_records (
     decision_id TEXT PRIMARY KEY,
-    invocation_id TEXT REFERENCES llm_invocations(invocation_id),
+    invocation_id TEXT NOT NULL REFERENCES llm_invocations(invocation_id),
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
-    decision_kind TEXT NOT NULL,
+    operation_id TEXT NOT NULL,
+    operation_kind TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('accepted', 'rejected')),
+    target_kind TEXT NOT NULL,
+    target_ref TEXT NOT NULL,
     canonical_payload BLOB NOT NULL,
-    payload_hash TEXT NOT NULL UNIQUE,
+    payload_hash TEXT NOT NULL,
+    before_refs_json BLOB NOT NULL,
+    after_refs_json BLOB NOT NULL,
     reason_code TEXT NOT NULL,
-    created_at REAL NOT NULL CHECK (created_at >= 0)
+    created_at REAL NOT NULL CHECK (created_at >= 0),
+    decision_hash TEXT NOT NULL UNIQUE,
+    UNIQUE (invocation_id, operation_id)
 );
+CREATE INDEX decision_trace_lookup ON decision_records(invocation_id, decision_id);
+CREATE TRIGGER decision_records_immutable_update
+BEFORE UPDATE ON decision_records BEGIN SELECT RAISE(ABORT, 'immutable audit'); END;
+CREATE TRIGGER decision_records_immutable_delete
+BEFORE DELETE ON decision_records BEGIN SELECT RAISE(ABORT, 'immutable audit'); END;
+CREATE TABLE decision_evidence_refs (
+    decision_id TEXT NOT NULL REFERENCES decision_records(decision_id),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 1),
+    evidence_id TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    PRIMARY KEY (decision_id, ordinal),
+    UNIQUE (decision_id, evidence_id)
+);
+CREATE INDEX decision_evidence_lookup ON decision_evidence_refs(evidence_id, decision_id);
+CREATE TRIGGER decision_evidence_refs_immutable_update
+BEFORE UPDATE ON decision_evidence_refs BEGIN SELECT RAISE(ABORT, 'immutable audit'); END;
+CREATE TRIGGER decision_evidence_refs_immutable_delete
+BEFORE DELETE ON decision_evidence_refs BEGIN SELECT RAISE(ABORT, 'immutable audit'); END;
+CREATE TABLE audit_trace_access_events (
+    event_id TEXT PRIMARY KEY,
+    access_receipt_id TEXT NOT NULL,
+    query_hash TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('granted', 'denied')),
+    reason_code TEXT NOT NULL,
+    occurred_at REAL NOT NULL CHECK (occurred_at >= 0),
+    event_hash TEXT NOT NULL UNIQUE
+);
+CREATE INDEX audit_trace_access_lookup
+    ON audit_trace_access_events(access_receipt_id, outcome, occurred_at, event_id);
+CREATE TRIGGER audit_trace_access_events_immutable_update
+BEFORE UPDATE ON audit_trace_access_events BEGIN SELECT RAISE(ABORT, 'immutable audit'); END;
+CREATE TRIGGER audit_trace_access_events_immutable_delete
+BEFORE DELETE ON audit_trace_access_events BEGIN SELECT RAISE(ABORT, 'immutable audit'); END;
 CREATE TABLE jobs (
     job_id TEXT PRIMARY KEY,
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
@@ -304,7 +396,11 @@ REQUIRED_TABLES = frozenset(
         "sealed_audit_access_receipts",
         "sealed_audit_access_events",
         "llm_invocations",
+        "llm_invocation_evidence_refs",
+        "llm_reasoning_refs",
         "decision_records",
+        "decision_evidence_refs",
+        "audit_trace_access_events",
         "jobs",
         "job_attempts",
         "outbox",

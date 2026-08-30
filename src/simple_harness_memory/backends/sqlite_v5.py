@@ -8,18 +8,19 @@ import importlib
 import json
 import math
 import os
+import re
 import sqlite3
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote
 from uuid import uuid4
 
 import aiosqlite
 import structlog
-from simple_harness.contracts import JsonValue, canonical_json
+from simple_harness.contracts import FrozenJsonValue, JsonValue, canonical_json, thaw_json
 
 from simple_harness_memory.backends.schema_v5 import (
     REQUIRED_TABLES,
@@ -34,13 +35,29 @@ from simple_harness_memory.core.errors import (
     MemoryCorruptionError,
     MemoryIdempotencyConflict,
     MemoryLegacySchemaUnsupported,
+    MemoryLimitError,
     MemoryValidationError,
     MemoryWriterConflict,
 )
 
 if TYPE_CHECKING:
-    from simple_harness.runtime import SanitizedEvidenceEnvelope, SanitizedEvidenceReceipt
+    from simple_harness.runtime import (
+        MemoryAnalysisReceipt,
+        MemoryAnalysisRequest,
+        MemoryAnalysisResult,
+        SanitizedEvidenceEnvelope,
+        SanitizedEvidenceReceipt,
+    )
 
+    from simple_harness_memory.core.audit import (
+        AuditTraceCursor,
+        AuditTraceItem,
+        AuditTracePage,
+        AuditTraceQuery,
+        DecisionLedgerEntry,
+        LLMInvocationAuditRecord,
+        PublicReasoningReference,
+    )
     from simple_harness_memory.core.evidence import (
         EvidenceIngestionReceipt,
         IngestedEvidenceRecord,
@@ -98,6 +115,10 @@ SUPPRESSION_FAULT_POINTS = (
 )
 logger = structlog.get_logger("simple_harness_memory.backends.sqlite_v5")
 _DEFAULT_FILTER_POLICIES = frozenset({"credential-filter/v1"})
+_AUDIT_IDENTIFIER_CREDENTIAL_PATTERNS = (
+    re.compile(r"(?i)\bbearer\s+[a-z0-9._~+/=-]{8,}"),
+    re.compile(r"\b(?:sk|key|tsk)-?[A-Za-z0-9_-]{8,}"),
+)
 
 
 class SQLiteHumanMemoryBackend:
@@ -729,6 +750,753 @@ class SQLiteHumanMemoryBackend:
             row = await cursor.fetchone()
         return None if row is None else _suppression_decision_from_row(row)
 
+    async def record_memory_analysis(
+        self,
+        invocation_id: str,
+        turn_id: str,
+        request: MemoryAnalysisRequest,
+        result: MemoryAnalysisResult,
+        host_receipt: MemoryAnalysisReceipt,
+        decisions: tuple[DecisionLedgerEntry, ...],
+        *,
+        reasoning_refs: tuple[PublicReasoningReference, ...] = (),
+    ) -> LLMInvocationAuditRecord:
+        """Append one public-only Host analysis invocation and its decisions atomically."""
+
+        from simple_harness.runtime import (
+            AnalysisValidationStatus,
+            MemoryAnalysisReceipt,
+            MemoryAnalysisRequest,
+            MemoryAnalysisResult,
+        )
+
+        from simple_harness_memory.core.audit import (
+            DecisionLedgerEntry,
+            DecisionOutcome,
+            LLMInvocationAuditRecord,
+            OutputStorageStatus,
+            PublicReasoningReference,
+            freeze_public_audit_object,
+        )
+
+        if type(request) is not MemoryAnalysisRequest:
+            raise TypeError("request must use MemoryAnalysisRequest")
+        if type(result) is not MemoryAnalysisResult:
+            raise TypeError("result must use MemoryAnalysisResult")
+        if type(host_receipt) is not MemoryAnalysisReceipt:
+            raise TypeError("host_receipt must use MemoryAnalysisReceipt")
+        decoded_request = MemoryAnalysisRequest.from_json(request.to_json())
+        decoded_result = MemoryAnalysisResult.from_json(result.to_json())
+        decoded_receipt = MemoryAnalysisReceipt.from_json(host_receipt.to_json())
+        if (
+            decoded_request.request_hash != request.request_hash
+            or decoded_result.result_hash != result.result_hash
+            or decoded_receipt.receipt_hash != host_receipt.receipt_hash
+        ):
+            raise MemoryValidationError("analysis_authority_hash_differs")
+        _audit_identifier(invocation_id, "invocation_id")
+        _audit_identifier(turn_id, "turn_id")
+        decisions = tuple(decisions)
+        reasoning_refs = tuple(reasoning_refs)
+        if not all(type(item) is DecisionLedgerEntry for item in decisions):
+            raise TypeError("decisions must use DecisionLedgerEntry")
+        if not all(type(item) is PublicReasoningReference for item in reasoning_refs):
+            raise TypeError("reasoning_refs must use PublicReasoningReference")
+        if (
+            result.job_id != request.job_id
+            or result.run_id != request.run_id
+            or result.request_hash != request.request_hash
+            or host_receipt.job_id != request.job_id
+            or host_receipt.run_id != request.run_id
+            or host_receipt.request_hash != request.request_hash
+            or host_receipt.result_hash != result.result_hash
+        ):
+            raise MemoryValidationError("analysis_authority_lineage_differs")
+        request_evidence = {
+            item.evidence_id: item.content_hash for item in request.ordered_evidence_refs
+        }
+        for decision in decisions:
+            if any(
+                request_evidence.get(item.evidence_id) != item.content_hash
+                for item in decision.evidence_refs
+            ):
+                raise MemoryValidationError("decision_evidence_lineage_differs")
+            if (
+                decision.target_kind.value == "subject"
+                and decision.target_ref != request.subject
+            ):
+                raise MemoryValidationError("decision_subject_target_differs")
+        if host_receipt.validation_status is not AnalysisValidationStatus.ACCEPTED and any(
+            item.outcome is DecisionOutcome.ACCEPTED for item in decisions
+        ):
+            raise MemoryValidationError("rejected_analysis_cannot_accept_operation")
+
+        public_output: Mapping[str, FrozenJsonValue] | None
+        public_output_hash: str | None
+        output_status = OutputStorageStatus.PUBLIC
+        try:
+            public_output = freeze_public_audit_object(result.structured_result)
+            public_output_json = thaw_json(cast(FrozenJsonValue, public_output))
+            assert isinstance(public_output_json, dict)
+            public_output_hash = hashlib.sha256(
+                canonical_json(public_output_json).encode()
+            ).hexdigest()
+            output_reason = host_receipt.reason_codes[0].value
+        except (MemoryLimitError, MemoryValidationError):
+            if host_receipt.validation_status is AnalysisValidationStatus.ACCEPTED or not any(
+                item.outcome is DecisionOutcome.REJECTED for item in decisions
+            ):
+                raise MemoryValidationError("unsafe_output_requires_rejected_decision") from None
+            public_output = None
+            public_output_hash = None
+            output_status = OutputStorageStatus.REJECTED_UNSAFE
+            output_reason = "audit_private_material_rejected"
+
+        completed_at = float(host_receipt.committed_at)
+        started_at = max(0.0, completed_at - (result.latency_ms / 1000.0))
+        expected = LLMInvocationAuditRecord(
+            1,
+            invocation_id,
+            request.subject,
+            request.run_id,
+            turn_id,
+            request.job_id,
+            request.request_hash,
+            request.ordered_evidence_refs,
+            public_output,
+            public_output_hash,
+            output_status,
+            output_reason,
+            request.provider_id,
+            request.model_id,
+            request.model_config_hash,
+            request.prompt_version,
+            request.result_schema_version,
+            request.policy_version,
+            host_receipt.validator_version,
+            result.provider_response_id,
+            host_receipt,
+            result.result_hash,
+            result.input_tokens,
+            result.output_tokens,
+            result.cost_microunits,
+            result.latency_ms,
+            started_at,
+            completed_at,
+            reasoning_refs,
+        )
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v5 backend is not initialized")
+        async with self._write_lock:
+            for evidence_ref in request.ordered_evidence_refs:
+                async with self._db.execute(
+                    "SELECT subject,sanitized_hash FROM evidence_envelopes WHERE evidence_id=?",
+                    (evidence_ref.evidence_id,),
+                ) as cursor:
+                    evidence_row = await cursor.fetchone()
+                if (
+                    evidence_row is None
+                    or str(evidence_row["subject"]) != request.subject
+                    or str(evidence_row["sanitized_hash"]) != evidence_ref.content_hash
+                ):
+                    raise MemoryValidationError("analysis_evidence_lineage_differs")
+            existing = await self._read_invocation(invocation_id)
+            if existing is not None:
+                stored_decisions = await self._read_decisions(invocation_id)
+                if (
+                    existing.invocation_hash != expected.invocation_hash
+                    or stored_decisions != decisions
+                ):
+                    raise MemoryIdempotencyConflict("analysis_invocation_replay_conflict")
+                return existing
+            async with self._db.execute(
+                "SELECT invocation_id FROM llm_invocations WHERE principal_id=? "
+                "AND request_hash=?",
+                (request.subject, request.request_hash),
+            ) as cursor:
+                if await cursor.fetchone() is not None:
+                    raise MemoryIdempotencyConflict("analysis_request_replay_conflict")
+            await self._append_invocation_unlocked(expected, decisions)
+            stored = await self._read_invocation(invocation_id)
+            if stored is None or stored.invocation_hash != expected.invocation_hash:
+                raise MemoryCorruptionError("stored analysis invocation differs")
+        logger.info(
+            "memory.analysis_invocation_recorded",
+            invocation_id_hash=_opaque_hash(invocation_id),
+            request_hash=request.request_hash,
+            validation_status=host_receipt.validation_status.value,
+        )
+        return stored
+
+    async def _append_invocation_unlocked(
+        self,
+        record: LLMInvocationAuditRecord,
+        decisions: tuple[DecisionLedgerEntry, ...],
+    ) -> None:
+        assert self._db is not None
+        input_refs_json = canonical_json(
+            [item.to_json() for item in record.public_input_refs]
+        )
+        input_hash = hashlib.sha256(input_refs_json.encode()).hexdigest()
+        output_json = (
+            None
+            if record.public_output is None
+            else canonical_json(thaw_json(cast(FrozenJsonValue, record.public_output)))
+        )
+        begun = False
+        committed = False
+        try:
+            await self._db.execute("BEGIN IMMEDIATE")
+            begun = True
+            await self._db.execute(
+                "INSERT INTO principals(principal_id,deployment_id,household_id,actor_id,"
+                "created_at) VALUES(?,?,?,?,?) ON CONFLICT(principal_id) DO NOTHING",
+                (
+                    record.subject,
+                    record.subject,
+                    record.subject,
+                    record.subject,
+                    record.completed_at,
+                ),
+            )
+            await self._db.execute(
+                "INSERT INTO llm_invocations(invocation_id,principal_id,run_id,turn_id,job_id,"
+                "request_hash,public_input_refs_json,public_input_hash,public_output_json,"
+                "public_output_hash,output_storage_status,output_reason_code,provider_id,model_id,"
+                "parameters_hash,prompt_version,schema_version,policy_version,validator_version,"
+                "provider_request_id,host_receipt_id,host_receipt_json,host_receipt_hash,"
+                "result_hash,input_tokens,output_tokens,cost_microunits,latency_ms,started_at,"
+                "completed_at,invocation_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
+                "?,?,?,?,?,?,?,?,?,?)",
+                (
+                    record.invocation_id,
+                    record.subject,
+                    record.run_id,
+                    record.turn_id,
+                    record.job_id,
+                    record.request_hash,
+                    input_refs_json,
+                    input_hash,
+                    output_json,
+                    record.public_output_hash,
+                    record.output_storage_status.value,
+                    record.output_reason_code,
+                    record.provider_id,
+                    record.model_id,
+                    record.parameters_hash,
+                    record.prompt_version,
+                    record.result_schema_version,
+                    record.policy_version,
+                    record.validator_version,
+                    record.provider_request_id,
+                    record.host_receipt.receipt_id,
+                    canonical_json(record.host_receipt.to_json()),
+                    record.host_receipt.receipt_hash,
+                    record.result_hash,
+                    record.input_tokens,
+                    record.output_tokens,
+                    record.cost_microunits,
+                    record.latency_ms,
+                    record.started_at,
+                    record.completed_at,
+                    record.invocation_hash,
+                ),
+            )
+            await self._db.executemany(
+                "INSERT INTO llm_invocation_evidence_refs(invocation_id,ordinal,evidence_id,"
+                "content_hash) VALUES(?,?,?,?)",
+                (
+                    (
+                        record.invocation_id,
+                        item.ordinal,
+                        item.evidence_id,
+                        item.content_hash,
+                    )
+                    for item in record.public_input_refs
+                ),
+            )
+            await self._db.executemany(
+                "INSERT INTO llm_reasoning_refs(invocation_id,ordinal,provider_item_id,item_type,"
+                "item_hash,opaque_ref) VALUES(?,?,?,?,?,?)",
+                (
+                    (
+                        record.invocation_id,
+                        ordinal,
+                        item.provider_item_id,
+                        item.item_type.value,
+                        item.item_hash,
+                        item.opaque_ref,
+                    )
+                    for ordinal, item in enumerate(record.reasoning_refs, start=1)
+                ),
+            )
+            for decision in decisions:
+                payload_json = canonical_json(
+                    thaw_json(cast(FrozenJsonValue, decision.public_payload))
+                )
+                await self._db.execute(
+                    "INSERT INTO decision_records(decision_id,invocation_id,principal_id,"
+                    "operation_id,operation_kind,outcome,target_kind,target_ref,canonical_payload,"
+                    "payload_hash,before_refs_json,after_refs_json,reason_code,created_at,"
+                    "decision_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        decision.decision_id,
+                        record.invocation_id,
+                        record.subject,
+                        decision.operation_id,
+                        decision.operation_kind,
+                        decision.outcome.value,
+                        decision.target_kind.value,
+                        decision.target_ref,
+                        payload_json,
+                        hashlib.sha256(payload_json.encode()).hexdigest(),
+                        canonical_json(list(decision.before_state_refs)),
+                        canonical_json(list(decision.after_state_refs)),
+                        decision.reason_code,
+                        decision.created_at,
+                        decision.decision_hash,
+                    ),
+                )
+                await self._db.executemany(
+                    "INSERT INTO decision_evidence_refs(decision_id,ordinal,evidence_id,"
+                    "content_hash) VALUES(?,?,?,?)",
+                    (
+                        (
+                            decision.decision_id,
+                            item.ordinal,
+                            item.evidence_id,
+                            item.content_hash,
+                        )
+                        for item in decision.evidence_refs
+                    ),
+                )
+            await self._db.execute("COMMIT")
+            committed = True
+        except BaseException:
+            if begun and not committed:
+                with suppress(Exception):
+                    await self._db.execute("ROLLBACK")
+            raise
+
+    async def export_audit_trace(
+        self,
+        query: AuditTraceQuery,
+        *,
+        limit: int = 20,
+        cursor: AuditTraceCursor | None = None,
+    ) -> AuditTracePage:
+        """Ordinary trace export; active suppression removes the whole linked item."""
+
+        return await self._export_audit_trace(query, limit=limit, cursor=cursor)
+
+    async def export_sealed_audit_trace(
+        self,
+        query: AuditTraceQuery,
+        access_receipt: SealedAuditAccessReceipt,
+        *,
+        limit: int = 20,
+        cursor: AuditTraceCursor | None = None,
+    ) -> AuditTracePage:
+        """Purpose-bound sealed trace export with an append-only access event."""
+
+        return await self._export_audit_trace(
+            query,
+            limit=limit,
+            cursor=cursor,
+            access_receipt=access_receipt,
+        )
+
+    async def _export_audit_trace(
+        self,
+        query: AuditTraceQuery,
+        *,
+        limit: int,
+        cursor: AuditTraceCursor | None,
+        access_receipt: SealedAuditAccessReceipt | None = None,
+    ) -> AuditTracePage:
+        from simple_harness_memory.core.audit import (
+            AuditTraceCursor,
+            AuditTraceItem,
+            AuditTracePage,
+            AuditTraceQuery,
+            AuditTraceSelector,
+        )
+
+        if type(query) is not AuditTraceQuery:
+            raise TypeError("query must use AuditTraceQuery")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise MemoryValidationError("audit_trace_limit_invalid")
+        if cursor is not None and type(cursor) is not AuditTraceCursor:
+            raise TypeError("cursor must use AuditTraceCursor")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v5 backend is not initialized")
+        mode = "sealed" if access_receipt is not None else "ordinary"
+        query_hash = hashlib.sha256(
+            canonical_json({"schema_version": 1, "mode": mode, "query": query.to_json()}).encode()
+        ).hexdigest()
+        if cursor is not None and cursor.query_hash != query_hash:
+            raise MemoryValidationError("audit_trace_cursor_query_differs")
+        predicate, parameters = _audit_trace_predicate(query)
+        async with self._write_lock:
+            if cursor is None:
+                async with self._db.execute(
+                    "SELECT COALESCE(MAX(i.invocation_sequence),0) FROM llm_invocations i "
+                    "WHERE i.principal_id=? AND " + predicate,
+                    (query.subject, *parameters),
+                ) as db_cursor:
+                    watermark_row = await db_cursor.fetchone()
+                watermark = 0 if watermark_row is None else int(watermark_row[0])
+                last_sequence = 0
+            else:
+                watermark = cursor.watermark_sequence
+                last_sequence = cursor.last_sequence
+            items: list[AuditTraceItem] = []
+            while last_sequence < watermark and len(items) < limit:
+                async with self._db.execute(
+                    "SELECT i.invocation_id,i.invocation_sequence FROM llm_invocations i "
+                    "WHERE i.principal_id=? AND i.invocation_sequence>? "
+                    "AND i.invocation_sequence<=? AND "
+                    + predicate
+                    + " ORDER BY i.invocation_sequence LIMIT 100",
+                    (query.subject, last_sequence, watermark, *parameters),
+                ) as db_cursor:
+                    rows = await db_cursor.fetchall()
+                if not rows:
+                    last_sequence = watermark
+                    break
+                for row in rows:
+                    last_sequence = int(row["invocation_sequence"])
+                    invocation = await self._read_invocation(str(row["invocation_id"]))
+                    if invocation is None:
+                        raise MemoryCorruptionError("audit trace invocation disappeared")
+                    decisions = await self._read_decisions(invocation.invocation_id)
+                    item = AuditTraceItem(invocation, decisions)
+                    if access_receipt is None and await self._trace_item_denied_unlocked(item):
+                        continue
+                    items.append(item)
+                    if len(items) == limit:
+                        break
+            next_cursor = (
+                AuditTraceCursor(query_hash, watermark, last_sequence)
+                if last_sequence < watermark
+                else None
+            )
+            page = AuditTracePage(tuple(items), next_cursor)
+            if access_receipt is not None:
+                await self._authorize_sealed_trace_unlocked(
+                    query,
+                    query_hash,
+                    page,
+                    access_receipt,
+                )
+            elif query.selector is AuditTraceSelector.EVIDENCE:
+                from simple_harness_memory.core.suppression import (
+                    OrdinaryMemoryPurpose,
+                    SuppressionCandidate,
+                    SuppressionDenied,
+                )
+
+                resolution = await self._resolve_suppression_unlocked(
+                    SuppressionCandidate(query.subject, evidence_id=query.selector_ref),
+                    OrdinaryMemoryPurpose.EXPORT,
+                )
+                if resolution.denied:
+                    raise SuppressionDenied()
+        return page
+
+    async def _trace_item_denied_unlocked(self, item: AuditTraceItem) -> bool:
+        from simple_harness_memory.core.suppression import (
+            OrdinaryMemoryPurpose,
+            SuppressionCandidate,
+            SuppressionScopeKind,
+        )
+
+        subject = item.invocation.subject
+        for evidence in item.invocation.public_input_refs:
+            if (
+                await self._resolve_suppression_unlocked(
+                    SuppressionCandidate(subject, evidence_id=evidence.evidence_id),
+                    OrdinaryMemoryPurpose.EXPORT,
+                )
+            ).denied:
+                return True
+        for decision in item.decisions:
+            candidate = SuppressionCandidate(
+                subject,
+                evidence_id=(
+                    decision.target_ref
+                    if decision.target_kind is SuppressionScopeKind.EVIDENCE
+                    else None
+                ),
+                memory_id=(
+                    decision.target_ref
+                    if decision.target_kind is SuppressionScopeKind.MEMORY
+                    else None
+                ),
+                entity_ids=(
+                    (decision.target_ref,)
+                    if decision.target_kind is SuppressionScopeKind.ENTITY
+                    else ()
+                ),
+            )
+            if (
+                await self._resolve_suppression_unlocked(
+                    candidate, OrdinaryMemoryPurpose.EXPORT
+                )
+            ).denied:
+                return True
+        return False
+
+    async def _authorize_sealed_trace_unlocked(
+        self,
+        query: AuditTraceQuery,
+        query_hash: str,
+        page: AuditTracePage,
+        access_receipt: SealedAuditAccessReceipt,
+    ) -> None:
+        from simple_harness_memory.core.suppression import (
+            SealedAuditAccessDenied,
+            SealedAuditAccessReceipt,
+            SuppressionScopeKind,
+        )
+
+        if type(access_receipt) is not SealedAuditAccessReceipt:
+            raise TypeError("access_receipt must use SealedAuditAccessReceipt")
+        assert self._db is not None
+        stored = await self._read_audit_access_by_decision(access_receipt.decision_id)
+        denial: str | None = None
+        if stored != access_receipt:
+            denial = "sealed_audit_receipt_differs"
+        now = _timestamp(self._now())
+        evidence_ids = {
+            ref.evidence_id
+            for item in page.items
+            for ref in item.invocation.public_input_refs
+        }
+        evidence_ids.update(
+            ref.evidence_id
+            for item in page.items
+            for decision in item.decisions
+            for ref in decision.evidence_refs
+        )
+        if query.selector.value == "evidence":
+            evidence_ids.add(query.selector_ref)
+        if denial is None and now >= access_receipt.expires_at:
+            denial = "sealed_audit_access_expired"
+        elif denial is None and access_receipt.subject != query.subject:
+            denial = "sealed_audit_subject_differs"
+        elif denial is None and access_receipt.scope_kind is SuppressionScopeKind.SUBJECT:
+            if access_receipt.scope_ref != query.subject:
+                denial = "sealed_audit_scope_differs"
+        elif denial is None and access_receipt.scope_kind is SuppressionScopeKind.EVIDENCE:
+            if not evidence_ids or evidence_ids != {access_receipt.scope_ref}:
+                denial = "sealed_audit_scope_differs"
+        if denial is None:
+            for evidence_id in evidence_ids:
+                if await self._read_evidence_subject(evidence_id) != query.subject:
+                    denial = "sealed_audit_evidence_scope_differs"
+                    break
+        async with self._db.execute(
+            "SELECT (SELECT COUNT(*) FROM sealed_audit_access_events "
+            "WHERE access_receipt_id=? AND outcome='granted') + "
+            "(SELECT COUNT(*) FROM audit_trace_access_events "
+            "WHERE access_receipt_id=? AND outcome='granted')",
+            (access_receipt.access_receipt_id, access_receipt.access_receipt_id),
+        ) as db_cursor:
+            usage_row = await db_cursor.fetchone()
+        usage = 0 if usage_row is None else int(usage_row[0])
+        if denial is None and usage >= access_receipt.max_reads:
+            denial = "sealed_audit_access_exhausted"
+        event_id = f"audit-trace-event-{uuid4().hex}"
+        event_payload: dict[str, JsonValue] = {
+            "schema_version": 1,
+            "event_id": event_id,
+            "access_receipt_id": access_receipt.access_receipt_id,
+            "query_hash": query_hash,
+            "outcome": "granted" if denial is None else "denied",
+            "reason_code": "sealed_audit_trace_granted" if denial is None else denial,
+            "occurred_at": now,
+        }
+        await self._db.execute("BEGIN IMMEDIATE")
+        committed = False
+        try:
+            await self._db.execute(
+                "INSERT INTO audit_trace_access_events(event_id,access_receipt_id,query_hash,"
+                "outcome,reason_code,occurred_at,event_hash) VALUES(?,?,?,?,?,?,?)",
+                (
+                    event_id,
+                    access_receipt.access_receipt_id,
+                    query_hash,
+                    event_payload["outcome"],
+                    event_payload["reason_code"],
+                    now,
+                    hashlib.sha256(canonical_json(event_payload).encode()).hexdigest(),
+                ),
+            )
+            await self._db.execute("COMMIT")
+            committed = True
+        finally:
+            if not committed:
+                with suppress(Exception):
+                    await self._db.execute("ROLLBACK")
+        if denial is not None:
+            raise SealedAuditAccessDenied(denial)
+
+    async def _read_invocation(
+        self, invocation_id: str
+    ) -> LLMInvocationAuditRecord | None:
+        from simple_harness.runtime import EvidenceRef, MemoryAnalysisReceipt
+
+        from simple_harness_memory.core.audit import (
+            LLMInvocationAuditRecord,
+            OutputStorageStatus,
+            PublicReasoningReference,
+            ReasoningItemType,
+        )
+
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT * FROM llm_invocations WHERE invocation_id=?", (invocation_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        async with self._db.execute(
+            "SELECT * FROM llm_invocation_evidence_refs WHERE invocation_id=? ORDER BY ordinal",
+            (invocation_id,),
+        ) as cursor:
+            evidence_rows = await cursor.fetchall()
+        refs = tuple(
+            EvidenceRef(str(item["evidence_id"]), str(item["content_hash"]), int(item["ordinal"]))
+            for item in evidence_rows
+        )
+        async with self._db.execute(
+            "SELECT * FROM llm_reasoning_refs WHERE invocation_id=? ORDER BY ordinal",
+            (invocation_id,),
+        ) as cursor:
+            reasoning_rows = await cursor.fetchall()
+        reasoning = tuple(
+            PublicReasoningReference(
+                str(item["provider_item_id"]),
+                ReasoningItemType(str(item["item_type"])),
+                str(item["item_hash"]),
+                None if item["opaque_ref"] is None else str(item["opaque_ref"]),
+            )
+            for item in reasoning_rows
+        )
+        public_output_value = (
+            None
+            if row["public_output_json"] is None
+            else json.loads(str(row["public_output_json"]))
+        )
+        if public_output_value is not None and not isinstance(public_output_value, dict):
+            raise MemoryCorruptionError("stored public output is not an object")
+        receipt_json = json.loads(str(row["host_receipt_json"]))
+        if not isinstance(receipt_json, dict):
+            raise MemoryCorruptionError("stored Host receipt is not an object")
+        receipt = MemoryAnalysisReceipt.from_json(receipt_json)
+        record = LLMInvocationAuditRecord(
+            int(row["invocation_sequence"]),
+            str(row["invocation_id"]),
+            str(row["principal_id"]),
+            str(row["run_id"]),
+            str(row["turn_id"]),
+            str(row["job_id"]),
+            str(row["request_hash"]),
+            refs,
+            public_output_value,
+            None if row["public_output_hash"] is None else str(row["public_output_hash"]),
+            OutputStorageStatus(str(row["output_storage_status"])),
+            str(row["output_reason_code"]),
+            str(row["provider_id"]),
+            str(row["model_id"]),
+            str(row["parameters_hash"]),
+            str(row["prompt_version"]),
+            str(row["schema_version"]),
+            str(row["policy_version"]),
+            str(row["validator_version"]),
+            None if row["provider_request_id"] is None else str(row["provider_request_id"]),
+            receipt,
+            str(row["result_hash"]),
+            int(row["input_tokens"]),
+            int(row["output_tokens"]),
+            int(row["cost_microunits"]),
+            int(row["latency_ms"]),
+            float(row["started_at"]),
+            float(row["completed_at"]),
+            reasoning,
+        )
+        expected_input_json = canonical_json([item.to_json() for item in refs])
+        if (
+            expected_input_json != str(row["public_input_refs_json"])
+            or hashlib.sha256(expected_input_json.encode()).hexdigest()
+            != str(row["public_input_hash"])
+            or receipt.receipt_hash != str(row["host_receipt_hash"])
+            or record.invocation_hash != str(row["invocation_hash"])
+        ):
+            raise MemoryCorruptionError("stored analysis invocation hash differs")
+        return record
+
+    async def _read_decisions(self, invocation_id: str) -> tuple[DecisionLedgerEntry, ...]:
+        from simple_harness.runtime import EvidenceRef
+
+        from simple_harness_memory.core.audit import DecisionLedgerEntry, DecisionOutcome
+        from simple_harness_memory.core.suppression import SuppressionScopeKind
+
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT * FROM decision_records WHERE invocation_id=? ORDER BY decision_id",
+            (invocation_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        decisions: list[DecisionLedgerEntry] = []
+        for row in rows:
+            async with self._db.execute(
+                "SELECT * FROM decision_evidence_refs WHERE decision_id=? ORDER BY ordinal",
+                (str(row["decision_id"]),),
+            ) as cursor:
+                evidence_rows = await cursor.fetchall()
+            payload = json.loads(str(row["canonical_payload"]))
+            before = json.loads(str(row["before_refs_json"]))
+            after = json.loads(str(row["after_refs_json"]))
+            if (
+                not isinstance(payload, dict)
+                or not isinstance(before, list)
+                or not all(isinstance(item, str) for item in before)
+                or not isinstance(after, list)
+                or not all(isinstance(item, str) for item in after)
+            ):
+                raise MemoryCorruptionError("stored decision payload is malformed")
+            decision = DecisionLedgerEntry(
+                str(row["decision_id"]),
+                str(row["operation_id"]),
+                str(row["operation_kind"]),
+                DecisionOutcome(str(row["outcome"])),
+                SuppressionScopeKind(str(row["target_kind"])),
+                str(row["target_ref"]),
+                payload,
+                tuple(before),
+                tuple(after),
+                tuple(
+                    EvidenceRef(
+                        str(item["evidence_id"]),
+                        str(item["content_hash"]),
+                        int(item["ordinal"]),
+                    )
+                    for item in evidence_rows
+                ),
+                str(row["reason_code"]),
+                float(row["created_at"]),
+            )
+            if (
+                hashlib.sha256(canonical_json(payload).encode()).hexdigest()
+                != str(row["payload_hash"])
+                or decision.decision_hash != str(row["decision_hash"])
+            ):
+                raise MemoryCorruptionError("stored decision hash differs")
+            decisions.append(decision)
+        return tuple(decisions)
+
     async def issue_sealed_audit_access(
         self, decision: SealedAuditAccessDecision
     ) -> SealedAuditAccessReceipt:
@@ -850,9 +1618,11 @@ class SQLiteHumanMemoryBackend:
             }:
                 denial = "sealed_audit_scope_unsupported"
             async with self._db.execute(
-                "SELECT COUNT(*) FROM sealed_audit_access_events WHERE access_receipt_id=? "
-                "AND outcome='granted'",
-                (access_receipt.access_receipt_id,),
+                "SELECT (SELECT COUNT(*) FROM sealed_audit_access_events "
+                "WHERE access_receipt_id=? AND outcome='granted') + "
+                "(SELECT COUNT(*) FROM audit_trace_access_events "
+                "WHERE access_receipt_id=? AND outcome='granted')",
+                (access_receipt.access_receipt_id, access_receipt.access_receipt_id),
             ) as cursor:
                 usage = await cursor.fetchone()
             if denial is None and usage is not None and int(usage[0]) >= access_receipt.max_reads:
@@ -1175,6 +1945,41 @@ def _timestamp(value: object) -> float:
     ):
         raise MemoryValidationError("evidence_timestamp_invalid")
     return float(value)
+
+
+def _audit_identifier(value: object, name: str) -> str:
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or "\x00" in value
+        or len(value.encode()) > 1024
+        or any(pattern.search(value) for pattern in _AUDIT_IDENTIFIER_CREDENTIAL_PATTERNS)
+    ):
+        raise MemoryValidationError(f"{name}_invalid")
+    return value
+
+
+def _audit_trace_predicate(query: AuditTraceQuery) -> tuple[str, tuple[object, ...]]:
+    from simple_harness_memory.core.audit import AuditTraceSelector
+
+    if query.selector is AuditTraceSelector.TURN:
+        return "i.turn_id=?", (query.selector_ref,)
+    if query.selector is AuditTraceSelector.INVOCATION:
+        return "i.invocation_id=?", (query.selector_ref,)
+    if query.selector is AuditTraceSelector.DECISION:
+        return (
+            "EXISTS(SELECT 1 FROM decision_records d WHERE d.invocation_id=i.invocation_id "
+            "AND d.decision_id=?)",
+            (query.selector_ref,),
+        )
+    return (
+        "(EXISTS(SELECT 1 FROM llm_invocation_evidence_refs er "
+        "WHERE er.invocation_id=i.invocation_id AND er.evidence_id=?) OR "
+        "EXISTS(SELECT 1 FROM decision_records d JOIN decision_evidence_refs dr "
+        "ON dr.decision_id=d.decision_id WHERE d.invocation_id=i.invocation_id "
+        "AND dr.evidence_id=?))",
+        (query.selector_ref, query.selector_ref),
+    )
 
 
 def _stable_id(namespace: str, *parts: str) -> str:
