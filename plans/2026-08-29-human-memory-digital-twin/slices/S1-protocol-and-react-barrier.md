@@ -3,13 +3,20 @@
 > Release unit：S1（Harness SDK）  
 > 高风险子系统：公共 API、ReAct 状态机、effect authority（3）  
 > 覆盖：HM-AC-3/4/7/8
-> 状态：COMPLETE — source candidate `9677cf948da9245b2aa4845f97dbc668e87f29ff`；未发布、未完成 Host 产品集成
+> 状态：REOPENED FOR CONTRACT AMENDMENT — `a2-001`；既有 candidate `9677cf948da9245b2aa4845f97dbc668e87f29ff` 未发布
 > 最终候选物：wheel `ef4e5a21128adede553ccd4fe8cfc726c37def329a2bc5217af0346466f23dad`；sdist `19f927708f456fb843127462e6ae09b5ecece0c02aecac5af2b42b63df7836a4`
 
 ## 交付边界
 
 只建立三仓共用的版本化 DTO、首次持久化安全边界、canonical hash/replay 规则，以及同一 ReAct Run 内的
 `context_route`/Context authority 屏障和 `TaskExecutionEnvelope`。不在本 slice 实现 Memory 检索或 Host TaskScope 数据库。
+
+### `a2-001` 最小契约增量
+
+S4 Task 4 证明泛型 Tool authorization receipt 与 `RunContextSnapshot.metadata` 不能作为 workspace binding authority。
+S1 必须新增 strict public DTO/port：Manual receipt 精确绑定 TaskScope、canonical root、filesystem identity、base
+revision、nonce、decision 及 SDK/Host hash；Auto snapshot 必须由 Host authority 签发并绑定 Run/context revision、
+configured workspace root identity 与 mode。模型提供的 metadata、opaque receipt ref 或 Host 结构 fallback 一律不成立。
 
 ## 文件影响清单
 
