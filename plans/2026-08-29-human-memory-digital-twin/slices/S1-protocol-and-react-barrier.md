@@ -3,9 +3,9 @@
 > Release unit：S1（Harness SDK）  
 > 高风险子系统：公共 API、ReAct 状态机、effect authority（3）  
 > 覆盖：HM-AC-3/4/7/8
-> 状态：COMPLETE — `a2-001`/`a2-002` 最小协议增量已闭合；Host/Memory consumer 集成仍分别接受验收，未 tag/publish
-> 最终 source：`8f1027d2d64ca3a7e7a4d161833507eadac9552b`
-> 最终候选物：wheel `b9421ddf2b1d5a4a4a0920a2e878c1d3cf098ff6ef0af8975b9eb5c516037d7b`；sdist `f9582decd48a195bd92dfd0f49cb2d726a0eedbf7f12143445758398f7ee4756`；manifest `fdc24acaababda1586afa965302be873f902240e1b943487e0e680258cbed097`
+> 状态：REOPENED / EXECUTION IN PROGRESS — 用户于 2026-08-31 批准 `a2-003` S3 strict protocol closure；未 tag/publish
+> 上一候选 source：`8f1027d2d64ca3a7e7a4d161833507eadac9552b`
+> 已失效候选物：wheel `b9421ddf2b1d5a4a4a0920a2e878c1d3cf098ff6ef0af8975b9eb5c516037d7b`；S3 架构挑战证明其 wire schema 无法表达 canonical cognitive mutation/recall，禁止继续作为 program candidate
 
 ## 交付边界
 
@@ -25,6 +25,18 @@ configured workspace root identity 与 mode。模型提供的 metadata、opaque 
 属于 Memory validator/apply，不能冒充 Host permanent invocation/result receipt。S1 必须新增 Host authority-verifiable
 delivery receipt/envelope，精确绑定 request/result/attempt/provider refs 与 issuer；Memory 验证 Host durable delivery 后，
 再独立产生 validation/apply receipt。
+
+### `a2-003` S3 strict protocol closure
+
+S3 实施前独立挑战确认，原 `MemoryMutationOperation` 只有 free-form claim/target/evidence ref，无法严格表达四类
+canonical payload、独立认知维度、EvidenceSpan、target revision 与 operation dependency；原 `RecallPlan` 也未绑定 exact
+`RecallContext.context_hash`，且缺 event/environment/task phase constraints。原 `SanitizedEvidenceEnvelope` 没有注册的
+conversation causal metadata，无法确定性建立最近 10 causal groups 与五天 Short-Horizon。
+
+用户批准在尚未发布的 0.7.0 candidate 内完成 breaking 修订：新增 strict typed EvidenceSpan/四类 mutation payload、
+privacy information attributes、target revision/dependency DAG、RecallContext exact binding 与 registered conversation evidence
+metadata；模型只提议语义且只能收窄 Host authority。修订必须重新跑 S1 全量、独立审计、exact wheel consumer 并产生新
+candidate hash；上一 candidate hash 永久作为失效证据保留，不覆盖历史记录。
 
 ## 文件影响清单
 
@@ -107,13 +119,29 @@ delivery receipt/envelope，精确绑定 request/result/attempt/provider refs �
   覆盖 unknown disclosure、raw-CoT/credential canary、乱序、重复、schema 违约、timeout 和超长字段。
 - 构建 wheel，在 clean venv 安装并运行 artifact/conformance/typing/full runtime tests。
 
+### Task 7 — S3 strict cognitive/recall/evidence protocol closure [HM-AC-2/4/5/7/8]
+
+- 新增 strict `EvidenceSpanRef`，绑定 evidence item、UTF-8 byte offsets、exact quote/hash、source hash、normalization、
+  actor/source provenance、support kind 与可选 typed observation schema/JSON Pointer/value hash；同 evidence 可有多个 span。
+- 四类 mutation 使用 discriminated typed payload，不把 Episode/Procedure/Prospective JSON 塞回 free-form claim；operation
+  明确携带 lifecycle/epistemic/conflict/verification、privacy class/information attributes、target revision 和 dependency IDs。
+- 依赖必须是同 plan 内完整 DAG；unknown/missing/self/cycle/乱序均 fail-closed，全 plan 原子，不允许部分应用。
+- `RecallPlan` 必须绑定 exact Host `RecallContext.context_hash`，event/environment/task phase、memory types、scope/time/entity、
+  disclosure 与预算只能相对 Host 缩窄；公开 filtered count 只表示全部权限门后的候选数。
+- 冻结 Host-authenticated `ConversationEvidenceMetadata`：primary conversation、causal group ID/sequence/ordinal、role、
+  occurred_at、TaskScope、tool causal link、entities；模型不能构造或扩大，缺失/非法 metadata 的 evidence 永久保存但不入短时域。
+- privacy class 由 Host/Memory policy 决定下限；LLM 只可提议更严格等级，不能放宽。unknown/external recipient 默认 deny。
+- 验证：中文/emoji offset、同 evidence 多 span、typed observation、payload discriminator、dependency DAG、target drift、
+  context replay、budget/constraint expansion、metadata forgery、credential/CoT canary、public snapshot 与 exact wheel consumer。
+
 ## 验证出口
 
 - `ruff`, `mypy`, 全量 `pytest`；wheel build/install；public API/protocol snapshots。
 - Required fault cases：wrong run, stale receipt, same-batch effect, duplicate call, illegal schema, no-recall zero Memory query。
 - S1 完成时只证明协议与 Runtime 屏障；不声称真实 TaskScope/Memory 产品链可用。
 
-最终闭合证据（source `8f1027d2`）：聚焦协议/runtime `84 passed`，public/artifact `27 passed`，全仓
+上一轮闭合证据（source `8f1027d2`，candidate 已由 `a2-003` 失效）：聚焦协议/runtime `84 passed`，public/artifact `27 passed`，全仓
 `1596 passed, 2 skipped`；默认 CI mypy 覆盖 35 个文件，ruff 与 clean wheel install/import 均通过；第三方独立审计
 P0/P1/P2 均为 0。候选 wheel 使用固定 ZIP timestamp 重复构建，hash 与 manifest 自洽。`a2-001` 的 Host
 binding consumer 与 `a2-002` 的 Memory durable-delivery consumer 必须各自在所属 slice 通过后，才能关闭 program 集成缺口。
+`a2-003` 完成前 S1 状态保持 REOPENED，不得复用上一轮 candidate bytes。
