@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 import pytest
 import structlog
@@ -15,6 +16,7 @@ from simple_harness.runtime import (
     MemoryAnalysisReceipt,
     MemoryAnalysisRequest,
     MemoryAnalysisResult,
+    MemoryAnalysisResultEnvelope,
 )
 
 from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
@@ -29,6 +31,7 @@ from simple_harness_memory.core.audit import (
     ReasoningItemType,
 )
 from simple_harness_memory.core.errors import MemoryIdempotencyConflict, MemoryValidationError
+from simple_harness_memory.core.jobs import AnalysisBatchClaim
 from simple_harness_memory.core.suppression import (
     SealedAuditAccessDecision,
     SealedAuditAccessDenied,
@@ -147,6 +150,99 @@ def _decision(
     )
 
 
+class _AuditAuthority:
+    def __init__(self, backend: SQLiteHumanMemoryBackend | None) -> None:
+        self._backend = backend
+        self._envelopes: dict[
+            tuple[str, int], MemoryAnalysisResultEnvelope
+        ] = {}
+
+    def remember(self, envelope: MemoryAnalysisResultEnvelope) -> None:
+        key = (envelope.result.request_hash, envelope.delivery_receipt.attempt)
+        self._envelopes[key] = envelope
+
+    def bind_backend(self, backend: SQLiteHumanMemoryBackend) -> None:
+        if self._backend is not None and self._backend is not backend:
+            raise AssertionError("audit authority is already bound")
+        self._backend = backend
+
+    async def verify_analysis_delivery(
+        self,
+        request: MemoryAnalysisRequest,
+        envelope: MemoryAnalysisResultEnvelope,
+    ) -> None:
+        assert self._backend is not None
+        assert not self._backend.connection.in_transaction
+        envelope.verify_request(request)
+        if self._envelopes.get((request.request_hash, request.attempt)) != envelope:
+            raise ValueError("durable Host analysis delivery differs")
+
+
+_AUDIT_AUTHORITIES: dict[
+    int, tuple[SQLiteHumanMemoryBackend, _AuditAuthority, Any]
+] = {}
+
+
+def _audit_backend(db_path: Path, **kwargs: Any) -> SQLiteHumanMemoryBackend:
+    authority = _AuditAuthority(None)
+    backend = SQLiteHumanMemoryBackend(
+        db_path, analysis_delivery_authority=authority, **kwargs
+    )
+    authority.bind_backend(backend)
+    registration = backend.register_analysis_delivery_authority(authority)
+    _AUDIT_AUTHORITIES[id(backend)] = (backend, authority, registration)
+    return backend
+
+
+async def _record_memory_analysis(
+    backend: SQLiteHumanMemoryBackend,
+    invocation_id: str,
+    turn_id: str,
+    request: MemoryAnalysisRequest,
+    result: MemoryAnalysisResult,
+    delivery: MemoryAnalysisDeliveryReceipt,
+    validation: MemoryAnalysisReceipt,
+    decisions: tuple[DecisionLedgerEntry, ...],
+    *,
+    reasoning_refs: tuple[PublicReasoningReference, ...] = (),
+) -> Any:
+    envelope = MemoryAnalysisResultEnvelope(result, delivery)
+    claim = AnalysisBatchClaim(
+        request.job_id,
+        request.subject,
+        request.idempotency_key,
+        request.ordered_evidence_refs[-1].evidence_id,
+        (request.job_id,),
+        f"audit-lease-{request.request_hash}",
+        1000.0,
+        request,
+    )
+    authority_state = _AUDIT_AUTHORITIES.get(id(backend))
+    if authority_state is None or authority_state[0] is not backend:
+        raise AssertionError("audit backend lacks its constructor-bound authority")
+    _, authority, registration = authority_state
+    authority.remember(envelope)
+    admission = await backend.admit_analysis_delivery(
+        claim, envelope, registration
+    )
+    try:
+        return await backend.record_memory_analysis(
+            claim,
+            envelope,
+            admission,
+            invocation_id,
+            turn_id,
+            request,
+            result,
+            delivery,
+            validation,
+            decisions,
+            reasoning_refs=reasoning_refs,
+        )
+    finally:
+        await backend.discard_analysis_delivery_admission(admission)
+
+
 async def _ingest(
     backend: SQLiteHumanMemoryBackend, evidence_id: str
 ) -> EvidenceRef:
@@ -159,7 +255,7 @@ async def _ingest(
 async def test_invocation_and_decision_lineage_is_replayable_immutable_and_queryable(
     tmp_path: Path,
 ) -> None:
-    backend = SQLiteHumanMemoryBackend(tmp_path / "audit-ledger.db", now=lambda: 120.0)
+    backend = _audit_backend(tmp_path / "audit-ledger.db", now=lambda: 120.0)
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
     request, result, delivery, receipt = _analysis_authority(evidence_ref, 1)
@@ -171,7 +267,8 @@ async def test_invocation_and_decision_lineage_is_replayable_immutable_and_query
         "opaque-continuation-1",
     )
 
-    record = await backend.record_memory_analysis(
+    record = await _record_memory_analysis(
+        backend,
         "invocation-1",
         "turn-1",
         request,
@@ -181,7 +278,8 @@ async def test_invocation_and_decision_lineage_is_replayable_immutable_and_query
         (decision,),
         reasoning_refs=(reasoning,),
     )
-    replay = await backend.record_memory_analysis(
+    replay = await _record_memory_analysis(
+        backend,
         "invocation-1",
         "turn-1",
         request,
@@ -235,12 +333,13 @@ async def test_invocation_and_decision_lineage_is_replayable_immutable_and_query
 
 @pytest.mark.asyncio
 async def test_stable_cursor_watermark_excludes_later_append(tmp_path: Path) -> None:
-    backend = SQLiteHumanMemoryBackend(tmp_path / "pagination.db", now=lambda: 120.0)
+    backend = _audit_backend(tmp_path / "pagination.db", now=lambda: 120.0)
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
     for ordinal in range(1, 4):
         request, result, delivery, receipt = _analysis_authority(evidence_ref, ordinal)
-        await backend.record_memory_analysis(
+        await _record_memory_analysis(
+            backend,
             f"invocation-{ordinal}",
             "turn-page",
             request,
@@ -254,7 +353,8 @@ async def test_stable_cursor_watermark_excludes_later_append(tmp_path: Path) -> 
     assert first.next_cursor is not None
 
     request, result, delivery, receipt = _analysis_authority(evidence_ref, 4)
-    await backend.record_memory_analysis(
+    await _record_memory_analysis(
+        backend,
         "invocation-4",
         "turn-page",
         request,
@@ -293,7 +393,7 @@ async def test_stable_cursor_watermark_excludes_later_append(tmp_path: Path) -> 
         )
     await backend.close()
 
-    reopened = SQLiteHumanMemoryBackend(tmp_path / "pagination.db", now=lambda: 121.0)
+    reopened = _audit_backend(tmp_path / "pagination.db", now=lambda: 121.0)
     await reopened.initialize()
     resumed = await reopened.export_audit_trace(query, limit=10, cursor=first.next_cursor)
     assert [item.invocation.invocation_id for item in resumed.items] == [
@@ -325,7 +425,7 @@ async def test_invalid_private_output_records_rejection_without_body_anywhere(
     tmp_path: Path, structured_result: dict[str, object], canary: str
 ) -> None:
     path = tmp_path / f"unsafe-{canary}.db"
-    backend = SQLiteHumanMemoryBackend(path, now=lambda: 120.0)
+    backend = _audit_backend(path, now=lambda: 120.0)
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
     request, result, delivery, receipt = _analysis_authority(
@@ -336,7 +436,8 @@ async def test_invalid_private_output_records_rejection_without_body_anywhere(
     )
     decision = _decision(evidence_ref, 1, outcome=DecisionOutcome.REJECTED)
     with structlog.testing.capture_logs() as logs:
-        record = await backend.record_memory_analysis(
+        record = await _record_memory_analysis(
+            backend,
             "invocation-unsafe",
             "turn-unsafe",
             request,
@@ -362,7 +463,7 @@ async def test_invalid_private_output_records_rejection_without_body_anywhere(
 async def test_unsafe_output_claimed_accepted_is_rejected_before_any_audit_write(
     tmp_path: Path,
 ) -> None:
-    backend = SQLiteHumanMemoryBackend(tmp_path / "unsafe-accepted.db", now=lambda: 120.0)
+    backend = _audit_backend(tmp_path / "unsafe-accepted.db", now=lambda: 120.0)
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
     request, result, delivery, receipt = _analysis_authority(
@@ -371,7 +472,8 @@ async def test_unsafe_output_claimed_accepted_is_rejected_before_any_audit_write
         structured_result={"chain_of_thought": "must-never-persist"},
     )
     with pytest.raises(MemoryValidationError, match="unsafe_output_requires_rejected_decision"):
-        await backend.record_memory_analysis(
+        await _record_memory_analysis(
+            backend,
             "invocation-unsafe",
             "turn-unsafe",
             request,
@@ -398,7 +500,7 @@ def test_public_reasoning_reference_rejects_credential_continuation_ref() -> Non
 
 @pytest.mark.asyncio
 async def test_invocation_metadata_rejects_credential_before_audit_write(tmp_path: Path) -> None:
-    backend = SQLiteHumanMemoryBackend(tmp_path / "unsafe-metadata.db", now=lambda: 120.0)
+    backend = _audit_backend(tmp_path / "unsafe-metadata.db", now=lambda: 120.0)
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
     request, result, delivery, receipt = _analysis_authority(
@@ -407,7 +509,8 @@ async def test_invocation_metadata_rejects_credential_before_audit_write(tmp_pat
         provider_id="ghp_0123456789abcdefghijklmnopqrstuv",
     )
     with pytest.raises(MemoryValidationError, match="invocation_provider_id_invalid"):
-        await backend.record_memory_analysis(
+        await _record_memory_analysis(
+            backend,
             "invocation-unsafe-metadata",
             "turn-unsafe-metadata",
             request,
@@ -468,7 +571,7 @@ async def test_accepted_operations_require_exact_decision_closure(
     decisions: tuple[DecisionLedgerEntry, ...] | str,
     reason: str,
 ) -> None:
-    backend = SQLiteHumanMemoryBackend(tmp_path / f"closure-{reason}.db", now=lambda: 120.0)
+    backend = _audit_backend(tmp_path / f"closure-{reason}.db", now=lambda: 120.0)
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
     request, result, delivery, receipt = _analysis_authority(
@@ -477,7 +580,8 @@ async def test_accepted_operations_require_exact_decision_closure(
     resolved = (_decision(evidence_ref, 1),) if decisions == "fixture-decision" else decisions
     assert isinstance(resolved, tuple)
     with pytest.raises(MemoryValidationError, match=reason):
-        await backend.record_memory_analysis(
+        await _record_memory_analysis(
+            backend,
             "invocation-closure",
             "turn-closure",
             request,
@@ -494,7 +598,7 @@ async def test_accepted_operations_require_exact_decision_closure(
 
 @pytest.mark.asyncio
 async def test_explicit_no_mutation_is_audited_without_decisions(tmp_path: Path) -> None:
-    backend = SQLiteHumanMemoryBackend(tmp_path / "no-mutation.db", now=lambda: 120.0)
+    backend = _audit_backend(tmp_path / "no-mutation.db", now=lambda: 120.0)
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
     request, result, delivery, receipt = _analysis_authority(
@@ -502,7 +606,8 @@ async def test_explicit_no_mutation_is_audited_without_decisions(tmp_path: Path)
         1,
         structured_result={"outcome": "no_mutation", "operations": []},
     )
-    record = await backend.record_memory_analysis(
+    record = await _record_memory_analysis(
+        backend,
         "invocation-no-mutation",
         "turn-no-mutation",
         request,
@@ -521,11 +626,12 @@ async def test_suppression_blocks_ordinary_trace_but_sealed_receipt_is_limited_a
     tmp_path: Path,
 ) -> None:
     clock = [120.0]
-    backend = SQLiteHumanMemoryBackend(tmp_path / "sealed-trace.db", now=lambda: clock[0])
+    backend = _audit_backend(tmp_path / "sealed-trace.db", now=lambda: clock[0])
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
     request, result, delivery, validation_receipt = _analysis_authority(evidence_ref, 1)
-    await backend.record_memory_analysis(
+    await _record_memory_analysis(
+        backend,
         "invocation-1",
         "turn-1",
         request,
@@ -583,7 +689,7 @@ async def test_suppression_blocks_ordinary_trace_but_sealed_receipt_is_limited_a
 @pytest.mark.asyncio
 async def test_sealed_audit_time_bounds_fail_closed_at_issue_and_use(tmp_path: Path) -> None:
     clock = [120.0]
-    backend = SQLiteHumanMemoryBackend(tmp_path / "sealed-time.db", now=lambda: clock[0])
+    backend = _audit_backend(tmp_path / "sealed-time.db", now=lambda: clock[0])
     await backend.initialize()
     await _ingest(backend, "evidence-1")
     for decision_id, issued_at, expires_at, reason in (
@@ -631,12 +737,13 @@ async def test_sealed_audit_time_bounds_fail_closed_at_issue_and_use(tmp_path: P
 
 @pytest.mark.asyncio
 async def test_replay_with_changed_decision_is_conflict(tmp_path: Path) -> None:
-    backend = SQLiteHumanMemoryBackend(tmp_path / "conflict.db", now=lambda: 120.0)
+    backend = _audit_backend(tmp_path / "conflict.db", now=lambda: 120.0)
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
     request, result, delivery, receipt = _analysis_authority(evidence_ref, 1)
     decision = _decision(evidence_ref, 1)
-    await backend.record_memory_analysis(
+    await _record_memory_analysis(
+        backend,
         "invocation-1", "turn-1", request, result, delivery, receipt, (decision,)
     )
     changed = DecisionLedgerEntry(
@@ -654,7 +761,8 @@ async def test_replay_with_changed_decision_is_conflict(tmp_path: Path) -> None:
         decision.created_at,
     )
     with pytest.raises(MemoryIdempotencyConflict, match="replay_conflict"):
-        await backend.record_memory_analysis(
+        await _record_memory_analysis(
+            backend,
             "invocation-1", "turn-1", request, result, delivery, receipt, (changed,)
         )
     await backend.close()

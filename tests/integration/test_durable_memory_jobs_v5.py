@@ -6,9 +6,10 @@ import inspect
 import json
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
+import structlog
 from simple_harness.contracts import JsonValue, canonical_json
 from simple_harness.runtime import (
     AnalysisBudget,
@@ -24,6 +25,7 @@ from simple_harness.runtime import (
     EvidenceSourceKind,
     IntendedAudience,
     LongTermMemoryType,
+    MemoryAnalysisDeliveryAuthorityPort,
     MemoryAnalysisDeliveryReceipt,
     MemoryAnalysisRequest,
     MemoryAnalysisResult,
@@ -36,8 +38,11 @@ from simple_harness.runtime import (
 )
 
 from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
-from simple_harness_memory.core.errors import MemoryCorruptionError
+from simple_harness_memory.core.audit import AuditTraceQuery, AuditTraceSelector
+from simple_harness_memory.core.errors import MemoryCorruptionError, MemoryValidationError
 from simple_harness_memory.core.jobs import (
+    AnalysisBatchClaim,
+    AnalysisDeliveryAuthorityTransientError,
     AnalysisResultCommitOutcome,
     DurableMemoryJobRunner,
     MemoryJobWorkerConfig,
@@ -62,6 +67,9 @@ TEST_WORKER_CONFIG = MemoryJobWorkerConfig(
     model_id="test-model",
     model_config_hash="a" * 64,
 )
+PRIVATE_REASONING_CANARY = "hidden-chain-of-thought-canary"
+PRIVATE_CREDENTIAL_CANARY = "ghp_012345678901234567890123456789"
+OVERSIZE_BODY_CANARY = "oversize-provider-body-canary"
 
 
 def _hash(value: JsonValue) -> str:
@@ -123,7 +131,7 @@ class _Executor:
 
     def __init__(
         self,
-        backend: SQLiteHumanMemoryBackend,
+        backend: SQLiteHumanMemoryBackend | None,
         *,
         no_mutation: bool = False,
         error: Exception | None = None,
@@ -134,6 +142,7 @@ class _Executor:
         delivery_mutation: str | None = None,
         deliveries: dict[tuple[str, int], MemoryAnalysisResultEnvelope] | None = None,
         issuer_id: str | None = None,
+        authority_error: Exception | None = None,
     ) -> None:
         self.backend = backend
         self.no_mutation = no_mutation
@@ -145,6 +154,7 @@ class _Executor:
         self.delivery_mutation = delivery_mutation
         if issuer_id is not None:
             self.issuer_id = issuer_id
+        self.authority_error = authority_error
         self.calls = 0
         self.provider_calls = 0
         self.verification_calls = 0
@@ -152,6 +162,7 @@ class _Executor:
 
     async def analyze_memory(self, request: MemoryAnalysisRequest) -> MemoryAnalysisResultEnvelope:
         self.calls += 1
+        assert self.backend is not None
         assert not self.backend.connection.in_transaction
         durable = self.deliveries.get((request.request_hash, request.attempt))
         if durable is not None:
@@ -164,7 +175,7 @@ class _Executor:
             structured = self.structured_override
         elif self.private:
             structured = {
-                "reasoning": "hidden-chain-of-thought-canary"
+                "reasoning": PRIVATE_REASONING_CANARY
             }
         elif self.no_mutation:
             structured = {"outcome": "no_mutation", "operations": []}
@@ -222,7 +233,10 @@ class _Executor:
         self, request: MemoryAnalysisRequest, envelope: MemoryAnalysisResultEnvelope
     ) -> None:
         self.verification_calls += 1
+        assert self.backend is not None
         assert not self.backend.connection.in_transaction
+        if self.authority_error is not None:
+            raise self.authority_error
         envelope.verify_request(request)
         if envelope.delivery_receipt.issuer_id != self.issuer_id:
             raise ValueError("analysis delivery issuer differs")
@@ -233,22 +247,23 @@ class _Executor:
 class _RejectedResultExecutor:
     issuer_id = "test-host-analysis-authority"
 
-    def __init__(self, backend: SQLiteHumanMemoryBackend, mode: str) -> None:
+    def __init__(self, backend: SQLiteHumanMemoryBackend | None, mode: str) -> None:
         self.backend = backend
         self.mode = mode
         self.deliveries: dict[tuple[str, int], MemoryAnalysisResultEnvelope] = {}
         self.verification_calls = 0
 
     async def analyze_memory(self, request: MemoryAnalysisRequest) -> MemoryAnalysisResultEnvelope:
+        assert self.backend is not None
         assert not self.backend.connection.in_transaction
         if self.mode == "type":
             return cast(MemoryAnalysisResultEnvelope, object())
         if self.mode == "private":
             structured: dict[str, JsonValue] = {
-                "safe": "ghp_012345678901234567890123456789"
+                "safe": PRIVATE_CREDENTIAL_CANARY
             }
         elif self.mode == "oversize":
-            structured = {"safe": "x" * 4096}
+            structured = {"safe": OVERSIZE_BODY_CANARY + ("x" * 4096)}
         else:
             structured = {"outcome": "no_mutation", "operations": []}
         result = MemoryAnalysisResult(
@@ -272,12 +287,38 @@ class _RejectedResultExecutor:
         self, request: MemoryAnalysisRequest, envelope: MemoryAnalysisResultEnvelope
     ) -> None:
         self.verification_calls += 1
+        assert self.backend is not None
         assert not self.backend.connection.in_transaction
         envelope.verify_request(request)
         if envelope.delivery_receipt.issuer_id != self.issuer_id:
             raise ValueError("analysis delivery issuer differs")
         if self.deliveries.get((request.request_hash, request.attempt)) != envelope:
             raise ValueError("durable Host analysis delivery differs")
+
+
+class _AlwaysAcceptAuthority:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def verify_analysis_delivery(
+        self,
+        request: MemoryAnalysisRequest,
+        envelope: MemoryAnalysisResultEnvelope,
+    ) -> None:
+        self.calls += 1
+        envelope.verify_request(request)
+
+
+def _authority_backend(
+    db_path: Path,
+    authority: _Executor | _RejectedResultExecutor,
+    **kwargs: Any,
+) -> SQLiteHumanMemoryBackend:
+    backend = SQLiteHumanMemoryBackend(
+        db_path, analysis_delivery_authority=authority, **kwargs
+    )
+    authority.backend = backend
+    return backend
 
 
 def _result_envelope(
@@ -307,6 +348,16 @@ def _result_envelope(
     return MemoryAnalysisResultEnvelope(result, delivery)
 
 
+async def _admit(
+    backend: SQLiteHumanMemoryBackend,
+    claim: AnalysisBatchClaim,
+    envelope: MemoryAnalysisResultEnvelope,
+    authority: MemoryAnalysisDeliveryAuthorityPort,
+) -> Any:
+    registration = backend.register_analysis_delivery_authority(authority)
+    return await backend.admit_analysis_delivery(claim, envelope, registration)
+
+
 async def _ingest(backend: SQLiteHumanMemoryBackend, count: int = 2) -> None:
     for index in range(1, count + 1):
         await backend.ingest_committed_evidence(*_authority(index))
@@ -323,11 +374,11 @@ async def _ingest_indexes(
 async def test_batch_analysis_runs_outside_transaction_and_cas_applies_once(
     tmp_path: Path,
 ) -> None:
-    backend = SQLiteHumanMemoryBackend(tmp_path / "jobs.db", now=lambda: 20.0)
+    executor = _Executor(None)
+    backend = _authority_backend(tmp_path / "jobs.db", executor, now=lambda: 20.0)
     await backend.initialize()
     await _ingest(backend)
     before = await backend.export_ingested_evidence("evidence-1")
-    executor = _Executor(backend)
     runner = DurableMemoryJobRunner(
         backend, executor, executor, TEST_WORKER_CONFIG, "worker-1", lambda: 20.0
     )
@@ -369,10 +420,12 @@ async def test_batch_analysis_runs_outside_transaction_and_cas_applies_once(
 async def test_nullable_provider_response_id_keeps_verified_delivery_authority(
     tmp_path: Path,
 ) -> None:
-    backend = SQLiteHumanMemoryBackend(tmp_path / "nullable-provider.db", now=lambda: 20.0)
+    executor = _Executor(None, no_mutation=True, provider_response_id=None)
+    backend = _authority_backend(
+        tmp_path / "nullable-provider.db", executor, now=lambda: 20.0
+    )
     await backend.initialize()
     await _ingest(backend)
-    executor = _Executor(backend, no_mutation=True, provider_response_id=None)
     runner = DurableMemoryJobRunner(
         backend, executor, executor, TEST_WORKER_CONFIG, "worker-1", lambda: 20.0
     )
@@ -394,14 +447,16 @@ async def test_nullable_provider_response_id_keeps_verified_delivery_authority(
 async def test_forged_or_wrong_delivery_is_contract_attempt_without_delivery_receipt(
     tmp_path: Path, delivery_mutation: str
 ) -> None:
-    backend = SQLiteHumanMemoryBackend(
-        tmp_path / f"delivery-{delivery_mutation}.db", now=lambda: 20.0
+    executor = _Executor(
+        None, no_mutation=True, delivery_mutation=delivery_mutation
+    )
+    backend = _authority_backend(
+        tmp_path / f"delivery-{delivery_mutation}.db",
+        executor,
+        now=lambda: 20.0,
     )
     await backend.initialize()
     await _ingest(backend)
-    executor = _Executor(
-        backend, no_mutation=True, delivery_mutation=delivery_mutation
-    )
     runner = DurableMemoryJobRunner(
         backend, executor, executor, TEST_WORKER_CONFIG, "worker-1", lambda: 20.0
     )
@@ -429,15 +484,150 @@ async def test_forged_or_wrong_delivery_is_contract_attempt_without_delivery_rec
 
 
 @pytest.mark.asyncio
+async def test_direct_forged_commit_and_fake_authority_admission_fail_closed(
+    tmp_path: Path,
+) -> None:
+    fake_authority = _AlwaysAcceptAuthority()
+    unbound = SQLiteHumanMemoryBackend(
+        tmp_path / "unbound-direct-forged.db", now=lambda: 20.0
+    )
+    try:
+        with pytest.raises(MemoryValidationError, match="authority_not_bound"):
+            unbound.register_analysis_delivery_authority(fake_authority)
+    finally:
+        await unbound.close()
+
+    trusted = _Executor(None, no_mutation=True)
+    backend = _authority_backend(
+        tmp_path / "direct-forged.db", trusted, now=lambda: 20.0
+    )
+    try:
+        await backend.initialize()
+        await _ingest(backend)
+        claim = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-1")
+        assert claim is not None
+        envelope = await trusted.analyze_memory(claim.request)
+        backend.register_analysis_delivery_authority(trusted)
+        with pytest.raises(MemoryValidationError, match="identity_differs"):
+            backend.register_analysis_delivery_authority(fake_authority)
+        with pytest.raises(MemoryValidationError, match="registration_invalid"):
+            await backend.admit_analysis_delivery(
+                claim, envelope, cast(Any, object())
+            )
+        assert fake_authority.calls == 0
+        with pytest.raises(MemoryValidationError, match="admission_invalid"):
+            await backend.commit_analysis_result(
+                claim, envelope, cast(Any, object())
+            )
+        async with backend.connection.execute(
+            "SELECT result_json,delivery_receipt_json FROM analysis_batches"
+        ) as cursor:
+            row = await cursor.fetchone()
+        assert row is not None and row[0] is None and row[1] is None
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_admission_is_bound_to_claim_envelope_and_each_purpose_once(
+    tmp_path: Path,
+) -> None:
+    authority = _Executor(None, no_mutation=True)
+    backend = _authority_backend(
+        tmp_path / "admission-binding.db", authority, now=lambda: 20.0
+    )
+    try:
+        await backend.initialize()
+        await _ingest(backend)
+        claim = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-1")
+        assert claim is not None
+        envelope = await authority.analyze_memory(claim.request)
+        registration = backend.register_analysis_delivery_authority(authority)
+        admission = await backend.admit_analysis_delivery(
+            claim, envelope, registration
+        )
+        wrong_claim = replace(claim, lease_token="wrong-lease-token")
+        with pytest.raises(MemoryValidationError, match="admission_invalid"):
+            await backend.commit_analysis_result(wrong_claim, envelope, admission)
+
+        wrong_result = MemoryAnalysisResult(
+            claim.request.job_id,
+            claim.request.run_id,
+            claim.request.request_hash,
+            "provider-response-wrong-envelope",
+            {"outcome": "no_mutation", "operations": []},
+            1,
+            1,
+            1,
+            1,
+        )
+        wrong_envelope = _result_envelope(
+            claim.request, wrong_result, authority.issuer_id
+        )
+        with pytest.raises(MemoryValidationError, match="admission_invalid"):
+            await backend.commit_analysis_result(claim, wrong_envelope, admission)
+
+        committed = await backend.commit_analysis_result(claim, envelope, admission)
+        assert committed.outcome is AnalysisResultCommitOutcome.COMMITTED
+        with pytest.raises(MemoryValidationError, match="admission_replayed"):
+            await backend.commit_analysis_result(claim, envelope, admission)
+
+        application = await backend.prepare_analysis_application(
+            claim, envelope.result, TEST_WORKER_CONFIG.validator_version
+        )
+        assert application is not None
+        with pytest.raises(MemoryValidationError, match="admission_invalid"):
+            await backend.record_memory_analysis(
+                claim,
+                envelope,
+                cast(Any, object()),
+                application.invocation_id,
+                application.turn_id,
+                claim.request,
+                envelope.result,
+                envelope.delivery_receipt,
+                application.receipt,
+                application.decisions,
+            )
+        await backend.record_memory_analysis(
+            claim,
+            envelope,
+            admission,
+            application.invocation_id,
+            application.turn_id,
+            claim.request,
+            envelope.result,
+            envelope.delivery_receipt,
+            application.receipt,
+            application.decisions,
+        )
+        with pytest.raises(MemoryValidationError, match="admission_replayed"):
+            await backend.record_memory_analysis(
+                claim,
+                envelope,
+                admission,
+                application.invocation_id,
+                application.turn_id,
+                claim.request,
+                envelope.result,
+                envelope.delivery_receipt,
+                application.receipt,
+                application.decisions,
+            )
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
 async def test_verified_delivery_with_credential_metadata_is_rejected_without_body(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "delivery-private-metadata.db"
     private_issuer = "ghp_012345678901234567890123456789"
-    backend = SQLiteHumanMemoryBackend(path, now=lambda: 20.0)
+    executor = _Executor(None, no_mutation=True, issuer_id=private_issuer)
+    backend = _authority_backend(path, executor, now=lambda: 20.0)
     await backend.initialize()
     await _ingest(backend)
-    executor = _Executor(backend, no_mutation=True, issuer_id=private_issuer)
     runner = DurableMemoryJobRunner(
         backend, executor, executor, TEST_WORKER_CONFIG, "worker-1", lambda: 20.0
     )
@@ -467,10 +657,12 @@ async def test_verified_delivery_with_credential_metadata_is_rejected_without_bo
 
 @pytest.mark.asyncio
 async def test_no_mutation_is_accepted_and_audited_without_decisions(tmp_path: Path) -> None:
-    backend = SQLiteHumanMemoryBackend(tmp_path / "no-mutation.db", now=lambda: 20.0)
+    executor = _Executor(None, no_mutation=True)
+    backend = _authority_backend(
+        tmp_path / "no-mutation.db", executor, now=lambda: 20.0
+    )
     await backend.initialize()
     await _ingest(backend)
-    executor = _Executor(backend, no_mutation=True)
     runner = DurableMemoryJobRunner(
         backend,
         executor,
@@ -502,10 +694,15 @@ async def test_no_mutation_is_accepted_and_audited_without_decisions(tmp_path: P
 async def test_no_mutation_does_not_stale_the_next_real_mutation_base_revision(
     tmp_path: Path,
 ) -> None:
-    backend = SQLiteHumanMemoryBackend(tmp_path / "no-mutation-then-plan.db", now=lambda: 20.0)
+    deliveries: dict[tuple[str, int], MemoryAnalysisResultEnvelope] = {}
+    no_mutation_executor = _Executor(None, no_mutation=True, deliveries=deliveries)
+    backend = _authority_backend(
+        tmp_path / "no-mutation-then-plan.db",
+        no_mutation_executor,
+        now=lambda: 20.0,
+    )
     await backend.initialize()
     await _ingest(backend)
-    no_mutation_executor = _Executor(backend, no_mutation=True)
     no_mutation_runner = DurableMemoryJobRunner(
         backend,
         no_mutation_executor,
@@ -517,11 +714,11 @@ async def test_no_mutation_does_not_stale_the_next_real_mutation_base_revision(
     assert await no_mutation_runner.run_once() is WorkerRunOutcome.APPLIED
 
     await _ingest_indexes(backend, (3, 4))
-    mutation_executor = _Executor(backend, base_revision=1)
+    mutation_executor = _Executor(backend, base_revision=1, deliveries=deliveries)
     mutation_runner = DurableMemoryJobRunner(
         backend,
         mutation_executor,
-        mutation_executor,
+        no_mutation_executor,
         TEST_WORKER_CONFIG,
         "worker-2",
         lambda: 20.0,
@@ -550,16 +747,20 @@ async def test_result_replay_divergence_and_stale_lease_are_audited_not_applied(
     tmp_path: Path,
 ) -> None:
     clock = [20.0]
-    backend = SQLiteHumanMemoryBackend(tmp_path / "result-cas.db", now=lambda: clock[0])
+    executor = _Executor(None, no_mutation=True)
+    backend = _authority_backend(
+        tmp_path / "result-cas.db", executor, now=lambda: clock[0]
+    )
     await backend.initialize()
     await _ingest(backend)
     claim = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-1")
     assert claim is not None
-    executor = _Executor(backend, no_mutation=True)
     envelope = await executor.analyze_memory(claim.request)
     result = envelope.result
-    first = await backend.commit_analysis_result(claim, envelope)
-    replay = await backend.commit_analysis_result(claim, envelope)
+    first_admission = await _admit(backend, claim, envelope, executor)
+    first = await backend.commit_analysis_result(claim, envelope, first_admission)
+    replay_admission = await _admit(backend, claim, envelope, executor)
+    replay = await backend.commit_analysis_result(claim, envelope, replay_admission)
     assert first.outcome is AnalysisResultCommitOutcome.COMMITTED
     assert replay.outcome is AnalysisResultCommitOutcome.REPLAYED
     divergent = MemoryAnalysisResult(
@@ -575,14 +776,19 @@ async def test_result_replay_divergence_and_stale_lease_are_audited_not_applied(
     )
     divergent_envelope = _result_envelope(claim.request, divergent, executor.issuer_id)
     executor.deliveries[(claim.request.request_hash, claim.request.attempt)] = divergent_envelope
-    divergence = await backend.commit_analysis_result(claim, divergent_envelope)
+    divergent_admission = await _admit(backend, claim, divergent_envelope, executor)
+    divergence = await backend.commit_analysis_result(
+        claim, divergent_envelope, divergent_admission
+    )
     assert divergence.outcome is AnalysisResultCommitOutcome.DIVERGENT
     assert divergence.canonical_result == result
 
     clock[0] = 31.0
     reclaimed = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-2")
     assert reclaimed is not None and reclaimed.lease_token != claim.lease_token
-    stale = await backend.commit_analysis_result(claim, envelope)
+    executor.deliveries[(claim.request.request_hash, claim.request.attempt)] = envelope
+    stale_admission = await _admit(backend, claim, envelope, executor)
+    stale = await backend.commit_analysis_result(claim, envelope, stale_admission)
     assert stale.outcome is AnalysisResultCommitOutcome.STALE_LEASE
     await backend.close()
 
@@ -593,16 +799,19 @@ async def test_expired_lease_without_reclaim_cannot_commit_result(
     tmp_path: Path, seconds_after_expiry: float
 ) -> None:
     clock = [20.0]
-    backend = SQLiteHumanMemoryBackend(tmp_path / "expired.db", now=lambda: clock[0])
+    executor = _Executor(None, no_mutation=True)
+    backend = _authority_backend(
+        tmp_path / "expired.db", executor, now=lambda: clock[0]
+    )
     await backend.initialize()
     await _ingest(backend)
     claim = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-old")
     assert claim is not None
-    executor = _Executor(backend, no_mutation=True)
     envelope = await executor.analyze_memory(claim.request)
     clock[0] = claim.lease_expires_at + seconds_after_expiry
 
-    committed = await backend.commit_analysis_result(claim, envelope)
+    admission = await _admit(backend, claim, envelope, executor)
+    committed = await backend.commit_analysis_result(claim, envelope, admission)
 
     assert committed.outcome is AnalysisResultCommitOutcome.STALE_LEASE
     async with backend.connection.execute(
@@ -624,12 +833,14 @@ async def test_partial_member_lease_or_attempt_tamper_invalidates_whole_claim(
     tmp_path: Path, tamper: str
 ) -> None:
     clock = [20.0]
-    backend = SQLiteHumanMemoryBackend(tmp_path / f"partial-{tamper}.db", now=lambda: clock[0])
+    executor = _Executor(None, no_mutation=True)
+    backend = _authority_backend(
+        tmp_path / f"partial-{tamper}.db", executor, now=lambda: clock[0]
+    )
     await backend.initialize()
     await _ingest(backend)
     claim = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-old")
     assert claim is not None
-    executor = _Executor(backend, no_mutation=True)
     envelope = await executor.analyze_memory(claim.request)
     if tamper == "member_expiry":
         await backend.connection.execute(
@@ -643,7 +854,8 @@ async def test_partial_member_lease_or_attempt_tamper_invalidates_whole_claim(
         )
     await backend.connection.commit()
 
-    committed = await backend.commit_analysis_result(claim, envelope)
+    admission = await _admit(backend, claim, envelope, executor)
+    committed = await backend.commit_analysis_result(claim, envelope, admission)
 
     assert committed.outcome is AnalysisResultCommitOutcome.STALE_LEASE
     async with backend.connection.execute(
@@ -660,16 +872,19 @@ async def test_expiry_between_result_prepare_and_finalize_never_applies_late(
     tmp_path: Path,
 ) -> None:
     clock = [20.0]
-    backend = SQLiteHumanMemoryBackend(tmp_path / "phase-expiry.db", now=lambda: clock[0])
+    executor = _Executor(None, no_mutation=True)
+    backend = _authority_backend(
+        tmp_path / "phase-expiry.db", executor, now=lambda: clock[0]
+    )
     await backend.initialize()
     await _ingest(backend)
     claim = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-old")
     assert claim is not None
-    executor = _Executor(backend, no_mutation=True)
     envelope = await executor.analyze_memory(claim.request)
     result = envelope.result
+    admission = await _admit(backend, claim, envelope, executor)
     assert (
-        await backend.commit_analysis_result(claim, envelope)
+        await backend.commit_analysis_result(claim, envelope, admission)
     ).outcome is AnalysisResultCommitOutcome.COMMITTED
     clock[0] = claim.lease_expires_at
     assert (
@@ -692,7 +907,13 @@ async def test_expiry_between_result_prepare_and_finalize_never_applies_late(
         reclaimed, reclaimed.result, TEST_WORKER_CONFIG.validator_version
     )
     assert application is not None
+    replay_admission = await _admit(
+        backend, reclaimed, reclaimed.envelope, executor
+    )
     await backend.record_memory_analysis(
+        reclaimed,
+        reclaimed.envelope,
+        replay_admission,
         application.invocation_id,
         application.turn_id,
         reclaimed.request,
@@ -713,10 +934,12 @@ async def test_executor_failure_retries_then_dead_letters_with_explicit_schedule
     tmp_path: Path,
 ) -> None:
     clock = [20.0]
-    backend = SQLiteHumanMemoryBackend(tmp_path / "retry.db", now=lambda: clock[0])
+    executor = _Executor(None, error=TimeoutError())
+    backend = _authority_backend(
+        tmp_path / "retry.db", executor, now=lambda: clock[0]
+    )
     await backend.initialize()
     await _ingest(backend)
-    executor = _Executor(backend, error=TimeoutError())
     runner = DurableMemoryJobRunner(
         backend, executor, executor, TEST_WORKER_CONFIG, "worker-1", lambda: clock[0]
     )
@@ -731,14 +954,75 @@ async def test_executor_failure_retries_then_dead_letters_with_explicit_schedule
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("authority_error", "reason_code"),
+    (
+        (TimeoutError("Host authority timeout"), "analysis_delivery_authority_timeout"),
+        (
+            AnalysisDeliveryAuthorityTransientError("Host authority unavailable"),
+            "analysis_delivery_authority_transient",
+        ),
+    ),
+)
+async def test_authority_transient_is_audited_and_retried_not_dead_lettered(
+    tmp_path: Path,
+    authority_error: Exception,
+    reason_code: str,
+) -> None:
+    clock = [20.0]
+    authority = _Executor(
+        None,
+        no_mutation=True,
+        authority_error=authority_error,
+    )
+    backend = _authority_backend(
+        tmp_path / f"{reason_code}.db", authority, now=lambda: clock[0]
+    )
+    try:
+        await backend.initialize()
+        await _ingest(backend)
+        runner = DurableMemoryJobRunner(
+            backend,
+            authority,
+            authority,
+            TEST_WORKER_CONFIG,
+            "worker-1",
+            lambda: clock[0],
+        )
+
+        assert await runner.run_once() is WorkerRunOutcome.RETRY_SCHEDULED
+        async with backend.connection.execute(
+            "SELECT output_reason_code,delivery_receipt_json FROM llm_invocations"
+        ) as cursor:
+            rejected = await cursor.fetchone()
+        assert rejected is not None
+        assert str(rejected[0]) == reason_code
+        assert rejected[1] is None
+        async with backend.connection.execute("SELECT DISTINCT state FROM jobs") as cursor:
+            assert {str(row[0]) for row in await cursor.fetchall()} == {"pending"}
+
+        authority.authority_error = None
+        clock[0] = 23.0
+        assert await runner.run_once() is WorkerRunOutcome.APPLIED
+        assert authority.provider_calls == 2
+        async with backend.connection.execute(
+            "SELECT output_reason_code FROM llm_invocations ORDER BY invocation_sequence"
+        ) as cursor:
+            reasons = [str(row[0]) for row in await cursor.fetchall()]
+        assert reasons == [reason_code, "analysis_validator_accepted"]
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
 async def test_private_result_is_dead_lettered_without_body_in_db_wal_or_logs(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "private-result.db"
-    backend = SQLiteHumanMemoryBackend(path, now=lambda: 20.0)
+    executor = _Executor(None, private=True)
+    backend = _authority_backend(path, executor, now=lambda: 20.0)
     await backend.initialize()
     await _ingest(backend)
-    executor = _Executor(backend, private=True)
     runner = DurableMemoryJobRunner(
         backend,
         executor,
@@ -769,7 +1053,8 @@ async def test_every_rejected_provider_result_has_one_public_only_audit_record(
     tmp_path: Path, mode: str
 ) -> None:
     path = tmp_path / f"rejected-{mode}.db"
-    backend = SQLiteHumanMemoryBackend(path, now=lambda: 20.0)
+    executor = _RejectedResultExecutor(None, mode)
+    backend = _authority_backend(path, executor, now=lambda: 20.0)
     await backend.initialize()
     await _ingest(backend)
     config = (
@@ -777,7 +1062,6 @@ async def test_every_rejected_provider_result_has_one_public_only_audit_record(
         if mode == "oversize"
         else TEST_WORKER_CONFIG
     )
-    executor = _RejectedResultExecutor(backend, mode)
     runner = DurableMemoryJobRunner(
         backend,
         executor,
@@ -787,7 +1071,8 @@ async def test_every_rejected_provider_result_has_one_public_only_audit_record(
         lambda: 20.0,
     )
 
-    assert await runner.run_once() is WorkerRunOutcome.DEAD_LETTER
+    with structlog.testing.capture_logs() as captured_logs:
+        assert await runner.run_once() is WorkerRunOutcome.DEAD_LETTER
 
     async with backend.connection.execute(
         "SELECT request_hash,public_output_json,public_output_hash,output_storage_status,"
@@ -829,7 +1114,31 @@ async def test_every_rejected_provider_result_has_one_public_only_audit_record(
     database_bytes = path.read_bytes()
     wal_path = Path(f"{path}-wal")
     wal_bytes = wal_path.read_bytes() if wal_path.exists() else b""
-    assert b"ghp_012345678901234567890123456789" not in database_bytes + wal_bytes
+    if mode in {"private", "oversize"}:
+        async with backend.connection.execute(
+            "SELECT invocation_id FROM llm_invocations"
+        ) as cursor:
+            invocation_id = await cursor.fetchone()
+        assert invocation_id is not None
+        exported = await backend.export_audit_trace(
+            AuditTraceQuery(
+                "actor-1",
+                AuditTraceSelector.INVOCATION,
+                str(invocation_id[0]),
+            )
+        )
+        canary = (
+            PRIVATE_CREDENTIAL_CANARY
+            if mode == "private"
+            else OVERSIZE_BODY_CANARY
+        ).encode()
+        inspected = (
+            database_bytes
+            + wal_bytes
+            + repr(captured_logs).encode()
+            + repr(exported).encode()
+        )
+        assert canary not in inspected
     await backend.close()
 
 
@@ -846,10 +1155,12 @@ async def test_rejected_audit_and_dead_letter_commit_atomically_across_restart(
             fired = True
             raise RuntimeError("fault after rejected audit commit")
 
-    first = SQLiteHumanMemoryBackend(path, now=lambda: 20.0, fault_injector=fault)
+    executor = _RejectedResultExecutor(None, "private")
+    first = _authority_backend(
+        path, executor, now=lambda: 20.0, fault_injector=fault
+    )
     await first.initialize()
     await _ingest(first)
-    executor = _RejectedResultExecutor(first, "private")
     runner = DurableMemoryJobRunner(
         first,
         executor,
@@ -862,9 +1173,9 @@ async def test_rejected_audit_and_dead_letter_commit_atomically_across_restart(
         await runner.run_once()
     await first.close()
 
-    reopened = SQLiteHumanMemoryBackend(path, now=lambda: 40.0)
+    replay_executor = _RejectedResultExecutor(None, "private")
+    reopened = _authority_backend(path, replay_executor, now=lambda: 40.0)
     await reopened.initialize()
-    replay_executor = _RejectedResultExecutor(reopened, "private")
     replay = DurableMemoryJobRunner(
         reopened,
         replay_executor,
@@ -898,10 +1209,12 @@ async def test_crash_after_result_commit_reopens_without_second_provider_call(
             fired = True
             raise RuntimeError("crash after durable result")
 
-    first = SQLiteHumanMemoryBackend(path, now=lambda: clock[0], fault_injector=fault)
+    executor = _Executor(None, no_mutation=True)
+    first = _authority_backend(
+        path, executor, now=lambda: clock[0], fault_injector=fault
+    )
     await first.initialize()
     await _ingest(first)
-    executor = _Executor(first, no_mutation=True)
     runner = DurableMemoryJobRunner(
         first, executor, executor, TEST_WORKER_CONFIG, "worker-1", lambda: clock[0]
     )
@@ -910,9 +1223,13 @@ async def test_crash_after_result_commit_reopens_without_second_provider_call(
     await first.close()
 
     clock[0] = 31.0
-    reopened = SQLiteHumanMemoryBackend(path, now=lambda: clock[0])
+    replay_executor = _Executor(
+        None, no_mutation=True, deliveries=executor.deliveries
+    )
+    reopened = _authority_backend(
+        path, replay_executor, now=lambda: clock[0]
+    )
     await reopened.initialize()
-    replay_executor = _Executor(reopened, no_mutation=True)
     replay_runner = DurableMemoryJobRunner(
         reopened,
         replay_executor,
@@ -926,7 +1243,7 @@ async def test_crash_after_result_commit_reopens_without_second_provider_call(
     assert executor.provider_calls == 1
     assert replay_executor.calls == 0
     assert replay_executor.provider_calls == 0
-    assert replay_executor.verification_calls == 0
+    assert replay_executor.verification_calls == 1
     await reopened.close()
 
 
@@ -945,10 +1262,12 @@ async def test_crash_before_memory_commit_replays_same_host_delivery_without_pro
             fired = True
             raise RuntimeError("crash before Memory result commit")
 
-    first = SQLiteHumanMemoryBackend(path, now=lambda: clock[0], fault_injector=fault)
+    executor = _Executor(None, no_mutation=True, deliveries=durable_deliveries)
+    first = _authority_backend(
+        path, executor, now=lambda: clock[0], fault_injector=fault
+    )
     await first.initialize()
     await _ingest(first)
-    executor = _Executor(first, no_mutation=True, deliveries=durable_deliveries)
     runner = DurableMemoryJobRunner(
         first, executor, executor, TEST_WORKER_CONFIG, "worker-1", lambda: clock[0]
     )
@@ -961,13 +1280,15 @@ async def test_crash_before_memory_commit_replays_same_host_delivery_without_pro
     await first.close()
 
     clock[0] = 31.0
-    reopened = SQLiteHumanMemoryBackend(path, now=lambda: clock[0])
-    await reopened.initialize()
     replay_executor = _Executor(
-        reopened,
+        None,
         no_mutation=True,
         deliveries=durable_deliveries,
     )
+    reopened = _authority_backend(
+        path, replay_executor, now=lambda: clock[0]
+    )
+    await reopened.initialize()
     replay_runner = DurableMemoryJobRunner(
         reopened,
         replay_executor,
@@ -1006,10 +1327,12 @@ async def test_persisted_delivery_receipt_tamper_fails_closed_on_reclaim(
             fired = True
             raise RuntimeError("crash after durable result")
 
-    first = SQLiteHumanMemoryBackend(path, now=lambda: clock[0], fault_injector=fault)
+    executor = _Executor(None, no_mutation=True)
+    first = _authority_backend(
+        path, executor, now=lambda: clock[0], fault_injector=fault
+    )
     await first.initialize()
     await _ingest(first)
-    executor = _Executor(first, no_mutation=True)
     runner = DurableMemoryJobRunner(
         first, executor, executor, TEST_WORKER_CONFIG, "worker-1", lambda: clock[0]
     )
@@ -1056,10 +1379,12 @@ async def test_commit_boundary_fault_matrix_is_reclaim_safe(
             fired = True
             raise RuntimeError(f"fault at {point}")
 
-    first = SQLiteHumanMemoryBackend(path, now=lambda: clock[0], fault_injector=fault)
+    first_executor = _Executor(None, no_mutation=True)
+    first = _authority_backend(
+        path, first_executor, now=lambda: clock[0], fault_injector=fault
+    )
     await first.initialize()
     await _ingest(first)
-    first_executor = _Executor(first, no_mutation=True)
     first_runner = DurableMemoryJobRunner(
         first,
         first_executor,
@@ -1074,9 +1399,13 @@ async def test_commit_boundary_fault_matrix_is_reclaim_safe(
 
     if advance_clock:
         clock[0] = 31.0
-    reopened = SQLiteHumanMemoryBackend(path, now=lambda: clock[0])
+    replay_executor = _Executor(
+        None, no_mutation=True, deliveries=first_executor.deliveries
+    )
+    reopened = _authority_backend(
+        path, replay_executor, now=lambda: clock[0]
+    )
     await reopened.initialize()
-    replay_executor = _Executor(reopened, no_mutation=True)
     replay_runner = DurableMemoryJobRunner(
         reopened,
         replay_executor,
@@ -1105,10 +1434,12 @@ async def test_partial_batch_waits_for_explicit_max_wait_and_shutdown_is_immedia
     tmp_path: Path,
 ) -> None:
     clock = [20.0]
-    backend = SQLiteHumanMemoryBackend(tmp_path / "max-wait.db", now=lambda: clock[0])
+    executor = _Executor(None, no_mutation=True)
+    backend = _authority_backend(
+        tmp_path / "max-wait.db", executor, now=lambda: clock[0]
+    )
     await backend.initialize()
     await _ingest(backend, count=1)
-    executor = _Executor(backend, no_mutation=True)
     runner = DurableMemoryJobRunner(
         backend, executor, executor, TEST_WORKER_CONFIG, "worker-1", lambda: clock[0]
     )
@@ -1133,10 +1464,12 @@ async def test_partial_batch_waits_for_explicit_max_wait_and_shutdown_is_immedia
 async def test_revision_drift_and_safe_refusal_are_rejected_and_audited(
     tmp_path: Path, executor_kwargs: dict[str, object]
 ) -> None:
-    backend = SQLiteHumanMemoryBackend(tmp_path / "rejected.db", now=lambda: 20.0)
+    executor = _Executor(None, **executor_kwargs)  # type: ignore[arg-type]
+    backend = _authority_backend(
+        tmp_path / "rejected.db", executor, now=lambda: 20.0
+    )
     await backend.initialize()
     await _ingest(backend)
-    executor = _Executor(backend, **executor_kwargs)  # type: ignore[arg-type]
     runner = DurableMemoryJobRunner(
         backend, executor, executor, TEST_WORKER_CONFIG, "worker-1", lambda: 20.0
     )
@@ -1170,11 +1503,13 @@ async def test_revision_drift_and_safe_refusal_are_rejected_and_audited(
 
 @pytest.mark.asyncio
 async def test_oversize_result_is_rejected_before_durable_body_write(tmp_path: Path) -> None:
-    backend = SQLiteHumanMemoryBackend(tmp_path / "oversize.db", now=lambda: 20.0)
+    executor = _Executor(None, no_mutation=True)
+    backend = _authority_backend(
+        tmp_path / "oversize.db", executor, now=lambda: 20.0
+    )
     await backend.initialize()
     await _ingest(backend)
     config = replace(TEST_WORKER_CONFIG, max_result_bytes=100)
-    executor = _Executor(backend, no_mutation=True)
     runner = DurableMemoryJobRunner(
         backend,
         executor,

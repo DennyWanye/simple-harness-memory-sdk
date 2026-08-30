@@ -270,6 +270,22 @@ class AnalysisResultCommitOutcome(StrEnum):
     STALE_LEASE = "stale_lease"
 
 
+class AnalysisDeliveryAuthorityTransientError(RuntimeError):
+    """A Host delivery-authority outage that is safe to retry within job policy."""
+
+
+class _AnalysisDeliveryAdmission:
+    """Opaque in-process capability; repository identity registration is the authority."""
+
+    __slots__ = ()
+
+
+class _AnalysisDeliveryAuthorityRegistration:
+    """Opaque registration proving the runner uses the repository-bound authority."""
+
+    __slots__ = ()
+
+
 @dataclass(frozen=True, slots=True)
 class AnalysisResultCommit:
     outcome: AnalysisResultCommitOutcome
@@ -300,8 +316,26 @@ class DurableJobRepositoryPort(Protocol):
         self, config: MemoryJobWorkerConfig, worker_id: str
     ) -> AnalysisBatchClaim | None: ...
 
+    def register_analysis_delivery_authority(
+        self, authority: MemoryAnalysisDeliveryAuthorityPort
+    ) -> _AnalysisDeliveryAuthorityRegistration: ...
+
+    async def admit_analysis_delivery(
+        self,
+        claim: AnalysisBatchClaim,
+        envelope: MemoryAnalysisResultEnvelope,
+        registration: _AnalysisDeliveryAuthorityRegistration,
+    ) -> _AnalysisDeliveryAdmission: ...
+
+    async def discard_analysis_delivery_admission(
+        self, admission: _AnalysisDeliveryAdmission
+    ) -> None: ...
+
     async def commit_analysis_result(
-        self, claim: AnalysisBatchClaim, envelope: MemoryAnalysisResultEnvelope
+        self,
+        claim: AnalysisBatchClaim,
+        envelope: MemoryAnalysisResultEnvelope,
+        admission: _AnalysisDeliveryAdmission,
     ) -> AnalysisResultCommit: ...
 
     async def reject_analysis_result(
@@ -310,6 +344,8 @@ class DurableJobRepositoryPort(Protocol):
         audit: RejectedAnalysisAudit,
         reason_code: str,
         validator_version: str,
+        admission: _AnalysisDeliveryAdmission | None = None,
+        retry_config: MemoryJobWorkerConfig | None = None,
     ) -> WorkerRunOutcome: ...
 
     async def prepare_analysis_application(
@@ -321,6 +357,9 @@ class DurableJobRepositoryPort(Protocol):
 
     async def record_memory_analysis(
         self,
+        claim: AnalysisBatchClaim,
+        envelope: MemoryAnalysisResultEnvelope,
+        admission: _AnalysisDeliveryAdmission,
         invocation_id: str,
         turn_id: str,
         request: MemoryAnalysisRequest,
@@ -362,6 +401,9 @@ class DurableMemoryJobRunner:
         self._repository = repository
         self._executor = executor
         self._delivery_authority = delivery_authority
+        self._delivery_authority_registration = (
+            repository.register_analysis_delivery_authority(delivery_authority)
+        )
         self._config = config
         self._worker_id = worker_id
         self._now = now
@@ -373,6 +415,7 @@ class DurableMemoryJobRunner:
         envelope = claim.envelope
         result = claim.result
         application = claim.application
+        admission: _AnalysisDeliveryAdmission | None = None
         if application is None:
             if envelope is None:
                 try:
@@ -413,29 +456,62 @@ class DurableMemoryJobRunner:
                         "analysis_envelope_lineage_invalid",
                         self._config.validator_version,
                     )
-                try:
-                    await self._delivery_authority.verify_analysis_delivery(
-                        claim.request, envelope
-                    )
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    return await self._repository.reject_analysis_result(
-                        claim, _rejected_result_audit(envelope, claim.request.request_hash),
-                        "analysis_delivery_authority_rejected",
-                        self._config.validator_version,
-                    )
-                try:
-                    freeze_public_audit_object(
-                        {"delivery_receipt": envelope.delivery_receipt.to_json()}
-                    )
-                except (MemoryLimitError, MemoryValidationError):
-                    return await self._repository.reject_analysis_result(
-                        claim,
-                        _rejected_result_audit(envelope, claim.request.request_hash),
-                        "analysis_delivery_public_metadata_invalid",
-                        self._config.validator_version,
-                    )
+            assert envelope is not None
+            try:
+                admission = await self._repository.admit_analysis_delivery(
+                    claim, envelope, self._delivery_authority_registration
+                )
+            except asyncio.CancelledError:
+                raise
+            except TimeoutError:
+                return await self._repository.reject_analysis_result(
+                    claim,
+                    _rejected_result_audit(envelope, claim.request.request_hash),
+                    "analysis_delivery_authority_timeout",
+                    self._config.validator_version,
+                    retry_config=self._config,
+                )
+            except AnalysisDeliveryAuthorityTransientError:
+                return await self._repository.reject_analysis_result(
+                    claim,
+                    _rejected_result_audit(envelope, claim.request.request_hash),
+                    "analysis_delivery_authority_transient",
+                    self._config.validator_version,
+                    retry_config=self._config,
+                )
+            except (MemoryLimitError, MemoryValidationError):
+                return await self._repository.reject_analysis_result(
+                    claim,
+                    _rejected_result_audit(envelope, claim.request.request_hash),
+                    "analysis_delivery_public_metadata_invalid",
+                    self._config.validator_version,
+                )
+            except Exception:
+                return await self._repository.reject_analysis_result(
+                    claim,
+                    _rejected_result_audit(envelope, claim.request.request_hash),
+                    "analysis_delivery_authority_rejected",
+                    self._config.validator_version,
+                )
+        else:
+            assert envelope is not None
+            try:
+                admission = await self._repository.admit_analysis_delivery(
+                    claim, envelope, self._delivery_authority_registration
+                )
+            except asyncio.CancelledError:
+                raise
+            except (TimeoutError, AnalysisDeliveryAuthorityTransientError):
+                return await self._repository.fail_analysis_batch(
+                    claim, "analysis_delivery_replay_authority_transient", self._config
+                )
+            except Exception:
+                return await self._repository.fail_analysis_batch(
+                    claim, "analysis_delivery_replay_authority_rejected", self._config
+                )
+        assert admission is not None and envelope is not None
+        try:
+            if application is None:
                 result = envelope.result
                 try:
                     freeze_public_audit_object(result.structured_result)
@@ -445,6 +521,7 @@ class DurableMemoryJobRunner:
                         _rejected_envelope_audit(envelope),
                         "analysis_result_private_material",
                         self._config.validator_version,
+                        admission,
                     )
                 encoded = canonical_json(result.to_json()).encode()
                 if len(encoded) > self._config.max_result_bytes:
@@ -453,33 +530,46 @@ class DurableMemoryJobRunner:
                         _rejected_envelope_audit(envelope),
                         "analysis_result_oversize",
                         self._config.validator_version,
+                        admission,
                     )
-                commit = await self._repository.commit_analysis_result(claim, envelope)
-                if commit.outcome is AnalysisResultCommitOutcome.STALE_LEASE:
+                if claim.envelope is None:
+                    commit = await self._repository.commit_analysis_result(
+                        claim, envelope, admission
+                    )
+                    if commit.outcome in {
+                        AnalysisResultCommitOutcome.STALE_LEASE,
+                        AnalysisResultCommitOutcome.DIVERGENT,
+                    }:
+                        return WorkerRunOutcome.STALE_LEASE
+                    if commit.canonical_envelope is None:
+                        return WorkerRunOutcome.STALE_LEASE
+                    envelope = commit.canonical_envelope
+                    result = envelope.result
+                application = await self._repository.prepare_analysis_application(
+                    claim, result, self._config.validator_version
+                )
+                if application is None:
                     return WorkerRunOutcome.STALE_LEASE
-                if commit.canonical_envelope is None:
-                    return WorkerRunOutcome.STALE_LEASE
-                envelope = commit.canonical_envelope
-                result = envelope.result
-            assert result is not None and envelope is not None
-            application = await self._repository.prepare_analysis_application(
-                claim, result, self._config.validator_version
+            assert result is not None and application is not None
+            await self._repository.record_memory_analysis(
+                claim,
+                envelope,
+                admission,
+                application.invocation_id,
+                application.turn_id,
+                claim.request,
+                result,
+                envelope.delivery_receipt,
+                application.receipt,
+                application.decisions,
+                reasoning_refs=application.reasoning_refs,
             )
-            if application is None:
-                return WorkerRunOutcome.STALE_LEASE
-        assert result is not None and envelope is not None and application is not None
-        await self._repository.record_memory_analysis(
-            application.invocation_id,
-            application.turn_id,
-            claim.request,
-            result,
-            envelope.delivery_receipt,
-            application.receipt,
-            application.decisions,
-            reasoning_refs=application.reasoning_refs,
-        )
-        finalized = await self._repository.finalize_analysis_application(claim, application)
-        return WorkerRunOutcome.APPLIED if finalized else WorkerRunOutcome.STALE_LEASE
+            finalized = await self._repository.finalize_analysis_application(
+                claim, application
+            )
+            return WorkerRunOutcome.APPLIED if finalized else WorkerRunOutcome.STALE_LEASE
+        finally:
+            await self._repository.discard_analysis_delivery_admission(admission)
 
     async def run_until_stopped(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
@@ -494,6 +584,7 @@ class DurableMemoryJobRunner:
 __all__ = (
     "AnalysisApplication",
     "AnalysisBatchClaim",
+    "AnalysisDeliveryAuthorityTransientError",
     "AnalysisResultCommit",
     "AnalysisResultCommitOutcome",
     "DurableJobRepositoryPort",

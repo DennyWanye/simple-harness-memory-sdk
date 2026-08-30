@@ -12,9 +12,11 @@ import os
 import re
 import secrets
 import sqlite3
+import threading
 import time
 from collections.abc import Callable, Mapping
 from contextlib import suppress
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote
@@ -44,6 +46,7 @@ from simple_harness_memory.core.errors import (
 
 if TYPE_CHECKING:
     from simple_harness.runtime import (
+        MemoryAnalysisDeliveryAuthorityPort,
         MemoryAnalysisDeliveryReceipt,
         MemoryAnalysisReceipt,
         MemoryAnalysisRequest,
@@ -73,6 +76,8 @@ if TYPE_CHECKING:
         MemoryJobWorkerConfig,
         RejectedAnalysisAudit,
         WorkerRunOutcome,
+        _AnalysisDeliveryAdmission,
+        _AnalysisDeliveryAuthorityRegistration,
     )
     from simple_harness_memory.core.suppression import (
         OrdinaryMemoryPurpose,
@@ -154,6 +159,20 @@ _AUDIT_IDENTIFIER_CREDENTIAL_PATTERNS = (
 )
 
 
+@dataclass(slots=True)
+class _DeliveryAdmissionState:
+    admission: object
+    authority: object
+    batch_id: str
+    lease_token: str
+    request_hash: str
+    envelope_hash: str
+    result_hash: str
+    delivery_receipt_hash: str
+    commit_available: bool = True
+    audit_available: bool = True
+
+
 class SQLiteHumanMemoryBackend:
     """Own the fresh v5 SQLite root and suppression-first repository APIs."""
 
@@ -164,6 +183,7 @@ class SQLiteHumanMemoryBackend:
         fault_injector: FaultInjector | None = None,
         now: Callable[[], float] = time.time,
         supported_filter_policies: frozenset[str] = _DEFAULT_FILTER_POLICIES,
+        analysis_delivery_authority: MemoryAnalysisDeliveryAuthorityPort | None = None,
     ) -> None:
         self._db_path = Path(db_path)
         self._fault_injector = fault_injector
@@ -173,6 +193,9 @@ class SQLiteHumanMemoryBackend:
         self._writer_lock_file: Any | None = None
         self._initialize_lock = asyncio.Lock()
         self._write_lock = asyncio.Lock()
+        self._admission_lock = asyncio.Lock()
+        self._authority_registration_lock = threading.Lock()
+        self._delivery_admissions: dict[int, _DeliveryAdmissionState] = {}
         self._receipt: InitializationReceipt | None = None
         self._audit_cursor_hmac_key: bytes | None = None
         self._busy_timeout_ms = 5000
@@ -181,6 +204,22 @@ class SQLiteHumanMemoryBackend:
         ):
             raise MemoryValidationError("supported filter policies are invalid")
         self._supported_filter_policies = frozenset(supported_filter_policies)
+        self._analysis_delivery_authority = analysis_delivery_authority
+        self._analysis_delivery_authority_registration: object | None = None
+        if analysis_delivery_authority is not None:
+            verify = getattr(analysis_delivery_authority, "verify_analysis_delivery", None)
+            if not callable(verify):
+                raise TypeError(
+                    "analysis_delivery_authority must implement "
+                    "MemoryAnalysisDeliveryAuthorityPort"
+                )
+            from simple_harness_memory.core.jobs import (
+                _AnalysisDeliveryAuthorityRegistration,
+            )
+
+            self._analysis_delivery_authority_registration = (
+                _AnalysisDeliveryAuthorityRegistration()
+            )
 
     @property
     def initialization_receipt(self) -> InitializationReceipt | None:
@@ -237,6 +276,8 @@ class SQLiteHumanMemoryBackend:
                 self._db = None
             self._receipt = None
             self._audit_cursor_hmac_key = None
+            async with self._admission_lock:
+                self._delivery_admissions.clear()
             self._release_writer_lease()
 
     async def ingest_committed_evidence(
@@ -1193,8 +1234,144 @@ class SQLiteHumanMemoryBackend:
             and int(row["current_count"] or 0) == len(claim.job_ids)
         )
 
+    def register_analysis_delivery_authority(
+        self, authority: MemoryAnalysisDeliveryAuthorityPort
+    ) -> _AnalysisDeliveryAuthorityRegistration:
+        """Return a capability only for the constructor-bound Host authority."""
+
+        from simple_harness_memory.core.jobs import (
+            _AnalysisDeliveryAuthorityRegistration,
+        )
+
+        verify = getattr(authority, "verify_analysis_delivery", None)
+        if not callable(verify):
+            raise TypeError("authority must implement MemoryAnalysisDeliveryAuthorityPort")
+        with self._authority_registration_lock:
+            if self._analysis_delivery_authority is None:
+                raise MemoryValidationError("analysis_delivery_authority_not_bound")
+            if authority is not self._analysis_delivery_authority:
+                raise MemoryValidationError(
+                    "analysis_delivery_authority_identity_differs"
+                )
+            registration = self._analysis_delivery_authority_registration
+            if type(registration) is not _AnalysisDeliveryAuthorityRegistration:
+                raise MemoryCorruptionError(
+                    "analysis delivery authority registration is invalid"
+                )
+            return registration
+
+    async def admit_analysis_delivery(
+        self,
+        claim: AnalysisBatchClaim,
+        envelope: MemoryAnalysisResultEnvelope,
+        registration: _AnalysisDeliveryAuthorityRegistration,
+    ) -> _AnalysisDeliveryAdmission:
+        """Verify Host durable authority outside SQLite and issue an identity capability."""
+
+        from simple_harness.runtime import MemoryAnalysisResultEnvelope
+
+        from simple_harness_memory.core.audit import freeze_public_audit_object
+        from simple_harness_memory.core.jobs import (
+            AnalysisBatchClaim,
+            _AnalysisDeliveryAdmission,
+            _AnalysisDeliveryAuthorityRegistration,
+        )
+
+        if (
+            type(claim) is not AnalysisBatchClaim
+            or type(envelope) is not MemoryAnalysisResultEnvelope
+        ):
+            raise TypeError("claim and envelope must use analysis protocol types")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v5 backend is not initialized")
+        if self._db.in_transaction:
+            raise MemoryWriterConflict("analysis_authority_called_inside_transaction")
+        if (
+            self._analysis_delivery_authority is None
+            or registration is not self._analysis_delivery_authority_registration
+            or type(registration) is not _AnalysisDeliveryAuthorityRegistration
+        ):
+            raise MemoryValidationError("analysis_delivery_authority_registration_invalid")
+        envelope.verify_request(claim.request)
+        await self._analysis_delivery_authority.verify_analysis_delivery(
+            claim.request, envelope
+        )
+        if self._db.in_transaction:
+            raise MemoryWriterConflict("analysis_authority_opened_memory_transaction")
+        freeze_public_audit_object(
+            {"delivery_receipt": envelope.delivery_receipt.to_json()}
+        )
+        admission = _AnalysisDeliveryAdmission()
+        state = _DeliveryAdmissionState(
+            admission,
+            self._analysis_delivery_authority,
+            claim.batch_id,
+            claim.lease_token,
+            claim.request.request_hash,
+            envelope.envelope_hash,
+            envelope.result.result_hash,
+            envelope.delivery_receipt.receipt_hash,
+        )
+        async with self._admission_lock:
+            self._delivery_admissions[id(admission)] = state
+        return admission
+
+    async def discard_analysis_delivery_admission(
+        self, admission: _AnalysisDeliveryAdmission
+    ) -> None:
+        async with self._admission_lock:
+            state = self._delivery_admissions.get(id(admission))
+            if state is not None and state.admission is admission:
+                self._delivery_admissions.pop(id(admission), None)
+
+    async def _consume_analysis_delivery_admission(
+        self,
+        admission: object,
+        claim: AnalysisBatchClaim,
+        envelope: MemoryAnalysisResultEnvelope | None,
+        *,
+        purpose: str,
+        result_hash: str | None = None,
+        delivery_receipt_hash: str | None = None,
+    ) -> None:
+        async with self._admission_lock:
+            state = self._delivery_admissions.get(id(admission))
+            if (
+                state is None
+                or state.admission is not admission
+                or state.batch_id != claim.batch_id
+                or state.lease_token != claim.lease_token
+                or state.request_hash != claim.request.request_hash
+                or (
+                    envelope is not None
+                    and state.envelope_hash != envelope.envelope_hash
+                )
+                or (
+                    result_hash is not None and state.result_hash != result_hash
+                )
+                or (
+                    delivery_receipt_hash is not None
+                    and state.delivery_receipt_hash != delivery_receipt_hash
+                )
+            ):
+                raise MemoryValidationError("analysis_delivery_admission_invalid")
+            if purpose == "commit":
+                if not state.commit_available:
+                    raise MemoryValidationError("analysis_delivery_admission_replayed")
+                state.commit_available = False
+                return
+            if purpose == "audit":
+                if not state.audit_available:
+                    raise MemoryValidationError("analysis_delivery_admission_replayed")
+                state.audit_available = False
+                return
+            raise MemoryValidationError("analysis_delivery_admission_purpose_invalid")
+
     async def commit_analysis_result(
-        self, claim: AnalysisBatchClaim, envelope: MemoryAnalysisResultEnvelope
+        self,
+        claim: AnalysisBatchClaim,
+        envelope: MemoryAnalysisResultEnvelope,
+        admission: _AnalysisDeliveryAdmission,
     ) -> AnalysisResultCommit:
         from simple_harness.runtime import (
             MemoryAnalysisDeliveryReceipt,
@@ -1220,6 +1397,9 @@ class SQLiteHumanMemoryBackend:
         envelope.verify_request(claim.request)
         freeze_public_audit_object(
             {"delivery_receipt": envelope.delivery_receipt.to_json()}
+        )
+        await self._consume_analysis_delivery_admission(
+            admission, claim, envelope, purpose="commit"
         )
         result = envelope.result
         decoded = MemoryAnalysisResult.from_json(result.to_json())
@@ -1339,6 +1519,8 @@ class SQLiteHumanMemoryBackend:
         audit: RejectedAnalysisAudit,
         reason_code: str,
         validator_version: str,
+        admission: _AnalysisDeliveryAdmission | None = None,
+        retry_config: MemoryJobWorkerConfig | None = None,
     ) -> WorkerRunOutcome:
         from simple_harness.runtime import (
             AnalysisValidationStatus,
@@ -1354,6 +1536,7 @@ class SQLiteHumanMemoryBackend:
         )
         from simple_harness_memory.core.jobs import (
             AnalysisBatchClaim,
+            MemoryJobWorkerConfig,
             RejectedAnalysisAudit,
             WorkerRunOutcome,
         )
@@ -1363,6 +1546,8 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("claim and audit must use analysis job protocol types")
         _audit_identifier(reason_code, "reason_code")
         _audit_identifier(validator_version, "validator_version")
+        if retry_config is not None and type(retry_config) is not MemoryJobWorkerConfig:
+            raise TypeError("retry_config must use MemoryJobWorkerConfig")
         if audit.delivery_receipt is not None:
             delivery = audit.delivery_receipt
             if (
@@ -1372,6 +1557,18 @@ class SQLiteHumanMemoryBackend:
                 or delivery.attempt != claim.request.attempt
             ):
                 raise MemoryValidationError("rejected_analysis_delivery_lineage_differs")
+            if admission is None:
+                raise MemoryValidationError("analysis_delivery_admission_required")
+            await self._consume_analysis_delivery_admission(
+                admission,
+                claim,
+                None,
+                purpose="audit",
+                result_hash=audit.result_hash,
+                delivery_receipt_hash=audit.delivery_receipt.receipt_hash,
+            )
+        elif admission is not None:
+            raise MemoryValidationError("analysis_delivery_admission_without_receipt")
         assert self._db is not None
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
@@ -1411,10 +1608,11 @@ class SQLiteHumanMemoryBackend:
                     "analysis-rejected-invocation",
                     claim.batch_id,
                     claim.request.request_hash,
+                    reason_code,
                 )
                 decision = DecisionLedgerEntry(
-                    _stable_id("analysis-rejected-decision", claim.batch_id),
-                    _stable_id("analysis-rejected-operation", claim.batch_id),
+                    _stable_id("analysis-rejected-decision", claim.batch_id, reason_code),
+                    _stable_id("analysis-rejected-operation", claim.batch_id, reason_code),
                     "analysis_result",
                     DecisionOutcome.REJECTED,
                     SuppressionScopeKind.SUBJECT,
@@ -1472,12 +1670,39 @@ class SQLiteHumanMemoryBackend:
                         raise MemoryIdempotencyConflict(
                             "rejected_analysis_invocation_replay_conflict"
                         )
-                await self._db.execute(
-                    "UPDATE jobs SET state='dead_letter',lease_owner=NULL,lease_token=NULL,"
-                    "lease_expires_at=NULL,last_error_code=?,updated_at=? WHERE job_id IN "
+                all_dead = retry_config is None
+                async with self._db.execute(
+                    "SELECT job_id,attempt_count FROM jobs WHERE job_id IN "
                     "(SELECT job_id FROM analysis_batch_members WHERE batch_id=?)",
-                    (reason_code, now, claim.batch_id),
-                )
+                    (claim.batch_id,),
+                ) as cursor:
+                    failure_rows = await cursor.fetchall()
+                for row in failure_rows:
+                    attempt = int(row["attempt_count"])
+                    dead = retry_config is None or attempt >= retry_config.max_attempts
+                    all_dead = all_dead and dead
+                    if retry_config is None or dead:
+                        retry_at = now
+                    else:
+                        retry_at = now + retry_config.retry_delays_seconds[attempt - 1]
+                    await self._db.execute(
+                        "UPDATE jobs SET state=?,lease_owner=NULL,lease_token=NULL,"
+                        "lease_expires_at=NULL,last_error_code=?,next_attempt_at=?,updated_at=? "
+                        "WHERE job_id=?",
+                        (
+                            "dead_letter" if dead else "pending",
+                            reason_code,
+                            retry_at,
+                            now,
+                            row["job_id"],
+                        ),
+                    )
+                    if dead:
+                        await self._db.execute(
+                            "UPDATE outbox SET state='dead_letter',updated_at=? WHERE "
+                            "idempotency_key=(SELECT idempotency_key FROM jobs WHERE job_id=?)",
+                            (now, row["job_id"]),
+                        )
                 await self._db.execute(
                     "UPDATE job_attempts SET state='failed',reason_code=?,completed_at=? "
                     "WHERE batch_id=?",
@@ -1487,20 +1712,22 @@ class SQLiteHumanMemoryBackend:
                     "UPDATE analysis_batches SET state='failed',updated_at=? WHERE batch_id=?",
                     (now, claim.batch_id),
                 )
-                await self._db.execute(
-                    "UPDATE outbox SET state='dead_letter',updated_at=? WHERE "
-                    "idempotency_key IN (SELECT idempotency_key FROM jobs WHERE job_id IN "
-                    "(SELECT job_id FROM analysis_batch_members WHERE batch_id=?))",
-                    (now, claim.batch_id),
-                )
                 await self._append_batch_events_unlocked(
-                    claim.batch_id, "dead_letter", reason_code, now, audit.result_hash
+                    claim.batch_id,
+                    "dead_letter" if all_dead else "retry_scheduled",
+                    reason_code,
+                    now,
+                    audit.result_hash,
                 )
                 self._fault("job.fail.before_commit")
                 await self._db.execute("COMMIT")
                 committed = True
                 self._fault("job.fail.after_commit")
-                return WorkerRunOutcome.DEAD_LETTER
+                return (
+                    WorkerRunOutcome.DEAD_LETTER
+                    if all_dead
+                    else WorkerRunOutcome.RETRY_SCHEDULED
+                )
             finally:
                 if not committed:
                     with suppress(Exception):
@@ -2028,6 +2255,9 @@ class SQLiteHumanMemoryBackend:
 
     async def record_memory_analysis(
         self,
+        claim: AnalysisBatchClaim,
+        envelope: MemoryAnalysisResultEnvelope,
+        admission: _AnalysisDeliveryAdmission,
         invocation_id: str,
         turn_id: str,
         request: MemoryAnalysisRequest,
@@ -2046,6 +2276,7 @@ class SQLiteHumanMemoryBackend:
             MemoryAnalysisReceipt,
             MemoryAnalysisRequest,
             MemoryAnalysisResult,
+            MemoryAnalysisResultEnvelope,
         )
 
         from simple_harness_memory.core.audit import (
@@ -2056,7 +2287,13 @@ class SQLiteHumanMemoryBackend:
             PublicReasoningReference,
             freeze_public_audit_object,
         )
+        from simple_harness_memory.core.jobs import AnalysisBatchClaim
 
+        if (
+            type(claim) is not AnalysisBatchClaim
+            or type(envelope) is not MemoryAnalysisResultEnvelope
+        ):
+            raise TypeError("claim and envelope must use analysis protocol types")
         if type(request) is not MemoryAnalysisRequest:
             raise TypeError("request must use MemoryAnalysisRequest")
         if type(result) is not MemoryAnalysisResult:
@@ -2065,6 +2302,8 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("delivery_receipt must use MemoryAnalysisDeliveryReceipt")
         if type(validation_receipt) is not MemoryAnalysisReceipt:
             raise TypeError("validation_receipt must use MemoryAnalysisReceipt")
+        if envelope.result != result or envelope.delivery_receipt != delivery_receipt:
+            raise MemoryValidationError("analysis_envelope_audit_lineage_differs")
         decoded_request = MemoryAnalysisRequest.from_json(request.to_json())
         decoded_result = MemoryAnalysisResult.from_json(result.to_json())
         decoded_delivery = MemoryAnalysisDeliveryReceipt.from_json(delivery_receipt.to_json())
@@ -2178,6 +2417,9 @@ class SQLiteHumanMemoryBackend:
         )
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v5 backend is not initialized")
+        await self._consume_analysis_delivery_admission(
+            admission, claim, envelope, purpose="audit"
+        )
         async with self._write_lock:
             for evidence_ref in request.ordered_evidence_refs:
                 async with self._db.execute(
@@ -3310,6 +3552,8 @@ class SQLiteHumanMemoryBackend:
             self._db = None
         self._receipt = None
         self._audit_cursor_hmac_key = None
+        async with self._admission_lock:
+            self._delivery_admissions.clear()
         self._release_writer_lease()
 
     def _fault(self, point: str) -> None:
