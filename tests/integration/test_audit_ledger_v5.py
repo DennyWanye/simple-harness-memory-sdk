@@ -226,7 +226,7 @@ async def _record_memory_analysis(
         claim, envelope, registration
     )
     try:
-        return await backend.record_memory_analysis(
+        return await backend.record_llm_invocation(
             claim,
             envelope,
             admission,

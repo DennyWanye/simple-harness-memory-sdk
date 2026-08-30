@@ -13,6 +13,7 @@ import structlog
 from simple_harness.contracts import JsonValue, canonical_json
 from simple_harness.runtime import (
     AnalysisBudget,
+    AnalysisValidationStatus,
     DeliveryRecipient,
     DisclosureContext,
     DisclosureGeneration,
@@ -27,6 +28,7 @@ from simple_harness.runtime import (
     LongTermMemoryType,
     MemoryAnalysisDeliveryAuthorityPort,
     MemoryAnalysisDeliveryReceipt,
+    MemoryAnalysisReceipt,
     MemoryAnalysisRequest,
     MemoryAnalysisResult,
     MemoryAnalysisResultEnvelope,
@@ -39,13 +41,18 @@ from simple_harness.runtime import (
 
 from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
 from simple_harness_memory.core.audit import AuditTraceQuery, AuditTraceSelector
-from simple_harness_memory.core.errors import MemoryCorruptionError, MemoryValidationError
+from simple_harness_memory.core.errors import (
+    MemoryCorruptionError,
+    MemoryValidationError,
+    MemoryWriterConflict,
+)
 from simple_harness_memory.core.jobs import (
     AnalysisBatchClaim,
     AnalysisDeliveryAuthorityTransientError,
     AnalysisResultCommitOutcome,
     DurableMemoryJobRunner,
     MemoryJobWorkerConfig,
+    RejectedAnalysisAudit,
     WorkerRunOutcome,
 )
 
@@ -576,6 +583,9 @@ async def test_admission_is_bound_to_claim_envelope_and_each_purpose_once(
             claim, envelope.result, TEST_WORKER_CONFIG.validator_version
         )
         assert application is not None
+        audit_admission = await backend.admit_analysis_application(
+            claim, envelope, application
+        )
         with pytest.raises(MemoryValidationError, match="admission_invalid"):
             await backend.record_memory_analysis(
                 claim,
@@ -592,7 +602,7 @@ async def test_admission_is_bound_to_claim_envelope_and_each_purpose_once(
         await backend.record_memory_analysis(
             claim,
             envelope,
-            admission,
+            audit_admission,
             application.invocation_id,
             application.turn_id,
             claim.request,
@@ -605,7 +615,7 @@ async def test_admission_is_bound_to_claim_envelope_and_each_purpose_once(
             await backend.record_memory_analysis(
                 claim,
                 envelope,
-                admission,
+                audit_admission,
                 application.invocation_id,
                 application.turn_id,
                 claim.request,
@@ -614,6 +624,593 @@ async def test_admission_is_bound_to_claim_envelope_and_each_purpose_once(
                 application.receipt,
                 application.decisions,
             )
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_mutation_audit_rejects_handed_off_and_result_committed_phases(
+    tmp_path: Path,
+) -> None:
+    authority = _Executor(None, no_mutation=True)
+    backend = _authority_backend(
+        tmp_path / "audit-phase-order.db", authority, now=lambda: 20.0
+    )
+    try:
+        await backend.initialize()
+        await _ingest(backend)
+        claim = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-1")
+        assert claim is not None
+        envelope = await authority.analyze_memory(claim.request)
+        receipt = MemoryAnalysisReceipt(
+            "caller-created-receipt",
+            claim.request.job_id,
+            claim.request.run_id,
+            claim.request.request_hash,
+            envelope.result.result_hash,
+            TEST_WORKER_CONFIG.validator_version,
+            AnalysisValidationStatus.ACCEPTED,
+            (EvidenceReasonCode.VALIDATOR_ACCEPTED,),
+            1,
+            20.0,
+        )
+        commit_admission = await _admit(backend, claim, envelope, authority)
+        with pytest.raises(MemoryWriterConflict, match="audit_phase_invalid"):
+            await backend.record_memory_analysis(
+                claim,
+                envelope,
+                commit_admission,
+                "caller-invocation",
+                "caller-turn",
+                claim.request,
+                envelope.result,
+                envelope.delivery_receipt,
+                receipt,
+                (),
+            )
+        assert (
+            await backend.commit_analysis_result(claim, envelope, commit_admission)
+        ).outcome is AnalysisResultCommitOutcome.COMMITTED
+
+        replay_admission = await _admit(backend, claim, envelope, authority)
+        with pytest.raises(MemoryWriterConflict, match="audit_phase_invalid"):
+            await backend.record_memory_analysis(
+                claim,
+                envelope,
+                replay_admission,
+                "caller-invocation",
+                "caller-turn",
+                claim.request,
+                envelope.result,
+                envelope.delivery_receipt,
+                receipt,
+                (),
+            )
+        async with backend.connection.execute(
+            "SELECT state,application_receipt_hash FROM analysis_batches"
+        ) as cursor:
+            row = await cursor.fetchone()
+        assert row is not None and tuple(row) == ("result_committed", None)
+        async with backend.connection.execute("SELECT COUNT(*) FROM llm_invocations") as cursor:
+            count = await cursor.fetchone()
+        assert count is not None and int(count[0]) == 0
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_mutation_audit_rejects_caller_receipt_and_changed_decisions(
+    tmp_path: Path,
+) -> None:
+    authority = _Executor(None)
+    backend = _authority_backend(
+        tmp_path / "audit-application-authority.db", authority, now=lambda: 20.0
+    )
+    try:
+        await backend.initialize()
+        await _ingest(backend)
+        claim = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-1")
+        assert claim is not None
+        envelope = await authority.analyze_memory(claim.request)
+        admission = await _admit(backend, claim, envelope, authority)
+        assert (
+            await backend.commit_analysis_result(claim, envelope, admission)
+        ).outcome is AnalysisResultCommitOutcome.COMMITTED
+        application = await backend.prepare_analysis_application(
+            claim, envelope.result, TEST_WORKER_CONFIG.validator_version
+        )
+        assert application is not None and application.decisions
+        with pytest.raises(MemoryValidationError, match="application_differs"):
+            await backend.admit_analysis_application(
+                claim,
+                envelope,
+                replace(application, invocation_id="cross-application-replay"),
+            )
+        audit_admission = await backend.admit_analysis_application(
+            claim, envelope, application
+        )
+
+        forged_receipt = replace(
+            application.receipt, validator_version="caller-validator/v1"
+        )
+        with pytest.raises(MemoryValidationError, match="application_differs"):
+            await backend.record_memory_analysis(
+                claim,
+                envelope,
+                audit_admission,
+                application.invocation_id,
+                application.turn_id,
+                claim.request,
+                envelope.result,
+                envelope.delivery_receipt,
+                forged_receipt,
+                application.decisions,
+            )
+        changed_decisions = (
+            replace(application.decisions[0], reason_code="caller_changed_decision"),
+        )
+        with pytest.raises(MemoryValidationError, match="application_differs"):
+            await backend.record_memory_analysis(
+                claim,
+                envelope,
+                audit_admission,
+                application.invocation_id,
+                application.turn_id,
+                claim.request,
+                envelope.result,
+                envelope.delivery_receipt,
+                application.receipt,
+                changed_decisions,
+            )
+        await backend.record_memory_analysis(
+            claim,
+            envelope,
+            audit_admission,
+            application.invocation_id,
+            application.turn_id,
+            claim.request,
+            envelope.result,
+            envelope.delivery_receipt,
+            application.receipt,
+            application.decisions,
+        )
+        assert await backend.finalize_analysis_application(claim, application)
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_generic_shadow_capability_cannot_authorize_mutation_finalize(
+    tmp_path: Path,
+) -> None:
+    authority = _Executor(None)
+    backend = _authority_backend(
+        tmp_path / "generic-shadow.db", authority, now=lambda: 20.0
+    )
+    try:
+        await backend.initialize()
+        await _ingest(backend)
+        claim = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-1")
+        assert claim is not None
+        envelope = await authority.analyze_memory(claim.request)
+        commit_admission = await _admit(backend, claim, envelope, authority)
+        assert (
+            await backend.commit_analysis_result(claim, envelope, commit_admission)
+        ).outcome is AnalysisResultCommitOutcome.COMMITTED
+        application = await backend.prepare_analysis_application(
+            claim, envelope.result, TEST_WORKER_CONFIG.validator_version
+        )
+        assert application is not None
+
+        shadow_claim = replace(claim, batch_id="generic-shadow-batch")
+        generic_admission = await _admit(
+            backend, shadow_claim, envelope, authority
+        )
+        with pytest.raises(
+            MemoryValidationError, match="generic_audit_mutation_lineage_forbidden"
+        ):
+            await backend.record_llm_invocation(
+                shadow_claim,
+                envelope,
+                generic_admission,
+                application.invocation_id,
+                application.turn_id,
+                claim.request,
+                envelope.result,
+                envelope.delivery_receipt,
+                application.receipt,
+                application.decisions,
+            )
+        with pytest.raises(MemoryWriterConflict, match="audit_not_durable"):
+            await backend.finalize_analysis_application(claim, application)
+        async with backend.connection.execute(
+            "SELECT COUNT(*) FROM llm_invocations"
+        ) as cursor:
+            count = await cursor.fetchone()
+        assert count is not None and int(count[0]) == 0
+        async with backend.connection.execute(
+            "SELECT state FROM analysis_batches"
+        ) as cursor:
+            batch = await cursor.fetchone()
+        assert batch is not None and str(batch[0]) == "audit_pending"
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_old_handed_off_capability_cannot_reject_after_phase_advances(
+    tmp_path: Path,
+) -> None:
+    authority = _Executor(None, no_mutation=True)
+    backend = _authority_backend(
+        tmp_path / "stale-reject.db", authority, now=lambda: 20.0
+    )
+    try:
+        await backend.initialize()
+        await _ingest(backend)
+        claim = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-1")
+        assert claim is not None
+        envelope = await authority.analyze_memory(claim.request)
+        stale_admission = await _admit(backend, claim, envelope, authority)
+        winning_admission = await _admit(backend, claim, envelope, authority)
+        assert (
+            await backend.commit_analysis_result(claim, envelope, winning_admission)
+        ).outcome is AnalysisResultCommitOutcome.COMMITTED
+        rejected = RejectedAnalysisAudit(
+            envelope.result.result_hash,
+            envelope.result.provider_response_id,
+            envelope.result.input_tokens,
+            envelope.result.output_tokens,
+            envelope.result.cost_microunits,
+            envelope.result.latency_ms,
+            envelope.delivery_receipt,
+        )
+        with pytest.raises(MemoryWriterConflict, match="rejection_phase_invalid"):
+            await backend.reject_analysis_result(
+                claim,
+                rejected,
+                "stale_rejection_attempt",
+                TEST_WORKER_CONFIG.validator_version,
+                stale_admission,
+            )
+        async with backend.connection.execute(
+            "SELECT state FROM analysis_batches"
+        ) as cursor:
+            committed_phase = await cursor.fetchone()
+        assert committed_phase is not None and str(committed_phase[0]) == "result_committed"
+
+        application = await backend.prepare_analysis_application(
+            claim, envelope.result, TEST_WORKER_CONFIG.validator_version
+        )
+        assert application is not None
+        with pytest.raises(MemoryWriterConflict, match="rejection_phase_invalid"):
+            await backend.reject_analysis_result(
+                claim,
+                rejected,
+                "stale_rejection_attempt",
+                TEST_WORKER_CONFIG.validator_version,
+                stale_admission,
+            )
+        async with backend.connection.execute(
+            "SELECT state,result_hash,application_receipt_hash FROM analysis_batches"
+        ) as cursor:
+            batch = await cursor.fetchone()
+        assert batch is not None
+        assert tuple(batch) == (
+            "audit_pending",
+            envelope.result.result_hash,
+            application.receipt.receipt_hash,
+        )
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_result_capability_survives_cancellation_before_consume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    authority = _Executor(None, no_mutation=True)
+    backend = _authority_backend(
+        tmp_path / "result-pre-consume-cancel.db", authority, now=lambda: 20.0
+    )
+    try:
+        await backend.initialize()
+        await _ingest(backend)
+        claim = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-1")
+        assert claim is not None
+        envelope = await authority.analyze_memory(claim.request)
+        admission = await _admit(backend, claim, envelope, authority)
+        consume = backend._consume_analysis_delivery_admission
+        cancelled = False
+
+        async def cancel_before_consume(*args: object, **kwargs: object) -> None:
+            nonlocal cancelled
+            if kwargs.get("purpose") == "commit" and not cancelled:
+                cancelled = True
+                raise asyncio.CancelledError
+            await consume(*args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(
+            backend, "_consume_analysis_delivery_admission", cancel_before_consume
+        )
+        with pytest.raises(asyncio.CancelledError):
+            await backend.commit_analysis_result(claim, envelope, admission)
+        async with backend.connection.execute(
+            "SELECT state,result_json FROM analysis_batches"
+        ) as cursor:
+            before_retry = await cursor.fetchone()
+        assert before_retry is not None and tuple(before_retry) == ("handed_off", None)
+
+        monkeypatch.setattr(backend, "_consume_analysis_delivery_admission", consume)
+        committed = await backend.commit_analysis_result(claim, envelope, admission)
+        assert committed.outcome is AnalysisResultCommitOutcome.COMMITTED
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_audit_capability_survives_cancellation_before_consume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    authority = _Executor(None, no_mutation=True)
+    backend = _authority_backend(
+        tmp_path / "audit-pre-consume-cancel.db", authority, now=lambda: 20.0
+    )
+    try:
+        await backend.initialize()
+        await _ingest(backend)
+        claim = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-1")
+        assert claim is not None
+        envelope = await authority.analyze_memory(claim.request)
+        commit_admission = await _admit(backend, claim, envelope, authority)
+        assert (
+            await backend.commit_analysis_result(claim, envelope, commit_admission)
+        ).outcome is AnalysisResultCommitOutcome.COMMITTED
+        application = await backend.prepare_analysis_application(
+            claim, envelope.result, TEST_WORKER_CONFIG.validator_version
+        )
+        assert application is not None
+        audit_admission = await backend.admit_analysis_application(
+            claim, envelope, application
+        )
+        consume = backend._consume_analysis_delivery_admission
+        cancelled = False
+
+        async def cancel_before_consume(*args: object, **kwargs: object) -> None:
+            nonlocal cancelled
+            if kwargs.get("purpose") == "audit" and not cancelled:
+                cancelled = True
+                raise asyncio.CancelledError
+            await consume(*args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(
+            backend, "_consume_analysis_delivery_admission", cancel_before_consume
+        )
+        with pytest.raises(asyncio.CancelledError):
+            await backend.record_memory_analysis(
+                claim,
+                envelope,
+                audit_admission,
+                application.invocation_id,
+                application.turn_id,
+                claim.request,
+                envelope.result,
+                envelope.delivery_receipt,
+                application.receipt,
+                application.decisions,
+            )
+        async with backend.connection.execute(
+            "SELECT COUNT(*) FROM llm_invocations"
+        ) as cursor:
+            invocation_count = await cursor.fetchone()
+        assert invocation_count is not None and int(invocation_count[0]) == 0
+
+        monkeypatch.setattr(backend, "_consume_analysis_delivery_admission", consume)
+        await backend.record_memory_analysis(
+            claim,
+            envelope,
+            audit_admission,
+            application.invocation_id,
+            application.turn_id,
+            claim.request,
+            envelope.result,
+            envelope.delivery_receipt,
+            application.receipt,
+            application.decisions,
+        )
+        assert await backend.finalize_analysis_application(claim, application)
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_caller_created_rejected_receipt_and_decisions_are_not_authority(
+    tmp_path: Path,
+) -> None:
+    authority = _Executor(
+        None,
+        structured_override={"outcome": "refusal", "operations": []},
+    )
+    backend = _authority_backend(
+        tmp_path / "caller-rejected-authority.db", authority, now=lambda: 20.0
+    )
+    try:
+        await backend.initialize()
+        await _ingest(backend)
+        claim = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-1")
+        assert claim is not None
+        envelope = await authority.analyze_memory(claim.request)
+        commit_admission = await _admit(backend, claim, envelope, authority)
+        assert (
+            await backend.commit_analysis_result(claim, envelope, commit_admission)
+        ).outcome is AnalysisResultCommitOutcome.COMMITTED
+        application = await backend.prepare_analysis_application(
+            claim, envelope.result, TEST_WORKER_CONFIG.validator_version
+        )
+        assert application is not None
+        assert (
+            application.receipt.validation_status
+            is AnalysisValidationStatus.REJECTED
+        )
+        assert application.decisions
+        audit_admission = await backend.admit_analysis_application(
+            claim, envelope, application
+        )
+
+        caller_receipt = replace(
+            application.receipt, validator_version="caller-rejected-validator/v1"
+        )
+        with pytest.raises(MemoryValidationError, match="application_differs"):
+            await backend.record_memory_analysis(
+                claim,
+                envelope,
+                audit_admission,
+                application.invocation_id,
+                application.turn_id,
+                claim.request,
+                envelope.result,
+                envelope.delivery_receipt,
+                caller_receipt,
+                application.decisions,
+            )
+        caller_decisions = (
+            replace(
+                application.decisions[0],
+                reason_code="caller_rejected_decision",
+            ),
+        )
+        with pytest.raises(MemoryValidationError, match="application_differs"):
+            await backend.record_memory_analysis(
+                claim,
+                envelope,
+                audit_admission,
+                application.invocation_id,
+                application.turn_id,
+                claim.request,
+                envelope.result,
+                envelope.delivery_receipt,
+                application.receipt,
+                caller_decisions,
+            )
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("event_mode", ("duplicate", "wrong_result", "cross_batch"))
+async def test_invalid_mutation_audit_events_cannot_satisfy_finalize(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    event_mode: str,
+) -> None:
+    authority = _Executor(None, no_mutation=True)
+    backend = _authority_backend(
+        tmp_path / f"invalid-audit-event-{event_mode}.db",
+        authority,
+        now=lambda: 20.0,
+    )
+    try:
+        await backend.initialize()
+        await _ingest(backend)
+        claim = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-1")
+        assert claim is not None
+        envelope = await authority.analyze_memory(claim.request)
+        commit_admission = await _admit(backend, claim, envelope, authority)
+        assert (
+            await backend.commit_analysis_result(claim, envelope, commit_admission)
+        ).outcome is AnalysisResultCommitOutcome.COMMITTED
+        application = await backend.prepare_analysis_application(
+            claim, envelope.result, TEST_WORKER_CONFIG.validator_version
+        )
+        assert application is not None
+        audit_admission = await backend.admit_analysis_application(
+            claim, envelope, application
+        )
+
+        append_events = backend._append_batch_events_unlocked
+
+        async def omit_valid_mutation_link(
+            batch_id: str,
+            event_kind: str,
+            reason_code: str,
+            occurred_at: float,
+            result_hash: str | None = None,
+        ) -> None:
+            if event_kind != "mutation_audit_committed":
+                await append_events(
+                    batch_id, event_kind, reason_code, occurred_at, result_hash
+                )
+
+        monkeypatch.setattr(
+            backend, "_append_batch_events_unlocked", omit_valid_mutation_link
+        )
+        await backend.record_memory_analysis(
+            claim,
+            envelope,
+            audit_admission,
+            application.invocation_id,
+            application.turn_id,
+            claim.request,
+            envelope.result,
+            envelope.delivery_receipt,
+            application.receipt,
+            application.decisions,
+        )
+        monkeypatch.setattr(backend, "_append_batch_events_unlocked", append_events)
+
+        event_batch_id = claim.batch_id
+        if event_mode == "cross_batch":
+            await _ingest_indexes(backend, (3, 4))
+            other_claim = await backend.claim_analysis_batch(
+                TEST_WORKER_CONFIG, "worker-2"
+            )
+            assert other_claim is not None and other_claim.batch_id != claim.batch_id
+            event_batch_id = other_claim.batch_id
+        async with backend.connection.execute(
+            "SELECT job_id,job_attempt FROM analysis_batch_members "
+            "WHERE batch_id=? ORDER BY ordinal",
+            (claim.batch_id,),
+        ) as cursor:
+            members = tuple(await cursor.fetchall())
+        assert len(members) == len(claim.job_ids)
+        repeats = 2 if event_mode == "duplicate" else 1
+        fake_result_hash = (
+            "0" * 64
+            if event_mode == "wrong_result"
+            else envelope.result.result_hash
+        )
+        for copy_index in range(repeats):
+            for ordinal, member in enumerate(members, start=1):
+                event_id = f"fake-{event_mode}-{copy_index}-{ordinal}"
+                event_hash = hashlib.sha256(event_id.encode()).hexdigest()
+                await backend.connection.execute(
+                    "INSERT INTO job_attempt_events(event_id,batch_id,job_id,attempt,"
+                    "event_kind,reason_code,request_hash,result_hash,occurred_at,event_hash) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        event_id,
+                        event_batch_id,
+                        str(member["job_id"]),
+                        int(member["job_attempt"]),
+                        "mutation_audit_committed",
+                        "analysis_mutation_audit_committed",
+                        claim.request.request_hash,
+                        fake_result_hash,
+                        20.0,
+                        event_hash,
+                    ),
+                )
+        await backend.connection.commit()
+
+        with pytest.raises(
+            MemoryWriterConflict, match="mutation_audit_authority_missing"
+        ):
+            await backend.finalize_analysis_application(claim, application)
+        async with backend.connection.execute(
+            "SELECT state FROM analysis_batches WHERE batch_id=?", (claim.batch_id,)
+        ) as cursor:
+            batch = await cursor.fetchone()
+        assert batch is not None and str(batch[0]) == "audit_pending"
     finally:
         await backend.close()
 
@@ -1438,6 +2035,74 @@ async def test_crash_after_result_commit_reopens_without_second_provider_call(
 
 
 @pytest.mark.asyncio
+async def test_audit_pending_restart_uses_repository_without_host_reverification(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "audit-pending-restart.db"
+    clock = [20.0]
+    fired = False
+    deliveries: dict[tuple[str, int], MemoryAnalysisResultEnvelope] = {}
+
+    def fault(point: str) -> None:
+        nonlocal fired
+        if point == "job.audit.after_commit" and not fired:
+            fired = True
+            raise RuntimeError("crash after mutation audit commit")
+
+    first_executor = _Executor(None, no_mutation=True, deliveries=deliveries)
+    first = _authority_backend(
+        path, first_executor, now=lambda: clock[0], fault_injector=fault
+    )
+    await first.initialize()
+    await _ingest(first)
+    first_runner = DurableMemoryJobRunner(
+        first,
+        first_executor,
+        first_executor,
+        TEST_WORKER_CONFIG,
+        "worker-1",
+        lambda: clock[0],
+    )
+    with pytest.raises(RuntimeError, match="mutation audit commit"):
+        await first_runner.run_once()
+    async with first.connection.execute(
+        "SELECT state,attempt,result_hash FROM analysis_batches"
+    ) as cursor:
+        before = await cursor.fetchone()
+    assert before is not None and str(before[0]) == "audit_pending"
+    await first.close()
+
+    clock[0] = 31.0
+    unavailable_host = _Executor(
+        None,
+        no_mutation=True,
+        deliveries=deliveries,
+        authority_error=AnalysisDeliveryAuthorityTransientError("must not be called"),
+    )
+    reopened = _authority_backend(path, unavailable_host, now=lambda: clock[0])
+    await reopened.initialize()
+    replay_runner = DurableMemoryJobRunner(
+        reopened,
+        unavailable_host,
+        unavailable_host,
+        TEST_WORKER_CONFIG,
+        "worker-2",
+        lambda: clock[0],
+    )
+    assert await replay_runner.run_once() is WorkerRunOutcome.APPLIED
+    assert unavailable_host.calls == 0
+    assert unavailable_host.provider_calls == 0
+    assert unavailable_host.verification_calls == 0
+    async with reopened.connection.execute(
+        "SELECT state,attempt,result_hash FROM analysis_batches"
+    ) as cursor:
+        after = await cursor.fetchone()
+    assert after is not None
+    assert tuple(after) == ("applied", int(before[1]), str(before[2]))
+    await reopened.close()
+
+
+@pytest.mark.asyncio
 async def test_crash_before_memory_commit_replays_same_host_delivery_without_provider(
     tmp_path: Path,
 ) -> None:
@@ -1548,7 +2213,13 @@ async def test_persisted_delivery_receipt_tamper_fails_closed_on_reclaim(
     ("fault_point", "advance_clock", "expected_replay_calls", "expected_outcome"),
     (
         ("job.claim.after_commit", True, 1, WorkerRunOutcome.APPLIED),
+        ("job.result.after_capability_consume", True, 1, WorkerRunOutcome.APPLIED),
+        ("job.apply.before_commit", True, 0, WorkerRunOutcome.APPLIED),
         ("job.apply.after_commit", True, 0, WorkerRunOutcome.APPLIED),
+        ("job.audit.after_capability_consume", True, 0, WorkerRunOutcome.APPLIED),
+        ("job.audit.before_commit", True, 0, WorkerRunOutcome.APPLIED),
+        ("job.audit.after_commit", True, 0, WorkerRunOutcome.APPLIED),
+        ("job.finalize.before_commit", True, 0, WorkerRunOutcome.APPLIED),
         ("job.finalize.after_commit", False, 0, WorkerRunOutcome.IDLE),
     ),
 )
@@ -1616,6 +2287,73 @@ async def test_commit_boundary_fault_matrix_is_reclaim_safe(
     ) as cursor:
         head = await cursor.fetchone()
     assert head is not None and int(head[0]) == 1
+    await reopened.close()
+
+
+@pytest.mark.asyncio
+async def test_accepted_mutation_recovers_after_finalize_boundary_without_reanalysis(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "accepted-mutation-finalize-recovery.db"
+    clock = [20.0]
+    fired = False
+    deliveries: dict[tuple[str, int], MemoryAnalysisResultEnvelope] = {}
+
+    def fault(point: str) -> None:
+        nonlocal fired
+        if point == "job.finalize.before_commit" and not fired:
+            fired = True
+            raise RuntimeError("accepted mutation finalize boundary")
+
+    first_executor = _Executor(None, deliveries=deliveries)
+    first = _authority_backend(
+        path, first_executor, now=lambda: clock[0], fault_injector=fault
+    )
+    await first.initialize()
+    await _ingest(first)
+    first_runner = DurableMemoryJobRunner(
+        first,
+        first_executor,
+        first_executor,
+        TEST_WORKER_CONFIG,
+        "worker-1",
+        lambda: clock[0],
+    )
+    with pytest.raises(RuntimeError, match="accepted mutation finalize boundary"):
+        await first_runner.run_once()
+    assert first_executor.provider_calls == 1
+    await first.close()
+
+    clock[0] = 31.0
+    replay_executor = _Executor(None, deliveries=deliveries)
+    reopened = _authority_backend(path, replay_executor, now=lambda: clock[0])
+    await reopened.initialize()
+    replay_runner = DurableMemoryJobRunner(
+        reopened,
+        replay_executor,
+        replay_executor,
+        TEST_WORKER_CONFIG,
+        "worker-2",
+        lambda: clock[0],
+    )
+    assert await replay_runner.run_once() is WorkerRunOutcome.APPLIED
+    assert replay_executor.calls == 0
+    assert replay_executor.provider_calls == 0
+    assert replay_executor.verification_calls == 0
+    async with reopened.connection.execute(
+        "SELECT state FROM analysis_batches"
+    ) as cursor:
+        batch = await cursor.fetchone()
+    assert batch is not None and str(batch[0]) == "applied"
+    async with reopened.connection.execute(
+        "SELECT revision FROM analysis_apply_heads"
+    ) as cursor:
+        head = await cursor.fetchone()
+    assert head is not None and int(head[0]) == 2
+    for table in ("accepted_analysis_plans", "llm_invocations", "decision_records"):
+        async with reopened.connection.execute(f"SELECT COUNT(*) FROM {table}") as cursor:
+            count = await cursor.fetchone()
+        assert count is not None and int(count[0]) == 1
     await reopened.close()
 
 

@@ -136,8 +136,12 @@ JOB_FAULT_POINTS = (
     "job.claim.after_commit",
     "job.result.before_commit",
     "job.result.after_commit",
+    "job.result.after_capability_consume",
     "job.apply.before_commit",
     "job.apply.after_commit",
+    "job.audit.after_capability_consume",
+    "job.audit.before_commit",
+    "job.audit.after_commit",
     "job.finalize.before_commit",
     "job.finalize.after_commit",
     "job.fail.before_commit",
@@ -169,8 +173,10 @@ class _DeliveryAdmissionState:
     envelope_hash: str
     result_hash: str
     delivery_receipt_hash: str
-    commit_available: bool = True
-    audit_available: bool = True
+    purpose: str
+    application_receipt_hash: str | None = None
+    application_decisions_hash: str | None = None
+    available: bool = True
 
 
 class SQLiteHumanMemoryBackend:
@@ -1301,6 +1307,33 @@ class SQLiteHumanMemoryBackend:
         freeze_public_audit_object(
             {"delivery_receipt": envelope.delivery_receipt.to_json()}
         )
+        async with self._write_lock:
+            async with self._db.execute(
+                "SELECT * FROM analysis_batches WHERE batch_id=?", (claim.batch_id,)
+            ) as cursor:
+                batch = await cursor.fetchone()
+            purpose = "generic_audit"
+            application_receipt_hash: str | None = None
+            application_decisions_hash: str | None = None
+            if batch is not None:
+                batch_phase = str(batch["state"])
+                if batch_phase == "handed_off":
+                    purpose = "commit"
+                elif batch_phase == "result_committed":
+                    purpose = "commit_replay"
+                elif batch_phase == "audit_pending":
+                    application = await self._application_from_batch_unlocked(
+                        batch, claim.request, envelope.result
+                    )
+                    purpose = "audit"
+                    application_receipt_hash = application.receipt.receipt_hash
+                    application_decisions_hash = _analysis_decisions_hash(
+                        cast(tuple[object, ...], application.decisions)
+                    )
+                elif batch_phase == "applied":
+                    purpose = "applied_replay"
+                else:
+                    raise MemoryValidationError("analysis_delivery_batch_phase_invalid")
         admission = _AnalysisDeliveryAdmission()
         state = _DeliveryAdmissionState(
             admission,
@@ -1311,6 +1344,9 @@ class SQLiteHumanMemoryBackend:
             envelope.envelope_hash,
             envelope.result.result_hash,
             envelope.delivery_receipt.receipt_hash,
+            purpose,
+            application_receipt_hash,
+            application_decisions_hash,
         )
         async with self._admission_lock:
             self._delivery_admissions[id(admission)] = state
@@ -1324,6 +1360,72 @@ class SQLiteHumanMemoryBackend:
             if state is not None and state.admission is admission:
                 self._delivery_admissions.pop(id(admission), None)
 
+    async def admit_analysis_application(
+        self,
+        claim: AnalysisBatchClaim,
+        envelope: MemoryAnalysisResultEnvelope,
+        application: AnalysisApplication,
+    ) -> _AnalysisDeliveryAdmission:
+        """Issue the audit phase capability from the already verified durable result."""
+
+        from simple_harness.runtime import MemoryAnalysisResultEnvelope
+
+        from simple_harness_memory.core.jobs import (
+            AnalysisApplication,
+            AnalysisBatchClaim,
+            _AnalysisDeliveryAdmission,
+        )
+
+        if (
+            type(claim) is not AnalysisBatchClaim
+            or type(envelope) is not MemoryAnalysisResultEnvelope
+            or type(application) is not AnalysisApplication
+        ):
+            raise TypeError("claim, envelope, and application must use analysis types")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v5 backend is not initialized")
+        async with self._write_lock:
+            now = _timestamp(self._now())
+            if not await self._analysis_claim_is_current_unlocked(claim, now):
+                raise MemoryWriterConflict("analysis_audit_claim_not_current")
+            async with self._db.execute(
+                "SELECT * FROM analysis_batches WHERE batch_id=?", (claim.batch_id,)
+            ) as cursor:
+                batch = await cursor.fetchone()
+            if batch is None or str(batch["state"]) != "audit_pending":
+                raise MemoryWriterConflict("analysis_audit_phase_invalid")
+            if (
+                envelope.result.result_hash != str(batch["result_hash"])
+                or envelope.envelope_hash != str(batch["result_envelope_hash"])
+                or envelope.delivery_receipt.receipt_hash
+                != str(batch["delivery_receipt_hash"])
+            ):
+                raise MemoryValidationError("analysis_audit_durable_lineage_differs")
+            canonical_application = await self._application_from_batch_unlocked(
+                batch, claim.request, envelope.result
+            )
+            if canonical_application != application:
+                raise MemoryValidationError("analysis_application_differs")
+        admission = _AnalysisDeliveryAdmission()
+        state = _DeliveryAdmissionState(
+            admission,
+            self._analysis_delivery_authority,
+            claim.batch_id,
+            claim.lease_token,
+            claim.request.request_hash,
+            envelope.envelope_hash,
+            envelope.result.result_hash,
+            envelope.delivery_receipt.receipt_hash,
+            "audit",
+            canonical_application.receipt.receipt_hash,
+            _analysis_decisions_hash(
+                cast(tuple[object, ...], canonical_application.decisions)
+            ),
+        )
+        async with self._admission_lock:
+            self._delivery_admissions[id(admission)] = state
+        return admission
+
     async def _consume_analysis_delivery_admission(
         self,
         admission: object,
@@ -1333,6 +1435,8 @@ class SQLiteHumanMemoryBackend:
         purpose: str,
         result_hash: str | None = None,
         delivery_receipt_hash: str | None = None,
+        application_receipt_hash: str | None = None,
+        application_decisions_hash: str | None = None,
     ) -> None:
         async with self._admission_lock:
             state = self._delivery_admissions.get(id(admission))
@@ -1353,19 +1457,28 @@ class SQLiteHumanMemoryBackend:
                     delivery_receipt_hash is not None
                     and state.delivery_receipt_hash != delivery_receipt_hash
                 )
+                or (
+                    application_receipt_hash is not None
+                    and state.application_receipt_hash != application_receipt_hash
+                )
+                or (
+                    application_decisions_hash is not None
+                    and state.application_decisions_hash != application_decisions_hash
+                )
             ):
                 raise MemoryValidationError("analysis_delivery_admission_invalid")
-            if purpose == "commit":
-                if not state.commit_available:
-                    raise MemoryValidationError("analysis_delivery_admission_replayed")
-                state.commit_available = False
-                return
-            if purpose == "audit":
-                if not state.audit_available:
-                    raise MemoryValidationError("analysis_delivery_admission_replayed")
-                state.audit_available = False
-                return
-            raise MemoryValidationError("analysis_delivery_admission_purpose_invalid")
+            allowed = {
+                "commit": {"commit", "commit_replay"},
+                "reject": {"commit", "commit_replay"},
+                "audit": {"audit"},
+                "generic_audit": {"generic_audit"},
+                "applied_replay": {"applied_replay"},
+            }
+            if purpose not in allowed or state.purpose not in allowed[purpose]:
+                raise MemoryValidationError("analysis_delivery_admission_phase_differs")
+            if not state.available:
+                raise MemoryValidationError("analysis_delivery_admission_replayed")
+            state.available = False
 
     async def commit_analysis_result(
         self,
@@ -1401,6 +1514,7 @@ class SQLiteHumanMemoryBackend:
         await self._consume_analysis_delivery_admission(
             admission, claim, envelope, purpose="commit"
         )
+        self._fault("job.result.after_capability_consume")
         result = envelope.result
         decoded = MemoryAnalysisResult.from_json(result.to_json())
         if decoded.result_hash != result.result_hash:
@@ -1433,7 +1547,7 @@ class SQLiteHumanMemoryBackend:
                     )
                 async with self._db.execute(
                     "SELECT result_json,result_hash,delivery_receipt_json,"
-                    "delivery_receipt_hash,result_envelope_hash FROM analysis_batches "
+                    "delivery_receipt_hash,result_envelope_hash,state FROM analysis_batches "
                     "WHERE batch_id=?",
                     (claim.batch_id,),
                 ) as cursor:
@@ -1441,6 +1555,12 @@ class SQLiteHumanMemoryBackend:
                 if row is None:
                     raise MemoryCorruptionError("analysis batch disappeared")
                 if row["result_json"] is not None:
+                    if str(row["state"]) not in {
+                        "result_committed",
+                        "audit_pending",
+                        "applied",
+                    }:
+                        raise MemoryWriterConflict("analysis_result_phase_invalid")
                     stored_value = json.loads(str(row["result_json"]))
                     if not isinstance(stored_value, dict):
                         raise MemoryCorruptionError("stored analysis result malformed")
@@ -1477,6 +1597,8 @@ class SQLiteHumanMemoryBackend:
                     committed = True
                     self._fault("job.result.after_commit")
                     return AnalysisResultCommit(outcome, canonical_envelope)
+                if str(row["state"]) != "handed_off":
+                    raise MemoryWriterConflict("analysis_result_phase_invalid")
                 await self._db.execute(
                     "UPDATE analysis_batches SET result_json=?,result_hash=?,"
                     "delivery_receipt_json=?,delivery_receipt_hash=?,result_envelope_hash=?,"
@@ -1559,14 +1681,6 @@ class SQLiteHumanMemoryBackend:
                 raise MemoryValidationError("rejected_analysis_delivery_lineage_differs")
             if admission is None:
                 raise MemoryValidationError("analysis_delivery_admission_required")
-            await self._consume_analysis_delivery_admission(
-                admission,
-                claim,
-                None,
-                purpose="audit",
-                result_hash=audit.result_hash,
-                delivery_receipt_hash=audit.delivery_receipt.receipt_hash,
-            )
         elif admission is not None:
             raise MemoryValidationError("analysis_delivery_admission_without_receipt")
         assert self._db is not None
@@ -1586,6 +1700,29 @@ class SQLiteHumanMemoryBackend:
                     await self._db.execute("COMMIT")
                     committed = True
                     return WorkerRunOutcome.STALE_LEASE
+                async with self._db.execute(
+                    "SELECT state,result_json,application_receipt_json "
+                    "FROM analysis_batches WHERE batch_id=?",
+                    (claim.batch_id,),
+                ) as cursor:
+                    batch_phase = await cursor.fetchone()
+                if (
+                    batch_phase is None
+                    or str(batch_phase["state"]) != "handed_off"
+                    or batch_phase["result_json"] is not None
+                    or batch_phase["application_receipt_json"] is not None
+                ):
+                    raise MemoryWriterConflict("analysis_rejection_phase_invalid")
+                if audit.delivery_receipt is not None:
+                    assert admission is not None
+                    await self._consume_analysis_delivery_admission(
+                        admission,
+                        claim,
+                        None,
+                        purpose="reject",
+                        result_hash=audit.result_hash,
+                        delivery_receipt_hash=audit.delivery_receipt.receipt_hash,
+                    )
                 authority_retry_ordinal = 0
                 if retry_config is not None:
                     async with self._db.execute(
@@ -1929,12 +2066,16 @@ class SQLiteHumanMemoryBackend:
                 if batch is None or str(batch["result_hash"]) != result.result_hash:
                     raise MemoryWriterConflict("analysis_result_not_canonical")
                 if batch["application_receipt_json"] is not None:
+                    if str(batch["state"]) not in {"audit_pending", "applied"}:
+                        raise MemoryWriterConflict("analysis_application_phase_invalid")
                     application = await self._application_from_batch_unlocked(
                         batch, claim.request, result
                     )
                     await self._db.execute("COMMIT")
                     committed = True
                     return application
+                if str(batch["state"]) != "result_committed":
+                    raise MemoryWriterConflict("analysis_application_phase_invalid")
 
                 plan: MemoryMutationPlan | None = None
                 no_mutation = False
@@ -2209,6 +2350,8 @@ class SQLiteHumanMemoryBackend:
     async def finalize_analysis_application(
         self, claim: AnalysisBatchClaim, application: AnalysisApplication
     ) -> bool:
+        from simple_harness.runtime import MemoryAnalysisResult
+
         from simple_harness_memory.core.jobs import AnalysisApplication, AnalysisBatchClaim
 
         if type(claim) is not AnalysisBatchClaim or type(application) is not AnalysisApplication:
@@ -2220,15 +2363,23 @@ class SQLiteHumanMemoryBackend:
             try:
                 now = _timestamp(self._now())
                 async with self._db.execute(
-                    "SELECT state,application_receipt_hash FROM analysis_batches "
-                    "WHERE batch_id=?",
+                    "SELECT * FROM analysis_batches WHERE batch_id=?",
                     (claim.batch_id,),
                 ) as cursor:
                     batch = await cursor.fetchone()
                 if batch is None:
                     raise MemoryCorruptionError("analysis batch disappeared")
-                if str(batch["application_receipt_hash"]) != application.receipt.receipt_hash:
-                    raise MemoryIdempotencyConflict("analysis_application_receipt_differs")
+                if str(batch["state"]) not in {"audit_pending", "applied"}:
+                    raise MemoryWriterConflict("analysis_finalize_phase_invalid")
+                result_value = json.loads(str(batch["result_json"]))
+                if not isinstance(result_value, dict):
+                    raise MemoryCorruptionError("analysis durable result malformed")
+                canonical_result = MemoryAnalysisResult.from_json(result_value)
+                canonical_application = await self._application_from_batch_unlocked(
+                    batch, claim.request, canonical_result
+                )
+                if canonical_application != application:
+                    raise MemoryIdempotencyConflict("analysis_application_differs")
                 if str(batch["state"]) == "applied":
                     await self._db.execute("COMMIT")
                     committed = True
@@ -2256,6 +2407,26 @@ class SQLiteHumanMemoryBackend:
                     != application.receipt.receipt_hash
                 ):
                     raise MemoryWriterConflict("analysis_audit_not_durable")
+                stored_decisions = await self._read_decisions(application.invocation_id)
+                if stored_decisions != canonical_application.decisions:
+                    raise MemoryWriterConflict("analysis_audit_decisions_differ")
+                async with self._db.execute(
+                    "SELECT COUNT(*) AS event_count,"
+                    "COUNT(DISTINCT job_id) AS job_count FROM job_attempt_events "
+                    "WHERE batch_id=? AND event_kind='mutation_audit_committed' "
+                    "AND reason_code='analysis_mutation_audit_committed' "
+                    "AND result_hash=?",
+                    (claim.batch_id, canonical_result.result_hash),
+                ) as cursor:
+                    audit_link = await cursor.fetchone()
+                if (
+                    audit_link is None
+                    or int(audit_link["event_count"]) != len(claim.job_ids)
+                    or int(audit_link["job_count"]) != len(claim.job_ids)
+                ):
+                    raise MemoryWriterConflict(
+                        "analysis_mutation_audit_authority_missing"
+                    )
                 await self._db.execute(
                     "UPDATE jobs SET state='applied',lease_owner=NULL,lease_token=NULL,"
                     "lease_expires_at=NULL,last_error_code=NULL,updated_at=? WHERE job_id IN "
@@ -2331,6 +2502,71 @@ class SQLiteHumanMemoryBackend:
         decisions: tuple[DecisionLedgerEntry, ...],
         *,
         reasoning_refs: tuple[PublicReasoningReference, ...] = (),
+    ) -> LLMInvocationAuditRecord:
+        """Record only the exact repository-staged mutation application."""
+
+        return await self._record_analysis_invocation(
+            claim,
+            envelope,
+            admission,
+            invocation_id,
+            turn_id,
+            request,
+            result,
+            delivery_receipt,
+            validation_receipt,
+            decisions,
+            reasoning_refs=reasoning_refs,
+            require_durable_application=True,
+        )
+
+    async def record_llm_invocation(
+        self,
+        claim: AnalysisBatchClaim,
+        envelope: MemoryAnalysisResultEnvelope,
+        admission: _AnalysisDeliveryAdmission,
+        invocation_id: str,
+        turn_id: str,
+        request: MemoryAnalysisRequest,
+        result: MemoryAnalysisResult,
+        delivery_receipt: MemoryAnalysisDeliveryReceipt,
+        validation_receipt: MemoryAnalysisReceipt,
+        decisions: tuple[DecisionLedgerEntry, ...],
+        *,
+        reasoning_refs: tuple[PublicReasoningReference, ...] = (),
+    ) -> LLMInvocationAuditRecord:
+        """Record generic invocation evidence without granting mutation authority."""
+
+        return await self._record_analysis_invocation(
+            claim,
+            envelope,
+            admission,
+            invocation_id,
+            turn_id,
+            request,
+            result,
+            delivery_receipt,
+            validation_receipt,
+            decisions,
+            reasoning_refs=reasoning_refs,
+            require_durable_application=False,
+        )
+
+    async def _record_analysis_invocation(
+        self,
+        claim: AnalysisBatchClaim,
+        envelope: MemoryAnalysisResultEnvelope,
+        admission: _AnalysisDeliveryAdmission,
+        invocation_id: str,
+        turn_id: str,
+        request: MemoryAnalysisRequest,
+        result: MemoryAnalysisResult,
+        delivery_receipt: MemoryAnalysisDeliveryReceipt,
+        validation_receipt: MemoryAnalysisReceipt,
+        decisions: tuple[DecisionLedgerEntry, ...],
+        *,
+        reasoning_refs: tuple[PublicReasoningReference, ...],
+        require_durable_application: bool,
     ) -> LLMInvocationAuditRecord:
         """Append one public-only Host analysis invocation and its decisions atomically."""
 
@@ -2481,42 +2717,162 @@ class SQLiteHumanMemoryBackend:
         )
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v5 backend is not initialized")
-        await self._consume_analysis_delivery_admission(
-            admission, claim, envelope, purpose="audit"
-        )
         async with self._write_lock:
-            for evidence_ref in request.ordered_evidence_refs:
-                async with self._db.execute(
-                    "SELECT subject,sanitized_hash FROM evidence_envelopes WHERE evidence_id=?",
-                    (evidence_ref.evidence_id,),
-                ) as cursor:
-                    evidence_row = await cursor.fetchone()
-                if (
-                    evidence_row is None
-                    or str(evidence_row["subject"]) != request.subject
-                    or str(evidence_row["sanitized_hash"]) != evidence_ref.content_hash
-                ):
-                    raise MemoryValidationError("analysis_evidence_lineage_differs")
-            existing = await self._read_invocation(invocation_id)
-            if existing is not None:
-                stored_decisions = await self._read_decisions(invocation_id)
-                if (
-                    existing.invocation_hash != expected.invocation_hash
-                    or stored_decisions != decisions
-                ):
-                    raise MemoryIdempotencyConflict("analysis_invocation_replay_conflict")
-                return existing
-            async with self._db.execute(
-                "SELECT invocation_id FROM llm_invocations WHERE principal_id=? "
-                "AND request_hash=?",
-                (request.subject, request.request_hash),
-            ) as cursor:
-                if await cursor.fetchone() is not None:
-                    raise MemoryIdempotencyConflict("analysis_request_replay_conflict")
-            await self._append_invocation_unlocked(expected, decisions)
-            stored = await self._read_invocation(invocation_id)
-            if stored is None or stored.invocation_hash != expected.invocation_hash:
-                raise MemoryCorruptionError("stored analysis invocation differs")
+            await self._db.execute("BEGIN IMMEDIATE")
+            committed = False
+            try:
+                admission_purpose = "generic_audit"
+                application_receipt_hash: str | None = None
+                application_decisions_hash: str | None = None
+                if require_durable_application:
+                    now = _timestamp(self._now())
+                    if not await self._analysis_claim_is_current_unlocked(claim, now):
+                        raise MemoryWriterConflict("analysis_audit_claim_not_current")
+                    async with self._db.execute(
+                        "SELECT * FROM analysis_batches WHERE batch_id=?",
+                        (claim.batch_id,),
+                    ) as cursor:
+                        batch = await cursor.fetchone()
+                    if batch is None:
+                        raise MemoryWriterConflict("analysis_audit_batch_missing")
+                    if str(batch["state"]) != "audit_pending":
+                        raise MemoryWriterConflict("analysis_audit_phase_invalid")
+                    request_value = json.loads(str(batch["request_json"]))
+                    result_value = json.loads(str(batch["result_json"]))
+                    if not isinstance(request_value, dict) or not isinstance(
+                        result_value, dict
+                    ):
+                        raise MemoryCorruptionError("analysis durable authority malformed")
+                    canonical_request = MemoryAnalysisRequest.from_json(request_value)
+                    canonical_result = MemoryAnalysisResult.from_json(result_value)
+                    if (
+                        canonical_request != claim.request
+                        or canonical_request != request
+                        or canonical_request.request_hash != str(batch["request_hash"])
+                        or canonical_result != result
+                        or canonical_result.result_hash != str(batch["result_hash"])
+                        or envelope.envelope_hash != str(batch["result_envelope_hash"])
+                        or delivery_receipt.receipt_hash
+                        != str(batch["delivery_receipt_hash"])
+                    ):
+                        raise MemoryValidationError(
+                            "analysis_audit_durable_lineage_differs"
+                        )
+                    canonical_application = await self._application_from_batch_unlocked(
+                        batch, canonical_request, canonical_result
+                    )
+                    if (
+                        canonical_application.invocation_id != invocation_id
+                        or canonical_application.turn_id != turn_id
+                        or canonical_application.receipt != validation_receipt
+                        or canonical_application.decisions != decisions
+                        or canonical_application.reasoning_refs != reasoning_refs
+                    ):
+                        raise MemoryValidationError("analysis_application_differs")
+                    admission_purpose = "audit"
+                    application_receipt_hash = canonical_application.receipt.receipt_hash
+                    application_decisions_hash = _analysis_decisions_hash(
+                        cast(tuple[object, ...], canonical_application.decisions)
+                    )
+                else:
+                    async with self._db.execute(
+                        "SELECT batch_id FROM analysis_batches WHERE request_hash=? "
+                        "OR batch_id=?",
+                        (request.request_hash, request.job_id),
+                    ) as cursor:
+                        if await cursor.fetchone() is not None:
+                            raise MemoryValidationError(
+                                "generic_audit_mutation_lineage_forbidden"
+                            )
+                await self._consume_analysis_delivery_admission(
+                    admission,
+                    claim,
+                    envelope,
+                    purpose=admission_purpose,
+                    application_receipt_hash=application_receipt_hash,
+                    application_decisions_hash=application_decisions_hash,
+                )
+                self._fault("job.audit.after_capability_consume")
+                for evidence_ref in request.ordered_evidence_refs:
+                    async with self._db.execute(
+                        "SELECT subject,sanitized_hash FROM evidence_envelopes "
+                        "WHERE evidence_id=?",
+                        (evidence_ref.evidence_id,),
+                    ) as cursor:
+                        evidence_row = await cursor.fetchone()
+                    if (
+                        evidence_row is None
+                        or str(evidence_row["subject"]) != request.subject
+                        or str(evidence_row["sanitized_hash"]) != evidence_ref.content_hash
+                    ):
+                        raise MemoryValidationError("analysis_evidence_lineage_differs")
+                existing = await self._read_invocation(invocation_id)
+                if existing is not None:
+                    stored_decisions = await self._read_decisions(invocation_id)
+                    if (
+                        existing.invocation_hash != expected.invocation_hash
+                        or stored_decisions != decisions
+                    ):
+                        raise MemoryIdempotencyConflict(
+                            "analysis_invocation_replay_conflict"
+                        )
+                    if require_durable_application:
+                        async with self._db.execute(
+                            "SELECT COUNT(*) AS event_count,"
+                            "COUNT(DISTINCT job_id) AS job_count "
+                            "FROM job_attempt_events WHERE batch_id=? "
+                            "AND event_kind='mutation_audit_committed' "
+                            "AND reason_code='analysis_mutation_audit_committed' "
+                            "AND result_hash=?",
+                            (claim.batch_id, result.result_hash),
+                        ) as cursor:
+                            audit_link = await cursor.fetchone()
+                        if (
+                            audit_link is None
+                            or int(audit_link["event_count"]) != len(claim.job_ids)
+                            or int(audit_link["job_count"]) != len(claim.job_ids)
+                        ):
+                            raise MemoryWriterConflict(
+                                "analysis_mutation_audit_authority_missing"
+                            )
+                    self._fault("job.audit.before_commit")
+                    await self._db.execute("COMMIT")
+                    committed = True
+                    self._fault("job.audit.after_commit")
+                    stored = existing
+                else:
+                    async with self._db.execute(
+                        "SELECT invocation_id FROM llm_invocations WHERE principal_id=? "
+                        "AND request_hash=?",
+                        (request.subject, request.request_hash),
+                    ) as cursor:
+                        if await cursor.fetchone() is not None:
+                            raise MemoryIdempotencyConflict(
+                                "analysis_request_replay_conflict"
+                            )
+                    await self._append_invocation_unlocked(
+                        expected, decisions, manage_transaction=False
+                    )
+                    candidate = await self._read_invocation(invocation_id)
+                    if candidate is None or candidate.invocation_hash != expected.invocation_hash:
+                        raise MemoryCorruptionError("stored analysis invocation differs")
+                    stored = candidate
+                    if require_durable_application:
+                        await self._append_batch_events_unlocked(
+                            claim.batch_id,
+                            "mutation_audit_committed",
+                            "analysis_mutation_audit_committed",
+                            _timestamp(self._now()),
+                            result.result_hash,
+                        )
+                    self._fault("job.audit.before_commit")
+                    await self._db.execute("COMMIT")
+                    committed = True
+                    self._fault("job.audit.after_commit")
+            finally:
+                if not committed:
+                    with suppress(Exception):
+                        await self._db.execute("ROLLBACK")
         logger.info(
             "memory.analysis_invocation_recorded",
             invocation_id_hash=_opaque_hash(invocation_id),
@@ -3741,6 +4097,21 @@ def _stable_id(namespace: str, *parts: str) -> str:
         }
     )
     return f"{namespace}-{hashlib.sha256(payload.encode('utf-8')).hexdigest()}"
+
+
+def _analysis_decisions_hash(decisions: tuple[object, ...]) -> str:
+    """Bind an audit capability to repository-reconstructed decisions."""
+
+    values: list[JsonValue] = []
+    for decision in decisions:
+        to_json = getattr(decision, "to_json", None)
+        if not callable(to_json):
+            raise MemoryValidationError("analysis_application_decisions_invalid")
+        value = to_json()
+        if not isinstance(value, dict):
+            raise MemoryValidationError("analysis_application_decisions_invalid")
+        values.append(cast(JsonValue, value))
+    return hashlib.sha256(canonical_json(values).encode()).hexdigest()
 
 
 def _opaque_hash(value: str) -> str:

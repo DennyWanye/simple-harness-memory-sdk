@@ -331,6 +331,13 @@ class DurableJobRepositoryPort(Protocol):
         self, admission: _AnalysisDeliveryAdmission
     ) -> None: ...
 
+    async def admit_analysis_application(
+        self,
+        claim: AnalysisBatchClaim,
+        envelope: MemoryAnalysisResultEnvelope,
+        application: AnalysisApplication,
+    ) -> _AnalysisDeliveryAdmission: ...
+
     async def commit_analysis_result(
         self,
         claim: AnalysisBatchClaim,
@@ -495,20 +502,9 @@ class DurableMemoryJobRunner:
                 )
         else:
             assert envelope is not None
-            try:
-                admission = await self._repository.admit_analysis_delivery(
-                    claim, envelope, self._delivery_authority_registration
-                )
-            except asyncio.CancelledError:
-                raise
-            except (TimeoutError, AnalysisDeliveryAuthorityTransientError):
-                return await self._repository.fail_analysis_batch(
-                    claim, "analysis_delivery_replay_authority_transient", self._config
-                )
-            except Exception:
-                return await self._repository.fail_analysis_batch(
-                    claim, "analysis_delivery_replay_authority_rejected", self._config
-                )
+            admission = await self._repository.admit_analysis_application(
+                claim, envelope, application
+            )
         assert admission is not None and envelope is not None
         try:
             if application is None:
@@ -550,7 +546,13 @@ class DurableMemoryJobRunner:
                 )
                 if application is None:
                     return WorkerRunOutcome.STALE_LEASE
+                await self._repository.discard_analysis_delivery_admission(admission)
+                admission = None
+                admission = await self._repository.admit_analysis_application(
+                    claim, envelope, application
+                )
             assert result is not None and application is not None
+            assert admission is not None
             await self._repository.record_memory_analysis(
                 claim,
                 envelope,
@@ -569,7 +571,8 @@ class DurableMemoryJobRunner:
             )
             return WorkerRunOutcome.APPLIED if finalized else WorkerRunOutcome.STALE_LEASE
         finally:
-            await self._repository.discard_analysis_delivery_admission(admission)
+            if admission is not None:
+                await self._repository.discard_analysis_delivery_admission(admission)
 
     async def run_until_stopped(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
