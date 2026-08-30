@@ -45,6 +45,7 @@ CREATE TABLE evidence_envelopes (
     filter_policy_version TEXT NOT NULL,
     disclosure_json BLOB NOT NULL,
     disclosure_hash TEXT NOT NULL,
+    removed_spans_json BLOB NOT NULL,
     sanitized_payload BLOB NOT NULL,
     created_at REAL NOT NULL CHECK (created_at >= 0),
     UNIQUE (principal_id, source_ref)
@@ -71,9 +72,30 @@ CREATE TABLE ingestion_receipts (
     evidence_id TEXT NOT NULL UNIQUE REFERENCES evidence_envelopes(evidence_id),
     source_hash TEXT NOT NULL,
     envelope_hash TEXT NOT NULL,
+    admission_receipt_id TEXT NOT NULL,
+    admission_receipt_json BLOB NOT NULL,
+    admission_receipt_hash TEXT NOT NULL,
     receipt_hash TEXT NOT NULL UNIQUE,
     accepted_at REAL NOT NULL CHECK (accepted_at >= 0)
 );
+CREATE UNIQUE INDEX ingestion_admission_receipt_unique
+    ON ingestion_receipts(admission_receipt_id);
+CREATE TRIGGER evidence_envelopes_immutable_update
+BEFORE UPDATE ON evidence_envelopes BEGIN SELECT RAISE(ABORT, 'immutable evidence'); END;
+CREATE TRIGGER evidence_envelopes_immutable_delete
+BEFORE DELETE ON evidence_envelopes BEGIN SELECT RAISE(ABORT, 'immutable evidence'); END;
+CREATE TRIGGER evidence_items_immutable_update
+BEFORE UPDATE ON evidence_items BEGIN SELECT RAISE(ABORT, 'immutable evidence'); END;
+CREATE TRIGGER evidence_items_immutable_delete
+BEFORE DELETE ON evidence_items BEGIN SELECT RAISE(ABORT, 'immutable evidence'); END;
+CREATE TRIGGER evidence_links_immutable_update
+BEFORE UPDATE ON evidence_links BEGIN SELECT RAISE(ABORT, 'immutable evidence'); END;
+CREATE TRIGGER evidence_links_immutable_delete
+BEFORE DELETE ON evidence_links BEGIN SELECT RAISE(ABORT, 'immutable evidence'); END;
+CREATE TRIGGER ingestion_receipts_immutable_update
+BEFORE UPDATE ON ingestion_receipts BEGIN SELECT RAISE(ABORT, 'immutable evidence'); END;
+CREATE TRIGGER ingestion_receipts_immutable_delete
+BEFORE DELETE ON ingestion_receipts BEGIN SELECT RAISE(ABORT, 'immutable evidence'); END;
 CREATE TABLE suppression_directives (
     directive_id TEXT PRIMARY KEY,
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
@@ -130,6 +152,7 @@ CREATE TABLE jobs (
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
     job_kind TEXT NOT NULL,
     idempotency_key TEXT NOT NULL,
+    payload BLOB NOT NULL,
     payload_hash TEXT NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('pending', 'claimed', 'applied', 'dead_letter')),
     lease_owner TEXT,
