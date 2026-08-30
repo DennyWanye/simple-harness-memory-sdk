@@ -1586,6 +1586,49 @@ class SQLiteHumanMemoryBackend:
                     await self._db.execute("COMMIT")
                     committed = True
                     return WorkerRunOutcome.STALE_LEASE
+                authority_retry_ordinal = 0
+                if retry_config is not None:
+                    async with self._db.execute(
+                        "SELECT COUNT(*) FROM job_attempt_events WHERE batch_id=? "
+                        "AND job_id=? AND event_kind='authority_retry_scheduled'",
+                        (claim.batch_id, claim.job_ids[0]),
+                    ) as cursor:
+                        retry_row = await cursor.fetchone()
+                    if retry_row is None:
+                        raise MemoryCorruptionError(
+                            "analysis authority retry audit count is unavailable"
+                        )
+                    authority_retry_ordinal = int(retry_row[0]) + 1
+                    if authority_retry_ordinal < retry_config.max_attempts:
+                        retry_at = now + retry_config.retry_delays_seconds[
+                            authority_retry_ordinal - 1
+                        ]
+                        await self._db.execute(
+                            "UPDATE jobs SET state='claimed',lease_owner=NULL,"
+                            "lease_token=?,lease_expires_at=?,last_error_code=?,"
+                            "next_attempt_at=?,updated_at=? WHERE job_id IN "
+                            "(SELECT job_id FROM analysis_batch_members WHERE batch_id=?)",
+                            (
+                                claim.lease_token,
+                                retry_at,
+                                reason_code,
+                                retry_at,
+                                now,
+                                claim.batch_id,
+                            ),
+                        )
+                        await self._append_batch_events_unlocked(
+                            claim.batch_id,
+                            "authority_retry_scheduled",
+                            reason_code,
+                            now,
+                            audit.result_hash,
+                        )
+                        self._fault("job.fail.before_commit")
+                        await self._db.execute("COMMIT")
+                        committed = True
+                        self._fault("job.fail.after_commit")
+                        return WorkerRunOutcome.RETRY_SCHEDULED
                 receipt = MemoryAnalysisReceipt(
                     _stable_id(
                         "analysis-rejected-receipt",
@@ -1593,6 +1636,7 @@ class SQLiteHumanMemoryBackend:
                         claim.request.request_hash,
                         audit.result_hash,
                         reason_code,
+                        str(authority_retry_ordinal),
                     ),
                     claim.request.job_id,
                     claim.request.run_id,
@@ -1609,10 +1653,21 @@ class SQLiteHumanMemoryBackend:
                     claim.batch_id,
                     claim.request.request_hash,
                     reason_code,
+                    str(authority_retry_ordinal),
                 )
                 decision = DecisionLedgerEntry(
-                    _stable_id("analysis-rejected-decision", claim.batch_id, reason_code),
-                    _stable_id("analysis-rejected-operation", claim.batch_id, reason_code),
+                    _stable_id(
+                        "analysis-rejected-decision",
+                        claim.batch_id,
+                        reason_code,
+                        str(authority_retry_ordinal),
+                    ),
+                    _stable_id(
+                        "analysis-rejected-operation",
+                        claim.batch_id,
+                        reason_code,
+                        str(authority_retry_ordinal),
+                    ),
                     "analysis_result",
                     DecisionOutcome.REJECTED,
                     SuppressionScopeKind.SUBJECT,
@@ -1670,51 +1725,60 @@ class SQLiteHumanMemoryBackend:
                         raise MemoryIdempotencyConflict(
                             "rejected_analysis_invocation_replay_conflict"
                         )
-                all_dead = retry_config is None
+                all_dead = (
+                    retry_config is None
+                    or authority_retry_ordinal >= retry_config.max_attempts
+                )
                 async with self._db.execute(
-                    "SELECT job_id,attempt_count FROM jobs WHERE job_id IN "
+                    "SELECT job_id FROM jobs WHERE job_id IN "
                     "(SELECT job_id FROM analysis_batch_members WHERE batch_id=?)",
                     (claim.batch_id,),
                 ) as cursor:
                     failure_rows = await cursor.fetchall()
                 for row in failure_rows:
-                    attempt = int(row["attempt_count"])
-                    dead = retry_config is None or attempt >= retry_config.max_attempts
-                    all_dead = all_dead and dead
-                    if retry_config is None or dead:
+                    if all_dead or retry_config is None:
                         retry_at = now
                     else:
-                        retry_at = now + retry_config.retry_delays_seconds[attempt - 1]
+                        retry_at = now + retry_config.retry_delays_seconds[
+                            authority_retry_ordinal - 1
+                        ]
                     await self._db.execute(
                         "UPDATE jobs SET state=?,lease_owner=NULL,lease_token=NULL,"
                         "lease_expires_at=NULL,last_error_code=?,next_attempt_at=?,updated_at=? "
                         "WHERE job_id=?",
                         (
-                            "dead_letter" if dead else "pending",
+                            "dead_letter" if all_dead else "claimed",
                             reason_code,
                             retry_at,
                             now,
                             row["job_id"],
                         ),
                     )
-                    if dead:
+                    if not all_dead:
+                        await self._db.execute(
+                            "UPDATE jobs SET lease_token=?,lease_expires_at=? WHERE job_id=?",
+                            (claim.lease_token, retry_at, row["job_id"]),
+                        )
+                    else:
                         await self._db.execute(
                             "UPDATE outbox SET state='dead_letter',updated_at=? WHERE "
                             "idempotency_key=(SELECT idempotency_key FROM jobs WHERE job_id=?)",
                             (now, row["job_id"]),
                         )
-                await self._db.execute(
-                    "UPDATE job_attempts SET state='failed',reason_code=?,completed_at=? "
-                    "WHERE batch_id=?",
-                    (reason_code, now, claim.batch_id),
-                )
-                await self._db.execute(
-                    "UPDATE analysis_batches SET state='failed',updated_at=? WHERE batch_id=?",
-                    (now, claim.batch_id),
-                )
+                if all_dead:
+                    await self._db.execute(
+                        "UPDATE job_attempts SET state='failed',reason_code=?,completed_at=? "
+                        "WHERE batch_id=?",
+                        (reason_code, now, claim.batch_id),
+                    )
+                    await self._db.execute(
+                        "UPDATE analysis_batches SET state='failed',updated_at=? "
+                        "WHERE batch_id=?",
+                        (now, claim.batch_id),
+                    )
                 await self._append_batch_events_unlocked(
                     claim.batch_id,
-                    "dead_letter" if all_dead else "retry_scheduled",
+                    "dead_letter" if all_dead else "authority_retry_scheduled",
                     reason_code,
                     now,
                     audit.result_hash,

@@ -970,14 +970,17 @@ async def test_authority_transient_is_audited_and_retried_not_dead_lettered(
     reason_code: str,
 ) -> None:
     clock = [20.0]
+    path = tmp_path / f"{reason_code}.db"
+    durable_deliveries: dict[
+        tuple[str, int], MemoryAnalysisResultEnvelope
+    ] = {}
     authority = _Executor(
         None,
         no_mutation=True,
         authority_error=authority_error,
+        deliveries=durable_deliveries,
     )
-    backend = _authority_backend(
-        tmp_path / f"{reason_code}.db", authority, now=lambda: clock[0]
-    )
+    backend = _authority_backend(path, authority, now=lambda: clock[0])
     try:
         await backend.initialize()
         await _ingest(backend)
@@ -995,23 +998,210 @@ async def test_authority_transient_is_audited_and_retried_not_dead_lettered(
             "SELECT output_reason_code,delivery_receipt_json FROM llm_invocations"
         ) as cursor:
             rejected = await cursor.fetchone()
-        assert rejected is not None
-        assert str(rejected[0]) == reason_code
-        assert rejected[1] is None
-        async with backend.connection.execute("SELECT DISTINCT state FROM jobs") as cursor:
-            assert {str(row[0]) for row in await cursor.fetchall()} == {"pending"}
-
-        authority.authority_error = None
-        clock[0] = 23.0
-        assert await runner.run_once() is WorkerRunOutcome.APPLIED
-        assert authority.provider_calls == 2
+        assert rejected is None
         async with backend.connection.execute(
+            "SELECT DISTINCT event_kind,reason_code FROM job_attempt_events "
+            "WHERE event_kind='authority_retry_scheduled'"
+        ) as cursor:
+            retry_events = tuple(await cursor.fetchall())
+        assert retry_events
+        assert {(str(row[0]), str(row[1])) for row in retry_events} == {
+            ("authority_retry_scheduled", reason_code)
+        }
+        async with backend.connection.execute("SELECT DISTINCT state FROM jobs") as cursor:
+            assert {str(row[0]) for row in await cursor.fetchall()} == {"claimed"}
+        async with backend.connection.execute(
+            "SELECT attempt,request_hash,result_json,delivery_receipt_json "
+            "FROM analysis_batches"
+        ) as cursor:
+            pending = await cursor.fetchone()
+        assert pending is not None
+        assert int(pending[0]) == 1 and str(pending[1])
+        assert pending[2] is None and pending[3] is None
+    finally:
+        await backend.close()
+
+    clock[0] = 23.0
+    replay_authority = _Executor(
+        None,
+        no_mutation=True,
+        deliveries=durable_deliveries,
+    )
+    reopened = _authority_backend(path, replay_authority, now=lambda: clock[0])
+    try:
+        await reopened.initialize()
+        replay_runner = DurableMemoryJobRunner(
+            reopened,
+            replay_authority,
+            replay_authority,
+            TEST_WORKER_CONFIG,
+            "worker-2",
+            lambda: clock[0],
+        )
+        assert await replay_runner.run_once() is WorkerRunOutcome.APPLIED
+        assert authority.provider_calls == 1
+        assert replay_authority.provider_calls == 0
+        assert replay_authority.calls == 1
+        async with reopened.connection.execute(
+            "SELECT attempt,request_hash FROM analysis_batches"
+        ) as cursor:
+            resumed = await cursor.fetchone()
+        assert resumed is not None
+        assert (int(resumed[0]), str(resumed[1])) == (int(pending[0]), str(pending[1]))
+        async with reopened.connection.execute(
             "SELECT output_reason_code FROM llm_invocations ORDER BY invocation_sequence"
         ) as cursor:
             reasons = [str(row[0]) for row in await cursor.fetchall()]
-        assert reasons == [reason_code, "analysis_validator_accepted"]
+        assert reasons == ["analysis_validator_accepted"]
     finally:
-        await backend.close()
+        await reopened.close()
+
+
+@pytest.mark.asyncio
+async def test_authority_retry_budget_dead_letters_without_persisting_unverified_body(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "authority-budget.db"
+    clock = [20.0]
+    durable_deliveries: dict[
+        tuple[str, int], MemoryAnalysisResultEnvelope
+    ] = {}
+    first_authority = _Executor(
+        None,
+        structured_override={"safe": PRIVATE_CREDENTIAL_CANARY},
+        authority_error=AnalysisDeliveryAuthorityTransientError("Host unavailable"),
+        deliveries=durable_deliveries,
+    )
+    first = _authority_backend(path, first_authority, now=lambda: clock[0])
+    with structlog.testing.capture_logs() as captured_logs:
+        try:
+            await first.initialize()
+            await _ingest(first)
+            first_runner = DurableMemoryJobRunner(
+                first,
+                first_authority,
+                first_authority,
+                TEST_WORKER_CONFIG,
+                "worker-1",
+                lambda: clock[0],
+            )
+            assert await first_runner.run_once() is WorkerRunOutcome.RETRY_SCHEDULED
+        finally:
+            await first.close()
+
+        clock[0] = 23.0
+        replay_authority = _Executor(
+            None,
+            structured_override={"safe": PRIVATE_CREDENTIAL_CANARY},
+            authority_error=AnalysisDeliveryAuthorityTransientError("Host unavailable"),
+            deliveries=durable_deliveries,
+        )
+        reopened = _authority_backend(path, replay_authority, now=lambda: clock[0])
+        try:
+            await reopened.initialize()
+            replay_runner = DurableMemoryJobRunner(
+                reopened,
+                replay_authority,
+                replay_authority,
+                TEST_WORKER_CONFIG,
+                "worker-2",
+                lambda: clock[0],
+            )
+            assert await replay_runner.run_once() is WorkerRunOutcome.DEAD_LETTER
+            assert first_authority.provider_calls == 1
+            assert replay_authority.provider_calls == 0
+            async with reopened.connection.execute(
+                "SELECT output_reason_code,delivery_receipt_json FROM llm_invocations "
+                "ORDER BY invocation_sequence"
+            ) as cursor:
+                audit_rows = tuple(await cursor.fetchall())
+            assert len(audit_rows) == 1
+            assert {str(row[0]) for row in audit_rows} == {
+                "analysis_delivery_authority_transient"
+            }
+            assert all(row[1] is None for row in audit_rows)
+            async with reopened.connection.execute(
+                "SELECT result_json,delivery_receipt_json,state FROM analysis_batches"
+            ) as cursor:
+                batch = await cursor.fetchone()
+            assert batch is not None
+            assert batch[0] is None and batch[1] is None and str(batch[2]) == "failed"
+        finally:
+            await reopened.close()
+
+    durable_bytes = b"".join(
+        item.read_bytes()
+        for item in (path, path.with_name(path.name + "-wal"))
+        if item.exists()
+    )
+    assert PRIVATE_CREDENTIAL_CANARY.encode() not in durable_bytes
+    assert PRIVATE_CREDENTIAL_CANARY not in repr(captured_logs)
+
+
+@pytest.mark.asyncio
+async def test_authority_retry_commit_crash_reopens_same_request_without_provider_call(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "authority-retry-crash.db"
+    clock = [20.0]
+    fired = False
+    deliveries: dict[tuple[str, int], MemoryAnalysisResultEnvelope] = {}
+
+    def fault(point: str) -> None:
+        nonlocal fired
+        if point == "job.fail.after_commit" and not fired:
+            fired = True
+            raise RuntimeError("crash after authority retry commit")
+
+    first_authority = _Executor(
+        None,
+        no_mutation=True,
+        authority_error=TimeoutError("Host authority timeout"),
+        deliveries=deliveries,
+    )
+    first = _authority_backend(
+        path, first_authority, now=lambda: clock[0], fault_injector=fault
+    )
+    try:
+        await first.initialize()
+        await _ingest(first)
+        first_runner = DurableMemoryJobRunner(
+            first,
+            first_authority,
+            first_authority,
+            TEST_WORKER_CONFIG,
+            "worker-1",
+            lambda: clock[0],
+        )
+        with pytest.raises(RuntimeError, match="authority retry commit"):
+            await first_runner.run_once()
+    finally:
+        await first.close()
+
+    clock[0] = 23.0
+    replay_authority = _Executor(None, no_mutation=True, deliveries=deliveries)
+    reopened = _authority_backend(path, replay_authority, now=lambda: clock[0])
+    try:
+        await reopened.initialize()
+        replay_runner = DurableMemoryJobRunner(
+            reopened,
+            replay_authority,
+            replay_authority,
+            TEST_WORKER_CONFIG,
+            "worker-2",
+            lambda: clock[0],
+        )
+        assert await replay_runner.run_once() is WorkerRunOutcome.APPLIED
+        assert first_authority.provider_calls == 1
+        assert replay_authority.provider_calls == 0
+        async with reopened.connection.execute(
+            "SELECT COUNT(DISTINCT request_hash),MIN(attempt),MAX(attempt) "
+            "FROM analysis_batches"
+        ) as cursor:
+            lineage = await cursor.fetchone()
+        assert lineage is not None and tuple(lineage) == (1, 1, 1)
+    finally:
+        await reopened.close()
 
 
 @pytest.mark.asyncio
