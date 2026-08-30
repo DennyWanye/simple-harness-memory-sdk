@@ -180,8 +180,48 @@ class _Executor:
         )
 
 
+class _RejectedResultExecutor:
+    def __init__(self, backend: SQLiteHumanMemoryBackend, mode: str) -> None:
+        self.backend = backend
+        self.mode = mode
+
+    async def analyze_memory(self, request: MemoryAnalysisRequest) -> MemoryAnalysisResult:
+        assert not self.backend.connection.in_transaction
+        if self.mode == "type":
+            return object()  # type: ignore[return-value]
+        if self.mode == "private":
+            structured: dict[str, JsonValue] = {
+                "safe": "ghp_012345678901234567890123456789"
+            }
+        elif self.mode == "oversize":
+            structured = {"safe": "x" * 4096}
+        else:
+            structured = {"outcome": "no_mutation", "operations": []}
+        result = MemoryAnalysisResult(
+            "wrong-job" if self.mode == "lineage" else request.job_id,
+            request.run_id,
+            request.request_hash,
+            f"provider-rejected-{self.mode}",
+            structured,
+            10,
+            5,
+            3,
+            7,
+        )
+        if self.mode == "hash":
+            object.__setattr__(result, "result_hash", "f" * 64)
+        return result
+
+
 async def _ingest(backend: SQLiteHumanMemoryBackend, count: int = 2) -> None:
     for index in range(1, count + 1):
+        await backend.ingest_committed_evidence(*_authority(index))
+
+
+async def _ingest_indexes(
+    backend: SQLiteHumanMemoryBackend, indexes: tuple[int, ...]
+) -> None:
+    for index in indexes:
         await backend.ingest_committed_evidence(*_authority(index))
 
 
@@ -237,6 +277,61 @@ async def test_no_mutation_is_accepted_and_audited_without_decisions(tmp_path: P
     async with backend.connection.execute("SELECT COUNT(*) FROM decision_records") as cursor:
         row = await cursor.fetchone()
     assert row is not None and int(row[0]) == 0
+    async with backend.connection.execute(
+        "SELECT revision FROM analysis_apply_heads"
+    ) as cursor:
+        head = await cursor.fetchone()
+    assert head is not None and int(head[0]) == 1
+    async with backend.connection.execute(
+        "SELECT base_revision,committed_revision,plan_json FROM accepted_analysis_plans"
+    ) as cursor:
+        no_mutation = await cursor.fetchone()
+    assert no_mutation is not None
+    assert int(no_mutation[0]) == int(no_mutation[1]) == 1
+    assert json.loads(str(no_mutation[2])) == {"operations": [], "outcome": "no_mutation"}
+    await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_no_mutation_does_not_stale_the_next_real_mutation_base_revision(
+    tmp_path: Path,
+) -> None:
+    backend = SQLiteHumanMemoryBackend(tmp_path / "no-mutation-then-plan.db", now=lambda: 20.0)
+    await backend.initialize()
+    await _ingest(backend)
+    no_mutation_runner = DurableMemoryJobRunner(
+        backend,
+        _Executor(backend, no_mutation=True),
+        TEST_WORKER_CONFIG,
+        "worker-1",
+        lambda: 20.0,
+    )
+    assert await no_mutation_runner.run_once() is WorkerRunOutcome.APPLIED
+
+    await _ingest_indexes(backend, (3, 4))
+    mutation_runner = DurableMemoryJobRunner(
+        backend,
+        _Executor(backend, base_revision=1),
+        TEST_WORKER_CONFIG,
+        "worker-2",
+        lambda: 20.0,
+    )
+    assert await mutation_runner.run_once() is WorkerRunOutcome.APPLIED
+
+    async with backend.connection.execute(
+        "SELECT revision FROM analysis_apply_heads"
+    ) as cursor:
+        head = await cursor.fetchone()
+    assert head is not None and int(head[0]) == 2
+    async with backend.connection.execute(
+        "SELECT base_revision,committed_revision,plan_json FROM accepted_analysis_plans "
+        "ORDER BY created_at,batch_id"
+    ) as cursor:
+        plans = await cursor.fetchall()
+    assert len(plans) == 2
+    revisions = {(int(row[0]), int(row[1])) for row in plans}
+    assert revisions == {(1, 1), (1, 2)}
+    assert sum(json.loads(str(row[2])).get("outcome") == "no_mutation" for row in plans) == 1
     await backend.close()
 
 
@@ -276,6 +371,121 @@ async def test_result_replay_divergence_and_stale_lease_are_audited_not_applied(
     assert reclaimed is not None and reclaimed.lease_token != claim.lease_token
     stale = await backend.commit_analysis_result(claim, result)
     assert stale.outcome is AnalysisResultCommitOutcome.STALE_LEASE
+    await backend.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("seconds_after_expiry", (0.0, 1.0))
+async def test_expired_lease_without_reclaim_cannot_commit_result(
+    tmp_path: Path, seconds_after_expiry: float
+) -> None:
+    clock = [20.0]
+    backend = SQLiteHumanMemoryBackend(tmp_path / "expired.db", now=lambda: clock[0])
+    await backend.initialize()
+    await _ingest(backend)
+    claim = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-old")
+    assert claim is not None
+    result = await _Executor(backend, no_mutation=True).analyze_memory(claim.request)
+    clock[0] = claim.lease_expires_at + seconds_after_expiry
+
+    committed = await backend.commit_analysis_result(claim, result)
+
+    assert committed.outcome is AnalysisResultCommitOutcome.STALE_LEASE
+    async with backend.connection.execute(
+        "SELECT result_json,state FROM analysis_batches"
+    ) as cursor:
+        batch = await cursor.fetchone()
+    assert batch is not None and batch[0] is None and str(batch[1]) == "handed_off"
+    async with backend.connection.execute(
+        "SELECT COUNT(*) FROM analysis_apply_heads"
+    ) as cursor:
+        head_count = await cursor.fetchone()
+    assert head_count is not None and int(head_count[0]) == 0
+    await backend.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tamper", ("member_expiry", "attempt_token"))
+async def test_partial_member_lease_or_attempt_tamper_invalidates_whole_claim(
+    tmp_path: Path, tamper: str
+) -> None:
+    clock = [20.0]
+    backend = SQLiteHumanMemoryBackend(tmp_path / f"partial-{tamper}.db", now=lambda: clock[0])
+    await backend.initialize()
+    await _ingest(backend)
+    claim = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-old")
+    assert claim is not None
+    result = await _Executor(backend, no_mutation=True).analyze_memory(claim.request)
+    if tamper == "member_expiry":
+        await backend.connection.execute(
+            "UPDATE jobs SET lease_expires_at=? WHERE job_id=?",
+            (clock[0], claim.job_ids[0]),
+        )
+    else:
+        await backend.connection.execute(
+            "UPDATE job_attempts SET lease_token='tampered' WHERE job_id=?",
+            (claim.job_ids[0],),
+        )
+    await backend.connection.commit()
+
+    committed = await backend.commit_analysis_result(claim, result)
+
+    assert committed.outcome is AnalysisResultCommitOutcome.STALE_LEASE
+    async with backend.connection.execute(
+        "SELECT COUNT(*) FROM job_attempt_events WHERE reason_code="
+        "'analysis_stale_lease_result_ignored'"
+    ) as cursor:
+        events = await cursor.fetchone()
+    assert events is not None and int(events[0]) == 2
+    await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_expiry_between_result_prepare_and_finalize_never_applies_late(
+    tmp_path: Path,
+) -> None:
+    clock = [20.0]
+    backend = SQLiteHumanMemoryBackend(tmp_path / "phase-expiry.db", now=lambda: clock[0])
+    await backend.initialize()
+    await _ingest(backend)
+    claim = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-old")
+    assert claim is not None
+    result = await _Executor(backend, no_mutation=True).analyze_memory(claim.request)
+    assert (
+        await backend.commit_analysis_result(claim, result)
+    ).outcome is AnalysisResultCommitOutcome.COMMITTED
+    clock[0] = claim.lease_expires_at
+    assert (
+        await backend.prepare_analysis_application(
+            claim, result, TEST_WORKER_CONFIG.validator_version
+        )
+        is None
+    )
+    async with backend.connection.execute(
+        "SELECT COUNT(*) FROM analysis_apply_heads"
+    ) as cursor:
+        head_count = await cursor.fetchone()
+    assert head_count is not None and int(head_count[0]) == 0
+
+    clock[0] = 40.0
+    reclaimed = await backend.claim_analysis_batch(TEST_WORKER_CONFIG, "worker-new")
+    assert reclaimed is not None and reclaimed.result is not None
+    application = await backend.prepare_analysis_application(
+        reclaimed, reclaimed.result, TEST_WORKER_CONFIG.validator_version
+    )
+    assert application is not None
+    await backend.record_memory_analysis(
+        application.invocation_id,
+        application.turn_id,
+        reclaimed.request,
+        reclaimed.result,
+        application.receipt,
+        application.decisions,
+    )
+    clock[0] = reclaimed.lease_expires_at
+    assert not await backend.finalize_analysis_application(reclaimed, application)
+    async with backend.connection.execute("SELECT state FROM jobs") as cursor:
+        assert {str(row[0]) for row in await cursor.fetchall()} == {"claimed"}
     await backend.close()
 
 
@@ -330,6 +540,116 @@ async def test_private_result_is_dead_lettered_without_body_in_db_wal_or_logs(
         row = await cursor.fetchone()
     assert row is not None and row[0] is None
     await backend.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ("type", "hash", "lineage", "private", "oversize"))
+async def test_every_rejected_provider_result_has_one_public_only_audit_record(
+    tmp_path: Path, mode: str
+) -> None:
+    path = tmp_path / f"rejected-{mode}.db"
+    backend = SQLiteHumanMemoryBackend(path, now=lambda: 20.0)
+    await backend.initialize()
+    await _ingest(backend)
+    config = (
+        replace(TEST_WORKER_CONFIG, max_result_bytes=100)
+        if mode == "oversize"
+        else TEST_WORKER_CONFIG
+    )
+    runner = DurableMemoryJobRunner(
+        backend,
+        _RejectedResultExecutor(backend, mode),
+        config,
+        "worker-1",
+        lambda: 20.0,
+    )
+
+    assert await runner.run_once() is WorkerRunOutcome.DEAD_LETTER
+
+    async with backend.connection.execute(
+        "SELECT request_hash,public_output_json,public_output_hash,output_storage_status,"
+        "output_reason_code,provider_id,model_id,host_receipt_json FROM llm_invocations"
+    ) as cursor:
+        invocation = await cursor.fetchone()
+        assert invocation is not None and await cursor.fetchone() is None
+    expected_reason = {
+        "type": "analysis_result_type_invalid",
+        "hash": "analysis_result_hash_invalid",
+        "lineage": "analysis_result_lineage_invalid",
+        "private": "analysis_result_private_material",
+        "oversize": "analysis_result_oversize",
+    }[mode]
+    assert str(invocation[0])
+    assert invocation[1] is None and invocation[2] is None
+    assert str(invocation[3]) == "rejected_unsafe"
+    assert str(invocation[4]) == expected_reason
+    assert str(invocation[5]) == TEST_WORKER_CONFIG.provider_id
+    assert str(invocation[6]) == TEST_WORKER_CONFIG.model_id
+    receipt = json.loads(str(invocation[7]))
+    assert receipt["validation_status"] == "rejected"
+    assert receipt["committed_revision"] is None
+    async with backend.connection.execute(
+        "SELECT outcome,reason_code,canonical_payload FROM decision_records"
+    ) as cursor:
+        decision = await cursor.fetchone()
+        assert decision is not None and await cursor.fetchone() is None
+    assert str(decision[0]) == "rejected"
+    assert str(decision[1]) == expected_reason
+    assert json.loads(str(decision[2])) == {}
+    async with backend.connection.execute("SELECT state FROM jobs") as cursor:
+        assert {str(row[0]) for row in await cursor.fetchall()} == {"dead_letter"}
+    database_bytes = path.read_bytes()
+    wal_path = Path(f"{path}-wal")
+    wal_bytes = wal_path.read_bytes() if wal_path.exists() else b""
+    assert b"ghp_012345678901234567890123456789" not in database_bytes + wal_bytes
+    await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_rejected_audit_and_dead_letter_commit_atomically_across_restart(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "rejected-crash.db"
+    fired = False
+
+    def fault(point: str) -> None:
+        nonlocal fired
+        if point == "job.fail.after_commit" and not fired:
+            fired = True
+            raise RuntimeError("fault after rejected audit commit")
+
+    first = SQLiteHumanMemoryBackend(path, now=lambda: 20.0, fault_injector=fault)
+    await first.initialize()
+    await _ingest(first)
+    runner = DurableMemoryJobRunner(
+        first,
+        _RejectedResultExecutor(first, "private"),
+        TEST_WORKER_CONFIG,
+        "worker-1",
+        lambda: 20.0,
+    )
+    with pytest.raises(RuntimeError, match="fault after rejected audit commit"):
+        await runner.run_once()
+    await first.close()
+
+    reopened = SQLiteHumanMemoryBackend(path, now=lambda: 40.0)
+    await reopened.initialize()
+    replay = DurableMemoryJobRunner(
+        reopened,
+        _RejectedResultExecutor(reopened, "private"),
+        TEST_WORKER_CONFIG,
+        "worker-2",
+        lambda: 40.0,
+    )
+    assert await replay.run_once() is WorkerRunOutcome.IDLE
+    for table in ("llm_invocations", "decision_records"):
+        async with reopened.connection.execute(f"SELECT COUNT(*) FROM {table}") as cursor:
+            row = await cursor.fetchone()
+        assert row is not None and int(row[0]) == 1
+    async with reopened.connection.execute("SELECT state FROM jobs") as cursor:
+        assert {str(row[0]) for row in await cursor.fetchall()} == {"dead_letter"}
+    assert b"ghp_012345678901234567890123456789" not in path.read_bytes()
+    await reopened.close()
 
 
 @pytest.mark.asyncio
@@ -430,6 +750,11 @@ async def test_commit_boundary_fault_matrix_is_reclaim_safe(
     ) as cursor:
         row = await cursor.fetchone()
     assert row is not None and int(row[0]) == 1
+    async with reopened.connection.execute(
+        "SELECT revision FROM analysis_apply_heads"
+    ) as cursor:
+        head = await cursor.fetchone()
+    assert head is not None and int(head[0]) == 1
     await reopened.close()
 
 

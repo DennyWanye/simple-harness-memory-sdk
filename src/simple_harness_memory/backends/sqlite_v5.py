@@ -69,6 +69,7 @@ if TYPE_CHECKING:
         AnalysisBatchClaim,
         AnalysisResultCommit,
         MemoryJobWorkerConfig,
+        RejectedAnalysisAudit,
         WorkerRunOutcome,
     )
     from simple_harness_memory.core.suppression import (
@@ -805,14 +806,14 @@ class SQLiteHumanMemoryBackend:
         _audit_identifier(worker_id, "worker_id")
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v5 backend is not initialized")
-        now = _timestamp(self._now())
-        lease_token = f"analysis-lease-{uuid4().hex}"
-        lease_expires_at = now + config.lease_seconds
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
             self._fault("job.claim.after_begin")
             committed = False
             try:
+                now = _timestamp(self._now())
+                lease_token = f"analysis-lease-{uuid4().hex}"
+                lease_expires_at = now + config.lease_seconds
                 async with self._db.execute(
                     "SELECT DISTINCT b.batch_id FROM analysis_batches b "
                     "JOIN analysis_batch_members m ON m.batch_id=b.batch_id "
@@ -1128,16 +1129,42 @@ class SQLiteHumanMemoryBackend:
                 ),
             )
 
-    async def _analysis_claim_is_current_unlocked(self, claim: AnalysisBatchClaim) -> bool:
+    async def _analysis_claim_is_current_unlocked(
+        self, claim: AnalysisBatchClaim, now: float
+    ) -> bool:
         assert self._db is not None
         placeholders = ",".join("?" for _ in claim.job_ids)
         async with self._db.execute(
-            f"SELECT COUNT(*) FROM jobs WHERE job_id IN ({placeholders}) "
-            "AND state='claimed' AND lease_token=?",
-            (*claim.job_ids, claim.lease_token),
+            "SELECT COUNT(*) AS member_count,"
+            f"SUM(CASE WHEN j.job_id IN ({placeholders}) "
+            "AND j.state='claimed' AND j.lease_token=? AND j.lease_expires_at>? "
+            "AND a.lease_token=? AND a.state IN "
+            "('handed_off','result_committed','audit_pending') THEN 1 ELSE 0 END) "
+            "AS current_count FROM analysis_batch_members m "
+            "JOIN jobs j ON j.job_id=m.job_id "
+            "JOIN job_attempts a ON a.job_id=m.job_id AND a.attempt=m.job_attempt "
+            "AND a.batch_id=m.batch_id "
+            "JOIN analysis_batches b ON b.batch_id=m.batch_id "
+            "WHERE m.batch_id=? AND b.principal_id=? AND b.request_hash=? "
+            "AND b.evidence_watermark=? AND b.state IN "
+            "('handed_off','result_committed','audit_pending')",
+            (
+                *claim.job_ids,
+                claim.lease_token,
+                now,
+                claim.lease_token,
+                claim.batch_id,
+                claim.subject,
+                claim.request.request_hash,
+                claim.evidence_watermark,
+            ),
         ) as cursor:
             row = await cursor.fetchone()
-        return row is not None and int(row[0]) == len(claim.job_ids)
+        return (
+            row is not None
+            and int(row["member_count"]) == len(claim.job_ids)
+            and int(row["current_count"] or 0) == len(claim.job_ids)
+        )
 
     async def commit_analysis_result(
         self, claim: AnalysisBatchClaim, result: MemoryAnalysisResult
@@ -1164,12 +1191,12 @@ class SQLiteHumanMemoryBackend:
             raise MemoryValidationError("analysis_result_lineage_differs")
         freeze_public_audit_object(result.structured_result)
         assert self._db is not None
-        now = _timestamp(self._now())
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
             committed = False
             try:
-                if not await self._analysis_claim_is_current_unlocked(claim):
+                now = _timestamp(self._now())
+                if not await self._analysis_claim_is_current_unlocked(claim, now):
                     await self._append_batch_events_unlocked(
                         claim.batch_id,
                         "result_out_of_order",
@@ -1240,29 +1267,134 @@ class SQLiteHumanMemoryBackend:
                         await self._db.execute("ROLLBACK")
 
     async def reject_analysis_result(
-        self, claim: AnalysisBatchClaim, result_hash: str, reason_code: str
+        self,
+        claim: AnalysisBatchClaim,
+        audit: RejectedAnalysisAudit,
+        reason_code: str,
+        validator_version: str,
     ) -> WorkerRunOutcome:
-        from simple_harness_memory.core.jobs import AnalysisBatchClaim, WorkerRunOutcome
+        from simple_harness.runtime import (
+            AnalysisValidationStatus,
+            EvidenceReasonCode,
+            MemoryAnalysisReceipt,
+        )
 
-        if type(claim) is not AnalysisBatchClaim:
-            raise TypeError("claim must use AnalysisBatchClaim")
+        from simple_harness_memory.core.audit import (
+            DecisionLedgerEntry,
+            DecisionOutcome,
+            LLMInvocationAuditRecord,
+            OutputStorageStatus,
+        )
+        from simple_harness_memory.core.jobs import (
+            AnalysisBatchClaim,
+            RejectedAnalysisAudit,
+            WorkerRunOutcome,
+        )
+        from simple_harness_memory.core.suppression import SuppressionScopeKind
+
+        if type(claim) is not AnalysisBatchClaim or type(audit) is not RejectedAnalysisAudit:
+            raise TypeError("claim and audit must use analysis job protocol types")
         _audit_identifier(reason_code, "reason_code")
-        if (
-            not isinstance(result_hash, str)
-            or len(result_hash) != 64
-            or any(character not in "0123456789abcdef" for character in result_hash)
-        ):
-            raise MemoryValidationError("result_hash_invalid")
+        _audit_identifier(validator_version, "validator_version")
         assert self._db is not None
-        now = _timestamp(self._now())
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
             committed = False
             try:
-                if not await self._analysis_claim_is_current_unlocked(claim):
+                now = _timestamp(self._now())
+                if not await self._analysis_claim_is_current_unlocked(claim, now):
+                    await self._append_batch_events_unlocked(
+                        claim.batch_id,
+                        "result_out_of_order",
+                        "analysis_stale_lease_result_ignored",
+                        now,
+                        audit.result_hash,
+                    )
                     await self._db.execute("COMMIT")
                     committed = True
                     return WorkerRunOutcome.STALE_LEASE
+                receipt = MemoryAnalysisReceipt(
+                    _stable_id(
+                        "analysis-rejected-receipt",
+                        claim.batch_id,
+                        claim.request.request_hash,
+                        audit.result_hash,
+                        reason_code,
+                    ),
+                    claim.request.job_id,
+                    claim.request.run_id,
+                    claim.request.request_hash,
+                    audit.result_hash,
+                    validator_version,
+                    AnalysisValidationStatus.REJECTED,
+                    (EvidenceReasonCode.VALIDATOR_REJECTED,),
+                    None,
+                    now,
+                )
+                invocation_id = _stable_id(
+                    "analysis-rejected-invocation",
+                    claim.batch_id,
+                    claim.request.request_hash,
+                )
+                decision = DecisionLedgerEntry(
+                    _stable_id("analysis-rejected-decision", claim.batch_id),
+                    _stable_id("analysis-rejected-operation", claim.batch_id),
+                    "analysis_result",
+                    DecisionOutcome.REJECTED,
+                    SuppressionScopeKind.SUBJECT,
+                    claim.subject,
+                    {},
+                    (),
+                    (),
+                    claim.request.ordered_evidence_refs,
+                    reason_code,
+                    now,
+                )
+                record = LLMInvocationAuditRecord(
+                    1,
+                    invocation_id,
+                    claim.subject,
+                    claim.request.run_id,
+                    _stable_id("analysis-batch-turn", claim.batch_id),
+                    claim.request.job_id,
+                    claim.request.request_hash,
+                    claim.request.ordered_evidence_refs,
+                    None,
+                    None,
+                    OutputStorageStatus.REJECTED_UNSAFE,
+                    reason_code,
+                    claim.request.provider_id,
+                    claim.request.model_id,
+                    claim.request.model_config_hash,
+                    claim.request.prompt_version,
+                    claim.request.result_schema_version,
+                    claim.request.policy_version,
+                    validator_version,
+                    audit.provider_response_id,
+                    receipt,
+                    audit.result_hash,
+                    audit.input_tokens,
+                    audit.output_tokens,
+                    audit.cost_microunits,
+                    audit.latency_ms,
+                    max(0.0, now - (audit.latency_ms / 1000.0)),
+                    now,
+                    (),
+                )
+                existing = await self._read_invocation(invocation_id)
+                if existing is None:
+                    await self._append_invocation_unlocked(
+                        record, (decision,), manage_transaction=False
+                    )
+                else:
+                    stored_decisions = await self._read_decisions(invocation_id)
+                    if (
+                        existing.invocation_hash != record.invocation_hash
+                        or stored_decisions != (decision,)
+                    ):
+                        raise MemoryIdempotencyConflict(
+                            "rejected_analysis_invocation_replay_conflict"
+                        )
                 await self._db.execute(
                     "UPDATE jobs SET state='dead_letter',lease_owner=NULL,lease_token=NULL,"
                     "lease_expires_at=NULL,last_error_code=?,updated_at=? WHERE job_id IN "
@@ -1285,7 +1417,7 @@ class SQLiteHumanMemoryBackend:
                     (now, claim.batch_id),
                 )
                 await self._append_batch_events_unlocked(
-                    claim.batch_id, "dead_letter", reason_code, now, result_hash
+                    claim.batch_id, "dead_letter", reason_code, now, audit.result_hash
                 )
                 self._fault("job.fail.before_commit")
                 await self._db.execute("COMMIT")
@@ -1313,12 +1445,18 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("claim and config must use analysis job protocol types")
         _audit_identifier(reason_code, "reason_code")
         assert self._db is not None
-        now = _timestamp(self._now())
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
             committed = False
             try:
-                if not await self._analysis_claim_is_current_unlocked(claim):
+                now = _timestamp(self._now())
+                if not await self._analysis_claim_is_current_unlocked(claim, now):
+                    await self._append_batch_events_unlocked(
+                        claim.batch_id,
+                        "result_out_of_order",
+                        "analysis_stale_lease_failure_ignored",
+                        now,
+                    )
                     await self._db.execute("COMMIT")
                     committed = True
                     return WorkerRunOutcome.STALE_LEASE
@@ -1386,7 +1524,7 @@ class SQLiteHumanMemoryBackend:
         claim: AnalysisBatchClaim,
         result: MemoryAnalysisResult,
         validator_version: str,
-    ) -> AnalysisApplication:
+    ) -> AnalysisApplication | None:
         from simple_harness.runtime import (
             AnalysisValidationStatus,
             EvidenceReasonCode,
@@ -1400,13 +1538,22 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("claim must use AnalysisBatchClaim")
         _audit_identifier(validator_version, "validator_version")
         assert self._db is not None
-        now = _timestamp(self._now())
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
             committed = False
             try:
-                if not await self._analysis_claim_is_current_unlocked(claim):
-                    raise MemoryWriterConflict("analysis_application_lease_stale")
+                now = _timestamp(self._now())
+                if not await self._analysis_claim_is_current_unlocked(claim, now):
+                    await self._append_batch_events_unlocked(
+                        claim.batch_id,
+                        "result_out_of_order",
+                        "analysis_stale_lease_application_ignored",
+                        now,
+                        result.result_hash,
+                    )
+                    await self._db.execute("COMMIT")
+                    committed = True
+                    return None
                 async with self._db.execute(
                     "SELECT * FROM analysis_batches WHERE batch_id=?", (claim.batch_id,)
                 ) as cursor:
@@ -1472,31 +1619,33 @@ class SQLiteHumanMemoryBackend:
                 )
                 committed_revision: int | None = None
                 if valid:
-                    committed_revision = base_revision + 1
-                    update = await self._db.execute(
-                        "UPDATE analysis_apply_heads SET revision=?,updated_at=? "
-                        "WHERE principal_id=? AND revision=?",
-                        (committed_revision, now, claim.subject, base_revision),
-                    )
-                    if update.rowcount != 1:
-                        valid = False
-                        committed_revision = None
-                    elif plan is not None:
-                        await self._db.execute(
-                            "INSERT INTO accepted_analysis_plans(batch_id,principal_id,"
-                            "base_revision,committed_revision,plan_json,plan_hash,created_at) "
-                            "VALUES(?,?,?,?,?,?,?)",
-                            (
-                                claim.batch_id,
-                                claim.subject,
-                                plan.base_revision,
-                                committed_revision,
-                                canonical_json(plan.to_json()),
-                                plan.plan_hash,
-                                now,
-                            ),
+                    if plan is not None:
+                        committed_revision = base_revision + 1
+                        update = await self._db.execute(
+                            "UPDATE analysis_apply_heads SET revision=?,updated_at=? "
+                            "WHERE principal_id=? AND revision=?",
+                            (committed_revision, now, claim.subject, base_revision),
                         )
+                        if update.rowcount != 1:
+                            valid = False
+                            committed_revision = None
+                        else:
+                            await self._db.execute(
+                                "INSERT INTO accepted_analysis_plans(batch_id,principal_id,"
+                                "base_revision,committed_revision,plan_json,plan_hash,created_at) "
+                                "VALUES(?,?,?,?,?,?,?)",
+                                (
+                                    claim.batch_id,
+                                    claim.subject,
+                                    plan.base_revision,
+                                    committed_revision,
+                                    canonical_json(plan.to_json()),
+                                    plan.plan_hash,
+                                    now,
+                                ),
+                            )
                     else:
+                        committed_revision = base_revision
                         no_mutation_value: dict[str, JsonValue] = {
                             "outcome": "no_mutation",
                             "operations": [],
@@ -1697,11 +1846,11 @@ class SQLiteHumanMemoryBackend:
         if type(claim) is not AnalysisBatchClaim or type(application) is not AnalysisApplication:
             raise TypeError("claim and application must use analysis protocol types")
         assert self._db is not None
-        now = _timestamp(self._now())
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
             committed = False
             try:
+                now = _timestamp(self._now())
                 async with self._db.execute(
                     "SELECT state,application_receipt_hash FROM analysis_batches "
                     "WHERE batch_id=?",
@@ -1716,7 +1865,14 @@ class SQLiteHumanMemoryBackend:
                     await self._db.execute("COMMIT")
                     committed = True
                     return True
-                if not await self._analysis_claim_is_current_unlocked(claim):
+                if not await self._analysis_claim_is_current_unlocked(claim, now):
+                    await self._append_batch_events_unlocked(
+                        claim.batch_id,
+                        "result_out_of_order",
+                        "analysis_stale_lease_finalize_ignored",
+                        now,
+                        claim.result.result_hash if claim.result is not None else None,
+                    )
                     await self._db.execute("COMMIT")
                     committed = True
                     return False
@@ -1975,6 +2131,8 @@ class SQLiteHumanMemoryBackend:
         self,
         record: LLMInvocationAuditRecord,
         decisions: tuple[DecisionLedgerEntry, ...],
+        *,
+        manage_transaction: bool = True,
     ) -> None:
         assert self._db is not None
         input_refs_json = canonical_json(
@@ -1989,8 +2147,9 @@ class SQLiteHumanMemoryBackend:
         begun = False
         committed = False
         try:
-            await self._db.execute("BEGIN IMMEDIATE")
-            begun = True
+            if manage_transaction:
+                await self._db.execute("BEGIN IMMEDIATE")
+                begun = True
             await self._db.execute(
                 "INSERT INTO principals(principal_id,deployment_id,household_id,actor_id,"
                 "created_at) VALUES(?,?,?,?,?) ON CONFLICT(principal_id) DO NOTHING",
@@ -2113,8 +2272,9 @@ class SQLiteHumanMemoryBackend:
                         for item in decision.evidence_refs
                     ),
                 )
-            await self._db.execute("COMMIT")
-            committed = True
+            if manage_transaction:
+                await self._db.execute("COMMIT")
+                committed = True
         except BaseException:
             if begun and not committed:
                 with suppress(Exception):

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol
+from typing import Protocol, cast
 
 from simple_harness.contracts import canonical_json
 from simple_harness.runtime import (
@@ -174,6 +175,59 @@ class AnalysisApplication:
         object.__setattr__(self, "reasoning_refs", reasoning)
 
 
+@dataclass(frozen=True, slots=True)
+class RejectedAnalysisAudit:
+    """Public-only metadata for a provider result that must not be persisted."""
+
+    result_hash: str
+    provider_response_id: str | None
+    input_tokens: int
+    output_tokens: int
+    cost_microunits: int
+    latency_ms: int
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.result_hash, str)
+            or len(self.result_hash) != 64
+            or any(character not in "0123456789abcdef" for character in self.result_hash)
+        ):
+            raise MemoryValidationError("rejected_analysis_result_hash_invalid")
+        if self.provider_response_id is not None:
+            _identifier(self.provider_response_id, "rejected_analysis_provider_response_id")
+        for name in ("input_tokens", "output_tokens", "cost_microunits", "latency_ms"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise MemoryValidationError(f"rejected_analysis_{name}_invalid")
+
+
+def _rejected_result_audit(result: object, request_hash: str) -> RejectedAnalysisAudit:
+    """Extract bounded public metadata without retaining an invalid result body."""
+
+    if type(result) is MemoryAnalysisResult:
+        typed_result = cast(MemoryAnalysisResult, result)
+        canonical_result_hash = hashlib.sha256(
+            canonical_json(typed_result.to_json()).encode()
+        ).hexdigest()
+        return RejectedAnalysisAudit(
+            canonical_result_hash,
+            typed_result.provider_response_id,
+            typed_result.input_tokens,
+            typed_result.output_tokens,
+            typed_result.cost_microunits,
+            typed_result.latency_ms,
+        )
+    result_type = f"{request_hash}:{type(result).__module__}.{type(result).__qualname__}"
+    return RejectedAnalysisAudit(
+        hashlib.sha256(result_type.encode()).hexdigest(),
+        None,
+        0,
+        0,
+        0,
+        0,
+    )
+
+
 class AnalysisResultCommitOutcome(StrEnum):
     COMMITTED = "committed"
     REPLAYED = "replayed"
@@ -212,7 +266,11 @@ class DurableJobRepositoryPort(Protocol):
     ) -> AnalysisResultCommit: ...
 
     async def reject_analysis_result(
-        self, claim: AnalysisBatchClaim, result_hash: str, reason_code: str
+        self,
+        claim: AnalysisBatchClaim,
+        audit: RejectedAnalysisAudit,
+        reason_code: str,
+        validator_version: str,
     ) -> WorkerRunOutcome: ...
 
     async def prepare_analysis_application(
@@ -220,7 +278,7 @@ class DurableJobRepositoryPort(Protocol):
         claim: AnalysisBatchClaim,
         result: MemoryAnalysisResult,
         validator_version: str,
-    ) -> AnalysisApplication: ...
+    ) -> AnalysisApplication | None: ...
 
     async def record_memory_analysis(
         self,
@@ -288,12 +346,18 @@ class DurableMemoryJobRunner:
                     )
                 if type(result) is not MemoryAnalysisResult:
                     return await self._repository.reject_analysis_result(
-                        claim, claim.request.request_hash, "analysis_result_type_invalid"
+                        claim,
+                        _rejected_result_audit(result, claim.request.request_hash),
+                        "analysis_result_type_invalid",
+                        self._config.validator_version,
                     )
                 decoded = MemoryAnalysisResult.from_json(result.to_json())
                 if decoded.result_hash != result.result_hash:
                     return await self._repository.reject_analysis_result(
-                        claim, result.result_hash, "analysis_result_hash_invalid"
+                        claim,
+                        _rejected_result_audit(result, claim.request.request_hash),
+                        "analysis_result_hash_invalid",
+                        self._config.validator_version,
                     )
                 if (
                     result.job_id != claim.request.job_id
@@ -301,18 +365,27 @@ class DurableMemoryJobRunner:
                     or result.request_hash != claim.request.request_hash
                 ):
                     return await self._repository.reject_analysis_result(
-                        claim, result.result_hash, "analysis_result_lineage_invalid"
+                        claim,
+                        _rejected_result_audit(result, claim.request.request_hash),
+                        "analysis_result_lineage_invalid",
+                        self._config.validator_version,
                     )
                 try:
                     freeze_public_audit_object(result.structured_result)
                 except (MemoryLimitError, MemoryValidationError):
                     return await self._repository.reject_analysis_result(
-                        claim, result.result_hash, "analysis_result_private_material"
+                        claim,
+                        _rejected_result_audit(result, claim.request.request_hash),
+                        "analysis_result_private_material",
+                        self._config.validator_version,
                     )
                 encoded = canonical_json(result.to_json()).encode()
                 if len(encoded) > self._config.max_result_bytes:
                     return await self._repository.reject_analysis_result(
-                        claim, result.result_hash, "analysis_result_oversize"
+                        claim,
+                        _rejected_result_audit(result, claim.request.request_hash),
+                        "analysis_result_oversize",
+                        self._config.validator_version,
                     )
                 commit = await self._repository.commit_analysis_result(claim, result)
                 if commit.outcome is AnalysisResultCommitOutcome.STALE_LEASE:
@@ -323,6 +396,8 @@ class DurableMemoryJobRunner:
             application = await self._repository.prepare_analysis_application(
                 claim, result, self._config.validator_version
             )
+            if application is None:
+                return WorkerRunOutcome.STALE_LEASE
         await self._repository.record_memory_analysis(
             application.invocation_id,
             application.turn_id,
@@ -353,5 +428,6 @@ __all__ = (
     "DurableJobRepositoryPort",
     "DurableMemoryJobRunner",
     "MemoryJobWorkerConfig",
+    "RejectedAnalysisAudit",
     "WorkerRunOutcome",
 )

@@ -388,7 +388,7 @@ CREATE TABLE accepted_analysis_plans (
     batch_id TEXT PRIMARY KEY REFERENCES analysis_batches(batch_id),
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
     base_revision INTEGER NOT NULL CHECK (base_revision >= 1),
-    committed_revision INTEGER NOT NULL CHECK (committed_revision > base_revision),
+    committed_revision INTEGER NOT NULL CHECK (committed_revision >= base_revision),
     plan_json BLOB NOT NULL,
     plan_hash TEXT NOT NULL,
     created_at REAL NOT NULL CHECK (created_at >= 0)
