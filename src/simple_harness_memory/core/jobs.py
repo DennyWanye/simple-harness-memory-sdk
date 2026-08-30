@@ -13,10 +13,13 @@ from typing import Protocol, cast
 from simple_harness.contracts import canonical_json
 from simple_harness.runtime import (
     AnalysisBudget,
+    MemoryAnalysisDeliveryAuthorityPort,
+    MemoryAnalysisDeliveryReceipt,
     MemoryAnalysisExecutorPort,
     MemoryAnalysisReceipt,
     MemoryAnalysisRequest,
     MemoryAnalysisResult,
+    MemoryAnalysisResultEnvelope,
 )
 
 from simple_harness_memory.core.audit import (
@@ -121,7 +124,7 @@ class AnalysisBatchClaim:
     lease_token: str
     lease_expires_at: float
     request: MemoryAnalysisRequest
-    result: MemoryAnalysisResult | None = None
+    envelope: MemoryAnalysisResultEnvelope | None = None
     application: AnalysisApplication | None = None
 
     def __post_init__(self) -> None:
@@ -138,18 +141,24 @@ class AnalysisBatchClaim:
             raise MemoryValidationError("analysis_job_ids_invalid")
         if not isinstance(self.request, MemoryAnalysisRequest):
             raise TypeError("request must use MemoryAnalysisRequest")
-        if self.result is not None and not isinstance(self.result, MemoryAnalysisResult):
-            raise TypeError("result must use MemoryAnalysisResult")
+        if self.envelope is not None and not isinstance(
+            self.envelope, MemoryAnalysisResultEnvelope
+        ):
+            raise TypeError("envelope must use MemoryAnalysisResultEnvelope")
         if self.application is not None and not isinstance(self.application, AnalysisApplication):
             raise TypeError("application must use AnalysisApplication")
-        if self.application is not None and self.result is None:
-            raise MemoryValidationError("analysis_application_requires_result")
+        if self.application is not None and self.envelope is None:
+            raise MemoryValidationError("analysis_application_requires_envelope")
         object.__setattr__(self, "job_ids", jobs)
         object.__setattr__(
             self,
             "lease_expires_at",
             _non_negative_seconds(self.lease_expires_at, "analysis_lease_expires_at"),
         )
+
+    @property
+    def result(self) -> MemoryAnalysisResult | None:
+        return None if self.envelope is None else self.envelope.result
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,6 +194,7 @@ class RejectedAnalysisAudit:
     output_tokens: int
     cost_microunits: int
     latency_ms: int
+    delivery_receipt: MemoryAnalysisDeliveryReceipt | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -199,6 +209,14 @@ class RejectedAnalysisAudit:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise MemoryValidationError(f"rejected_analysis_{name}_invalid")
+        if self.delivery_receipt is not None:
+            if not isinstance(self.delivery_receipt, MemoryAnalysisDeliveryReceipt):
+                raise TypeError("delivery_receipt must use MemoryAnalysisDeliveryReceipt")
+            if (
+                self.delivery_receipt.result_hash != self.result_hash
+                or self.delivery_receipt.provider_response_id != self.provider_response_id
+            ):
+                raise MemoryValidationError("rejected_analysis_delivery_lineage_differs")
 
 
 def _rejected_result_audit(result: object, request_hash: str) -> RejectedAnalysisAudit:
@@ -228,6 +246,23 @@ def _rejected_result_audit(result: object, request_hash: str) -> RejectedAnalysi
     )
 
 
+def _rejected_envelope_audit(
+    envelope: MemoryAnalysisResultEnvelope,
+) -> RejectedAnalysisAudit:
+    """Retain only public metrics plus a previously authority-verified delivery receipt."""
+
+    result = envelope.result
+    return RejectedAnalysisAudit(
+        result.result_hash,
+        result.provider_response_id,
+        result.input_tokens,
+        result.output_tokens,
+        result.cost_microunits,
+        result.latency_ms,
+        envelope.delivery_receipt,
+    )
+
+
 class AnalysisResultCommitOutcome(StrEnum):
     COMMITTED = "committed"
     REPLAYED = "replayed"
@@ -238,14 +273,18 @@ class AnalysisResultCommitOutcome(StrEnum):
 @dataclass(frozen=True, slots=True)
 class AnalysisResultCommit:
     outcome: AnalysisResultCommitOutcome
-    canonical_result: MemoryAnalysisResult | None
+    canonical_envelope: MemoryAnalysisResultEnvelope | None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "outcome", AnalysisResultCommitOutcome(self.outcome))
-        if self.canonical_result is not None and not isinstance(
-            self.canonical_result, MemoryAnalysisResult
+        if self.canonical_envelope is not None and not isinstance(
+            self.canonical_envelope, MemoryAnalysisResultEnvelope
         ):
-            raise TypeError("canonical_result must use MemoryAnalysisResult")
+            raise TypeError("canonical_envelope must use MemoryAnalysisResultEnvelope")
+
+    @property
+    def canonical_result(self) -> MemoryAnalysisResult | None:
+        return None if self.canonical_envelope is None else self.canonical_envelope.result
 
 
 class WorkerRunOutcome(StrEnum):
@@ -262,7 +301,7 @@ class DurableJobRepositoryPort(Protocol):
     ) -> AnalysisBatchClaim | None: ...
 
     async def commit_analysis_result(
-        self, claim: AnalysisBatchClaim, result: MemoryAnalysisResult
+        self, claim: AnalysisBatchClaim, envelope: MemoryAnalysisResultEnvelope
     ) -> AnalysisResultCommit: ...
 
     async def reject_analysis_result(
@@ -286,7 +325,8 @@ class DurableJobRepositoryPort(Protocol):
         turn_id: str,
         request: MemoryAnalysisRequest,
         result: MemoryAnalysisResult,
-        host_receipt: MemoryAnalysisReceipt,
+        delivery_receipt: MemoryAnalysisDeliveryReceipt,
+        validation_receipt: MemoryAnalysisReceipt,
         decisions: tuple[DecisionLedgerEntry, ...],
         *,
         reasoning_refs: tuple[PublicReasoningReference, ...] = (),
@@ -311,6 +351,7 @@ class DurableMemoryJobRunner:
         self,
         repository: DurableJobRepositoryPort,
         executor: MemoryAnalysisExecutorPort,
+        delivery_authority: MemoryAnalysisDeliveryAuthorityPort,
         config: MemoryJobWorkerConfig,
         worker_id: str,
         now: Callable[[], float],
@@ -320,6 +361,7 @@ class DurableMemoryJobRunner:
         _identifier(worker_id, "worker_id")
         self._repository = repository
         self._executor = executor
+        self._delivery_authority = delivery_authority
         self._config = config
         self._worker_id = worker_id
         self._now = now
@@ -328,12 +370,13 @@ class DurableMemoryJobRunner:
         claim = await self._repository.claim_analysis_batch(self._config, self._worker_id)
         if claim is None:
             return WorkerRunOutcome.IDLE
+        envelope = claim.envelope
         result = claim.result
         application = claim.application
         if application is None:
-            if result is None:
+            if envelope is None:
                 try:
-                    result = await self._executor.analyze_memory(claim.request)
+                    candidate = await self._executor.analyze_memory(claim.request)
                 except asyncio.CancelledError:
                     raise
                 except TimeoutError:
@@ -344,38 +387,62 @@ class DurableMemoryJobRunner:
                     return await self._repository.fail_analysis_batch(
                         claim, "analysis_executor_failed", self._config
                     )
-                if type(result) is not MemoryAnalysisResult:
+                if type(candidate) is not MemoryAnalysisResultEnvelope:
                     return await self._repository.reject_analysis_result(
                         claim,
-                        _rejected_result_audit(result, claim.request.request_hash),
-                        "analysis_result_type_invalid",
+                        _rejected_result_audit(candidate, claim.request.request_hash),
+                        "analysis_envelope_type_invalid",
                         self._config.validator_version,
                     )
-                decoded = MemoryAnalysisResult.from_json(result.to_json())
-                if decoded.result_hash != result.result_hash:
+                envelope = cast(MemoryAnalysisResultEnvelope, candidate)
+                try:
+                    decoded_envelope = MemoryAnalysisResultEnvelope.from_json(
+                        envelope.to_json()
+                    )
+                    envelope.verify_request(claim.request)
+                    if (
+                        decoded_envelope.envelope_hash != envelope.envelope_hash
+                        or decoded_envelope.result.result_hash != envelope.result.result_hash
+                        or decoded_envelope.delivery_receipt.receipt_hash
+                        != envelope.delivery_receipt.receipt_hash
+                    ):
+                        raise MemoryValidationError("analysis_envelope_hash_differs")
+                except (TypeError, ValueError, MemoryValidationError):
+                    return await self._repository.reject_analysis_result(
+                        claim, _rejected_result_audit(envelope, claim.request.request_hash),
+                        "analysis_envelope_lineage_invalid",
+                        self._config.validator_version,
+                    )
+                try:
+                    await self._delivery_authority.verify_analysis_delivery(
+                        claim.request, envelope
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    return await self._repository.reject_analysis_result(
+                        claim, _rejected_result_audit(envelope, claim.request.request_hash),
+                        "analysis_delivery_authority_rejected",
+                        self._config.validator_version,
+                    )
+                try:
+                    freeze_public_audit_object(
+                        {"delivery_receipt": envelope.delivery_receipt.to_json()}
+                    )
+                except (MemoryLimitError, MemoryValidationError):
                     return await self._repository.reject_analysis_result(
                         claim,
-                        _rejected_result_audit(result, claim.request.request_hash),
-                        "analysis_result_hash_invalid",
+                        _rejected_result_audit(envelope, claim.request.request_hash),
+                        "analysis_delivery_public_metadata_invalid",
                         self._config.validator_version,
                     )
-                if (
-                    result.job_id != claim.request.job_id
-                    or result.run_id != claim.request.run_id
-                    or result.request_hash != claim.request.request_hash
-                ):
-                    return await self._repository.reject_analysis_result(
-                        claim,
-                        _rejected_result_audit(result, claim.request.request_hash),
-                        "analysis_result_lineage_invalid",
-                        self._config.validator_version,
-                    )
+                result = envelope.result
                 try:
                     freeze_public_audit_object(result.structured_result)
                 except (MemoryLimitError, MemoryValidationError):
                     return await self._repository.reject_analysis_result(
                         claim,
-                        _rejected_result_audit(result, claim.request.request_hash),
+                        _rejected_envelope_audit(envelope),
                         "analysis_result_private_material",
                         self._config.validator_version,
                     )
@@ -383,26 +450,30 @@ class DurableMemoryJobRunner:
                 if len(encoded) > self._config.max_result_bytes:
                     return await self._repository.reject_analysis_result(
                         claim,
-                        _rejected_result_audit(result, claim.request.request_hash),
+                        _rejected_envelope_audit(envelope),
                         "analysis_result_oversize",
                         self._config.validator_version,
                     )
-                commit = await self._repository.commit_analysis_result(claim, result)
+                commit = await self._repository.commit_analysis_result(claim, envelope)
                 if commit.outcome is AnalysisResultCommitOutcome.STALE_LEASE:
                     return WorkerRunOutcome.STALE_LEASE
-                if commit.canonical_result is None:
+                if commit.canonical_envelope is None:
                     return WorkerRunOutcome.STALE_LEASE
-                result = commit.canonical_result
+                envelope = commit.canonical_envelope
+                result = envelope.result
+            assert result is not None and envelope is not None
             application = await self._repository.prepare_analysis_application(
                 claim, result, self._config.validator_version
             )
             if application is None:
                 return WorkerRunOutcome.STALE_LEASE
+        assert result is not None and envelope is not None and application is not None
         await self._repository.record_memory_analysis(
             application.invocation_id,
             application.turn_id,
             claim.request,
             result,
+            envelope.delivery_receipt,
             application.receipt,
             application.decisions,
             reasoning_refs=application.reasoning_refs,

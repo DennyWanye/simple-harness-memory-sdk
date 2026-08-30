@@ -11,6 +11,7 @@ from simple_harness.runtime import (
     AnalysisValidationStatus,
     EvidenceReasonCode,
     EvidenceRef,
+    MemoryAnalysisDeliveryReceipt,
     MemoryAnalysisReceipt,
     MemoryAnalysisRequest,
     MemoryAnalysisResult,
@@ -49,7 +50,12 @@ def _analysis_authority(
     structured_result: dict[str, object] | None = None,
     status: AnalysisValidationStatus = AnalysisValidationStatus.ACCEPTED,
     provider_id: str = "fixture-provider",
-) -> tuple[MemoryAnalysisRequest, MemoryAnalysisResult, MemoryAnalysisReceipt]:
+) -> tuple[
+    MemoryAnalysisRequest,
+    MemoryAnalysisResult,
+    MemoryAnalysisDeliveryReceipt,
+    MemoryAnalysisReceipt,
+]:
     request = MemoryAnalysisRequest(
         f"job-{ordinal}",
         "run-1",
@@ -86,8 +92,22 @@ def _analysis_authority(
         250 + ordinal,
     )
     accepted = status is AnalysisValidationStatus.ACCEPTED
+    delivery = MemoryAnalysisDeliveryReceipt(
+        f"delivery-receipt-{ordinal}",
+        "fixture-host-analysis-authority",
+        request.run_id,
+        request.job_id,
+        request.request_hash,
+        result.result_hash,
+        request.attempt,
+        result.provider_response_id,
+        f"{ordinal % 10}" * 64,
+        99.0 + ordinal,
+        f"host-delivery-record-{ordinal}",
+        f"{(ordinal + 1) % 10}" * 64,
+    )
     receipt = MemoryAnalysisReceipt(
-        f"host-invocation-receipt-{ordinal}",
+        f"memory-validation-receipt-{ordinal}",
         request.job_id,
         request.run_id,
         request.request_hash,
@@ -102,7 +122,7 @@ def _analysis_authority(
         ordinal if accepted else None,
         100.0 + ordinal,
     )
-    return request, result, receipt
+    return request, result, delivery, receipt
 
 
 def _decision(
@@ -142,7 +162,7 @@ async def test_invocation_and_decision_lineage_is_replayable_immutable_and_query
     backend = SQLiteHumanMemoryBackend(tmp_path / "audit-ledger.db", now=lambda: 120.0)
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
-    request, result, receipt = _analysis_authority(evidence_ref, 1)
+    request, result, delivery, receipt = _analysis_authority(evidence_ref, 1)
     decision = _decision(evidence_ref, 1)
     reasoning = PublicReasoningReference(
         "reasoning-item-1",
@@ -156,6 +176,7 @@ async def test_invocation_and_decision_lineage_is_replayable_immutable_and_query
         "turn-1",
         request,
         result,
+        delivery,
         receipt,
         (decision,),
         reasoning_refs=(reasoning,),
@@ -165,12 +186,14 @@ async def test_invocation_and_decision_lineage_is_replayable_immutable_and_query
         "turn-1",
         request,
         result,
+        delivery,
         receipt,
         (decision,),
         reasoning_refs=(reasoning,),
     )
     assert replay == record
-    assert record.host_receipt.receipt_hash == receipt.receipt_hash
+    assert record.delivery_receipt == delivery
+    assert record.validation_receipt.receipt_hash == receipt.receipt_hash
     assert record.public_output_hash is not None
     assert record.provider_request_id == result.provider_response_id
     assert record.input_tokens == result.input_tokens
@@ -216,12 +239,13 @@ async def test_stable_cursor_watermark_excludes_later_append(tmp_path: Path) -> 
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
     for ordinal in range(1, 4):
-        request, result, receipt = _analysis_authority(evidence_ref, ordinal)
+        request, result, delivery, receipt = _analysis_authority(evidence_ref, ordinal)
         await backend.record_memory_analysis(
             f"invocation-{ordinal}",
             "turn-page",
             request,
             result,
+            delivery,
             receipt,
             (_decision(evidence_ref, ordinal),),
         )
@@ -229,12 +253,13 @@ async def test_stable_cursor_watermark_excludes_later_append(tmp_path: Path) -> 
     first = await backend.export_audit_trace(query, limit=1)
     assert first.next_cursor is not None
 
-    request, result, receipt = _analysis_authority(evidence_ref, 4)
+    request, result, delivery, receipt = _analysis_authority(evidence_ref, 4)
     await backend.record_memory_analysis(
         "invocation-4",
         "turn-page",
         request,
         result,
+        delivery,
         receipt,
         (_decision(evidence_ref, 4),),
     )
@@ -303,7 +328,7 @@ async def test_invalid_private_output_records_rejection_without_body_anywhere(
     backend = SQLiteHumanMemoryBackend(path, now=lambda: 120.0)
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
-    request, result, receipt = _analysis_authority(
+    request, result, delivery, receipt = _analysis_authority(
         evidence_ref,
         1,
         structured_result=structured_result,
@@ -316,6 +341,7 @@ async def test_invalid_private_output_records_rejection_without_body_anywhere(
             "turn-unsafe",
             request,
             result,
+            delivery,
             receipt,
             (decision,),
         )
@@ -339,7 +365,7 @@ async def test_unsafe_output_claimed_accepted_is_rejected_before_any_audit_write
     backend = SQLiteHumanMemoryBackend(tmp_path / "unsafe-accepted.db", now=lambda: 120.0)
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
-    request, result, receipt = _analysis_authority(
+    request, result, delivery, receipt = _analysis_authority(
         evidence_ref,
         1,
         structured_result={"chain_of_thought": "must-never-persist"},
@@ -350,6 +376,7 @@ async def test_unsafe_output_claimed_accepted_is_rejected_before_any_audit_write
             "turn-unsafe",
             request,
             result,
+            delivery,
             receipt,
             (_decision(evidence_ref, 1),),
         )
@@ -374,7 +401,7 @@ async def test_invocation_metadata_rejects_credential_before_audit_write(tmp_pat
     backend = SQLiteHumanMemoryBackend(tmp_path / "unsafe-metadata.db", now=lambda: 120.0)
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
-    request, result, receipt = _analysis_authority(
+    request, result, delivery, receipt = _analysis_authority(
         evidence_ref,
         1,
         provider_id="ghp_0123456789abcdefghijklmnopqrstuv",
@@ -385,6 +412,7 @@ async def test_invocation_metadata_rejects_credential_before_audit_write(tmp_pat
             "turn-unsafe-metadata",
             request,
             result,
+            delivery,
             receipt,
             (_decision(evidence_ref, 1),),
         )
@@ -443,14 +471,20 @@ async def test_accepted_operations_require_exact_decision_closure(
     backend = SQLiteHumanMemoryBackend(tmp_path / f"closure-{reason}.db", now=lambda: 120.0)
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
-    request, result, receipt = _analysis_authority(
+    request, result, delivery, receipt = _analysis_authority(
         evidence_ref, 1, structured_result=structured_result
     )
     resolved = (_decision(evidence_ref, 1),) if decisions == "fixture-decision" else decisions
     assert isinstance(resolved, tuple)
     with pytest.raises(MemoryValidationError, match=reason):
         await backend.record_memory_analysis(
-            "invocation-closure", "turn-closure", request, result, receipt, resolved
+            "invocation-closure",
+            "turn-closure",
+            request,
+            result,
+            delivery,
+            receipt,
+            resolved,
         )
     async with backend.connection.execute("SELECT COUNT(*) FROM llm_invocations") as cursor:
         row = await cursor.fetchone()
@@ -463,13 +497,19 @@ async def test_explicit_no_mutation_is_audited_without_decisions(tmp_path: Path)
     backend = SQLiteHumanMemoryBackend(tmp_path / "no-mutation.db", now=lambda: 120.0)
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
-    request, result, receipt = _analysis_authority(
+    request, result, delivery, receipt = _analysis_authority(
         evidence_ref,
         1,
         structured_result={"outcome": "no_mutation", "operations": []},
     )
     record = await backend.record_memory_analysis(
-        "invocation-no-mutation", "turn-no-mutation", request, result, receipt, ()
+        "invocation-no-mutation",
+        "turn-no-mutation",
+        request,
+        result,
+        delivery,
+        receipt,
+        (),
     )
     assert record.public_output is not None
     assert record.public_output["outcome"] == "no_mutation"
@@ -484,13 +524,14 @@ async def test_suppression_blocks_ordinary_trace_but_sealed_receipt_is_limited_a
     backend = SQLiteHumanMemoryBackend(tmp_path / "sealed-trace.db", now=lambda: clock[0])
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
-    request, result, host_receipt = _analysis_authority(evidence_ref, 1)
+    request, result, delivery, validation_receipt = _analysis_authority(evidence_ref, 1)
     await backend.record_memory_analysis(
         "invocation-1",
         "turn-1",
         request,
         result,
-        host_receipt,
+        delivery,
+        validation_receipt,
         (_decision(evidence_ref, 1),),
     )
     await backend.suppress(
@@ -593,10 +634,10 @@ async def test_replay_with_changed_decision_is_conflict(tmp_path: Path) -> None:
     backend = SQLiteHumanMemoryBackend(tmp_path / "conflict.db", now=lambda: 120.0)
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
-    request, result, receipt = _analysis_authority(evidence_ref, 1)
+    request, result, delivery, receipt = _analysis_authority(evidence_ref, 1)
     decision = _decision(evidence_ref, 1)
     await backend.record_memory_analysis(
-        "invocation-1", "turn-1", request, result, receipt, (decision,)
+        "invocation-1", "turn-1", request, result, delivery, receipt, (decision,)
     )
     changed = DecisionLedgerEntry(
         decision.decision_id,
@@ -614,6 +655,6 @@ async def test_replay_with_changed_decision_is_conflict(tmp_path: Path) -> None:
     )
     with pytest.raises(MemoryIdempotencyConflict, match="replay_conflict"):
         await backend.record_memory_analysis(
-            "invocation-1", "turn-1", request, result, receipt, (changed,)
+            "invocation-1", "turn-1", request, result, delivery, receipt, (changed,)
         )
     await backend.close()

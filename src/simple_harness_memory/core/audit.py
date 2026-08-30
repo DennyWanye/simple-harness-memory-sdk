@@ -17,7 +17,11 @@ from simple_harness.contracts import (
     freeze_json,
     thaw_json,
 )
-from simple_harness.runtime import EvidenceRef, MemoryAnalysisReceipt
+from simple_harness.runtime import (
+    EvidenceRef,
+    MemoryAnalysisDeliveryReceipt,
+    MemoryAnalysisReceipt,
+)
 
 from simple_harness_memory.core.errors import MemoryLimitError, MemoryValidationError
 from simple_harness_memory.core.suppression import SuppressionScopeKind
@@ -308,7 +312,8 @@ class LLMInvocationAuditRecord:
     policy_version: str
     validator_version: str
     provider_request_id: str | None
-    host_receipt: MemoryAnalysisReceipt
+    delivery_receipt: MemoryAnalysisDeliveryReceipt | None
+    validation_receipt: MemoryAnalysisReceipt
     result_hash: str
     input_tokens: int
     output_tokens: int
@@ -366,13 +371,48 @@ class LLMInvocationAuditRecord:
         elif self.public_output is not None or self.public_output_hash is not None:
             raise MemoryValidationError("unsafe_output_body_must_not_persist")
         _reason(self.output_reason_code, "invocation_output_reason_code")
-        if not isinstance(self.host_receipt, MemoryAnalysisReceipt):
-            raise TypeError("host_receipt must use MemoryAnalysisReceipt")
-        _identifier(self.host_receipt.receipt_id, "host_invocation_receipt_id")
-        if self.host_receipt.receipt_hash != MemoryAnalysisReceipt.from_json(
-            self.host_receipt.to_json()
+        if self.delivery_receipt is not None:
+            if not isinstance(self.delivery_receipt, MemoryAnalysisDeliveryReceipt):
+                raise TypeError("delivery_receipt must use MemoryAnalysisDeliveryReceipt")
+            for value, name in (
+                (self.delivery_receipt.receipt_id, "delivery_receipt_id"),
+                (self.delivery_receipt.issuer_id, "delivery_receipt_issuer_id"),
+                (self.delivery_receipt.run_id, "delivery_receipt_run_id"),
+                (self.delivery_receipt.job_id, "delivery_receipt_job_id"),
+                (self.delivery_receipt.host_receipt_id, "delivery_host_receipt_id"),
+            ):
+                _identifier(value, name)
+            if self.delivery_receipt.provider_response_id is not None:
+                _identifier(
+                    self.delivery_receipt.provider_response_id,
+                    "delivery_provider_response_id",
+                )
+            decoded_delivery = MemoryAnalysisDeliveryReceipt.from_json(
+                self.delivery_receipt.to_json()
+            )
+            if (
+                decoded_delivery.receipt_hash != self.delivery_receipt.receipt_hash
+                or self.delivery_receipt.job_id != self.job_id
+                or self.delivery_receipt.run_id != self.run_id
+                or self.delivery_receipt.request_hash != self.request_hash
+                or self.delivery_receipt.result_hash != self.result_hash
+                or self.delivery_receipt.provider_response_id != self.provider_request_id
+            ):
+                raise MemoryValidationError("invocation_delivery_receipt_invalid")
+        if not isinstance(self.validation_receipt, MemoryAnalysisReceipt):
+            raise TypeError("validation_receipt must use MemoryAnalysisReceipt")
+        _identifier(self.validation_receipt.receipt_id, "validation_receipt_id")
+        if self.validation_receipt.receipt_hash != MemoryAnalysisReceipt.from_json(
+            self.validation_receipt.to_json()
         ).receipt_hash:
-            raise MemoryValidationError("host_invocation_receipt_invalid")
+            raise MemoryValidationError("invocation_validation_receipt_invalid")
+        if (
+            self.validation_receipt.job_id != self.job_id
+            or self.validation_receipt.run_id != self.run_id
+            or self.validation_receipt.request_hash != self.request_hash
+            or self.validation_receipt.result_hash != self.result_hash
+        ):
+            raise MemoryValidationError("invocation_validation_receipt_lineage_differs")
         for name in ("input_tokens", "output_tokens", "cost_microunits", "latency_ms"):
             _non_negative_int(getattr(self, name), name)
         started = _timestamp(self.started_at, "invocation_started_at")
@@ -426,7 +466,10 @@ class LLMInvocationAuditRecord:
             "policy_version": self.policy_version,
             "validator_version": self.validator_version,
             "provider_request_id": self.provider_request_id,
-            "host_receipt": self.host_receipt.to_json(),
+            "delivery_receipt": (
+                None if self.delivery_receipt is None else self.delivery_receipt.to_json()
+            ),
+            "validation_receipt": self.validation_receipt.to_json(),
             "result_hash": self.result_hash,
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,

@@ -44,9 +44,11 @@ from simple_harness_memory.core.errors import (
 
 if TYPE_CHECKING:
     from simple_harness.runtime import (
+        MemoryAnalysisDeliveryReceipt,
         MemoryAnalysisReceipt,
         MemoryAnalysisRequest,
         MemoryAnalysisResult,
+        MemoryAnalysisResultEnvelope,
         SanitizedEvidenceEnvelope,
         SanitizedEvidenceReceipt,
     )
@@ -1028,7 +1030,12 @@ class SQLiteHumanMemoryBackend:
         lease_token: str,
         lease_expires_at: float,
     ) -> AnalysisBatchClaim:
-        from simple_harness.runtime import MemoryAnalysisRequest, MemoryAnalysisResult
+        from simple_harness.runtime import (
+            MemoryAnalysisDeliveryReceipt,
+            MemoryAnalysisRequest,
+            MemoryAnalysisResult,
+            MemoryAnalysisResultEnvelope,
+        )
 
         from simple_harness_memory.core.jobs import AnalysisBatchClaim
 
@@ -1046,6 +1053,7 @@ class SQLiteHumanMemoryBackend:
         if request.request_hash != str(batch["request_hash"]):
             raise MemoryCorruptionError("stored analysis request hash differs")
         result: MemoryAnalysisResult | None = None
+        envelope: MemoryAnalysisResultEnvelope | None = None
         if batch["result_json"] is not None:
             result_json = json.loads(str(batch["result_json"]))
             if not isinstance(result_json, dict):
@@ -1053,6 +1061,25 @@ class SQLiteHumanMemoryBackend:
             result = MemoryAnalysisResult.from_json(result_json)
             if result.result_hash != str(batch["result_hash"]):
                 raise MemoryCorruptionError("stored analysis result hash differs")
+            delivery_json = json.loads(str(batch["delivery_receipt_json"]))
+            if not isinstance(delivery_json, dict):
+                raise MemoryCorruptionError("stored delivery receipt is malformed")
+            delivery_receipt = MemoryAnalysisDeliveryReceipt.from_json(delivery_json)
+            envelope = MemoryAnalysisResultEnvelope(result, delivery_receipt)
+            if (
+                delivery_receipt.receipt_hash != str(batch["delivery_receipt_hash"])
+                or envelope.envelope_hash != str(batch["result_envelope_hash"])
+            ):
+                raise MemoryCorruptionError("stored analysis delivery authority differs")
+        elif any(
+            batch[name] is not None
+            for name in (
+                "delivery_receipt_json",
+                "delivery_receipt_hash",
+                "result_envelope_hash",
+            )
+        ):
+            raise MemoryCorruptionError("stored analysis delivery is partial")
         async with self._db.execute(
             "SELECT * FROM analysis_batch_members WHERE batch_id=? ORDER BY ordinal",
             (batch_id,),
@@ -1075,7 +1102,7 @@ class SQLiteHumanMemoryBackend:
             lease_token,
             lease_expires_at,
             request,
-            result,
+            envelope,
             application,
         )
 
@@ -1167,9 +1194,13 @@ class SQLiteHumanMemoryBackend:
         )
 
     async def commit_analysis_result(
-        self, claim: AnalysisBatchClaim, result: MemoryAnalysisResult
+        self, claim: AnalysisBatchClaim, envelope: MemoryAnalysisResultEnvelope
     ) -> AnalysisResultCommit:
-        from simple_harness.runtime import MemoryAnalysisResult
+        from simple_harness.runtime import (
+            MemoryAnalysisDeliveryReceipt,
+            MemoryAnalysisResult,
+            MemoryAnalysisResultEnvelope,
+        )
 
         from simple_harness_memory.core.audit import freeze_public_audit_object
         from simple_harness_memory.core.jobs import (
@@ -1178,8 +1209,19 @@ class SQLiteHumanMemoryBackend:
             AnalysisResultCommitOutcome,
         )
 
-        if type(claim) is not AnalysisBatchClaim or type(result) is not MemoryAnalysisResult:
-            raise TypeError("claim and result must use analysis protocol types")
+        if (
+            type(claim) is not AnalysisBatchClaim
+            or type(envelope) is not MemoryAnalysisResultEnvelope
+        ):
+            raise TypeError("claim and envelope must use analysis protocol types")
+        decoded_envelope = MemoryAnalysisResultEnvelope.from_json(envelope.to_json())
+        if decoded_envelope.envelope_hash != envelope.envelope_hash:
+            raise MemoryValidationError("analysis_envelope_hash_differs")
+        envelope.verify_request(claim.request)
+        freeze_public_audit_object(
+            {"delivery_receipt": envelope.delivery_receipt.to_json()}
+        )
+        result = envelope.result
         decoded = MemoryAnalysisResult.from_json(result.to_json())
         if decoded.result_hash != result.result_hash:
             raise MemoryValidationError("analysis_result_hash_differs")
@@ -1210,7 +1252,9 @@ class SQLiteHumanMemoryBackend:
                         AnalysisResultCommitOutcome.STALE_LEASE, None
                     )
                 async with self._db.execute(
-                    "SELECT result_json,result_hash FROM analysis_batches WHERE batch_id=?",
+                    "SELECT result_json,result_hash,delivery_receipt_json,"
+                    "delivery_receipt_hash,result_envelope_hash FROM analysis_batches "
+                    "WHERE batch_id=?",
                     (claim.batch_id,),
                 ) as cursor:
                     row = await cursor.fetchone()
@@ -1223,7 +1267,21 @@ class SQLiteHumanMemoryBackend:
                     canonical = MemoryAnalysisResult.from_json(stored_value)
                     if canonical.result_hash != str(row["result_hash"]):
                         raise MemoryCorruptionError("stored analysis result hash differs")
-                    if canonical.result_hash == result.result_hash:
+                    delivery_value = json.loads(str(row["delivery_receipt_json"]))
+                    if not isinstance(delivery_value, dict):
+                        raise MemoryCorruptionError("stored delivery receipt malformed")
+                    canonical_delivery = MemoryAnalysisDeliveryReceipt.from_json(delivery_value)
+                    canonical_envelope = MemoryAnalysisResultEnvelope(
+                        canonical, canonical_delivery
+                    )
+                    if (
+                        canonical_delivery.receipt_hash
+                        != str(row["delivery_receipt_hash"])
+                        or canonical_envelope.envelope_hash
+                        != str(row["result_envelope_hash"])
+                    ):
+                        raise MemoryCorruptionError("stored analysis envelope hash differs")
+                    if canonical_envelope.envelope_hash == envelope.envelope_hash:
                         outcome = AnalysisResultCommitOutcome.REPLAYED
                         event_kind = "result_replayed"
                         reason = "analysis_result_replayed"
@@ -1238,11 +1296,20 @@ class SQLiteHumanMemoryBackend:
                     await self._db.execute("COMMIT")
                     committed = True
                     self._fault("job.result.after_commit")
-                    return AnalysisResultCommit(outcome, canonical)
+                    return AnalysisResultCommit(outcome, canonical_envelope)
                 await self._db.execute(
                     "UPDATE analysis_batches SET result_json=?,result_hash=?,"
+                    "delivery_receipt_json=?,delivery_receipt_hash=?,result_envelope_hash=?,"
                     "state='result_committed',updated_at=? WHERE batch_id=?",
-                    (canonical_json(result.to_json()), result.result_hash, now, claim.batch_id),
+                    (
+                        canonical_json(result.to_json()),
+                        result.result_hash,
+                        canonical_json(envelope.delivery_receipt.to_json()),
+                        envelope.delivery_receipt.receipt_hash,
+                        envelope.envelope_hash,
+                        now,
+                        claim.batch_id,
+                    ),
                 )
                 await self._db.execute(
                     "UPDATE job_attempts SET result_hash=?,state='result_committed' "
@@ -1260,7 +1327,7 @@ class SQLiteHumanMemoryBackend:
                 await self._db.execute("COMMIT")
                 committed = True
                 self._fault("job.result.after_commit")
-                return AnalysisResultCommit(AnalysisResultCommitOutcome.COMMITTED, result)
+                return AnalysisResultCommit(AnalysisResultCommitOutcome.COMMITTED, envelope)
             finally:
                 if not committed:
                     with suppress(Exception):
@@ -1296,6 +1363,15 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("claim and audit must use analysis job protocol types")
         _audit_identifier(reason_code, "reason_code")
         _audit_identifier(validator_version, "validator_version")
+        if audit.delivery_receipt is not None:
+            delivery = audit.delivery_receipt
+            if (
+                delivery.job_id != claim.request.job_id
+                or delivery.run_id != claim.request.run_id
+                or delivery.request_hash != claim.request.request_hash
+                or delivery.attempt != claim.request.attempt
+            ):
+                raise MemoryValidationError("rejected_analysis_delivery_lineage_differs")
         assert self._db is not None
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
@@ -1371,6 +1447,7 @@ class SQLiteHumanMemoryBackend:
                     claim.request.policy_version,
                     validator_version,
                     audit.provider_response_id,
+                    audit.delivery_receipt,
                     receipt,
                     audit.result_hash,
                     audit.input_tokens,
@@ -1877,13 +1954,15 @@ class SQLiteHumanMemoryBackend:
                     committed = True
                     return False
                 async with self._db.execute(
-                    "SELECT host_receipt_hash FROM llm_invocations WHERE invocation_id=?",
+                    "SELECT validation_receipt_hash FROM llm_invocations "
+                    "WHERE invocation_id=?",
                     (application.invocation_id,),
                 ) as cursor:
                     invocation = await cursor.fetchone()
                 if (
                     invocation is None
-                    or str(invocation["host_receipt_hash"]) != application.receipt.receipt_hash
+                    or str(invocation["validation_receipt_hash"])
+                    != application.receipt.receipt_hash
                 ):
                     raise MemoryWriterConflict("analysis_audit_not_durable")
                 await self._db.execute(
@@ -1953,7 +2032,8 @@ class SQLiteHumanMemoryBackend:
         turn_id: str,
         request: MemoryAnalysisRequest,
         result: MemoryAnalysisResult,
-        host_receipt: MemoryAnalysisReceipt,
+        delivery_receipt: MemoryAnalysisDeliveryReceipt,
+        validation_receipt: MemoryAnalysisReceipt,
         decisions: tuple[DecisionLedgerEntry, ...],
         *,
         reasoning_refs: tuple[PublicReasoningReference, ...] = (),
@@ -1962,6 +2042,7 @@ class SQLiteHumanMemoryBackend:
 
         from simple_harness.runtime import (
             AnalysisValidationStatus,
+            MemoryAnalysisDeliveryReceipt,
             MemoryAnalysisReceipt,
             MemoryAnalysisRequest,
             MemoryAnalysisResult,
@@ -1980,17 +2061,22 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("request must use MemoryAnalysisRequest")
         if type(result) is not MemoryAnalysisResult:
             raise TypeError("result must use MemoryAnalysisResult")
-        if type(host_receipt) is not MemoryAnalysisReceipt:
-            raise TypeError("host_receipt must use MemoryAnalysisReceipt")
+        if type(delivery_receipt) is not MemoryAnalysisDeliveryReceipt:
+            raise TypeError("delivery_receipt must use MemoryAnalysisDeliveryReceipt")
+        if type(validation_receipt) is not MemoryAnalysisReceipt:
+            raise TypeError("validation_receipt must use MemoryAnalysisReceipt")
         decoded_request = MemoryAnalysisRequest.from_json(request.to_json())
         decoded_result = MemoryAnalysisResult.from_json(result.to_json())
-        decoded_receipt = MemoryAnalysisReceipt.from_json(host_receipt.to_json())
+        decoded_delivery = MemoryAnalysisDeliveryReceipt.from_json(delivery_receipt.to_json())
+        decoded_receipt = MemoryAnalysisReceipt.from_json(validation_receipt.to_json())
         if (
             decoded_request.request_hash != request.request_hash
             or decoded_result.result_hash != result.result_hash
-            or decoded_receipt.receipt_hash != host_receipt.receipt_hash
+            or decoded_delivery.receipt_hash != delivery_receipt.receipt_hash
+            or decoded_receipt.receipt_hash != validation_receipt.receipt_hash
         ):
             raise MemoryValidationError("analysis_authority_hash_differs")
+        delivery_receipt.verify_result(request, result)
         _audit_identifier(invocation_id, "invocation_id")
         _audit_identifier(turn_id, "turn_id")
         decisions = tuple(decisions)
@@ -2003,10 +2089,15 @@ class SQLiteHumanMemoryBackend:
             result.job_id != request.job_id
             or result.run_id != request.run_id
             or result.request_hash != request.request_hash
-            or host_receipt.job_id != request.job_id
-            or host_receipt.run_id != request.run_id
-            or host_receipt.request_hash != request.request_hash
-            or host_receipt.result_hash != result.result_hash
+            or delivery_receipt.job_id != request.job_id
+            or delivery_receipt.run_id != request.run_id
+            or delivery_receipt.request_hash != request.request_hash
+            or delivery_receipt.result_hash != result.result_hash
+            or delivery_receipt.provider_response_id != result.provider_response_id
+            or validation_receipt.job_id != request.job_id
+            or validation_receipt.run_id != request.run_id
+            or validation_receipt.request_hash != request.request_hash
+            or validation_receipt.result_hash != result.result_hash
         ):
             raise MemoryValidationError("analysis_authority_lineage_differs")
         request_evidence = {
@@ -2023,7 +2114,7 @@ class SQLiteHumanMemoryBackend:
                 and decision.target_ref != request.subject
             ):
                 raise MemoryValidationError("decision_subject_target_differs")
-        if host_receipt.validation_status is not AnalysisValidationStatus.ACCEPTED and any(
+        if validation_receipt.validation_status is not AnalysisValidationStatus.ACCEPTED and any(
             item.outcome is DecisionOutcome.ACCEPTED for item in decisions
         ):
             raise MemoryValidationError("rejected_analysis_cannot_accept_operation")
@@ -2037,9 +2128,9 @@ class SQLiteHumanMemoryBackend:
             public_output_hash = hashlib.sha256(
                 canonical_json(public_output_json).encode()
             ).hexdigest()
-            output_reason = host_receipt.reason_codes[0].value
+            output_reason = validation_receipt.reason_codes[0].value
         except (MemoryLimitError, MemoryValidationError):
-            if host_receipt.validation_status is AnalysisValidationStatus.ACCEPTED or not any(
+            if validation_receipt.validation_status is AnalysisValidationStatus.ACCEPTED or not any(
                 item.outcome is DecisionOutcome.REJECTED for item in decisions
             ):
                 raise MemoryValidationError("unsafe_output_requires_rejected_decision") from None
@@ -2047,11 +2138,11 @@ class SQLiteHumanMemoryBackend:
             public_output_hash = None
             output_status = OutputStorageStatus.REJECTED_UNSAFE
             output_reason = "audit_private_material_rejected"
-        if host_receipt.validation_status is AnalysisValidationStatus.ACCEPTED:
+        if validation_receipt.validation_status is AnalysisValidationStatus.ACCEPTED:
             assert public_output is not None
             _validate_accepted_operation_decisions(public_output, decisions)
 
-        completed_at = float(host_receipt.committed_at)
+        completed_at = float(validation_receipt.committed_at)
         started_at = max(0.0, completed_at - (result.latency_ms / 1000.0))
         expected = LLMInvocationAuditRecord(
             1,
@@ -2072,9 +2163,10 @@ class SQLiteHumanMemoryBackend:
             request.prompt_version,
             request.result_schema_version,
             request.policy_version,
-            host_receipt.validator_version,
+            validation_receipt.validator_version,
             result.provider_response_id,
-            host_receipt,
+            delivery_receipt,
+            validation_receipt,
             result.result_hash,
             result.input_tokens,
             result.output_tokens,
@@ -2123,7 +2215,7 @@ class SQLiteHumanMemoryBackend:
             "memory.analysis_invocation_recorded",
             invocation_id_hash=_opaque_hash(invocation_id),
             request_hash=request.request_hash,
-            validation_status=host_receipt.validation_status.value,
+            validation_status=validation_receipt.validation_status.value,
         )
         return stored
 
@@ -2166,10 +2258,12 @@ class SQLiteHumanMemoryBackend:
                 "request_hash,public_input_refs_json,public_input_hash,public_output_json,"
                 "public_output_hash,output_storage_status,output_reason_code,provider_id,model_id,"
                 "parameters_hash,prompt_version,schema_version,policy_version,validator_version,"
-                "provider_request_id,host_receipt_id,host_receipt_json,host_receipt_hash,"
+                "provider_request_id,delivery_receipt_id,delivery_receipt_json,"
+                "delivery_receipt_hash,validation_receipt_id,validation_receipt_json,"
+                "validation_receipt_hash,"
                 "result_hash,input_tokens,output_tokens,cost_microunits,latency_ms,started_at,"
                 "completed_at,invocation_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
-                "?,?,?,?,?,?,?,?,?,?)",
+                "?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     record.invocation_id,
                     record.subject,
@@ -2191,9 +2285,24 @@ class SQLiteHumanMemoryBackend:
                     record.policy_version,
                     record.validator_version,
                     record.provider_request_id,
-                    record.host_receipt.receipt_id,
-                    canonical_json(record.host_receipt.to_json()),
-                    record.host_receipt.receipt_hash,
+                    (
+                        None
+                        if record.delivery_receipt is None
+                        else record.delivery_receipt.receipt_id
+                    ),
+                    (
+                        None
+                        if record.delivery_receipt is None
+                        else canonical_json(record.delivery_receipt.to_json())
+                    ),
+                    (
+                        None
+                        if record.delivery_receipt is None
+                        else record.delivery_receipt.receipt_hash
+                    ),
+                    record.validation_receipt.receipt_id,
+                    canonical_json(record.validation_receipt.to_json()),
+                    record.validation_receipt.receipt_hash,
                     record.result_hash,
                     record.input_tokens,
                     record.output_tokens,
@@ -2552,7 +2661,11 @@ class SQLiteHumanMemoryBackend:
     async def _read_invocation(
         self, invocation_id: str
     ) -> LLMInvocationAuditRecord | None:
-        from simple_harness.runtime import EvidenceRef, MemoryAnalysisReceipt
+        from simple_harness.runtime import (
+            EvidenceRef,
+            MemoryAnalysisDeliveryReceipt,
+            MemoryAnalysisReceipt,
+        )
 
         from simple_harness_memory.core.audit import (
             LLMInvocationAuditRecord,
@@ -2598,10 +2711,16 @@ class SQLiteHumanMemoryBackend:
         )
         if public_output_value is not None and not isinstance(public_output_value, dict):
             raise MemoryCorruptionError("stored public output is not an object")
-        receipt_json = json.loads(str(row["host_receipt_json"]))
-        if not isinstance(receipt_json, dict):
-            raise MemoryCorruptionError("stored Host receipt is not an object")
-        receipt = MemoryAnalysisReceipt.from_json(receipt_json)
+        delivery_receipt = None
+        if row["delivery_receipt_json"] is not None:
+            delivery_json = json.loads(str(row["delivery_receipt_json"]))
+            if not isinstance(delivery_json, dict):
+                raise MemoryCorruptionError("stored delivery receipt is not an object")
+            delivery_receipt = MemoryAnalysisDeliveryReceipt.from_json(delivery_json)
+        validation_json = json.loads(str(row["validation_receipt_json"]))
+        if not isinstance(validation_json, dict):
+            raise MemoryCorruptionError("stored validation receipt is not an object")
+        validation_receipt = MemoryAnalysisReceipt.from_json(validation_json)
         record = LLMInvocationAuditRecord(
             int(row["invocation_sequence"]),
             str(row["invocation_id"]),
@@ -2623,7 +2742,8 @@ class SQLiteHumanMemoryBackend:
             str(row["policy_version"]),
             str(row["validator_version"]),
             None if row["provider_request_id"] is None else str(row["provider_request_id"]),
-            receipt,
+            delivery_receipt,
+            validation_receipt,
             str(row["result_hash"]),
             int(row["input_tokens"]),
             int(row["output_tokens"]),
@@ -2638,7 +2758,23 @@ class SQLiteHumanMemoryBackend:
             expected_input_json != str(row["public_input_refs_json"])
             or hashlib.sha256(expected_input_json.encode()).hexdigest()
             != str(row["public_input_hash"])
-            or receipt.receipt_hash != str(row["host_receipt_hash"])
+            or (
+                delivery_receipt is None
+                and any(
+                    row[name] is not None
+                    for name in ("delivery_receipt_id", "delivery_receipt_hash")
+                )
+            )
+            or (
+                delivery_receipt is not None
+                and (
+                    delivery_receipt.receipt_id != str(row["delivery_receipt_id"])
+                    or delivery_receipt.receipt_hash
+                    != str(row["delivery_receipt_hash"])
+                )
+            )
+            or validation_receipt.receipt_id != str(row["validation_receipt_id"])
+            or validation_receipt.receipt_hash != str(row["validation_receipt_hash"])
             or record.invocation_hash != str(row["invocation_hash"])
         ):
             raise MemoryCorruptionError("stored analysis invocation hash differs")

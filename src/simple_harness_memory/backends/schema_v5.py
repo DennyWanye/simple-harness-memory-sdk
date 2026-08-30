@@ -200,9 +200,12 @@ CREATE TABLE llm_invocations (
     policy_version TEXT NOT NULL,
     validator_version TEXT NOT NULL,
     provider_request_id TEXT,
-    host_receipt_id TEXT NOT NULL UNIQUE,
-    host_receipt_json BLOB NOT NULL,
-    host_receipt_hash TEXT NOT NULL UNIQUE,
+    delivery_receipt_id TEXT UNIQUE,
+    delivery_receipt_json BLOB,
+    delivery_receipt_hash TEXT UNIQUE,
+    validation_receipt_id TEXT NOT NULL UNIQUE,
+    validation_receipt_json BLOB NOT NULL,
+    validation_receipt_hash TEXT NOT NULL UNIQUE,
     result_hash TEXT NOT NULL UNIQUE,
     input_tokens INTEGER NOT NULL CHECK (input_tokens >= 0),
     output_tokens INTEGER NOT NULL CHECK (output_tokens >= 0),
@@ -211,6 +214,8 @@ CREATE TABLE llm_invocations (
     started_at REAL NOT NULL CHECK (started_at >= 0),
     completed_at REAL NOT NULL CHECK (completed_at >= started_at),
     invocation_hash TEXT NOT NULL UNIQUE,
+    CHECK ((delivery_receipt_id IS NULL) = (delivery_receipt_json IS NULL)),
+    CHECK ((delivery_receipt_id IS NULL) = (delivery_receipt_hash IS NULL)),
     UNIQUE (principal_id, request_hash)
 );
 CREATE INDEX llm_invocation_trace_lookup
@@ -343,6 +348,9 @@ CREATE TABLE analysis_batches (
     request_hash TEXT NOT NULL UNIQUE,
     result_json BLOB,
     result_hash TEXT UNIQUE,
+    delivery_receipt_json BLOB,
+    delivery_receipt_hash TEXT UNIQUE,
+    result_envelope_hash TEXT UNIQUE,
     state TEXT NOT NULL CHECK (
         state IN ('handed_off', 'result_committed', 'audit_pending', 'applied', 'failed')
     ),
