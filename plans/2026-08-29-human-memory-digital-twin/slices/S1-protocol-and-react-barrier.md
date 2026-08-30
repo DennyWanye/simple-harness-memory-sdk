@@ -125,7 +125,8 @@ candidate hash；上一 candidate hash 永久作为失效证据保留，不覆�
   actor/source provenance、support kind 与可选 typed observation schema/JSON Pointer/value hash；同 evidence 可有多个 span。
 - 四类 mutation 使用 discriminated typed payload，不把 Episode/Procedure/Prospective JSON 塞回 free-form claim；operation
   明确携带 lifecycle/epistemic/conflict/verification、privacy class/information attributes、target revision 和 dependency IDs。
-- 依赖必须是同 plan 内完整 DAG；unknown/missing/self/cycle/乱序均 fail-closed，全 plan 原子，不允许部分应用。
+- 依赖必须是同 plan 内完整 DAG；数组可乱序但必须得到唯一、稳定的拓扑执行序，unknown/missing/self/cycle 均
+  fail-closed，全 plan 原子，不允许部分应用。
 - `RecallPlan` 必须绑定 exact Host `RecallContext.context_hash`，event/environment/task phase、memory types、scope/time/entity、
   disclosure 与预算只能相对 Host 缩窄；公开 filtered count 只表示全部权限门后的候选数。
 - 冻结 Host-authenticated `ConversationEvidenceMetadata`：primary conversation、causal group ID/sequence/ordinal、role、
