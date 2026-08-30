@@ -1,7 +1,7 @@
 # Human Memory Digital Twin Plan Workspace
 
 > 创建日期：2026-08-29
-> 状态：用户已批准直接实施；V0、S1 已闭合，S2 与 S4 候选进入 Phase 2 authority 重审收口
+> 状态：用户已批准直接实施；V0、S1 已闭合，S2 Task 1—5 已闭合并进入 candidate 收口，S4 候选待后续集成
 > 主计划仓库：`simple-harness-memory-sdk`
 > Worktree：`/Users/denny/projects/simple-harness-memory-sdk-memory-plan`
 > 分支：`feat/human-memory-plan`
@@ -189,10 +189,10 @@ SDK 当前生产事实以本仓库的 `ARCHITECTURE/`、`src/simple_harness_memo
 V0 authority、旧 Session oracle lineage 和五项关键假设 spike 已闭合；S1 Harness SDK 0.7.0 最终 source
 `8f1027d2` 已完成 `a2-001` typed workspace binding authority 与 `a2-002` Host-durable analysis delivery
 协议，三轮独立安全审计 P0/P1/P2=0，exact candidate wheel SHA-256 为 `b9421ddf…`；仍未 tag/publish。
-S2 Memory SDK 已完成 fresh schema、永久 evidence ingestion、suppression authority 与 LLM audit ledger；Task 5 候选链
-`71066b69`→`3929669`→`4f58793` 已验证 constructor-bound Host delivery、同 request/attempt 瞬时恢复和 Provider 不重放，
-但独立审计又证明 mutation audit 尚可绕过 repository-generated application/phase，因此 `a2-003` 保持打开并暂停
-0.6.0 candidate 收口。S4 Host 已完成 primary evidence、Canonical TaskScope Archive、目录 provisioning，并在候选
+S2 Memory SDK 已完成 fresh schema、永久 evidence ingestion、suppression authority、LLM audit ledger 与 durable worker；
+Task 5 最终提交 `83ce301` 在三轮实现/独立复核后关闭 generic audit 升权、stale reject、audit-pending Provider 重放和
+repository phase 绕过，最终 focused 75/75、P0/P1/P2=0。当前进入 Task 6 的旧默认移除、公共快照、文档与 0.6.0
+candidate 收口。S4 Host 已完成 primary evidence、Canonical TaskScope Archive、目录 provisioning，并在候选
 `13dbef17` 关闭 store-level Manual/Auto freshness、identity 和 replay seam；`a2-004` 仍要求把 durable Manual interaction、
 current Run/context/config facts 与 production adapters 明确装配。Phase 2 综合审查另确认 Host exact Harness 0.7 production
 composition 缺少三个 mandatory authority port，定为 P0，必须在 S5 由唯一 composition owner 实装且 fail-closed。

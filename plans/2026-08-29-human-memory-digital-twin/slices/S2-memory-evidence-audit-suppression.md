@@ -3,7 +3,7 @@
 > Release unit：S2（Memory SDK）  
 > 高风险子系统：fresh SQLite schema、append-only privacy/audit、worker/outbox（3）  
 > 覆盖：HM-AC-1/2/7/8
-> 实施进度：Task 1—4 complete；Task 5 在独立审计发现 repository phase authority bypass 后按 `a2-003` 重新打开，Task 6 暂停。候选链 `71066b69`→`3929669`→`4f58793` 已完成 Host durable delivery、constructor-bound authority、同 request/attempt 瞬时恢复且 Provider 不重放，但 mutation audit 仍须收口为下面冻结的单一 repository 状态机，尚不是 Task 5 最终提交。
+> 实施进度：Task 1—5 complete；Task 5 最终提交 `83ce301` 在候选链 `71066b69`→`3929669`→`4f58793` 上完成 repository 四阶段 authority、generic/mutation audit 隔离、同 request/attempt 恢复且 Provider 不重放。focused 75/75，strict mypy/ruff 通过，三轮独立缺陷复核后 P0/P1/P2=0。Task 6 进行中。
 
 ## 交付边界
 
