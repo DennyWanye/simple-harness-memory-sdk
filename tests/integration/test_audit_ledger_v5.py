@@ -48,6 +48,7 @@ def _analysis_authority(
     *,
     structured_result: dict[str, object] | None = None,
     status: AnalysisValidationStatus = AnalysisValidationStatus.ACCEPTED,
+    provider_id: str = "fixture-provider",
 ) -> tuple[MemoryAnalysisRequest, MemoryAnalysisResult, MemoryAnalysisReceipt]:
     request = MemoryAnalysisRequest(
         f"job-{ordinal}",
@@ -57,7 +58,7 @@ def _analysis_authority(
         "memory-analysis-prompt/v1",
         "memory-mutation-plan/v1",
         "memory-policy/v1",
-        "fixture-provider",
+        provider_id,
         "fixture-model",
         "a" * 64,
         ordinal,
@@ -70,8 +71,15 @@ def _analysis_authority(
         request.run_id,
         request.request_hash,
         f"provider-request-{ordinal}",
-        structured_result
-        or {"operations": [{"operation_id": f"operation-{ordinal}", "kind": "upsert"}]},
+        (
+            structured_result
+            if structured_result is not None
+            else {
+                "operations": [
+                    {"operation_id": f"operation-{ordinal}", "kind": "create"}
+                ]
+            }
+        ),
         100 + ordinal,
         20 + ordinal,
         1000 + ordinal,
@@ -106,11 +114,11 @@ def _decision(
     return DecisionLedgerEntry(
         f"decision-{ordinal}",
         f"operation-{ordinal}",
-        "semantic_upsert",
+        "create",
         outcome,
         SuppressionScopeKind.MEMORY,
         f"memory-{ordinal}",
-        {"operation": "semantic_upsert", "ordinal": ordinal},
+        {"operation": "create", "ordinal": ordinal},
         (f"memory-{ordinal}:revision:1",),
         (() if outcome is DecisionOutcome.REJECTED else (f"memory-{ordinal}:revision:2",)),
         (evidence_ref,),
@@ -230,6 +238,14 @@ async def test_stable_cursor_watermark_excludes_later_append(tmp_path: Path) -> 
         receipt,
         (_decision(evidence_ref, 4),),
     )
+    forged = AuditTraceCursor(
+        first.next_cursor.query_hash,
+        4,
+        first.next_cursor.last_sequence,
+        first.next_cursor.cursor_hash,
+    )
+    with pytest.raises(MemoryValidationError, match="cursor_signature_invalid"):
+        await backend.export_audit_trace(query, limit=10, cursor=forged)
     old_snapshot = [first.items[0].invocation.invocation_id]
     cursor: AuditTraceCursor | None = first.next_cursor
     while cursor is not None:
@@ -252,13 +268,32 @@ async def test_stable_cursor_watermark_excludes_later_append(tmp_path: Path) -> 
         )
     await backend.close()
 
+    reopened = SQLiteHumanMemoryBackend(tmp_path / "pagination.db", now=lambda: 121.0)
+    await reopened.initialize()
+    resumed = await reopened.export_audit_trace(query, limit=10, cursor=first.next_cursor)
+    assert [item.invocation.invocation_id for item in resumed.items] == [
+        "invocation-2",
+        "invocation-3",
+    ]
+    with pytest.raises(sqlite3.IntegrityError, match="immutable cursor authority"):
+        await reopened.connection.execute(
+            "UPDATE audit_cursor_authority SET hmac_key_hex=? WHERE singleton=1",
+            ("0" * 64,),
+        )
+    await reopened.close()
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("structured_result", "canary"),
     (
         ({"hidden_reasoning": "private-cot-canary"}, "private-cot-canary"),
+        ({"reasoning_content": "provider-private-cot-canary"}, "private-cot-canary"),
         ({"operations": [{"value": "sk-private-audit-key-123456"}]}, "private-audit-key"),
+        (
+            {"operations": [{"value": "ghp_0123456789abcdefghijklmnopqrstuv"}]},
+            "ghp_0123456789abcdefghijklmnopqrstuv",
+        ),
     ),
 )
 async def test_invalid_private_output_records_rejection_without_body_anywhere(
@@ -321,6 +356,123 @@ async def test_unsafe_output_claimed_accepted_is_rejected_before_any_audit_write
     async with backend.connection.execute("SELECT COUNT(*) FROM llm_invocations") as cursor:
         row = await cursor.fetchone()
     assert row is not None and int(row[0]) == 0
+    await backend.close()
+
+
+def test_public_reasoning_reference_rejects_credential_continuation_ref() -> None:
+    with pytest.raises(MemoryValidationError, match="opaque_ref_invalid"):
+        PublicReasoningReference(
+            "reasoning-item-secret",
+            ReasoningItemType.REASONING,
+            "b" * 64,
+            "ghp_0123456789abcdefghijklmnopqrstuv",
+        )
+
+
+@pytest.mark.asyncio
+async def test_invocation_metadata_rejects_credential_before_audit_write(tmp_path: Path) -> None:
+    backend = SQLiteHumanMemoryBackend(tmp_path / "unsafe-metadata.db", now=lambda: 120.0)
+    await backend.initialize()
+    evidence_ref = await _ingest(backend, "evidence-1")
+    request, result, receipt = _analysis_authority(
+        evidence_ref,
+        1,
+        provider_id="ghp_0123456789abcdefghijklmnopqrstuv",
+    )
+    with pytest.raises(MemoryValidationError, match="invocation_provider_id_invalid"):
+        await backend.record_memory_analysis(
+            "invocation-unsafe-metadata",
+            "turn-unsafe-metadata",
+            request,
+            result,
+            receipt,
+            (_decision(evidence_ref, 1),),
+        )
+    async with backend.connection.execute("SELECT COUNT(*) FROM llm_invocations") as cursor:
+        row = await cursor.fetchone()
+    assert row is not None and int(row[0]) == 0
+    await backend.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("structured_result", "decisions", "reason"),
+    (
+        ({"operations": []}, (), "zero_operations_outcome_invalid"),
+        (
+            {
+                "operations": [
+                    {"operation_id": "operation-1", "kind": "create"}
+                ]
+            },
+            (),
+            "operation_decisions_differ",
+        ),
+        (
+            {
+                "operations": [
+                    {"operation_id": "operation-other", "kind": "create"}
+                ]
+            },
+            "fixture-decision",
+            "operation_decisions_differ",
+        ),
+        (
+            {"operations": [{"operation_id": "operation-1", "kind": "revise"}]},
+            "fixture-decision",
+            "operation_kind_differs",
+        ),
+        (
+            {
+                "operations": [
+                    {"operation_id": "operation-1", "kind": "create"},
+                    {"operation_id": "operation-1", "kind": "create"},
+                ]
+            },
+            "fixture-decision",
+            "operation_duplicated",
+        ),
+    ),
+)
+async def test_accepted_operations_require_exact_decision_closure(
+    tmp_path: Path,
+    structured_result: dict[str, object],
+    decisions: tuple[DecisionLedgerEntry, ...] | str,
+    reason: str,
+) -> None:
+    backend = SQLiteHumanMemoryBackend(tmp_path / f"closure-{reason}.db", now=lambda: 120.0)
+    await backend.initialize()
+    evidence_ref = await _ingest(backend, "evidence-1")
+    request, result, receipt = _analysis_authority(
+        evidence_ref, 1, structured_result=structured_result
+    )
+    resolved = (_decision(evidence_ref, 1),) if decisions == "fixture-decision" else decisions
+    assert isinstance(resolved, tuple)
+    with pytest.raises(MemoryValidationError, match=reason):
+        await backend.record_memory_analysis(
+            "invocation-closure", "turn-closure", request, result, receipt, resolved
+        )
+    async with backend.connection.execute("SELECT COUNT(*) FROM llm_invocations") as cursor:
+        row = await cursor.fetchone()
+    assert row is not None and int(row[0]) == 0
+    await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_explicit_no_mutation_is_audited_without_decisions(tmp_path: Path) -> None:
+    backend = SQLiteHumanMemoryBackend(tmp_path / "no-mutation.db", now=lambda: 120.0)
+    await backend.initialize()
+    evidence_ref = await _ingest(backend, "evidence-1")
+    request, result, receipt = _analysis_authority(
+        evidence_ref,
+        1,
+        structured_result={"outcome": "no_mutation", "operations": []},
+    )
+    record = await backend.record_memory_analysis(
+        "invocation-no-mutation", "turn-no-mutation", request, result, receipt, ()
+    )
+    assert record.public_output is not None
+    assert record.public_output["outcome"] == "no_mutation"
     await backend.close()
 
 

@@ -32,6 +32,12 @@ _CREDENTIAL_PATTERNS = (
     re.compile(r"(?i)\bbearer\s+[a-z0-9._~+/=-]{8,}"),
     re.compile(r"\b(?:sk|key|tsk)-?[A-Za-z0-9_-]{8,}"),
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b"),
+    re.compile(r"\b(?:xox[baprs]-[A-Za-z0-9-]{10,}|glpat-[A-Za-z0-9_-]{10,})\b"),
+    re.compile(r"\b(?:npm_[A-Za-z0-9]{20,}|pypi-[A-Za-z0-9_-]{20,})\b"),
+    re.compile(r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{12,}\b"),
+    re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----"),
 )
 _FORBIDDEN_KEYS = frozenset(
@@ -48,10 +54,20 @@ _FORBIDDEN_KEYS = frozenset(
         "clientsecret",
         "credential",
         "credentials",
+        "token",
+        "secret",
+        "auth",
+        "authentication",
         "reasoning",
+        "reasoningcontent",
+        "reasoningdetails",
+        "internalreasoning",
         "hiddenreasoning",
         "chainofthought",
         "thoughts",
+        "analysis",
+        "analysistext",
+        "thinking",
     }
 )
 
@@ -130,6 +146,8 @@ def _refs(value: object, name: str) -> tuple[EvidenceRef, ...]:
     ):
         raise TypeError(f"{name} must contain EvidenceRef values")
     refs = tuple(value)
+    for item in refs:
+        _identifier(item.evidence_id, f"{name}_evidence_id")
     if len({item.evidence_id for item in refs}) != len(refs):
         raise MemoryValidationError(f"{name}_duplicated")
     if refs and tuple(item.ordinal for item in refs) != tuple(range(1, len(refs) + 1)):
@@ -159,7 +177,15 @@ def freeze_public_audit_object(
             for key, nested in item.items():
                 normalized = re.sub(r"[^a-z0-9]", "", key.casefold())
                 if normalized in _FORBIDDEN_KEYS or normalized.endswith(
-                    ("apikey", "password", "accesstoken", "clientsecret")
+                    (
+                        "apikey",
+                        "password",
+                        "token",
+                        "secret",
+                        "credential",
+                        "cookie",
+                        "privatekey",
+                    )
                 ):
                     raise MemoryValidationError("audit_private_material_rejected")
                 visit(nested, depth + 1)
@@ -436,7 +462,7 @@ class AuditTraceCursor:
     query_hash: str
     watermark_sequence: int
     last_sequence: int
-    cursor_hash: str = field(init=False)
+    cursor_hash: str
 
     def __post_init__(self) -> None:
         _digest(self.query_hash, "audit_trace_query_hash")
@@ -444,14 +470,18 @@ class AuditTraceCursor:
         last = _non_negative_int(self.last_sequence, "last_sequence")
         if last > watermark:
             raise MemoryValidationError("audit_trace_cursor_invalid")
-        object.__setattr__(self, "cursor_hash", _hash(self.to_json()))
+        _digest(self.cursor_hash, "audit_trace_cursor_hash")
 
-    def to_json(self) -> dict[str, JsonValue]:
+    def signing_payload(self) -> dict[str, JsonValue]:
         return {
+            "schema_version": 1,
             "query_hash": self.query_hash,
             "watermark_sequence": self.watermark_sequence,
             "last_sequence": self.last_sequence,
         }
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {**self.signing_payload(), "cursor_hash": self.cursor_hash}
 
 
 @dataclass(frozen=True, slots=True)

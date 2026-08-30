@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import importlib
 import json
 import math
 import os
 import re
+import secrets
 import sqlite3
 import time
 from collections.abc import Callable, Mapping
@@ -118,6 +120,14 @@ _DEFAULT_FILTER_POLICIES = frozenset({"credential-filter/v1"})
 _AUDIT_IDENTIFIER_CREDENTIAL_PATTERNS = (
     re.compile(r"(?i)\bbearer\s+[a-z0-9._~+/=-]{8,}"),
     re.compile(r"\b(?:sk|key|tsk)-?[A-Za-z0-9_-]{8,}"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b"),
+    re.compile(r"\b(?:xox[baprs]-[A-Za-z0-9-]{10,}|glpat-[A-Za-z0-9_-]{10,})\b"),
+    re.compile(r"\b(?:npm_[A-Za-z0-9]{20,}|pypi-[A-Za-z0-9_-]{20,})\b"),
+    re.compile(r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{12,}\b"),
+    re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
+    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----"),
 )
 
 
@@ -141,6 +151,7 @@ class SQLiteHumanMemoryBackend:
         self._initialize_lock = asyncio.Lock()
         self._write_lock = asyncio.Lock()
         self._receipt: InitializationReceipt | None = None
+        self._audit_cursor_hmac_key: bytes | None = None
         self._busy_timeout_ms = 5000
         if not supported_filter_policies or any(
             not isinstance(item, str) or not item.strip() for item in supported_filter_policies
@@ -188,6 +199,7 @@ class SQLiteHumanMemoryBackend:
                     raise MemoryCorruptionError("WAL journal mode unavailable")
                 await self._db.execute(f"PRAGMA busy_timeout = {self._busy_timeout_ms}")
                 await self._validate_integrity()
+                self._audit_cursor_hmac_key = await self._read_audit_cursor_hmac_key()
                 verify_sqlite_path(self._secure_path)
                 self._receipt = receipt
                 return receipt
@@ -201,6 +213,7 @@ class SQLiteHumanMemoryBackend:
                 await self._db.close()
                 self._db = None
             self._receipt = None
+            self._audit_cursor_hmac_key = None
             self._release_writer_lease()
 
     async def ingest_committed_evidence(
@@ -830,7 +843,6 @@ class SQLiteHumanMemoryBackend:
             item.outcome is DecisionOutcome.ACCEPTED for item in decisions
         ):
             raise MemoryValidationError("rejected_analysis_cannot_accept_operation")
-
         public_output: Mapping[str, FrozenJsonValue] | None
         public_output_hash: str | None
         output_status = OutputStorageStatus.PUBLIC
@@ -851,6 +863,9 @@ class SQLiteHumanMemoryBackend:
             public_output_hash = None
             output_status = OutputStorageStatus.REJECTED_UNSAFE
             output_reason = "audit_private_material_rejected"
+        if host_receipt.validation_status is AnalysisValidationStatus.ACCEPTED:
+            assert public_output is not None
+            _validate_accepted_operation_decisions(public_output, decisions)
 
         completed_at = float(host_receipt.committed_at)
         started_at = max(0.0, completed_at - (result.latency_ms / 1000.0))
@@ -1136,6 +1151,8 @@ class SQLiteHumanMemoryBackend:
         ).hexdigest()
         if cursor is not None and cursor.query_hash != query_hash:
             raise MemoryValidationError("audit_trace_cursor_query_differs")
+        if cursor is not None and not self._verify_audit_cursor(cursor):
+            raise MemoryValidationError("audit_trace_cursor_signature_invalid")
         predicate, parameters = _audit_trace_predicate(query)
         async with self._write_lock:
             if cursor is None:
@@ -1177,7 +1194,7 @@ class SQLiteHumanMemoryBackend:
                     if len(items) == limit:
                         break
             next_cursor = (
-                AuditTraceCursor(query_hash, watermark, last_sequence)
+                self._issue_audit_cursor(query_hash, watermark, last_sequence)
                 if last_sequence < watermark
                 else None
             )
@@ -1851,6 +1868,10 @@ class SQLiteHumanMemoryBackend:
                 self._fault(f"before_ddl.{index}")
                 await self._db.execute(statement)
                 self._fault(f"after_ddl.{index}")
+            await self._db.execute(
+                "INSERT INTO audit_cursor_authority(singleton,hmac_key_hex) VALUES(1,?)",
+                (secrets.token_hex(32),),
+            )
             self._fault("before_receipt")
             await self._db.execute(
                 "INSERT INTO initialization_receipts("
@@ -1899,12 +1920,62 @@ class SQLiteHumanMemoryBackend:
             if await cursor.fetchone() is not None:
                 raise MemoryCorruptionError("human-memory v5 foreign key check failed")
 
+    async def _read_audit_cursor_hmac_key(self) -> bytes:
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT hmac_key_hex FROM audit_cursor_authority WHERE singleton=1"
+        ) as cursor:
+            rows = list(await cursor.fetchall())
+        if len(rows) != 1:
+            raise MemoryCorruptionError("audit cursor authority cardinality differs")
+        try:
+            key = bytes.fromhex(str(rows[0][0]))
+        except ValueError as exc:
+            raise MemoryCorruptionError("audit cursor authority is invalid") from exc
+        if len(key) != 32:
+            raise MemoryCorruptionError("audit cursor authority is invalid")
+        return key
+
+    def _issue_audit_cursor(
+        self, query_hash: str, watermark_sequence: int, last_sequence: int
+    ) -> AuditTraceCursor:
+        from simple_harness_memory.core.audit import AuditTraceCursor
+
+        signature = self._audit_cursor_signature(
+            query_hash, watermark_sequence, last_sequence
+        )
+        return AuditTraceCursor(
+            query_hash, watermark_sequence, last_sequence, signature
+        )
+
+    def _verify_audit_cursor(self, cursor: AuditTraceCursor) -> bool:
+        expected = self._audit_cursor_signature(
+            cursor.query_hash, cursor.watermark_sequence, cursor.last_sequence
+        )
+        return hmac.compare_digest(cursor.cursor_hash, expected)
+
+    def _audit_cursor_signature(
+        self, query_hash: str, watermark_sequence: int, last_sequence: int
+    ) -> str:
+        if self._audit_cursor_hmac_key is None:
+            raise RuntimeError("audit cursor authority is unavailable")
+        payload = canonical_json(
+            {
+                "schema_version": 1,
+                "query_hash": query_hash,
+                "watermark_sequence": watermark_sequence,
+                "last_sequence": last_sequence,
+            }
+        ).encode()
+        return hmac.new(self._audit_cursor_hmac_key, payload, hashlib.sha256).hexdigest()
+
     async def _close_after_failure(self) -> None:
         if self._db is not None:
             with suppress(Exception):
                 await self._db.close()
             self._db = None
         self._receipt = None
+        self._audit_cursor_hmac_key = None
         self._release_writer_lease()
 
     def _fault(self, point: str) -> None:
@@ -1957,6 +2028,43 @@ def _audit_identifier(value: object, name: str) -> str:
     ):
         raise MemoryValidationError(f"{name}_invalid")
     return value
+
+
+def _validate_accepted_operation_decisions(
+    structured_result: Mapping[str, FrozenJsonValue],
+    decisions: tuple[DecisionLedgerEntry, ...],
+) -> None:
+    output = thaw_json(cast(FrozenJsonValue, structured_result))
+    if not isinstance(output, dict):
+        raise MemoryValidationError("analysis_operations_invalid")
+    operations = output.get("operations")
+    if not isinstance(operations, list):
+        raise MemoryValidationError("analysis_operations_invalid")
+    if not operations:
+        if output.get("outcome") != "no_mutation":
+            raise MemoryValidationError("analysis_zero_operations_outcome_invalid")
+        if decisions:
+            raise MemoryValidationError("analysis_operation_decisions_differ")
+        return
+    if output.get("outcome") == "no_mutation":
+        raise MemoryValidationError("analysis_zero_operations_outcome_invalid")
+    expected: dict[str, str] = {}
+    for operation in operations:
+        if not isinstance(operation, dict):
+            raise MemoryValidationError("analysis_operation_invalid")
+        operation_id = _audit_identifier(operation.get("operation_id"), "operation_id")
+        operation_kind = _audit_identifier(operation.get("kind"), "operation_kind")
+        if operation_id in expected:
+            raise MemoryValidationError("analysis_operation_duplicated")
+        expected[operation_id] = operation_kind
+    actual = {decision.operation_id: decision.operation_kind for decision in decisions}
+    if len(actual) != len(decisions) or actual.keys() != expected.keys():
+        raise MemoryValidationError("analysis_operation_decisions_differ")
+    if any(
+        actual[operation_id] != operation_kind
+        for operation_id, operation_kind in expected.items()
+    ):
+        raise MemoryValidationError("analysis_operation_kind_differs")
 
 
 def _audit_trace_predicate(query: AuditTraceQuery) -> tuple[str, tuple[object, ...]]:

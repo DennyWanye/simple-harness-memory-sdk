@@ -24,6 +24,16 @@ CREATE TABLE initialization_receipts (
     created_at REAL NOT NULL CHECK (created_at >= 0),
     receipt_hash TEXT NOT NULL UNIQUE
 );
+CREATE TABLE audit_cursor_authority (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    hmac_key_hex TEXT NOT NULL CHECK (length(hmac_key_hex) = 64)
+);
+CREATE TRIGGER audit_cursor_authority_immutable_update
+BEFORE UPDATE ON audit_cursor_authority
+BEGIN SELECT RAISE(ABORT, 'immutable cursor authority'); END;
+CREATE TRIGGER audit_cursor_authority_immutable_delete
+BEFORE DELETE ON audit_cursor_authority
+BEGIN SELECT RAISE(ABORT, 'immutable cursor authority'); END;
 CREATE TABLE principals (
     principal_id TEXT PRIMARY KEY,
     deployment_id TEXT NOT NULL,
@@ -386,6 +396,7 @@ REQUIRED_TABLES = frozenset(
     {
         "schema_meta",
         "initialization_receipts",
+        "audit_cursor_authority",
         "principals",
         "evidence_envelopes",
         "evidence_items",
