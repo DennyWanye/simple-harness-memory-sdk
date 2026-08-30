@@ -37,6 +37,15 @@ class MemorySchemaIncompatible(MemoryCorruptionError):
         super().__init__(self.code)
 
 
+class MemoryLegacySchemaUnsupported(MemorySchemaIncompatible):
+    """The human-memory v1 loader rejected a legacy or unknown schema read-only."""
+
+    code = "LEGACY_SCHEMA_UNSUPPORTED"
+
+    def __init__(self) -> None:
+        MemoryCorruptionError.__init__(self, self.code)
+
+
 class MemoryOwnershipConflict(MemoryErrorBase):
     """A session or record is not owned by the supplied trusted principal."""
 
