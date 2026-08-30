@@ -1247,7 +1247,11 @@ class SQLiteHumanMemoryBackend:
         if type(claim) is not AnalysisBatchClaim:
             raise TypeError("claim must use AnalysisBatchClaim")
         _audit_identifier(reason_code, "reason_code")
-        if not isinstance(result_hash, str) or len(result_hash) != 64:
+        if (
+            not isinstance(result_hash, str)
+            or len(result_hash) != 64
+            or any(character not in "0123456789abcdef" for character in result_hash)
+        ):
             raise MemoryValidationError("result_hash_invalid")
         assert self._db is not None
         now = _timestamp(self._now())
@@ -1342,6 +1346,12 @@ class SQLiteHumanMemoryBackend:
                             row["job_id"],
                         ),
                     )
+                    if dead:
+                        await self._db.execute(
+                            "UPDATE outbox SET state='dead_letter',updated_at=? WHERE "
+                            "idempotency_key=(SELECT idempotency_key FROM jobs WHERE job_id=?)",
+                            (now, row["job_id"]),
+                        )
                 await self._db.execute(
                     "UPDATE job_attempts SET state='failed',reason_code=?,completed_at=? "
                     "WHERE batch_id=?",
@@ -1351,13 +1361,6 @@ class SQLiteHumanMemoryBackend:
                     "UPDATE analysis_batches SET state='failed',updated_at=? WHERE batch_id=?",
                     (now, claim.batch_id),
                 )
-                if all_dead:
-                    await self._db.execute(
-                        "UPDATE outbox SET state='dead_letter',updated_at=? WHERE "
-                        "idempotency_key IN (SELECT idempotency_key FROM jobs WHERE job_id IN "
-                        "(SELECT job_id FROM analysis_batch_members WHERE batch_id=?))",
-                        (now, claim.batch_id),
-                    )
                 await self._append_batch_events_unlocked(
                     claim.batch_id,
                     "dead_letter" if all_dead else "retry_scheduled",
