@@ -5,6 +5,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Protocol
 
+from simple_harness.runtime import MemoryMutationApplyReceiptRef, MemoryMutationPlan
+
 from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
 from simple_harness_memory.core.models import (
     BoundedRecallResult,
@@ -243,3 +245,21 @@ class AgentMemoryBackend(Protocol):
     async def agent_delete_scopes(
         self, principal: MemoryPrincipal, scopes: tuple[MemoryScope, ...]
     ) -> dict[str, int | str]: ...
+
+
+class CognitiveMemoryBackend(Protocol):
+    """Strict v5 cognitive write boundary, separate from the legacy backend.
+
+    Implementations own identity/evidence/suppression/revision/idempotency
+    authority and must apply the exact Harness plan as one transaction.  The
+    pure compiler in :mod:`simple_harness_memory.core.mutations` is not an
+    authority substitute.
+    """
+
+    async def apply_memory_mutation_plan(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        scope: MemoryScope,
+        plan: MemoryMutationPlan,
+    ) -> MemoryMutationApplyReceiptRef: ...
