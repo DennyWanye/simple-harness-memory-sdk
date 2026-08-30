@@ -1300,6 +1300,8 @@ class SQLiteHumanMemoryBackend:
             evidence_ids.add(query.selector_ref)
         if denial is None and now >= access_receipt.expires_at:
             denial = "sealed_audit_access_expired"
+        elif denial is None and now < access_receipt.issued_at:
+            denial = "sealed_audit_access_not_yet_valid"
         elif denial is None and access_receipt.subject != query.subject:
             denial = "sealed_audit_subject_differs"
         elif denial is None and access_receipt.scope_kind is SuppressionScopeKind.SUBJECT:
@@ -1519,6 +1521,7 @@ class SQLiteHumanMemoryBackend:
     ) -> SealedAuditAccessReceipt:
         from simple_harness_memory.core.suppression import (
             SealedAuditAccessDecision,
+            SealedAuditAccessDenied,
             SealedAuditAccessReceipt,
         )
 
@@ -1526,6 +1529,11 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("decision must use SealedAuditAccessDecision")
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v5 backend is not initialized")
+        now = _timestamp(self._now())
+        if decision.issued_at > now:
+            raise SealedAuditAccessDenied("sealed_audit_decision_not_yet_valid")
+        if now >= decision.expires_at:
+            raise SealedAuditAccessDenied("sealed_audit_decision_expired")
         receipt = SealedAuditAccessReceipt(
             _stable_id("sealed-audit-access", decision.subject, decision.decision_id),
             decision.decision_id,
@@ -1619,6 +1627,8 @@ class SQLiteHumanMemoryBackend:
                 denial = "sealed_audit_evidence_not_found"
             elif denial is None and now >= access_receipt.expires_at:
                 denial = "sealed_audit_access_expired"
+            elif denial is None and now < access_receipt.issued_at:
+                denial = "sealed_audit_access_not_yet_valid"
             elif denial is None and access_receipt.subject != subject:
                 denial = "sealed_audit_subject_differs"
             elif denial is None and access_receipt.scope_kind is SuppressionScopeKind.EVIDENCE and (

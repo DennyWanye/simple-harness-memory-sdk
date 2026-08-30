@@ -428,7 +428,7 @@ async def test_sealed_audit_access_is_exact_limited_logged_and_not_an_ordinary_b
 
 @pytest.mark.asyncio
 async def test_expired_or_tampered_sealed_receipt_is_denied_and_logged(tmp_path: Path) -> None:
-    clock = [50.0]
+    clock = [40.0]
     backend = SQLiteHumanMemoryBackend(tmp_path / "expired.db", now=lambda: clock[0])
     await backend.initialize()
     await backend.ingest_committed_evidence(*_authority("evidence-1"))
@@ -444,6 +444,7 @@ async def test_expired_or_tampered_sealed_receipt_is_denied_and_logged(tmp_path:
         45.0,
     )
     receipt = await backend.issue_sealed_audit_access(decision)
+    clock[0] = 50.0
     with pytest.raises(SealedAuditAccessDenied, match="expired"):
         await backend.export_sealed_evidence("evidence-1", receipt)
     tampered = SealedAuditAccessReceipt(

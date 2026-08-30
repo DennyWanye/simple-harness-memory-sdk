@@ -540,6 +540,55 @@ async def test_suppression_blocks_ordinary_trace_but_sealed_receipt_is_limited_a
 
 
 @pytest.mark.asyncio
+async def test_sealed_audit_time_bounds_fail_closed_at_issue_and_use(tmp_path: Path) -> None:
+    clock = [120.0]
+    backend = SQLiteHumanMemoryBackend(tmp_path / "sealed-time.db", now=lambda: clock[0])
+    await backend.initialize()
+    await _ingest(backend, "evidence-1")
+    for decision_id, issued_at, expires_at, reason in (
+        ("future-access", 121.0, 130.0, "decision_not_yet_valid"),
+        ("expired-access", 100.0, 120.0, "decision_expired"),
+    ):
+        with pytest.raises(SealedAuditAccessDenied, match=reason):
+            await backend.issue_sealed_audit_access(
+                SealedAuditAccessDecision(
+                    decision_id,
+                    "actor-1",
+                    SuppressionScopeKind.EVIDENCE,
+                    "evidence-1",
+                    "user_review",
+                    _audit_disclosure(),
+                    1,
+                    issued_at,
+                    expires_at,
+                )
+            )
+    async with backend.connection.execute(
+        "SELECT COUNT(*) FROM sealed_audit_access_receipts"
+    ) as cursor:
+        row = await cursor.fetchone()
+    assert row is not None and int(row[0]) == 0
+
+    receipt = await backend.issue_sealed_audit_access(
+        SealedAuditAccessDecision(
+            "valid-access",
+            "actor-1",
+            SuppressionScopeKind.EVIDENCE,
+            "evidence-1",
+            "user_review",
+            _audit_disclosure(),
+            1,
+            115.0,
+            130.0,
+        )
+    )
+    clock[0] = 114.0
+    with pytest.raises(SealedAuditAccessDenied, match="access_not_yet_valid"):
+        await backend.export_sealed_evidence("evidence-1", receipt)
+    await backend.close()
+
+
+@pytest.mark.asyncio
 async def test_replay_with_changed_decision_is_conflict(tmp_path: Path) -> None:
     backend = SQLiteHumanMemoryBackend(tmp_path / "conflict.db", now=lambda: 120.0)
     await backend.initialize()
