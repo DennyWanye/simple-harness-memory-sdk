@@ -98,12 +98,14 @@ CREATE TRIGGER ingestion_receipts_immutable_delete
 BEFORE DELETE ON ingestion_receipts BEGIN SELECT RAISE(ABORT, 'immutable evidence'); END;
 CREATE TABLE suppression_directives (
     directive_id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL UNIQUE,
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
     event_kind TEXT NOT NULL CHECK (event_kind IN ('directive', 'revoke')),
     scope_kind TEXT NOT NULL,
-    scope_ref TEXT,
+    scope_ref TEXT NOT NULL,
     purpose TEXT,
     reason_code TEXT NOT NULL,
+    decision_hash TEXT NOT NULL UNIQUE,
     supersedes_directive_id TEXT REFERENCES suppression_directives(directive_id),
     decision_record_id TEXT,
     effective_at REAL NOT NULL CHECK (effective_at >= 0)
@@ -118,6 +120,53 @@ CREATE TABLE suppression_targets (
 );
 CREATE INDEX suppression_target_lookup
     ON suppression_targets(target_kind, target_ref, directive_id);
+CREATE TRIGGER suppression_directives_immutable_update
+BEFORE UPDATE ON suppression_directives BEGIN SELECT RAISE(ABORT, 'immutable suppression'); END;
+CREATE TRIGGER suppression_directives_immutable_delete
+BEFORE DELETE ON suppression_directives BEGIN SELECT RAISE(ABORT, 'immutable suppression'); END;
+CREATE TRIGGER suppression_targets_immutable_update
+BEFORE UPDATE ON suppression_targets BEGIN SELECT RAISE(ABORT, 'immutable suppression'); END;
+CREATE TRIGGER suppression_targets_immutable_delete
+BEFORE DELETE ON suppression_targets BEGIN SELECT RAISE(ABORT, 'immutable suppression'); END;
+CREATE TABLE sealed_audit_access_receipts (
+    access_receipt_id TEXT PRIMARY KEY,
+    decision_id TEXT NOT NULL UNIQUE,
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    purpose TEXT NOT NULL CHECK (purpose = 'sealed_evidence_audit'),
+    scope_kind TEXT NOT NULL,
+    scope_ref TEXT NOT NULL,
+    reason_code TEXT NOT NULL,
+    disclosure_context_json BLOB NOT NULL,
+    decision_hash TEXT NOT NULL UNIQUE,
+    max_reads INTEGER NOT NULL CHECK (max_reads >= 1 AND max_reads <= 32),
+    issued_at REAL NOT NULL CHECK (issued_at >= 0),
+    expires_at REAL NOT NULL CHECK (expires_at > issued_at),
+    receipt_hash TEXT NOT NULL UNIQUE
+);
+CREATE TRIGGER sealed_audit_access_receipts_immutable_update
+BEFORE UPDATE ON sealed_audit_access_receipts
+BEGIN SELECT RAISE(ABORT, 'immutable audit access'); END;
+CREATE TRIGGER sealed_audit_access_receipts_immutable_delete
+BEFORE DELETE ON sealed_audit_access_receipts
+BEGIN SELECT RAISE(ABORT, 'immutable audit access'); END;
+CREATE TABLE sealed_audit_access_events (
+    event_id TEXT PRIMARY KEY,
+    access_receipt_id TEXT NOT NULL,
+    evidence_id TEXT NOT NULL,
+    purpose TEXT NOT NULL CHECK (purpose = 'sealed_evidence_audit'),
+    outcome TEXT NOT NULL CHECK (outcome IN ('granted', 'denied')),
+    reason_code TEXT NOT NULL,
+    occurred_at REAL NOT NULL CHECK (occurred_at >= 0),
+    event_hash TEXT NOT NULL UNIQUE
+);
+CREATE INDEX sealed_audit_access_event_lookup
+    ON sealed_audit_access_events(access_receipt_id, outcome, occurred_at, event_id);
+CREATE TRIGGER sealed_audit_access_events_immutable_update
+BEFORE UPDATE ON sealed_audit_access_events
+BEGIN SELECT RAISE(ABORT, 'immutable audit event'); END;
+CREATE TRIGGER sealed_audit_access_events_immutable_delete
+BEFORE DELETE ON sealed_audit_access_events
+BEGIN SELECT RAISE(ABORT, 'immutable audit event'); END;
 CREATE TABLE llm_invocations (
     invocation_id TEXT PRIMARY KEY,
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
@@ -252,6 +301,8 @@ REQUIRED_TABLES = frozenset(
         "ingestion_receipts",
         "suppression_directives",
         "suppression_targets",
+        "sealed_audit_access_receipts",
+        "sealed_audit_access_events",
         "llm_invocations",
         "decision_records",
         "jobs",

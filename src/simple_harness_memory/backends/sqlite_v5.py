@@ -45,6 +45,16 @@ if TYPE_CHECKING:
         EvidenceIngestionReceipt,
         IngestedEvidenceRecord,
     )
+    from simple_harness_memory.core.suppression import (
+        OrdinaryMemoryPurpose,
+        SealedAuditAccessDecision,
+        SealedAuditAccessReceipt,
+        SuppressionCandidate,
+        SuppressionDecision,
+        SuppressionRequest,
+        SuppressionResolution,
+        SuppressionRevokeRequest,
+    )
 
 FaultInjector = Callable[[str], None]
 _DDL = ddl_statements()
@@ -76,12 +86,22 @@ INGESTION_FAULT_POINTS = (
     "ingestion.before_commit",
     "ingestion.after_commit",
 )
+SUPPRESSION_FAULT_POINTS = (
+    "suppression.before_begin",
+    "suppression.after_begin",
+    "suppression.after_directive",
+    "suppression.after_target",
+    "suppression.before_outbox",
+    "suppression.after_outbox",
+    "suppression.before_commit",
+    "suppression.after_commit",
+)
 logger = structlog.get_logger("simple_harness_memory.backends.sqlite_v5")
 _DEFAULT_FILTER_POLICIES = frozenset({"credential-filter/v1"})
 
 
 class SQLiteHumanMemoryBackend:
-    """Own the v5 SQLite root lifecycle without exposing unfinished S2 APIs."""
+    """Own the fresh v5 SQLite root and suppression-first repository APIs."""
 
     def __init__(
         self,
@@ -370,17 +390,555 @@ class SQLiteHumanMemoryBackend:
         return ingestion_receipt
 
     async def export_ingested_evidence(self, evidence_id: str) -> IngestedEvidenceRecord:
-        """Export one exact immutable record; Task 3 will wrap ordinary access in suppression."""
+        """Ordinary export; active suppression always wins over exact identity."""
+
+        from simple_harness_memory.core.suppression import OrdinaryMemoryPurpose
+
+        return await self._ordinary_evidence_record(evidence_id, OrdinaryMemoryPurpose.EXPORT)
+
+    async def read_ingested_evidence(self, evidence_id: str) -> IngestedEvidenceRecord:
+        """Ordinary exact read with the same synchronous suppression authority."""
+
+        from simple_harness_memory.core.suppression import OrdinaryMemoryPurpose
+
+        return await self._ordinary_evidence_record(evidence_id, OrdinaryMemoryPurpose.READ)
+
+    async def search_evidence_ids(self, subject: str) -> tuple[str, ...]:
+        from simple_harness_memory.core.suppression import OrdinaryMemoryPurpose
+
+        return await self._visible_evidence_ids(subject, OrdinaryMemoryPurpose.SEARCH)
+
+    async def recall_evidence_ids(self, subject: str) -> tuple[str, ...]:
+        from simple_harness_memory.core.suppression import OrdinaryMemoryPurpose
+
+        return await self._visible_evidence_ids(subject, OrdinaryMemoryPurpose.RECALL)
+
+    async def projection_evidence_ids(self, subject: str) -> tuple[str, ...]:
+        from simple_harness_memory.core.suppression import OrdinaryMemoryPurpose
+
+        return await self._visible_evidence_ids(subject, OrdinaryMemoryPurpose.PROJECTION)
+
+    async def _ordinary_evidence_record(
+        self, evidence_id: str, purpose: OrdinaryMemoryPurpose
+    ) -> IngestedEvidenceRecord:
+        from simple_harness_memory.core.suppression import (
+            SuppressionCandidate,
+            SuppressionDenied,
+        )
 
         if not isinstance(evidence_id, str) or not evidence_id.strip() or "\x00" in evidence_id:
             raise MemoryValidationError("evidence_id_invalid")
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v5 backend is not initialized")
         async with self._write_lock:
+            subject = await self._read_evidence_subject(evidence_id)
+            if subject is None:
+                raise KeyError("evidence_not_found")
+            resolution = await self._resolve_suppression_unlocked(
+                SuppressionCandidate(subject, evidence_id=evidence_id), purpose
+            )
+            if resolution.denied:
+                raise SuppressionDenied()
             record = await self._read_ingested_record(evidence_id)
         if record is None:
             raise KeyError("evidence_not_found")
         return record
+
+    async def _visible_evidence_ids(
+        self, subject: str, purpose: OrdinaryMemoryPurpose
+    ) -> tuple[str, ...]:
+        from simple_harness_memory.core.suppression import SuppressionCandidate
+
+        if not isinstance(subject, str) or not subject.strip() or "\x00" in subject:
+            raise MemoryValidationError("suppression_subject_invalid")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v5 backend is not initialized")
+        async with self._write_lock:
+            async with self._db.execute(
+                "SELECT evidence_id FROM evidence_envelopes WHERE subject=? ORDER BY evidence_id",
+                (subject,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+            visible: list[str] = []
+            for row in rows:
+                evidence_id = str(row["evidence_id"])
+                resolution = await self._resolve_suppression_unlocked(
+                    SuppressionCandidate(subject, evidence_id=evidence_id), purpose
+                )
+                if not resolution.denied:
+                    visible.append(evidence_id)
+        return tuple(visible)
+
+    async def suppress(self, request: SuppressionRequest) -> SuppressionDecision:
+        from simple_harness_memory.core.suppression import (
+            SuppressionAction,
+            SuppressionDecision,
+            SuppressionRequest,
+        )
+
+        if type(request) is not SuppressionRequest:
+            raise TypeError("request must use SuppressionRequest")
+        directive_id = _stable_id("suppression-directive", request.subject, request.request_id)
+        outbox_id = _stable_id("suppression-rebuild-outbox", directive_id)
+        decision = SuppressionDecision(
+            directive_id,
+            request.request_id,
+            request.subject,
+            SuppressionAction.DIRECTIVE,
+            request.scope_kind,
+            request.scope_ref,
+            request.reason_code,
+            request.requested_at,
+            request.purpose,
+            None,
+            outbox_id,
+        )
+        return await self._append_suppression_decision(decision)
+
+    async def revoke_suppression(
+        self, request: SuppressionRevokeRequest
+    ) -> SuppressionDecision:
+        from simple_harness_memory.core.suppression import (
+            SuppressionAction,
+            SuppressionDecision,
+            SuppressionRevokeRequest,
+        )
+
+        if type(request) is not SuppressionRevokeRequest:
+            raise TypeError("request must use SuppressionRevokeRequest")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v5 backend is not initialized")
+        async with self._write_lock:
+            replay = await self._read_suppression_by_request(request.request_id)
+            if replay is not None:
+                if (
+                    replay.action is not SuppressionAction.REVOKE
+                    or replay.subject != request.subject
+                    or replay.supersedes_directive_id != request.directive_id
+                    or replay.reason_code != request.reason_code
+                    or replay.effective_at != request.requested_at
+                ):
+                    raise MemoryIdempotencyConflict("suppression_request_replay_conflict")
+                return replay
+            original = await self._read_suppression_decision(request.directive_id)
+            if (
+                original is None
+                or original.action is not SuppressionAction.DIRECTIVE
+                or original.subject != request.subject
+            ):
+                raise MemoryValidationError("suppression_directive_not_found")
+            async with self._db.execute(
+                "SELECT 1 FROM suppression_directives WHERE event_kind='revoke' "
+                "AND supersedes_directive_id=? LIMIT 1",
+                (original.directive_id,),
+            ) as cursor:
+                if await cursor.fetchone() is not None:
+                    raise MemoryIdempotencyConflict("suppression_directive_already_revoked")
+            directive_id = _stable_id("suppression-revoke", request.subject, request.request_id)
+            decision = SuppressionDecision(
+                directive_id,
+                request.request_id,
+                request.subject,
+                SuppressionAction.REVOKE,
+                original.scope_kind,
+                original.scope_ref,
+                request.reason_code,
+                request.requested_at,
+                original.purpose,
+                original.directive_id,
+                _stable_id("suppression-rebuild-outbox", directive_id),
+            )
+            return await self._append_suppression_decision_unlocked(decision)
+
+    async def resolve_suppression(
+        self,
+        candidate: SuppressionCandidate,
+        purpose: OrdinaryMemoryPurpose,
+    ) -> SuppressionResolution:
+        from simple_harness_memory.core.suppression import (
+            OrdinaryMemoryPurpose,
+            SuppressionCandidate,
+        )
+
+        if type(candidate) is not SuppressionCandidate:
+            raise TypeError("candidate must use SuppressionCandidate")
+        if not isinstance(purpose, OrdinaryMemoryPurpose):
+            raise TypeError("purpose must use OrdinaryMemoryPurpose")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v5 backend is not initialized")
+        async with self._write_lock:
+            return await self._resolve_suppression_unlocked(candidate, purpose)
+
+    async def _resolve_suppression_unlocked(
+        self,
+        candidate: SuppressionCandidate,
+        purpose: OrdinaryMemoryPurpose,
+    ) -> SuppressionResolution:
+        from simple_harness_memory.core.suppression import (
+            SuppressionResolution,
+            SuppressionScopeKind,
+        )
+
+        assert self._db is not None
+        targets = [(SuppressionScopeKind.SUBJECT.value, candidate.subject)]
+        if candidate.evidence_id is not None:
+            targets.append((SuppressionScopeKind.EVIDENCE.value, candidate.evidence_id))
+        if candidate.memory_id is not None:
+            targets.append((SuppressionScopeKind.MEMORY.value, candidate.memory_id))
+        targets.extend((SuppressionScopeKind.ENTITY.value, item) for item in candidate.entity_ids)
+        predicates = " OR ".join("(t.target_kind=? AND t.target_ref=?)" for _ in targets)
+        parameters: list[object] = [candidate.subject, purpose.value]
+        for target_kind, target_ref in targets:
+            parameters.extend((target_kind, target_ref))
+        async with self._db.execute(
+            "SELECT DISTINCT d.directive_id FROM suppression_directives d "
+            "JOIN suppression_targets t ON t.directive_id=d.directive_id "
+            "WHERE d.principal_id=? AND d.event_kind='directive' "
+            "AND (d.purpose IS NULL OR d.purpose=?) AND ("
+            + predicates
+            + ") AND NOT EXISTS(SELECT 1 FROM suppression_directives r "
+            "WHERE r.event_kind='revoke' AND r.supersedes_directive_id=d.directive_id) "
+            "ORDER BY d.directive_id",
+            tuple(parameters),
+        ) as cursor:
+            directive_ids = tuple(str(row[0]) for row in await cursor.fetchall())
+        return SuppressionResolution(bool(directive_ids), directive_ids, _timestamp(self._now()))
+
+    async def _append_suppression_decision(
+        self, decision: SuppressionDecision
+    ) -> SuppressionDecision:
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v5 backend is not initialized")
+        async with self._write_lock:
+            replay = await self._read_suppression_by_request(decision.request_id)
+            if replay is not None:
+                if replay != decision:
+                    raise MemoryIdempotencyConflict("suppression_request_replay_conflict")
+                return replay
+            return await self._append_suppression_decision_unlocked(decision)
+
+    async def _append_suppression_decision_unlocked(
+        self, decision: SuppressionDecision
+    ) -> SuppressionDecision:
+        assert self._db is not None
+        payload: dict[str, JsonValue] = {
+            "schema_version": 1,
+            "directive_id": decision.directive_id,
+            "subject": decision.subject,
+            "action": decision.action.value,
+            "scope_kind": decision.scope_kind.value,
+            "scope_ref": decision.scope_ref,
+        }
+        payload_json = canonical_json(payload)
+        payload_hash = hashlib.sha256(payload_json.encode()).hexdigest()
+        begun = False
+        committed = False
+        try:
+            self._fault("suppression.before_begin")
+            await self._db.execute("BEGIN IMMEDIATE")
+            begun = True
+            self._fault("suppression.after_begin")
+            await self._db.execute(
+                "INSERT INTO principals(principal_id,deployment_id,household_id,actor_id,"
+                "created_at) VALUES(?,?,?,?,?) ON CONFLICT(principal_id) DO NOTHING",
+                (
+                    decision.subject,
+                    decision.subject,
+                    decision.subject,
+                    decision.subject,
+                    decision.effective_at,
+                ),
+            )
+            await self._db.execute(
+                "INSERT INTO suppression_directives(directive_id,request_id,principal_id,"
+                "event_kind,scope_kind,scope_ref,purpose,reason_code,decision_hash,"
+                "supersedes_directive_id,effective_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    decision.directive_id,
+                    decision.request_id,
+                    decision.subject,
+                    decision.action.value,
+                    decision.scope_kind.value,
+                    decision.scope_ref,
+                    None if decision.purpose is None else decision.purpose.value,
+                    decision.reason_code,
+                    decision.decision_hash,
+                    decision.supersedes_directive_id,
+                    decision.effective_at,
+                ),
+            )
+            self._fault("suppression.after_directive")
+            await self._db.execute(
+                "INSERT INTO suppression_targets(directive_id,ordinal,target_kind,target_ref) "
+                "VALUES(?,1,?,?)",
+                (decision.directive_id, decision.scope_kind.value, decision.scope_ref),
+            )
+            self._fault("suppression.after_target")
+            self._fault("suppression.before_outbox")
+            await self._db.execute(
+                "INSERT INTO outbox(outbox_id,principal_id,topic,idempotency_key,payload,"
+                "payload_hash,state,next_attempt_at,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,'pending',?,?,?)",
+                (
+                    decision.rebuild_outbox_id,
+                    decision.subject,
+                    "memory.suppression.rebuild",
+                    decision.directive_id,
+                    payload_json,
+                    payload_hash,
+                    decision.effective_at,
+                    decision.effective_at,
+                    decision.effective_at,
+                ),
+            )
+            self._fault("suppression.after_outbox")
+            self._fault("suppression.before_commit")
+            await self._db.execute("COMMIT")
+            committed = True
+            self._fault("suppression.after_commit")
+        except BaseException:
+            if begun and not committed:
+                with suppress(Exception):
+                    await self._db.execute("ROLLBACK")
+            raise
+        logger.info(
+            "memory.suppression_appended",
+            directive_id_hash=_opaque_hash(decision.directive_id),
+            subject_hash=_opaque_hash(decision.subject),
+            action=decision.action.value,
+        )
+        return decision
+
+    async def _read_suppression_by_request(
+        self, request_id: str
+    ) -> SuppressionDecision | None:
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT * FROM suppression_directives WHERE request_id=?", (request_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        return None if row is None else _suppression_decision_from_row(row)
+
+    async def _read_suppression_decision(
+        self, directive_id: str
+    ) -> SuppressionDecision | None:
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT * FROM suppression_directives WHERE directive_id=?", (directive_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        return None if row is None else _suppression_decision_from_row(row)
+
+    async def issue_sealed_audit_access(
+        self, decision: SealedAuditAccessDecision
+    ) -> SealedAuditAccessReceipt:
+        from simple_harness_memory.core.suppression import (
+            SealedAuditAccessDecision,
+            SealedAuditAccessReceipt,
+        )
+
+        if type(decision) is not SealedAuditAccessDecision:
+            raise TypeError("decision must use SealedAuditAccessDecision")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v5 backend is not initialized")
+        receipt = SealedAuditAccessReceipt(
+            _stable_id("sealed-audit-access", decision.subject, decision.decision_id),
+            decision.decision_id,
+            decision.subject,
+            decision.scope_kind,
+            decision.scope_ref,
+            decision.purpose,
+            decision.decision_hash,
+            decision.max_reads,
+            decision.issued_at,
+            decision.expires_at,
+        )
+        async with self._write_lock:
+            existing = await self._read_audit_access_by_decision(decision.decision_id)
+            if existing is not None:
+                if existing != receipt:
+                    raise MemoryIdempotencyConflict("sealed_audit_decision_replay_conflict")
+                return existing
+            begun = False
+            committed = False
+            try:
+                await self._db.execute("BEGIN IMMEDIATE")
+                begun = True
+                await self._db.execute(
+                    "INSERT INTO principals(principal_id,deployment_id,household_id,actor_id,"
+                    "created_at) VALUES(?,?,?,?,?) ON CONFLICT(principal_id) DO NOTHING",
+                    (
+                        decision.subject,
+                        decision.subject,
+                        decision.subject,
+                        decision.subject,
+                        decision.issued_at,
+                    ),
+                )
+                await self._db.execute(
+                    "INSERT INTO sealed_audit_access_receipts(access_receipt_id,decision_id,"
+                    "principal_id,purpose,scope_kind,scope_ref,reason_code,"
+                    "disclosure_context_json,decision_hash,max_reads,issued_at,expires_at,"
+                    "receipt_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        receipt.access_receipt_id,
+                        receipt.decision_id,
+                        receipt.subject,
+                        receipt.purpose.value,
+                        receipt.scope_kind.value,
+                        receipt.scope_ref,
+                        decision.reason_code,
+                        canonical_json(decision.disclosure_context.to_json()),
+                        receipt.decision_hash,
+                        receipt.max_reads,
+                        receipt.issued_at,
+                        receipt.expires_at,
+                        receipt.receipt_hash,
+                    ),
+                )
+                await self._db.execute("COMMIT")
+                committed = True
+            except BaseException:
+                if begun and not committed:
+                    with suppress(Exception):
+                        await self._db.execute("ROLLBACK")
+                raise
+        return receipt
+
+    async def export_sealed_evidence(
+        self,
+        evidence_id: str,
+        access_receipt: SealedAuditAccessReceipt,
+    ) -> IngestedEvidenceRecord:
+        from simple_harness_memory.core.suppression import (
+            SealedAuditAccessDenied,
+            SealedAuditAccessReceipt,
+            SuppressionScopeKind,
+        )
+
+        if type(access_receipt) is not SealedAuditAccessReceipt:
+            raise TypeError("access_receipt must use SealedAuditAccessReceipt")
+        if not isinstance(evidence_id, str) or not evidence_id.strip() or "\x00" in evidence_id:
+            raise MemoryValidationError("evidence_id_invalid")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v5 backend is not initialized")
+        denial: str | None = None
+        record: IngestedEvidenceRecord | None = None
+        async with self._write_lock:
+            stored = await self._read_audit_access_by_decision(access_receipt.decision_id)
+            if stored != access_receipt:
+                denial = "sealed_audit_receipt_differs"
+            now = _timestamp(self._now())
+            subject = await self._read_evidence_subject(evidence_id)
+            if denial is None and subject is None:
+                denial = "sealed_audit_evidence_not_found"
+            elif denial is None and now >= access_receipt.expires_at:
+                denial = "sealed_audit_access_expired"
+            elif denial is None and access_receipt.subject != subject:
+                denial = "sealed_audit_subject_differs"
+            elif denial is None and access_receipt.scope_kind is SuppressionScopeKind.EVIDENCE and (
+                access_receipt.scope_ref != evidence_id
+            ):
+                denial = "sealed_audit_scope_differs"
+            elif denial is None and access_receipt.scope_kind is SuppressionScopeKind.SUBJECT and (
+                access_receipt.scope_ref != subject
+            ):
+                denial = "sealed_audit_scope_differs"
+            elif denial is None and access_receipt.scope_kind not in {
+                SuppressionScopeKind.EVIDENCE,
+                SuppressionScopeKind.SUBJECT,
+            }:
+                denial = "sealed_audit_scope_unsupported"
+            async with self._db.execute(
+                "SELECT COUNT(*) FROM sealed_audit_access_events WHERE access_receipt_id=? "
+                "AND outcome='granted'",
+                (access_receipt.access_receipt_id,),
+            ) as cursor:
+                usage = await cursor.fetchone()
+            if denial is None and usage is not None and int(usage[0]) >= access_receipt.max_reads:
+                denial = "sealed_audit_access_exhausted"
+            await self._db.execute("BEGIN IMMEDIATE")
+            committed = False
+            try:
+                if denial is None:
+                    record = await self._read_ingested_record(evidence_id)
+                    if record is None:
+                        denial = "sealed_audit_evidence_not_found"
+                event_id = f"sealed-audit-event-{uuid4().hex}"
+                event_payload: dict[str, JsonValue] = {
+                    "schema_version": 1,
+                    "event_id": event_id,
+                    "access_receipt_id": access_receipt.access_receipt_id,
+                    "evidence_id": evidence_id,
+                    "purpose": access_receipt.purpose.value,
+                    "outcome": "granted" if denial is None else "denied",
+                    "reason_code": "sealed_audit_access_granted" if denial is None else denial,
+                    "occurred_at": now,
+                }
+                await self._db.execute(
+                    "INSERT INTO sealed_audit_access_events(event_id,access_receipt_id,"
+                    "evidence_id,purpose,outcome,reason_code,occurred_at,event_hash) "
+                    "VALUES(?,?,?,?,?,?,?,?)",
+                    (
+                        event_id,
+                        access_receipt.access_receipt_id,
+                        evidence_id,
+                        access_receipt.purpose.value,
+                        "granted" if denial is None else "denied",
+                        event_payload["reason_code"],
+                        now,
+                        hashlib.sha256(canonical_json(event_payload).encode()).hexdigest(),
+                    ),
+                )
+                await self._db.execute("COMMIT")
+                committed = True
+            finally:
+                if not committed:
+                    with suppress(Exception):
+                        await self._db.execute("ROLLBACK")
+        if denial is not None or record is None:
+            raise SealedAuditAccessDenied(denial)
+        return record
+
+    async def _read_audit_access_by_decision(
+        self, decision_id: str
+    ) -> SealedAuditAccessReceipt | None:
+        from simple_harness_memory.core.suppression import (
+            SealedAuditAccessReceipt,
+            SealedAuditPurpose,
+            SuppressionScopeKind,
+        )
+
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT * FROM sealed_audit_access_receipts WHERE decision_id=?", (decision_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        receipt = SealedAuditAccessReceipt(
+            str(row["access_receipt_id"]),
+            str(row["decision_id"]),
+            str(row["principal_id"]),
+            SuppressionScopeKind(str(row["scope_kind"])),
+            str(row["scope_ref"]),
+            SealedAuditPurpose(str(row["purpose"])),
+            str(row["decision_hash"]),
+            int(row["max_reads"]),
+            float(row["issued_at"]),
+            float(row["expires_at"]),
+        )
+        if receipt.receipt_hash != str(row["receipt_hash"]):
+            raise MemoryCorruptionError("stored sealed audit access receipt hash differs")
+        return receipt
+
+    async def _read_evidence_subject(self, evidence_id: str) -> str | None:
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT subject FROM evidence_envelopes WHERE evidence_id=?", (evidence_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        return None if row is None else str(row["subject"])
 
     async def _read_ingestion_by_source(
         self, principal_id: str, source_ref: str
@@ -656,6 +1214,37 @@ def _ingestion_receipt_from_row(row: aiosqlite.Row) -> EvidenceIngestionReceipt:
     return receipt
 
 
+def _suppression_decision_from_row(row: aiosqlite.Row) -> SuppressionDecision:
+    from simple_harness_memory.core.suppression import (
+        OrdinaryMemoryPurpose,
+        SuppressionAction,
+        SuppressionDecision,
+        SuppressionScopeKind,
+    )
+
+    directive_id = str(row["directive_id"])
+    decision = SuppressionDecision(
+        directive_id,
+        str(row["request_id"]),
+        str(row["principal_id"]),
+        SuppressionAction(str(row["event_kind"])),
+        SuppressionScopeKind(str(row["scope_kind"])),
+        str(row["scope_ref"]),
+        str(row["reason_code"]),
+        float(row["effective_at"]),
+        None
+        if row["purpose"] is None
+        else OrdinaryMemoryPurpose(str(row["purpose"])),
+        None
+        if row["supersedes_directive_id"] is None
+        else str(row["supersedes_directive_id"]),
+        _stable_id("suppression-rebuild-outbox", directive_id),
+    )
+    if decision.decision_hash != str(row["decision_hash"]):
+        raise MemoryCorruptionError("stored suppression decision hash differs")
+    return decision
+
+
 def _verify_replay(
     existing: EvidenceIngestionReceipt,
     envelope: SanitizedEvidenceEnvelope,
@@ -815,5 +1404,6 @@ def _platform_writer_lock(handle: Any, *, acquire: bool) -> None:
 __all__ = (
     "INGESTION_FAULT_POINTS",
     "INITIALIZATION_FAULT_POINTS",
+    "SUPPRESSION_FAULT_POINTS",
     "SQLiteHumanMemoryBackend",
 )
