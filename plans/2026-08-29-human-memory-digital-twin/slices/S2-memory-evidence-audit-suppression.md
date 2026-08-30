@@ -3,7 +3,7 @@
 > Release unit：S2（Memory SDK）  
 > 高风险子系统：fresh SQLite schema、append-only privacy/audit、worker/outbox（3）  
 > 覆盖：HM-AC-1/2/7/8
-> 实施进度：Task 1—4 complete；Task 5 in progress。Task 4 最终提交 `1e1bb5c`，独立审计 P0/P1/P2=0。
+> 实施进度：Task 1—4 complete；Task 5 local kernel implemented but blocked on S1 `a2-002` Host delivery receipt。Task 4 最终提交 `1e1bb5c`，独立审计 P0/P1/P2=0。
 
 ## 交付边界
 

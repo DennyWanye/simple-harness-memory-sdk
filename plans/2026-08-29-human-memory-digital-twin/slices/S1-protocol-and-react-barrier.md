@@ -3,7 +3,7 @@
 > Release unit：S1（Harness SDK）  
 > 高风险子系统：公共 API、ReAct 状态机、effect authority（3）  
 > 覆盖：HM-AC-3/4/7/8
-> 状态：REOPENED FOR CONTRACT AMENDMENT — `a2-001`；既有 candidate `9677cf948da9245b2aa4845f97dbc668e87f29ff` 未发布
+> 状态：REOPENED FOR CONTRACT AMENDMENT — `a2-001`/`a2-002`；既有 candidate `9677cf948da9245b2aa4845f97dbc668e87f29ff` 未发布
 > 最终候选物：wheel `ef4e5a21128adede553ccd4fe8cfc726c37def329a2bc5217af0346466f23dad`；sdist `19f927708f456fb843127462e6ae09b5ecece0c02aecac5af2b42b63df7836a4`
 
 ## 交付边界
@@ -17,6 +17,13 @@ S4 Task 4 证明泛型 Tool authorization receipt 与 `RunContextSnapshot.metada
 S1 必须新增 strict public DTO/port：Manual receipt 精确绑定 TaskScope、canonical root、filesystem identity、base
 revision、nonce、decision 及 SDK/Host hash；Auto snapshot 必须由 Host authority 签发并绑定 Run/context revision、
 configured workspace root identity 与 mode。模型提供的 metadata、opaque receipt ref 或 Host 结构 fallback 一律不成立。
+
+### `a2-002` 最小契约增量
+
+`MemoryAnalysisExecutorPort` 原本只返回 result，而 `MemoryAnalysisReceipt` 的 validation status/committed revision 语义
+属于 Memory validator/apply，不能冒充 Host permanent invocation/result receipt。S1 必须新增 Host authority-verifiable
+delivery receipt/envelope，精确绑定 request/result/attempt/provider refs 与 issuer；Memory 验证 Host durable delivery 后，
+再独立产生 validation/apply receipt。
 
 ## 文件影响清单
 
