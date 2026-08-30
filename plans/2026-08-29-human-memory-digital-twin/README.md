@@ -1,7 +1,7 @@
 # Human Memory Digital Twin Plan Workspace
 
 > 创建日期：2026-08-29
-> 状态：用户已批准直接实施；V0、S2 已闭合，S1 因 S3 strict protocol 缺口重新打开，S4 候选待后续集成
+> 状态：用户已批准直接实施；V0、S1、S2 已闭合，S3 恢复实施，S4 候选待后续集成
 > 主计划仓库：`simple-harness-memory-sdk`
 > Worktree：`/Users/denny/projects/simple-harness-memory-sdk-memory-plan`
 > 分支：`feat/human-memory-plan`
@@ -187,13 +187,13 @@ SDK 当前生产事实以本仓库的 `ARCHITECTURE/`、`src/simple_harness_memo
 
 初版本产品级核心设定、验收契约、跨仓架构基线和代码级 program plan 已冻结，用户已批准直接实施。
 V0 authority、旧 Session oracle lineage 和五项关键假设 spike 已闭合；S1 Harness SDK 0.7.0 source
-`8f1027d2` 已完成 `a2-001` typed workspace binding authority 与 `a2-002` Host-durable analysis delivery，
-但 S3 实施前挑战证明 mutation/span/recall/conversation metadata 表达能力不足。用户于 2026-08-31 批准重新打开
-`a2-003` strict protocol closure；旧 exact candidate wheel `b9421ddf…` 已失效，仍未 tag/publish。
+`64d409d4` 已完成 `a2-001` typed workspace binding authority、`a2-002` Host-durable analysis delivery 和
+`a2-003` strict cognitive/evidence/recall protocol closure。旧 exact candidate wheel `b9421ddf…` 永久失效；
+新 reproducible candidate wheel 为 `49e42eaa…`，独立最终审计 P0/P1/P2=0，仍未 tag/publish。
 S2 Memory SDK 已完成 fresh schema、永久 evidence ingestion、suppression authority、LLM audit ledger、durable worker、
 旧默认移除与 0.6.0 slice candidate；source `e316919` 全仓 `493 passed, 8 skipped`、独立审计 P0/P1/P2=0，clean wheel
 `5011da96…` 曾与旧 exact Harness 0.7.0 wheel `b9421ddf…` 完成隔离兼容验证，该回执仅保留为 S2 历史证据，不再是
-program 候选。当前先闭合 S1 `a2-003`，随后恢复 S3 四类认知状态、短时域索引、类型化召回和 display-only 图投影。
+program 候选。S1 门已重新关闭，现在恢复 S3 四类认知状态、短时域索引、类型化召回和 display-only 图投影。
 S4 Host 已完成 primary evidence、Canonical TaskScope Archive、目录 provisioning，并在候选
 `13dbef17` 关闭 store-level Manual/Auto freshness、identity 和 replay seam；`a2-004` 仍要求把 durable Manual interaction、
 current Run/context/config facts 与 production adapters 明确装配。Phase 2 综合审查另确认 Host exact Harness 0.7 production

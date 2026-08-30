@@ -3,7 +3,8 @@
 > Release unit：S1（Harness SDK）  
 > 高风险子系统：公共 API、ReAct 状态机、effect authority（3）  
 > 覆盖：HM-AC-3/4/7/8
-> 状态：REOPENED / EXECUTION IN PROGRESS — 用户于 2026-08-31 批准 `a2-003` S3 strict protocol closure；未 tag/publish
+> 状态：COMPLETE — `a2-003` strict protocol closure 已通过三轮独立审计；未 tag/publish
+> 当前候选 source：`64d409d4463673907ff094825cc4d5de2205be76`
 > 上一候选 source：`8f1027d2d64ca3a7e7a4d161833507eadac9552b`
 > 已失效候选物：wheel `b9421ddf2b1d5a4a4a0920a2e878c1d3cf098ff6ef0af8975b9eb5c516037d7b`；S3 架构挑战证明其 wire schema 无法表达 canonical cognitive mutation/recall，禁止继续作为 program candidate
 
@@ -145,4 +146,6 @@ candidate hash；上一 candidate hash 永久作为失效证据保留，不覆�
 `1596 passed, 2 skipped`；默认 CI mypy 覆盖 35 个文件，ruff 与 clean wheel install/import 均通过；第三方独立审计
 P0/P1/P2 均为 0。候选 wheel 使用固定 ZIP timestamp 重复构建，hash 与 manifest 自洽。`a2-001` 的 Host
 binding consumer 与 `a2-002` 的 Memory durable-delivery consumer 必须各自在所属 slice 通过后，才能关闭 program 集成缺口。
-`a2-003` 完成前 S1 状态保持 REOPENED，不得复用上一轮 candidate bytes。
+`a2-003` 已闭合：全仓 `1635 passed, 2 skipped`，scoped ruff/mypy PASS，三轮独立审计最终
+P0/P1/P2=0；reproducible wheel `49e42eaa189d7a6e238b17d39bf4c4ebb5352e9113b67f539cbbeda949eaf18b`。
+上一轮 candidate bytes 继续永久失效；当前 candidate 仍未 tag/publish，且只证明 S1 协议/Runtime 边界。
