@@ -453,6 +453,478 @@ CREATE TABLE evidence_vectors (
     dimension INTEGER NOT NULL CHECK (dimension >= 1),
     PRIMARY KEY (evidence_id, generation_id)
 );
+CREATE TABLE cognitive_apply_heads (
+    principal_id TEXT PRIMARY KEY REFERENCES principals(principal_id),
+    revision INTEGER NOT NULL CHECK (revision >= 1),
+    updated_at REAL NOT NULL CHECK (updated_at >= 0)
+);
+CREATE TABLE cognitive_memory_heads (
+    memory_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    memory_type TEXT NOT NULL CHECK (
+        memory_type IN ('episode', 'semantic', 'procedure', 'prospective')
+    ),
+    current_revision INTEGER NOT NULL CHECK (current_revision >= 1),
+    created_at REAL NOT NULL CHECK (created_at >= 0),
+    updated_at REAL NOT NULL CHECK (updated_at >= created_at),
+    UNIQUE (principal_id, memory_id)
+);
+CREATE INDEX cognitive_memory_head_lookup
+    ON cognitive_memory_heads(principal_id, memory_type, updated_at, memory_id);
+CREATE TABLE cognitive_memory_revisions (
+    memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
+    revision INTEGER NOT NULL CHECK (revision >= 1),
+    operation_id TEXT NOT NULL UNIQUE,
+    task_scope_id TEXT,
+    lifecycle_state TEXT NOT NULL,
+    epistemic_status TEXT NOT NULL,
+    conflict_status TEXT NOT NULL,
+    verification_state TEXT NOT NULL,
+    effective_privacy_class TEXT NOT NULL CHECK (
+        effective_privacy_class IN ('public', 'personal', 'sensitive', 'restricted')
+    ),
+    information_attributes_json BLOB NOT NULL,
+    content_json BLOB NOT NULL,
+    content_hash TEXT NOT NULL,
+    valid_from REAL NOT NULL CHECK (valid_from >= 0),
+    valid_to REAL,
+    created_at REAL NOT NULL CHECK (created_at >= 0),
+    PRIMARY KEY (memory_id, revision),
+    CHECK (valid_to IS NULL OR valid_to >= valid_from)
+);
+CREATE INDEX cognitive_memory_revision_lookup
+    ON cognitive_memory_revisions(memory_id, revision, lifecycle_state);
+CREATE TRIGGER cognitive_memory_revisions_immutable_update
+BEFORE UPDATE ON cognitive_memory_revisions
+BEGIN SELECT RAISE(ABORT, 'immutable cognitive revision'); END;
+CREATE TRIGGER cognitive_memory_revisions_immutable_delete
+BEFORE DELETE ON cognitive_memory_revisions
+BEGIN SELECT RAISE(ABORT, 'immutable cognitive revision'); END;
+CREATE TABLE episode_records (
+    memory_id TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    thread_ref TEXT,
+    participants_json BLOB NOT NULL,
+    goals_json BLOB NOT NULL,
+    actions_json BLOB NOT NULL,
+    results_json BLOB NOT NULL,
+    impacts_json BLOB NOT NULL,
+    occurred_start REAL NOT NULL CHECK (occurred_start >= 0),
+    occurred_end REAL,
+    PRIMARY KEY (memory_id, revision),
+    FOREIGN KEY (memory_id, revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision),
+    CHECK (occurred_end IS NULL OR occurred_end >= occurred_start)
+);
+CREATE TRIGGER episode_records_immutable_update
+BEFORE UPDATE ON episode_records
+BEGIN SELECT RAISE(ABORT, 'immutable episode record'); END;
+CREATE TRIGGER episode_records_immutable_delete
+BEFORE DELETE ON episode_records
+BEGIN SELECT RAISE(ABORT, 'immutable episode record'); END;
+CREATE TABLE semantic_claims (
+    memory_id TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    subject_entity TEXT NOT NULL,
+    predicate TEXT NOT NULL,
+    object_json BLOB NOT NULL,
+    object_hash TEXT NOT NULL,
+    qualifiers_json BLOB NOT NULL,
+    PRIMARY KEY (memory_id, revision),
+    FOREIGN KEY (memory_id, revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision)
+);
+CREATE INDEX semantic_claim_lookup
+    ON semantic_claims(subject_entity, predicate, object_hash, memory_id);
+CREATE TRIGGER semantic_claims_immutable_update
+BEFORE UPDATE ON semantic_claims
+BEGIN SELECT RAISE(ABORT, 'immutable semantic claim'); END;
+CREATE TRIGGER semantic_claims_immutable_delete
+BEFORE DELETE ON semantic_claims
+BEGIN SELECT RAISE(ABORT, 'immutable semantic claim'); END;
+CREATE TABLE procedure_records (
+    memory_id TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    applicability_json BLOB NOT NULL,
+    steps_json BLOB NOT NULL,
+    risk_level TEXT NOT NULL CHECK (
+        risk_level IN ('low', 'medium', 'high', 'irreversible')
+    ),
+    applicability_fingerprint TEXT NOT NULL,
+    success_evidence_count INTEGER NOT NULL DEFAULT 0 CHECK (success_evidence_count >= 0),
+    failure_evidence_count INTEGER NOT NULL DEFAULT 0 CHECK (failure_evidence_count >= 0),
+    PRIMARY KEY (memory_id, revision),
+    FOREIGN KEY (memory_id, revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision)
+);
+CREATE TRIGGER procedure_records_immutable_update
+BEFORE UPDATE ON procedure_records
+BEGIN SELECT RAISE(ABORT, 'immutable procedure record'); END;
+CREATE TRIGGER procedure_records_immutable_delete
+BEFORE DELETE ON procedure_records
+BEGIN SELECT RAISE(ABORT, 'immutable procedure record'); END;
+CREATE TABLE prospective_records (
+    memory_id TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    action_text TEXT NOT NULL,
+    trigger_kind TEXT NOT NULL CHECK (trigger_kind IN ('time', 'event')),
+    trigger_json BLOB NOT NULL,
+    scheduler_registration_ref TEXT,
+    due_at REAL,
+    PRIMARY KEY (memory_id, revision),
+    FOREIGN KEY (memory_id, revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision),
+    CHECK ((trigger_kind = 'time') = (due_at IS NOT NULL))
+);
+CREATE TRIGGER prospective_records_immutable_update
+BEFORE UPDATE ON prospective_records
+BEGIN SELECT RAISE(ABORT, 'immutable prospective record'); END;
+CREATE TRIGGER prospective_records_immutable_delete
+BEFORE DELETE ON prospective_records
+BEGIN SELECT RAISE(ABORT, 'immutable prospective record'); END;
+CREATE TABLE cognitive_evidence_spans (
+    memory_id TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 1),
+    span_id TEXT NOT NULL,
+    evidence_id TEXT NOT NULL REFERENCES evidence_envelopes(evidence_id),
+    envelope_hash TEXT NOT NULL,
+    sanitized_hash TEXT NOT NULL,
+    admission_receipt_id TEXT NOT NULL,
+    admission_receipt_hash TEXT NOT NULL,
+    evidence_item_ordinal INTEGER NOT NULL CHECK (evidence_item_ordinal >= 1),
+    evidence_item_id TEXT NOT NULL,
+    evidence_item_json_pointer TEXT NOT NULL,
+    byte_start INTEGER NOT NULL CHECK (byte_start >= 0),
+    byte_end INTEGER NOT NULL CHECK (byte_end > byte_start),
+    exact_quote TEXT NOT NULL,
+    quote_hash TEXT NOT NULL,
+    source_hash TEXT NOT NULL,
+    normalization_version TEXT NOT NULL,
+    actor_role TEXT NOT NULL,
+    provenance TEXT NOT NULL,
+    source_kind TEXT NOT NULL,
+    support_kind TEXT NOT NULL,
+    observation_schema_id TEXT,
+    observation_schema_version INTEGER,
+    observation_registered_schema_hash TEXT,
+    observation_receipt_id TEXT,
+    observation_receipt_hash TEXT,
+    observation_authority_issuer_id TEXT,
+    observation_json_pointer TEXT,
+    observation_value_hash TEXT,
+    PRIMARY KEY (memory_id, revision, ordinal),
+    UNIQUE (memory_id, revision, span_id),
+    FOREIGN KEY (memory_id, revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision),
+    FOREIGN KEY (evidence_id, evidence_item_ordinal)
+        REFERENCES evidence_items(evidence_id, ordinal),
+    CHECK (
+        (observation_schema_id IS NULL AND observation_schema_version IS NULL
+            AND observation_registered_schema_hash IS NULL
+            AND observation_receipt_id IS NULL AND observation_receipt_hash IS NULL
+            AND observation_authority_issuer_id IS NULL
+            AND observation_json_pointer IS NULL AND observation_value_hash IS NULL)
+        OR
+        (observation_schema_id IS NOT NULL AND observation_schema_version >= 1
+            AND observation_registered_schema_hash IS NOT NULL
+            AND observation_receipt_id IS NOT NULL AND observation_receipt_hash IS NOT NULL
+            AND observation_authority_issuer_id IS NOT NULL
+            AND observation_json_pointer IS NOT NULL AND observation_value_hash IS NOT NULL)
+    )
+);
+CREATE INDEX cognitive_evidence_lookup
+    ON cognitive_evidence_spans(evidence_id, memory_id, revision);
+CREATE TRIGGER cognitive_evidence_spans_immutable_update
+BEFORE UPDATE ON cognitive_evidence_spans
+BEGIN SELECT RAISE(ABORT, 'immutable cognitive evidence'); END;
+CREATE TRIGGER cognitive_evidence_spans_immutable_delete
+BEFORE DELETE ON cognitive_evidence_spans
+BEGIN SELECT RAISE(ABORT, 'immutable cognitive evidence'); END;
+CREATE TABLE cognitive_relations (
+    relation_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    source_memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
+    source_revision INTEGER NOT NULL,
+    relation_kind TEXT NOT NULL CHECK (
+        relation_kind IN ('amends', 'supersedes', 'contests', 'supports', 'relates_to')
+    ),
+    target_memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
+    target_revision INTEGER NOT NULL,
+    operation_id TEXT NOT NULL,
+    created_at REAL NOT NULL CHECK (created_at >= 0),
+    relation_hash TEXT NOT NULL UNIQUE,
+    UNIQUE (operation_id, relation_kind, source_memory_id, target_memory_id),
+    FOREIGN KEY (source_memory_id, source_revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision),
+    FOREIGN KEY (target_memory_id, target_revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision)
+);
+CREATE TRIGGER cognitive_relations_immutable_update
+BEFORE UPDATE ON cognitive_relations
+BEGIN SELECT RAISE(ABORT, 'immutable cognitive relation'); END;
+CREATE TRIGGER cognitive_relations_immutable_delete
+BEFORE DELETE ON cognitive_relations
+BEGIN SELECT RAISE(ABORT, 'immutable cognitive relation'); END;
+CREATE TABLE memory_mutation_receipts (
+    receipt_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    authority_ref TEXT NOT NULL,
+    plan_id TEXT NOT NULL,
+    plan_hash TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    plan_outcome TEXT NOT NULL CHECK (plan_outcome IN ('mutate', 'no_mutation')),
+    plan_json BLOB NOT NULL,
+    base_revision INTEGER NOT NULL CHECK (base_revision >= 1),
+    committed_revision INTEGER NOT NULL CHECK (committed_revision >= base_revision),
+    canonical_operation_ids_json BLOB NOT NULL,
+    apply_mode TEXT NOT NULL CHECK (apply_mode = 'strict_atomic'),
+    receipt_json BLOB NOT NULL,
+    receipt_hash TEXT NOT NULL UNIQUE,
+    committed_at REAL NOT NULL CHECK (committed_at >= 0),
+    UNIQUE (principal_id, idempotency_key),
+    CHECK (committed_revision IN (base_revision, base_revision + 1))
+);
+CREATE TRIGGER memory_mutation_receipts_immutable_update
+BEFORE UPDATE ON memory_mutation_receipts
+BEGIN SELECT RAISE(ABORT, 'immutable mutation receipt'); END;
+CREATE TRIGGER memory_mutation_receipts_immutable_delete
+BEFORE DELETE ON memory_mutation_receipts
+BEGIN SELECT RAISE(ABORT, 'immutable mutation receipt'); END;
+CREATE TABLE memory_mutation_decisions (
+    decision_id TEXT PRIMARY KEY,
+    receipt_id TEXT NOT NULL REFERENCES memory_mutation_receipts(receipt_id),
+    operation_id TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome = 'committed'),
+    reason_code TEXT NOT NULL,
+    before_ref TEXT,
+    after_ref TEXT,
+    decision_json BLOB NOT NULL,
+    decision_hash TEXT NOT NULL UNIQUE,
+    UNIQUE (receipt_id, operation_id)
+);
+CREATE TRIGGER memory_mutation_decisions_immutable_update
+BEFORE UPDATE ON memory_mutation_decisions
+BEGIN SELECT RAISE(ABORT, 'immutable mutation decision'); END;
+CREATE TRIGGER memory_mutation_decisions_immutable_delete
+BEFORE DELETE ON memory_mutation_decisions
+BEGIN SELECT RAISE(ABORT, 'immutable mutation decision'); END;
+CREATE TABLE procedure_observations (
+    observation_id TEXT PRIMARY KEY,
+    memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
+    procedure_revision INTEGER NOT NULL CHECK (procedure_revision >= 1),
+    task_scope_id TEXT NOT NULL,
+    terminal_receipt_ref TEXT NOT NULL,
+    applicability_fingerprint TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('success', 'failure')),
+    occurred_at REAL NOT NULL CHECK (occurred_at >= 0),
+    evidence_id TEXT NOT NULL REFERENCES evidence_envelopes(evidence_id),
+    observation_hash TEXT NOT NULL UNIQUE,
+    UNIQUE (memory_id, procedure_revision, task_scope_id, terminal_receipt_ref),
+    FOREIGN KEY (memory_id, procedure_revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision)
+);
+CREATE TRIGGER procedure_observations_immutable_update
+BEFORE UPDATE ON procedure_observations
+BEGIN SELECT RAISE(ABORT, 'immutable procedure observation'); END;
+CREATE TRIGGER procedure_observations_immutable_delete
+BEFORE DELETE ON procedure_observations
+BEGIN SELECT RAISE(ABORT, 'immutable procedure observation'); END;
+CREATE TABLE prospective_trigger_events (
+    event_id TEXT PRIMARY KEY,
+    memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
+    prospective_revision INTEGER NOT NULL CHECK (prospective_revision >= 1),
+    trigger_fingerprint TEXT NOT NULL,
+    event_ref TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (
+        outcome IN ('matched', 'ignored', 'invalidated', 'registered')
+    ),
+    reason_code TEXT NOT NULL,
+    occurred_at REAL NOT NULL CHECK (occurred_at >= 0),
+    event_hash TEXT NOT NULL UNIQUE,
+    UNIQUE (memory_id, prospective_revision, event_ref, outcome),
+    FOREIGN KEY (memory_id, prospective_revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision)
+);
+CREATE TRIGGER prospective_trigger_events_immutable_update
+BEFORE UPDATE ON prospective_trigger_events
+BEGIN SELECT RAISE(ABORT, 'immutable prospective trigger event'); END;
+CREATE TRIGGER prospective_trigger_events_immutable_delete
+BEFORE DELETE ON prospective_trigger_events
+BEGIN SELECT RAISE(ABORT, 'immutable prospective trigger event'); END;
+CREATE TABLE conversation_evidence_registrations (
+    registration_id TEXT PRIMARY KEY,
+    registration_hash TEXT NOT NULL UNIQUE,
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    evidence_id TEXT NOT NULL UNIQUE REFERENCES evidence_envelopes(evidence_id),
+    envelope_hash TEXT NOT NULL,
+    admission_receipt_id TEXT NOT NULL,
+    admission_receipt_hash TEXT NOT NULL,
+    metadata_id TEXT NOT NULL UNIQUE,
+    metadata_hash TEXT NOT NULL UNIQUE,
+    metadata_json BLOB NOT NULL,
+    metadata_receipt_id TEXT NOT NULL UNIQUE,
+    metadata_receipt_hash TEXT NOT NULL UNIQUE,
+    metadata_receipt_json BLOB NOT NULL,
+    authority_issuer_id TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    primary_conversation_id TEXT NOT NULL,
+    causal_group_id TEXT NOT NULL,
+    causal_group_sequence INTEGER NOT NULL CHECK (causal_group_sequence >= 1),
+    item_ordinal INTEGER NOT NULL CHECK (item_ordinal >= 1),
+    group_item_count INTEGER NOT NULL CHECK (group_item_count >= item_ordinal),
+    ordered_group_manifest_hash TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'tool', 'runtime')),
+    occurred_at REAL NOT NULL CHECK (occurred_at >= 0),
+    task_scope_id TEXT,
+    tool_causal_link_json BLOB,
+    entities_json BLOB NOT NULL,
+    registration_json BLOB NOT NULL,
+    registered_at REAL NOT NULL CHECK (registered_at >= 0),
+    UNIQUE (
+        principal_id, primary_conversation_id, causal_group_id, item_ordinal
+    ),
+    CHECK (conversation_id = primary_conversation_id),
+    CHECK ((role = 'tool') = (tool_causal_link_json IS NOT NULL))
+);
+CREATE INDEX conversation_evidence_group_lookup
+    ON conversation_evidence_registrations(
+        principal_id, primary_conversation_id, causal_group_sequence, item_ordinal
+    );
+CREATE TRIGGER conversation_evidence_registrations_immutable_update
+BEFORE UPDATE ON conversation_evidence_registrations
+BEGIN SELECT RAISE(ABORT, 'immutable conversation registration'); END;
+CREATE TRIGGER conversation_evidence_registrations_immutable_delete
+BEFORE DELETE ON conversation_evidence_registrations
+BEGIN SELECT RAISE(ABORT, 'immutable conversation registration'); END;
+CREATE TABLE short_horizon_chunks (
+    chunk_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    subject TEXT NOT NULL,
+    primary_conversation_id TEXT NOT NULL,
+    causal_group_id TEXT NOT NULL,
+    causal_group_sequence INTEGER NOT NULL CHECK (causal_group_sequence >= 1),
+    roles_json BLOB NOT NULL,
+    task_scope_ids_json BLOB NOT NULL,
+    entities_json BLOB NOT NULL,
+    source_refs_json BLOB NOT NULL,
+    public_text TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    occurred_at REAL NOT NULL CHECK (occurred_at >= 0),
+    expires_at REAL NOT NULL CHECK (expires_at > occurred_at),
+    created_at REAL NOT NULL CHECK (created_at >= 0),
+    UNIQUE (principal_id, primary_conversation_id, causal_group_id)
+);
+CREATE INDEX short_horizon_eligibility_lookup
+    ON short_horizon_chunks(principal_id, expires_at, occurred_at, chunk_id);
+CREATE TABLE short_horizon_chunk_evidence (
+    chunk_id TEXT NOT NULL REFERENCES short_horizon_chunks(chunk_id) ON DELETE CASCADE,
+    item_ordinal INTEGER NOT NULL CHECK (item_ordinal >= 1),
+    registration_id TEXT NOT NULL REFERENCES conversation_evidence_registrations(registration_id),
+    evidence_id TEXT NOT NULL REFERENCES evidence_envelopes(evidence_id),
+    envelope_hash TEXT NOT NULL,
+    PRIMARY KEY (chunk_id, item_ordinal),
+    UNIQUE (chunk_id, registration_id),
+    UNIQUE (chunk_id, evidence_id)
+);
+CREATE VIRTUAL TABLE short_horizon_fts USING fts5(
+    chunk_id UNINDEXED,
+    public_text,
+    tokenize='unicode61'
+);
+CREATE TRIGGER short_horizon_fts_insert
+AFTER INSERT ON short_horizon_chunks
+BEGIN
+    INSERT INTO short_horizon_fts(chunk_id, public_text)
+    VALUES (new.chunk_id, new.public_text);
+END;
+CREATE TRIGGER short_horizon_fts_delete
+AFTER DELETE ON short_horizon_chunks
+BEGIN
+    DELETE FROM short_horizon_fts WHERE chunk_id = old.chunk_id;
+END;
+CREATE TRIGGER short_horizon_fts_update
+AFTER UPDATE OF public_text ON short_horizon_chunks
+BEGIN
+    DELETE FROM short_horizon_fts WHERE chunk_id = old.chunk_id;
+    INSERT INTO short_horizon_fts(chunk_id, public_text)
+    VALUES (new.chunk_id, new.public_text);
+END;
+CREATE TABLE short_horizon_generations (
+    generation_id TEXT PRIMARY KEY,
+    lineage_id TEXT NOT NULL REFERENCES embedding_lineages(lineage_id),
+    state TEXT NOT NULL CHECK (state IN ('building', 'active', 'retired', 'failed')),
+    content_hash TEXT,
+    last_error_code TEXT,
+    created_at REAL NOT NULL CHECK (created_at >= 0),
+    activated_at REAL
+);
+CREATE UNIQUE INDEX short_horizon_one_active
+    ON short_horizon_generations(state) WHERE state = 'active';
+CREATE TABLE short_horizon_vectors (
+    chunk_id TEXT NOT NULL REFERENCES short_horizon_chunks(chunk_id),
+    generation_id TEXT NOT NULL REFERENCES short_horizon_generations(generation_id),
+    embedding BLOB NOT NULL,
+    dimension INTEGER NOT NULL CHECK (dimension >= 1),
+    PRIMARY KEY (chunk_id, generation_id)
+);
+CREATE TABLE recall_decisions (
+    decision_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    run_id TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    context_hash TEXT NOT NULL,
+    context_revision INTEGER NOT NULL CHECK (context_revision >= 1),
+    plan_id TEXT NOT NULL,
+    plan_hash TEXT NOT NULL,
+    disclosure_context_json BLOB NOT NULL,
+    disclosure_context_hash TEXT NOT NULL,
+    evidence_refs_json BLOB NOT NULL,
+    evidence_refs_hash TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (
+        outcome IN ('no_recall', 'recall', 'needs_user_confirmation', 'rejected')
+    ),
+    filtered_candidate_count INTEGER NOT NULL CHECK (filtered_candidate_count >= 0),
+    candidate_count_stage TEXT NOT NULL CHECK (
+        candidate_count_stage = 'after_all_eligibility_gates'
+    ),
+    decision_json BLOB NOT NULL,
+    decision_hash TEXT NOT NULL UNIQUE,
+    decided_at REAL NOT NULL CHECK (decided_at >= 0),
+    UNIQUE (principal_id, plan_id, plan_hash)
+);
+CREATE INDEX recall_decision_trace_lookup
+    ON recall_decisions(principal_id, run_id, decided_at, decision_id);
+CREATE TRIGGER recall_decisions_immutable_update
+BEFORE UPDATE ON recall_decisions
+BEGIN SELECT RAISE(ABORT, 'immutable recall decision'); END;
+CREATE TRIGGER recall_decisions_immutable_delete
+BEFORE DELETE ON recall_decisions
+BEGIN SELECT RAISE(ABORT, 'immutable recall decision'); END;
+CREATE TABLE recall_decision_items (
+    decision_id TEXT NOT NULL REFERENCES recall_decisions(decision_id),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 1),
+    source_kind TEXT NOT NULL CHECK (source_kind IN ('memory', 'short_horizon')),
+    source_ref TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    memory_type TEXT,
+    score REAL NOT NULL,
+    cross_scope INTEGER NOT NULL CHECK (cross_scope IN (0, 1)),
+    PRIMARY KEY (decision_id, ordinal),
+    UNIQUE (decision_id, source_kind, source_ref)
+);
+CREATE TRIGGER recall_decision_items_immutable_update
+BEFORE UPDATE ON recall_decision_items
+BEGIN SELECT RAISE(ABORT, 'immutable recall decision item'); END;
+CREATE TRIGGER recall_decision_items_immutable_delete
+BEFORE DELETE ON recall_decision_items
+BEGIN SELECT RAISE(ABORT, 'immutable recall decision item'); END;
 """
 
 
@@ -502,6 +974,32 @@ REQUIRED_TABLES = frozenset(
         "embedding_lineages",
         "embedding_generations",
         "evidence_vectors",
+        "cognitive_apply_heads",
+        "cognitive_memory_heads",
+        "cognitive_memory_revisions",
+        "episode_records",
+        "semantic_claims",
+        "procedure_records",
+        "prospective_records",
+        "cognitive_evidence_spans",
+        "cognitive_relations",
+        "memory_mutation_receipts",
+        "memory_mutation_decisions",
+        "procedure_observations",
+        "prospective_trigger_events",
+        "conversation_evidence_registrations",
+        "short_horizon_chunks",
+        "short_horizon_chunk_evidence",
+        "short_horizon_fts",
+        "short_horizon_fts_data",
+        "short_horizon_fts_idx",
+        "short_horizon_fts_content",
+        "short_horizon_fts_docsize",
+        "short_horizon_fts_config",
+        "short_horizon_generations",
+        "short_horizon_vectors",
+        "recall_decisions",
+        "recall_decision_items",
     }
 )
 
