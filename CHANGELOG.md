@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0] - 2026-08-30
+
+### Human Memory foundation
+
+- Added the fresh `human-memory-v1` evidence, audit, suppression and durable analysis repositories.
+- Removed the regex fact extractor implementation from the production package, every production builder
+  argument that could enable it, the legacy worker implementation, and Mock/SQLite recover/claim/apply/fail
+  job mutation seams. Regression-only extractor/worker fixtures live under `tests/`; Harness 0.7 owns
+  structured LLM analysis.
+- Removed category-derived Fact half-lives and automatic Fact decay. Compatibility Fact rows use a neutral
+  explicit decay value; category is no longer retention authority.
+- Removed `delete_session`, `delete_old_sessions` and `delete_all` from the 0.6 public backend and
+  manager protocols. Suppression is the ordinary-use authority; immutable evidence is retained.
+- Froze candidate metadata at `0.6.0` with exact Harness compatibility `>=0.7,<0.8`.
+
 ## [0.5.2] - 2026-08-25
 
 ### Changed

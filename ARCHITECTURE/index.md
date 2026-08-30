@@ -1,15 +1,10 @@
 # ARCHITECTURE 索引
 
-本目录是 simple-harness-memory-sdk 的当前架构事实源。当前 0.5.2 source candidate 延续 Agent Memory v1 direct
-`MemoryManager`、deployment/household/actor/session + personal/family 隔离、committed-turn 原子写、
-durable fact worker、privacy tombstone、有界 FTS5/vector recall、完整 embedding lineage、双 generation
-reindex、单写者、SQLite backup/restore、四类 taxonomy 驱动的显式 backup-first v3→v4 migrator、
-deployment-scoped recall snapshot、跨平台 writer lease、principal-scoped explicit fact write/read，以及
-durable explicit forget action receipt、principal-scoped fact listing、0.4.0 exact-wheel candidate
-identity/provenance门禁，以及基于 Harness 0.4/0.5/0.6 公共协议的 Memory observability S1+S2。0.5.2 仅扩大
-Harness metadata 范围并增加双 wheel 门禁，现已 tag/push/publish；公开 builders、
-direct backends、recall/committed-turn/fact-job/recovery 与 aggregate diagnostics snapshot 已接线；
-`simple_harness` 产品接线与真实 UI 已完成，其他 future consumers 仍只接口就绪。
+本目录是 simple-harness-memory-sdk 的当前架构事实源。当前 **0.6.0 source candidate**
+新增 fresh `human-memory-v1` 的 immutable evidence、append-only suppression/audit 与 durable analysis
+四阶段 authority，并精确依赖 Harness `>=0.7,<0.8`。0.6 不再默认实例化 regex fact
+extractor，不导出物理会话删除 API；旧 v4 Message/Fact 类型和私有 storage seam 仅作兼容读及
+回归 fixture，不是新 Human Memory 的 authority。候选版本尚未 tag/push/publish。
 
 | 文档 | 范围 |
 |---|---|

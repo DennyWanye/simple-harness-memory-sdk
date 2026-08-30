@@ -1,6 +1,6 @@
 import pytest
 
-from simple_harness_memory import MemoryManager
+from simple_harness_memory import MemoryManager, MemoryPrincipal
 
 
 @pytest.mark.asyncio
@@ -20,9 +20,10 @@ async def test_manager_mock_end_to_end():
 
 
 @pytest.mark.asyncio
-async def test_manager_sqlite_with_facts(tmp_path):
+async def test_manager_sqlite_with_explicit_fact(tmp_path):
     m = await MemoryManager.build(
-        str(tmp_path / "m.db"), enable_facts=True, enable_world_model=True
+        str(tmp_path / "m.db"),
+        enable_world_model=True,
     )
     await m.append_message(
         "s1",
@@ -31,7 +32,14 @@ async def test_manager_sqlite_with_facts(tmp_path):
         user_id="u1",
         source_event_id="manager-2",
     )
-    assert any(f.key == "pet_name" for f in await m.get_facts(user_id="u1"))
+    principal = MemoryPrincipal("u1", "u1", "u1", "explicit")
+    fact_id = await m.remember_fact(
+        principal,
+        "Max is the user's pet",
+        source_event_id="manager-explicit-fact-1",
+        tier="identity",
+    )
+    assert await m.read_fact(principal, fact_id) is not None
     await m.close()
 
 

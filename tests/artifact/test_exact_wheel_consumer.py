@@ -70,20 +70,26 @@ def test_exact_wheel_in_clean_consumer(
                     self.path = path
 
                 async def verify_authorized_share(self):
-                    facts = await self.manager.get_facts(user_id="user-1")
-                    assert facts and facts[0].id is not None
-                    fact_id = facts[0].id
+                    principal = MemoryPrincipal(
+                        "deployment-a", "house-a", "actor-a", "explicit"
+                    )
+                    fact_id = await self.manager.remember_fact(
+                        principal,
+                        "Max is the user's pet",
+                        source_event_id="share-fixture-1",
+                        tier="identity",
+                    )
+                    assert await self.manager.read_fact(principal, fact_id) is not None
                     with sqlite3.connect(self.path) as connection:
                         stored_origin = connection.execute(
                             "SELECT deterministic_id FROM facts WHERE id=?", (fact_id,)
                         ).fetchone()[0]
                     origin = stored_origin or f"legacy-fact:{fact_id}"
-                    principal = MemoryPrincipal("user-1", "user-1", "user-1", "session-1")
                     projection = await self.manager.share_fact(principal, fact_id)
                     assert await self.manager.share_fact(principal, fact_id) == projection
                     for unauthorized in (
-                        MemoryPrincipal("user-1", "user-1", "actor-b", "session-b"),
-                        MemoryPrincipal("user-1", "house-b", "user-1", "session-b"),
+                        MemoryPrincipal("deployment-a", "house-a", "actor-b", "session-b"),
+                        MemoryPrincipal("deployment-a", "house-b", "actor-a", "session-b"),
                     ):
                         try:
                             await self.manager.share_fact(unauthorized, fact_id)
@@ -101,7 +107,7 @@ def test_exact_wheel_in_clean_consumer(
                         assert rows[0][1:] == (
                             origin,
                             "family",
-                            "user-1",
+                            "house-a",
                         )
                     forget_event = "explicit-memory-action/v1/root/call-forget"
                     assert await self.manager.forget_fact(
@@ -178,10 +184,13 @@ def test_exact_wheel_in_clean_consumer(
                     assert await self.manager.read_fact(principal, fact_id) is None
 
             async def main():
-                assert __version__ == "0.5.2"
+                assert __version__ == "0.6.0"
                 assert not hasattr(simple_harness_memory, "ConversationMemoryAdapter")
+                assert not hasattr(MemoryManager, "delete_session")
+                assert not hasattr(MemoryManager, "delete_old_sessions")
+                assert not hasattr(MemoryManager, "delete_all")
                 path = Path("memory.db").resolve()
-                manager = await MemoryManager.build(str(path), enable_facts=True)
+                manager = await MemoryManager.build(str(path))
                 first = await manager.append_message(
                     "session-1", "user", "line1\\r\\n我叫Max",
                     user_id="user-1", source_event_id="event-1",
@@ -214,4 +223,5 @@ def test_exact_wheel_in_clean_consumer(
         env=environment,
         capture_output=True,
         text=True,
+        timeout=60,
     )

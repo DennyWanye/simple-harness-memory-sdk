@@ -20,6 +20,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Checkout private Harness 0.7 source (fail closed without repository access)
+        uses: actions/checkout@v4
+        with:
+          repository: DennyWanye/simple-harness-sdk
+          ref: 8f1027d2d64ca3a7e7a4d161833507eadac9552b
+          path: harness-sdk
+          token: ${{ secrets.HARNESS_REPOSITORY_TOKEN || github.token }}
+      - name: Bind exact Harness 0.7 source for uv
+        run: ln -s "$GITHUB_WORKSPACE/harness-sdk" "$GITHUB_WORKSPACE/../simple-harness-sdk-memory-program"
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -52,12 +61,26 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Checkout private Harness 0.7 source (fail closed without repository access)
+        uses: actions/checkout@v4
+        with:
+          repository: DennyWanye/simple-harness-sdk
+          ref: 8f1027d2d64ca3a7e7a4d161833507eadac9552b
+          path: harness-sdk
+          token: ${{ secrets.HARNESS_REPOSITORY_TOKEN || github.token }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
       - uses: astral-sh/setup-uv@v6
         with:
           version: "0.11.7"
+      - name: Bind and build exact Harness 0.7 artifact
+        run: |
+          test "$(git -C harness-sdk rev-parse HEAD)" = "8f1027d2d64ca3a7e7a4d161833507eadac9552b"
+          ln -s "$GITHUB_WORKSPACE/harness-sdk" "$GITHUB_WORKSPACE/../simple-harness-sdk-memory-program"
+          SOURCE_DATE_EPOCH=315532800 uv build --wheel --project harness-sdk --out-dir harness-dist
+          test "$(find harness-dist -maxdepth 1 -name 'simple_harness_sdk-0.7.0-*.whl' | wc -l)" = "1"
+          echo "b9421ddf2b1d5a4a4a0920a2e878c1d3cf098ff6ef0af8975b9eb5c516037d7b  harness-dist/simple_harness_sdk-0.7.0-py3-none-any.whl" | sha256sum --check
       - name: Build candidate bytes once
         run: uv build --out-dir candidate-dist
       - name: Validate candidate distributions
@@ -71,6 +94,7 @@ jobs:
       - name: Test exact wheel and authoritative metadata contracts
         env:
           MEMORY_SDK_ARTIFACT_DIST: candidate-dist
+          HARNESS_SDK_ARTIFACT_DIST: harness-dist
           MEMORY_SDK_CI_CANDIDATE: "1"
         run: >-
           uv run --frozen --group dev pytest -q
@@ -82,7 +106,8 @@ jobs:
           cd ..
           uv venv .candidate-venv --python 3.13
           WHEEL="$(find candidate-dist -maxdepth 1 -name '*.whl' -print -quit)"
-          uv pip install --python .candidate-venv/bin/python "$WHEEL"
+          HARNESS_WHEEL="$(find harness-dist -maxdepth 1 -name '*.whl' -print -quit)"
+          uv pip install --python .candidate-venv/bin/python "$HARNESS_WHEEL" "$WHEEL"
           .candidate-venv/bin/python -I - <<'PY'
           import asyncio
           import os
@@ -103,7 +128,7 @@ jobs:
               )
               assert applied.status.value == "applied"
               await backend.close()
-              assert __version__ == "0.5.1"
+              assert __version__ == "0.6.0"
               assert os.stat(path).st_mode & 0o777 == 0o600
               with sqlite3.connect(path) as connection:
                   assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
@@ -115,6 +140,12 @@ jobs:
         with:
           name: memory-sdk-candidate-${{ github.sha }}
           path: candidate-dist/*
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: harness-sdk-candidate-${{ github.sha }}
+          path: harness-dist/*.whl
           if-no-files-found: error
           retention-days: 30
 
@@ -146,6 +177,10 @@ jobs:
         with:
           name: memory-sdk-candidate-${{ github.sha }}
           path: candidate-dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: harness-sdk-candidate-${{ github.sha }}
+          path: harness-dist
       - name: Verify and consume the exact candidate wheel
         shell: bash
         env:
@@ -163,7 +198,8 @@ jobs:
               assert hashlib.sha256((root / name).read_bytes()).hexdigest() == digest
           PY
           WHEEL="$(find candidate-dist -maxdepth 1 -name '*.whl' -print -quit)"
-          uv pip install --system "$WHEEL"
+          HARNESS_WHEEL="$(find harness-dist -maxdepth 1 -name '*.whl' -print -quit)"
+          uv pip install --system "$HARNESS_WHEEL" "$WHEEL"
           python -I - <<'PY'
           import asyncio
           import importlib.metadata as metadata
@@ -176,7 +212,8 @@ jobs:
           import simple_harness_memory
           from simple_harness_memory import MemoryManager
 
-          assert metadata.version("simple-harness-memory-sdk") == "0.5.1"
+          assert metadata.version("simple-harness-memory-sdk") == "0.6.0"
+          assert metadata.version("simple-harness-sdk") == "0.7.0"
           assert "site-packages" in simple_harness_memory.__file__
           assert importlib.util.find_spec("simple_harness.observability") is not None
           assert sqlite3.sqlite_version_info >= (3, 35)
@@ -190,8 +227,8 @@ jobs:
           print(platform.python_version(), sqlite3.sqlite_version)
           PY
 
-  harness-0-4-compatibility:
-    name: Memory 0.5.1 / Harness 0.4.0 exact wheels
+  harness-0-7-compatibility:
+    name: Memory 0.6.0 / Harness 0.7.0 exact wheels
     needs: candidate
     runs-on: ubuntu-latest
     steps:
@@ -206,25 +243,23 @@ jobs:
         with:
           name: memory-sdk-candidate-${{ github.sha }}
           path: candidate-dist
-      - name: Download and verify the released Harness 0.4.0 wheel
-        run: |
-          mkdir -p harness-dist
-          curl --fail --location --proto '=https' --tlsv1.2 \
-            https://github.com/DennyWanye/simple-harness-sdk/releases/download/v0.4.0/simple_harness_sdk-0.4.0-py3-none-any.whl \
-            --output harness-dist/simple_harness_sdk-0.4.0-py3-none-any.whl
-          echo "aaf8d79a71b75bde0d71157a635b841eb557ea8889e2824571cacd7d8a58ecb6  harness-dist/simple_harness_sdk-0.4.0-py3-none-any.whl" \
-            | sha256sum --check
-      - name: Verify the H0.4 / Memory candidate cell in a clean environment
+      - uses: actions/download-artifact@v4
+        with:
+          name: harness-sdk-candidate-${{ github.sha }}
+          path: harness-dist
+      - name: Verify the H0.7 / Memory candidate cell in a clean environment
         run: |
           MEMORY_WHEEL="$(find candidate-dist -maxdepth 1 -name '*.whl' -print -quit)"
           MEMORY_SHA256="$(sha256sum "$MEMORY_WHEEL" | awk '{print $1}')"
+          HARNESS_WHEEL="$(find harness-dist -maxdepth 1 -name '*.whl' -print -quit)"
+          HARNESS_SHA256="$(sha256sum "$HARNESS_WHEEL" | awk '{print $1}')"
           python scripts/verify_harness_compatibility.py \
             --memory-wheel "$MEMORY_WHEEL" \
             --memory-sha256 "$MEMORY_SHA256" \
-            --expected-memory-version 0.5.1 \
-            --harness-wheel harness-dist/simple_harness_sdk-0.4.0-py3-none-any.whl \
-            --harness-sha256 aaf8d79a71b75bde0d71157a635b841eb557ea8889e2824571cacd7d8a58ecb6 \
-            --expected-harness-version 0.4.0 \
+            --expected-memory-version 0.6.0 \
+            --harness-wheel "$HARNESS_WHEEL" \
+            --harness-sha256 "$HARNESS_SHA256" \
+            --expected-harness-version 0.7.0 \
             --python 3.11
 
   linux-arm64-core:
@@ -242,6 +277,10 @@ jobs:
         with:
           name: memory-sdk-candidate-${{ github.sha }}
           path: candidate-dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: harness-sdk-candidate-${{ github.sha }}
+          path: harness-dist
       - name: Install and verify the same ARM64 candidate bytes
         run: |
           test "$(uname -m)" = "aarch64"
@@ -250,7 +289,8 @@ jobs:
           cd ..
           uv venv .arm64-venv --python 3.13
           WHEEL="$(find candidate-dist -maxdepth 1 -name '*.whl' -print -quit)"
-          uv pip install --python .arm64-venv/bin/python "$WHEEL"
+          HARNESS_WHEEL="$(find harness-dist -maxdepth 1 -name '*.whl' -print -quit)"
+          uv pip install --python .arm64-venv/bin/python "$HARNESS_WHEEL" "$WHEEL"
           .arm64-venv/bin/python -I - <<'PY'
           import asyncio
           import os

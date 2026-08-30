@@ -16,11 +16,7 @@ from typing import Any, Concatenate, ParamSpec, TypeVar, overload
 
 import structlog
 
-from simple_harness_memory.cognitive.decay import (
-    bump_salience,
-    decay_salience,
-    should_forget,
-)
+from simple_harness_memory.cognitive.decay import bump_salience, decay_salience
 from simple_harness_memory.cognitive.twin_builder import (
     build_twin_from_facts,
     detect_fact_conflicts,
@@ -37,11 +33,9 @@ from simple_harness_memory.core.conversation import (
 from simple_harness_memory.core.errors import (
     MemoryIdempotencyConflict,
     MemoryLimitError,
-    MemoryUnsupportedOperation,
     MemoryValidationError,
 )
 from simple_harness_memory.core.models import (
-    SINGLE_VALUED_KEYS,
     BoundedRecallResult,
     Fact,
     FactConflict,
@@ -59,7 +53,6 @@ from simple_harness_memory.embedders.base import (
     encode_vector,
 )
 from simple_harness_memory.embedders.mock import HashEmbedder
-from simple_harness_memory.features.facts import RuleBasedFactExtractor
 from simple_harness_memory.features.reranker import IdentityReranker
 from simple_harness_memory.features.retriever import Retriever
 from simple_harness_memory.features.summarizer import RuleBasedSummarizer
@@ -92,10 +85,8 @@ class BaseMemoryBackend(MemoryBackend):
         self,
         *,
         embedder=None,
-        fact_extractor=None,
         reranker=None,
         summarizer=None,
-        auto_extract_facts: bool = False,
         bounds: MemoryResourceBounds | None = None,
         max_content_chars: int | None = None,
         max_fact_value_chars: int | None = None,
@@ -127,11 +118,9 @@ class BaseMemoryBackend(MemoryBackend):
             context_result_dedupe_seconds=base.context_result_dedupe_seconds,
         )
         self._embedder = embedder or HashEmbedder()
-        self._fact_extractor = fact_extractor or RuleBasedFactExtractor()
         self._reranker = reranker or IdentityReranker()
         self._summarizer = summarizer or RuleBasedSummarizer()
         self._retriever = Retriever(self._embedder, self._reranker)
-        self._auto_extract_facts = auto_extract_facts
         self._operation_lock = asyncio.Lock()
         self._operation_owner: asyncio.Task[Any] | None = None
         self._operation_depth = ContextVar[int](f"memory_operation_depth_{id(self)}", default=0)
@@ -453,8 +442,6 @@ class BaseMemoryBackend(MemoryBackend):
                 embedding_dim=self._embedder.dim,
                 embedding_format_version=EMBEDDING_FORMAT_VERSION,
             )
-            if self._auto_extract_facts and role == "user" and result.status.value == "applied":
-                await self.extract_facts(result.message_id, content, role, user_id=user_id)
         logger.info(
             "memory.append_message",
             principal_id=_opaque_id(user_id),
@@ -488,59 +475,6 @@ class BaseMemoryBackend(MemoryBackend):
     async def get_message(self, message_id: int, *, user_id: str) -> Message | None:
         user_id, _ = self._identity(user_id)
         return await self._get_message_impl(user_id, message_id)
-
-    @_serialized_operation
-    async def extract_facts(
-        self,
-        message_id: int,
-        content: str,
-        role: str,
-        *,
-        user_id: str,
-    ) -> list[Fact]:
-        user_id, _ = self._identity(user_id)
-        source_message = await self._get_message_impl(user_id, message_id)
-        if source_message is None:
-            raise MemoryValidationError("source message is not owned by user")
-        await self._check_db_size()
-        facts = await self._fact_extractor.extract(
-            content,
-            role=role,
-            message_id=message_id,
-            created_at=time.time(),
-            subject="user",
-            user_id=user_id,
-        )
-        stored: list[Fact] = []
-        for fact in facts[: self._bounds.maintenance_batch_size]:
-            fact.user_id = user_id
-            fact.source_msg_id = message_id
-            if (
-                len(fact.value) > self._bounds.max_fact_value_chars
-                or len(fact.evidence) > self._bounds.max_fact_value_chars
-            ):
-                raise MemoryLimitError("fact value/evidence exceeds max_fact_value_chars")
-            new_id = await self._insert_fact_impl(user_id, fact)
-            fact.id = new_id
-            stored.append(fact)
-            if fact.key in SINGLE_VALUED_KEYS:
-                old_facts = await self._query_facts_impl(
-                    user_id,
-                    limit=self._bounds.recall_candidate_facts,
-                    subject=fact.subject,
-                    active_only=True,
-                )
-                for old in old_facts:
-                    if old.key == fact.key and old.id != new_id and old.id is not None:
-                        await self._supersede_fact_impl(user_id, old.id, new_id)
-        await self._commit()
-        logger.info(
-            "memory.extract_facts",
-            principal_id=_opaque_id(user_id),
-            message_id=message_id,
-            fact_count=len(stored),
-        )
-        return stored
 
     @_serialized_operation
     async def get_facts(
@@ -963,7 +897,6 @@ class BaseMemoryBackend(MemoryBackend):
         decayed = 0
         forgotten = 0
         messages = await self._query_messages_impl(user_id, limit=cap)
-        facts = await self._query_facts_impl(user_id, limit=cap, active_only=True)
         for message in messages:
             ref = message.last_decay_at or message.last_recalled or message.created_at
             days = (now - ref) / 86400.0
@@ -976,17 +909,6 @@ class BaseMemoryBackend(MemoryBackend):
                     None,
                     last_decay_at=now,
                 )
-                decayed += 1
-        for fact in facts:
-            if fact.pinned or fact.id is None:
-                continue
-            ref = fact.last_decay_at or fact.created_at
-            days = (now - ref) / 86400.0
-            if should_forget(fact.decay_rate, days):
-                await self._set_fact_decay_impl(user_id, fact.id, forgotten_at=now)
-                forgotten += 1
-            else:
-                await self._set_fact_decay_impl(user_id, fact.id, last_decay_at=now)
                 decayed += 1
         await self._commit()
         return {"decayed": decayed, "forgotten": forgotten}
@@ -1079,42 +1001,6 @@ class BaseMemoryBackend(MemoryBackend):
         await self._ensure_session_impl(user_id, session_id)
         await self._record_workspace_impl(user_id, session_id, action_type, payload)
         await self._commit()
-
-    @_serialized_operation
-    async def delete_session(self, session_id: str, *, user_id: str) -> int:
-        user_id, session_id = self._identity(user_id, session_id)
-        assert session_id is not None
-        deleted = await self._delete_session_impl(user_id, session_id)
-        await self._commit()
-        await self._rebuild_twin(user_id=user_id)
-        return deleted
-
-    @_serialized_operation
-    async def delete_all(self) -> None:
-        raise MemoryUnsupportedOperation()
-
-    @_serialized_operation
-    async def delete_old_sessions(
-        self,
-        older_than_days: float = 30.0,
-        *,
-        user_id: str,
-        limit: int | None = None,
-    ) -> int:
-        user_id, _ = self._identity(user_id)
-        cutoff = time.time() - older_than_days * 86400.0
-        session_ids = await self._old_session_ids_impl(
-            user_id,
-            cutoff,
-            self._bounded_limit(limit or self._bounds.maintenance_batch_size),
-        )
-        deleted = 0
-        for session_id in session_ids:
-            deleted += await self._delete_session_impl(user_id, session_id)
-        await self._commit()
-        if deleted:
-            await self._rebuild_twin(user_id=user_id)
-        return deleted
 
     async def _rebuild_twin(self, *, user_id: str, subject: str = "user") -> None:
         facts = await self._query_facts_impl(

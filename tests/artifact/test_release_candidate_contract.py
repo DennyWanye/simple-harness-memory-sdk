@@ -45,10 +45,10 @@ def _read_build_info(path: Path) -> dict[str, str]:
 def _assert_ci_metadata(dist: Path) -> None:
     info = _read_build_info(dist / "BUILD_INFO.txt")
     assert info["package"] == "simple-harness-memory-sdk"
-    assert info["version"] == "0.5.2"
+    assert info["version"] == "0.6.0"
     assert re.fullmatch(r"[0-9a-f]{40}", info["source_commit"])
     assert info["requires_python"] == "<3.14,>=3.11"
-    assert info["harness_requires"] == "simple-harness-sdk<0.7,>=0.4"
+    assert info["harness_requires"] == "simple-harness-sdk<0.8,>=0.7"
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", info["build_utc"])
     wheels = sorted(dist.glob("*.whl"))
     sdists = sorted((*dist.glob("*.tar.gz"), *dist.glob("*.zip")))
@@ -96,9 +96,10 @@ def test_ci_covers_full_matrix_clean_wheel_and_arm64() -> None:
     assert "uv run --frozen --group dev mypy src tests" in workflow
     assert "Build candidate bytes once" in workflow
     assert "twine check candidate-dist/*" in workflow
-    assert "SOURCE_DATE_EPOCH" not in workflow
+    assert workflow.count("SOURCE_DATE_EPOCH=315532800") == 1
     assert "scripts/write_candidate_metadata.py" in workflow
     assert "MEMORY_SDK_ARTIFACT_DIST: candidate-dist" in workflow
+    assert "HARNESS_SDK_ARTIFACT_DIST: harness-dist" in workflow
     assert 'MEMORY_SDK_CI_CANDIDATE: "1"' in workflow
     assert "retention-days: 30" in workflow
     assert "ubuntu-24.04-arm" in workflow
@@ -109,10 +110,15 @@ def test_ci_covers_full_matrix_clean_wheel_and_arm64() -> None:
     assert "uv pip install --system" in workflow
     assert 'test "$(uname -m)" = "aarch64"' in workflow
     assert "agent_record_turn" in workflow
-    assert "harness-0-4-compatibility" in workflow
+    assert "harness-0-7-compatibility" in workflow
     assert "scripts/verify_harness_compatibility.py" in workflow
-    assert "simple_harness_sdk-0.4.0-py3-none-any.whl" in workflow
-    assert "aaf8d79a71b75bde0d71157a635b841eb557ea8889e2824571cacd7d8a58ecb6" in workflow
+    assert "simple_harness_sdk-0.7.0-*.whl" in workflow
+    assert "8f1027d2d64ca3a7e7a4d161833507eadac9552b" in workflow
+    assert "b9421ddf2b1d5a4a4a0920a2e878c1d3cf098ff6ef0af8975b9eb5c516037d7b" in workflow
+    assert "secrets.HARNESS_REPOSITORY_TOKEN || github.token" in workflow
+    assert "fail closed without repository access" in workflow
+    assert "harness-sdk-candidate-${{ github.sha }}" in workflow
+    assert workflow.count("uv pip install") >= 3
     assert (
         "FROM turn_receipts WHERE deployment_id='deployment-a' AND turn_id='turn-a'"
         in workflow

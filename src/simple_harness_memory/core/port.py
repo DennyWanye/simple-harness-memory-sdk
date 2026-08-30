@@ -47,16 +47,6 @@ class MemoryBackend(ABC):
     async def get_message(self, message_id: int, *, user_id: str) -> Message | None: ...
 
     @abstractmethod
-    async def extract_facts(
-        self,
-        message_id: int,
-        content: str,
-        role: str,
-        *,
-        user_id: str,
-    ) -> list[Fact]: ...
-
-    @abstractmethod
     async def get_facts(
         self,
         subject: str = "user",
@@ -184,22 +174,6 @@ class MemoryBackend(ABC):
         *,
         user_id: str,
     ) -> None: ...
-
-    @abstractmethod
-    async def delete_session(self, session_id: str, *, user_id: str) -> int: ...
-
-    @abstractmethod
-    async def delete_all(self) -> None:
-        """Deprecated compatibility surface; always fails closed."""
-
-    @abstractmethod
-    async def delete_old_sessions(
-        self,
-        older_than_days: float = 30.0,
-        *,
-        user_id: str,
-        limit: int | None = None,
-    ) -> int: ...
 
     @abstractmethod
     async def reindex(

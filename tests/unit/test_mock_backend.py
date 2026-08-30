@@ -7,8 +7,7 @@ import time
 import pytest
 
 from simple_harness_memory.backends.mock import MockMemoryBackend
-from simple_harness_memory.core.errors import MemoryUnsupportedOperation
-from simple_harness_memory.core.models import FACT_DECAY_DEFAULTS, Fact
+from simple_harness_memory.core.models import Fact
 
 USER = "user-1"
 
@@ -117,10 +116,10 @@ async def test_fact_active_and_forget(backend: MockMemoryBackend) -> None:
     assert not any(item.key == "pet_name" for item in await backend.get_facts(user_id=USER))
 
 
-def test_fact_decay_defaults_by_category() -> None:
-    assert FACT_DECAY_DEFAULTS["profile"] == 0.0
-    assert FACT_DECAY_DEFAULTS["event"] == 0.05
-    assert FACT_DECAY_DEFAULTS["constraint"] == 0.001
+def test_fact_category_does_not_set_retention_policy() -> None:
+    import simple_harness_memory.core.models as models
+
+    assert not hasattr(models, "FACT_DECAY_DEFAULTS")
     profile = Fact(
         id=None,
         user_id=USER,
@@ -146,7 +145,7 @@ def test_fact_decay_defaults_by_category() -> None:
         created_at=0.0,
     )
     assert profile.decay_rate == 0.0
-    assert event.decay_rate == 0.05
+    assert event.decay_rate == 0.0
 
 
 @pytest.mark.asyncio
@@ -169,11 +168,9 @@ async def test_recall_and_reinforce_bumps_salience(
 
 
 @pytest.mark.asyncio
-async def test_delete_all_is_deprecated_fail_closed(
-    backend: MockMemoryBackend,
-) -> None:
+async def test_physical_delete_methods_are_not_public(backend: MockMemoryBackend) -> None:
     await _append(backend, "s1", "user", "保留", "mock-12")
-    with pytest.raises(MemoryUnsupportedOperation) as error:
-        await backend.delete_all()
-    assert error.value.code == "runtime_delete_disabled"
+    assert not hasattr(backend, "delete_session")
+    assert not hasattr(backend, "delete_old_sessions")
+    assert not hasattr(backend, "delete_all")
     assert await backend.get_recent_messages("s1", user_id=USER)

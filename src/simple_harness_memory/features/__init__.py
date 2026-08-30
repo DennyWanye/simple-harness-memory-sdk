@@ -1,10 +1,5 @@
 """simple_harness_memory.features — Facts / 召回 / 重排 / 摘要。"""
 
-from simple_harness_memory.features.facts import (
-    FactExtractor,
-    LLMFactExtractor,
-    RuleBasedFactExtractor,
-)
 from simple_harness_memory.features.reranker import (
     CrossEncoderReranker,
     IdentityReranker,
@@ -18,9 +13,6 @@ from simple_harness_memory.features.summarizer import (
 )
 
 __all__ = [
-    "FactExtractor",
-    "RuleBasedFactExtractor",
-    "LLMFactExtractor",
     "Retriever",
     "Reranker",
     "IdentityReranker",

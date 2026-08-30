@@ -1,5 +1,9 @@
 # Memory SDK 架构设计文档
 
+> 历史基线：本文保留 0.4/0.5 的原始设计以便审计，不是 0.6 生产事实源。
+> 0.6 当前边界见 [`../ARCHITECTURE/ARCHITECTURE.md`](../ARCHITECTURE/ARCHITECTURE.md)，
+> fresh schema 见 [`human-memory-v1-schema.md`](human-memory-v1-schema.md)。
+
 **创建日期**: 2026-08-17
 **状态**: 已实施（Phase 1-4 本地切片完成；2026-08-19 已接入 Simple Harness host 并真机 E2E 验证）
 **决策来源**: 2026-08-17 头脑风暴会话

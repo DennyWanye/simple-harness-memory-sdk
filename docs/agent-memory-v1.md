@@ -22,14 +22,14 @@ must match on replay.
 ## Stable lifecycle and failures
 
 `recall_for_turn()` creates one bounded, hash-addressed recall snapshot. `release_recall()` releases that
-same snapshot. `record_committed_turn()` atomically writes one receipt, the committed user/assistant pair
-and an optional durable fact job. Replaying the same canonical turn returns `already_applied`; reusing an
-identifier with a different canonical payload raises `memory_idempotency_conflict`.
+same snapshot. `record_committed_turn()` atomically writes one receipt and the committed user/assistant
+pair; it does not create a legacy fact job. Replaying the same canonical turn returns `already_applied`;
+reusing an identifier with a different canonical payload raises `memory_idempotency_conflict`.
 
 Recall failure may degrade a turn to empty Memory context. A committed response is not rolled back when
 Memory delivery fails: Harness retries its durable outbox and Memory deduplicates by turn receipt. Erasure
-epochs and write fences reject late recall, outbox and fact-worker replay with `rejected_erased` rather than
-resurrecting deleted content.
+epochs and write fences reject late recall and outbox replay with `rejected_erased` rather than resurrecting
+deleted content. The 0.6 production package has no legacy fact-worker mutation path.
 
 The backend reads and exposes the personal erasure fence before embedding or ranking. An embedding timeout
 or corruption path therefore retains the fence, and a deletion crossing that work boundary invalidates the

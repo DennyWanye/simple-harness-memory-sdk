@@ -4,9 +4,8 @@
     retention = exp(-decay_rate * days_since_last_recall)
     new_salience = base_salience * retention
 
-每日 decay 任务：
-- 对所有非 pinned、非 forgotten 的 Message / Fact 执行衰减
-- 当 retention < FORGET_THRESHOLD 时标记为 forgotten
+兼容 decay 算法只供显式 record-specific 数值计算。当前每日 maintenance 只更新 Message salience；
+Fact category 不提供 decay rate，Fact 也不会在 maintenance 中自动遗忘。
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ def retention(decay_rate: float, days_elapsed: float) -> float:
     """计算经过 days_elapsed 天后的保留率（0.0-1.0）。
 
     Args:
-        decay_rate:   衰减率（见 FACT_DECAY_DEFAULTS）
+        decay_rate: legacy record-specific decay rate
         days_elapsed: 距上次召回的天数
 
     Returns:

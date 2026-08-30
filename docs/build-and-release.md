@@ -3,164 +3,133 @@ SPDX-FileCopyrightText: 2026 Denny
 SPDX-License-Identifier: BUSL-1.1
 -->
 
-# Build and release runbook
+# 0.6 candidate build and verification runbook
 
-This is the authoritative operator procedure for building and distributing
-`simple-harness-memory-sdk`. Build authority is local. GitHub Releases may host the exact frozen
-bytes for AIPhone and other consumers, but must never rebuild them.
+This is the current operator procedure for `simple-harness-memory-sdk` 0.6.0. The Task 6 boundary is
+candidate-only: build and verify artifacts, but do not create or move a tag, push a release commit, upload
+assets, or publish the candidate. `.github/workflows/release.yml` remains the read-only 0.5.1 historical
+publisher and must not be used for 0.6.
 
-## Invariants
+## Current invariants
 
-- Release Harness SDK first; Memory requires Harness SDK `>=0.4,<0.6` as a base dependency and
-  keeps the same range for `[harness]`.
-- Build once from the exact candidate commit in a clean detached worktree.
-- The version tag, `BUILD_INFO.txt`, wheel metadata, and source commit must agree.
-- Publish the wheel, sdist, `SHA256SUMS`, and `BUILD_INFO.txt` together.
-- Never overwrite a published asset or move a published tag; issue a new version instead.
-- Do not treat a GitHub Actions artifact as permanent distribution storage.
+- Memory version is exactly `0.6.0`; base and `[harness]` metadata both require
+  `simple-harness-sdk>=0.7,<0.8`.
+- The Harness input is exact source commit `8f1027d2d64ca3a7e7a4d161833507eadac9552b`, built once as
+  a 0.7.0 wheel with `SOURCE_DATE_EPOCH=315532800`; its required SHA-256 is
+  `b9421ddf2b1d5a4a4a0920a2e878c1d3cf098ff6ef0af8975b9eb5c516037d7b`. Source tests use the same
+  checkout through the frozen `uv.lock` source binding.
+- Build Memory wheel and sdist once from one reviewed, clean commit. All artifact, clean-consumer and
+  platform jobs consume those same bytes.
+- `BUILD_INFO.txt`, `SHA256SUMS`, wheel metadata and source commit must agree.
+- A dirty-worktree build may be used only as non-final validation evidence. It has no promotion authority.
 
-## Prerequisites
-
-- Git and authenticated GitHub CLI (`gh auth status`).
-- `uv` and Python 3.11–3.13.
-- A clean repository and candidate commit already merged to `main`.
-- The compatible Harness wheel available for joint consumer testing.
-
-## 1. Freeze the candidate
-
-The values below prepare the current 0.5.1 candidate. Freeze `CANDIDATE_COMMIT` from the reviewed,
-clean release-identity commit before creating the tag.
+## 1. Verify the frozen source inputs
 
 ```bash
 MEMORY_REPO=/Users/denny/projects/simple-harness-memory-sdk
-HARNESS_REPO=/Users/denny/projects/simple-harness-sdk
-RELEASE_TAG=v0.5.1
-CANDIDATE_COMMIT="$(git -C "$MEMORY_REPO" rev-parse main)"
+HARNESS_REPO=/Users/denny/projects/simple-harness-sdk-memory-program
+HARNESS_COMMIT=8f1027d2d64ca3a7e7a4d161833507eadac9552b
+CANDIDATE_COMMIT="$(git -C "$MEMORY_REPO" rev-parse HEAD)"
 
-git -C "$MEMORY_REPO" status --short
 test -z "$(git -C "$MEMORY_REPO" status --short)"
-git -C "$MEMORY_REPO" merge-base --is-ancestor "$CANDIDATE_COMMIT" main
+test "$(git -C "$HARNESS_REPO" rev-parse HEAD)" = "$HARNESS_COMMIT"
+uv sync --directory "$MEMORY_REPO" --frozen --group dev
+uv run --directory "$MEMORY_REPO" --frozen --group dev python -c \
+  'import importlib.metadata as m; assert m.version("simple-harness-sdk") == "0.7.0"'
 ```
 
-For a new version, create the annotated tag locally only after review:
+If either exact-source assertion fails, stop. Do not substitute a sibling Harness 0.6.x checkout or let the
+resolver fetch a different version.
+
+## 2. Source and quality gates
 
 ```bash
-git -C "$MEMORY_REPO" tag -a "$RELEASE_TAG" "$CANDIDATE_COMMIT" \
-  -m "simple-harness-memory-sdk ${RELEASE_TAG#v}"
-```
-
-Do not move an existing tag.
-
-After creating the local tag, verify it before building:
-
-```bash
-test "$(git -C "$MEMORY_REPO" rev-parse "$RELEASE_TAG^{}")" = "$CANDIDATE_COMMIT"
-```
-
-## 2. Build once in a clean worktree
-
-```bash
-RELEASE_DIR="$(mktemp -d /Users/denny/projects/simple-harness-memory-release.XXXXXX)"
-git -C "$MEMORY_REPO" worktree add --detach "$RELEASE_DIR" "$CANDIDATE_COMMIT"
-cd "$RELEASE_DIR"
-
-uv sync --frozen --group dev
+cd "$MEMORY_REPO"
 uv run --frozen --group dev pytest -q
 uv run --frozen --group dev ruff check src tests
 uv run --frozen --group dev mypy src tests
+uv run --frozen --group dev ruff check scripts
+uv run --frozen --group dev mypy --strict \
+  scripts/harness_compatibility_consumer.py \
+  scripts/verify_harness_compatibility.py \
+  scripts/write_candidate_metadata.py
 uvx --from "reuse>=5,<6" reuse lint
+```
 
+## 3. Build the exact Harness and Memory candidates
+
+Run this only after `CANDIDATE_COMMIT` is reviewed and the Memory worktree is clean:
+
+```bash
+RELEASE_DIR="$(mktemp -d /Users/denny/projects/simple-harness-memory-candidate.XXXXXX)"
+git -C "$MEMORY_REPO" worktree add --detach "$RELEASE_DIR" "$CANDIDATE_COMMIT"
+cd "$RELEASE_DIR"
+
+SOURCE_DATE_EPOCH=315532800 uv build --wheel --project "$HARNESS_REPO" --out-dir harness-dist
+test "$(find harness-dist -maxdepth 1 -name 'simple_harness_sdk-0.7.0-*.whl' | wc -l)" = 1
+echo "b9421ddf2b1d5a4a4a0920a2e878c1d3cf098ff6ef0af8975b9eb5c516037d7b  harness-dist/simple_harness_sdk-0.7.0-py3-none-any.whl" \
+  | shasum -a 256 -c
 uv build --out-dir candidate-dist
 uvx --from "twine>=6.1,<7" twine check candidate-dist/*
+
 BUILD_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-uv run python scripts/write_candidate_metadata.py \
+python scripts/write_candidate_metadata.py \
   --dist candidate-dist \
   --source-commit "$CANDIDATE_COMMIT" \
   --build-utc "$BUILD_UTC"
+
 MEMORY_SDK_ARTIFACT_DIST=candidate-dist \
+HARNESS_SDK_ARTIFACT_DIST=harness-dist \
 MEMORY_SDK_CI_CANDIDATE=1 \
   uv run --frozen --group dev pytest -q tests/artifact
 (cd candidate-dist && shasum -a 256 -c SHA256SUMS)
+```
 
+## 4. Clean consumer
+
+```bash
+cd "$RELEASE_DIR"
 uv venv .candidate-venv --python 3.13
-uv pip install --python .candidate-venv/bin/python candidate-dist/*.whl
-.candidate-venv/bin/python -I -c \
-  'import simple_harness_memory; print(simple_harness_memory.__version__)'
+MEMORY_WHEEL="$(find candidate-dist -maxdepth 1 -name '*.whl' -print -quit)"
+HARNESS_WHEEL="$(find harness-dist -maxdepth 1 -name '*.whl' -print -quit)"
+uv pip install --python .candidate-venv/bin/python "$HARNESS_WHEEL" "$MEMORY_WHEEL"
+.candidate-venv/bin/python -I - <<'PY'
+import importlib.metadata as metadata
+import inspect
+
+from simple_harness_memory import MemoryManager, __version__
+
+assert __version__ == "0.6.0"
+assert metadata.version("simple-harness-sdk") == "0.7.0"
+for name in ("enable_facts", "fact_extractor", "auto_extract_facts"):
+    assert name not in inspect.signature(MemoryManager.build).parameters
+assert not hasattr(MemoryManager, "delete_session")
+assert not hasattr(MemoryManager, "delete_old_sessions")
+assert not hasattr(MemoryManager, "delete_all")
+PY
 ```
 
-For the official Agent Memory combinations, run `scripts/verify_harness_compatibility.py` separately
-against the released Harness 0.4.0 wheel and the exact Harness 0.5.0 candidate (then release) wheel.
-Pass each wheel path, expected version, and SHA-256 explicitly. The script creates a clean venv,
-installs only those wheel bytes, and runs the consumer with `python -I`; sibling editable source is
-not release proof. Both the Harness 0.5.0 candidate and exact final release/download-back cells are now
-complete for Memory 0.5.1; never record a missing cell as PASS for a future release.
+The CI candidate job additionally uploads the exact Memory and Harness artifacts once and reuses them for
+Python 3.11/3.12/3.13, Windows x64, macOS ARM64 and Linux ARM64 checks. Because the Harness repository is
+private, CI needs the `HARNESS_REPOSITORY_TOKEN` secret with read access. It falls back to `github.token`
+only when that token already has cross-repository access; otherwise checkout fails closed and no candidate
+job is skipped or marked successful.
 
-The current successful Harness 0.5 candidate run is recorded in
-`docs/harness-compatibility-candidate-0.5.1-ac2e2add.json`. It supersedes the historical
-`docs/harness-compatibility-candidate-0.5.1.json`, whose candidate was withdrawn and has no promotion
-authority. Neither receipt replaces the final Harness release/download-back cell; both contain no
-local paths or Memory content.
+## 5. Stop boundary and recordkeeping
 
-The final Harness v0.5.0 public download-back matrix is complete and recorded in
-`docs/harness-compatibility-release-0.5.1.json`; its wheel bytes match the accepted candidate. This
-formal receipt, together with the released H0.4 cell, closes the Harness prerequisite for Memory 0.5.1.
+Task 6 ends after candidate verification. Record source commit, exact Harness commit, commands, test totals,
+artifact filenames and SHA-256 values. Do not invoke the release workflow, create a 0.6 tag, push, upload, or
+publish. A later explicitly authorized release task must define a new 0.6 publisher contract before any such
+action.
 
-`candidate-dist/` is now the frozen local publication set. Preserve these exact bytes and do not
-rebuild the same version at upload time.
-
-## 3. Publish the tag and frozen assets
-
-```bash
-git -C "$MEMORY_REPO" push origin main "refs/tags/$RELEASE_TAG"
-
-gh release create "$RELEASE_TAG" \
-  "$RELEASE_DIR"/candidate-dist/*.whl \
-  "$RELEASE_DIR"/candidate-dist/*.tar.gz \
-  "$RELEASE_DIR"/candidate-dist/SHA256SUMS \
-  "$RELEASE_DIR"/candidate-dist/BUILD_INFO.txt \
-  --repo DennyWanye/simple-harness-memory-sdk \
-  --verify-tag \
-  --title "simple-harness-memory-sdk $RELEASE_TAG" \
-  --notes "Locally built and verified frozen Memory SDK artifacts."
-```
-
-GitHub is only the download channel. Do not run the repository's build job during publication,
-and do not use `gh release upload --clobber`.
-
-## 4. Download-back verification
-
-```bash
-VERIFY_DIR="$(mktemp -d /tmp/simple-harness-memory-download.XXXXXX)"
-gh release download "$RELEASE_TAG" \
-  --repo DennyWanye/simple-harness-memory-sdk \
-  --dir "$VERIFY_DIR"
-(cd "$VERIFY_DIR" && shasum -a 256 -c SHA256SUMS)
-cmp "$RELEASE_DIR/candidate-dist/BUILD_INFO.txt" "$VERIFY_DIR/BUILD_INFO.txt"
-```
-
-## 5. Consumer URL and AIPhone handoff
-
-The stable wheel URL is:
-
-```text
-https://github.com/DennyWanye/simple-harness-memory-sdk/releases/download/<tag>/<wheel-filename>
-```
-
-AIPhone must pin both SDKs by exact Release URL and SHA-256. It must then update its expected
-distribution versions, provenance/candidate manifests, hashed requirements, offline wheelhouse,
-`uv.lock`, composition code, and candidate tests. A successful URL download alone does not prove
-AIPhone integration.
-
-Never use `latest`, a branch archive, or an unversioned URL for a production candidate.
-
-## 6. Cleanup and recordkeeping
-
-After retaining the frozen local publication set and verifying downloaded bytes:
+After retaining the candidate evidence outside Git, remove the detached worktree:
 
 ```bash
 git -C "$MEMORY_REPO" worktree remove "$RELEASE_DIR"
 ```
 
-Update `README.md`, `docs/integration-status.md`, and `ARCHITECTURE/ARCHITECTURE.md` with the tag,
-source commit, wheel SHA-256, test result, and Release URL. Do not commit generated distributions,
-credentials, logs, databases, or raw test evidence.
+## Historical releases
+
+The published 0.5.1 release and its Harness 0.4/0.5 receipts remain historical audit records in
+`docs/integration-status.md` and `docs/harness-compatibility-*.json`. They do not define the 0.6 resolver,
+candidate or publication contract.

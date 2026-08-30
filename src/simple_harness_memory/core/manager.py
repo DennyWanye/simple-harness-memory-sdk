@@ -17,7 +17,6 @@ from simple_harness_memory.core.errors import (
     MemoryOwnershipConflict,
     MemoryProductionConfigurationError,
 )
-from simple_harness_memory.core.fact_jobs import FactJobWorker
 from simple_harness_memory.core.identity import (
     ExportPage,
     MemoryPrincipal,
@@ -67,14 +66,12 @@ class MemoryManager:
         backend: MemoryBackend,
         world: WorldModelPort,
         *,
-        fact_worker: FactJobWorker | None = None,
         observability_sink=None,
         correlation: CorrelationInput = None,
         observability: MemoryObservability | None = None,
     ) -> None:
         self._backend = backend
         self.world = world
-        self._fact_worker = fact_worker
         self._closed = False
         inherited = getattr(backend, "observability", None)
         self._observability = observability or (
@@ -95,11 +92,9 @@ class MemoryManager:
         cls,
         db_path=None,
         *,
-        enable_facts=False,
         enable_world_model=False,
         backend=None,
         embedder=None,
-        fact_extractor=None,
         reranker=None,
         summarizer=None,
         world=None,
@@ -114,10 +109,8 @@ class MemoryManager:
         if backend is None:
             kwargs = {
                 "embedder": embedder,
-                "fact_extractor": fact_extractor,
                 "reranker": reranker,
                 "summarizer": summarizer,
-                "auto_extract_facts": enable_facts,
                 "bounds": bounds,
                 "observability_sink": observability_sink,
                 "correlation": correlation,
@@ -148,20 +141,11 @@ class MemoryManager:
         logger.info(
             "memory.manager_built",
             backend_type=type(backend).__name__,
-            enable_facts=enable_facts,
             enable_world_model=enable_world_model,
         )
-        worker = None
-        if enable_facts and all(
-            hasattr(backend, name)
-            for name in ("recover_fact_jobs", "claim_fact_job", "apply_fact_job")
-        ):
-            worker = FactJobWorker(backend, backend._fact_extractor, observer)
-            await worker.start()
         return cls(
             backend=backend,
             world=world_model,
-            fact_worker=worker,
             observability=observer,
         )
 
@@ -471,8 +455,6 @@ class MemoryManager:
                     "memory.embedding_incremental_degraded",
                     stable_code="memory_embedding_incremental_degraded",
                 )
-        if self._fact_worker is not None and status_value == "applied":
-            self._fact_worker.notify()
         status = harness.CommittedTurnStatus(status_value)
         event_name = {
             "already_applied": "memory.committed_turn.replayed",
@@ -494,15 +476,6 @@ class MemoryManager:
             },
             severity="warning" if status_value == "rejected_erased" else "info",
         )
-        if self._fact_worker is not None and status_value == "applied":
-            self._observability.emit(
-                "memory.fact_job.pending",
-                operation="fact_job",
-                outcome="accepted",
-                entity_id=request.turn_id,
-                session_id=principal.session_id,
-                attributes={"stage": "pending"},
-            )
         logger.info(
             "memory.committed_turn",
             principal_id=principal.opaque_id,
@@ -512,11 +485,6 @@ class MemoryManager:
         return harness.CommittedTurnReceipt(
             request.turn_id, request.payload_hash, status, receipt_id
         )
-
-    async def drain_fact_jobs(self) -> None:
-        if self._fact_worker is not None:
-            while await self._fact_worker.drain_once():
-                pass
 
     def _emit_failure(
         self,
@@ -546,7 +514,7 @@ class MemoryManager:
         if self._closed:
             return {
                 "schema_version": 1,
-                "sdk_version": "0.5.2",
+                "sdk_version": "0.6.0",
                 "component": "memory",
                 "lifecycle": "closed",
                 "health": "closed",
@@ -567,7 +535,7 @@ class MemoryManager:
         )
         return {
             "schema_version": 1,
-            "sdk_version": "0.5.2",
+            "sdk_version": "0.6.0",
             "component": "memory",
             "lifecycle": "open",
             "health": health,
@@ -706,9 +674,6 @@ class MemoryManager:
     async def get_message(self, message_id, *, user_id):
         return await self._backend.get_message(message_id, user_id=user_id)
 
-    async def extract_facts(self, message_id, content, role, *, user_id):
-        return await self._backend.extract_facts(message_id, content, role, user_id=user_id)
-
     async def get_facts(
         self,
         subject="user",
@@ -841,17 +806,6 @@ class MemoryManager:
             session_id, action_type, payload, user_id=user_id
         )
 
-    async def delete_session(self, session_id, *, user_id):
-        return await self._backend.delete_session(session_id, user_id=user_id)
-
-    async def delete_all(self):
-        await self._backend.delete_all()
-
-    async def delete_old_sessions(self, older_than_days=30.0, *, user_id, limit=None):
-        return await self._backend.delete_old_sessions(
-            older_than_days, user_id=user_id, limit=limit
-        )
-
     async def reindex(self, embedder=None, *, user_id, limit=None):
         return await self._backend.reindex(embedder, user_id=user_id, limit=limit)
 
@@ -895,8 +849,6 @@ class MemoryManager:
         )
 
     async def close(self):
-        if self._fact_worker is not None:
-            await self._fact_worker.close()
         await self._backend.close()
         self._closed = True
         self._observability.close()

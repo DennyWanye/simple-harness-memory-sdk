@@ -1,8 +1,14 @@
 # Integration status
 
-Status as of 2026-08-25: 0.5.2 is a source candidate extending the same public contract to Harness
-`>=0.4,<0.7`; it is not a release until its exact-wheel Harness 0.6.1 and Host prepublish gates pass.
+Status as of 2026-08-30: 0.6.0 is an unpublished source candidate requiring exact Harness
+`>=0.7,<0.8`. Its Human Memory evidence/audit/suppression/analysis contracts require a clean exact-wheel
+Harness 0.7 consumer gate before promotion. The pinned Harness source is
+`8f1027d2d64ca3a7e7a4d161833507eadac9552b`; CI builds that 0.7.0 wheel once, passes its directory through
+`HARNESS_SDK_ARTIFACT_DIST`, and reuses the same Harness and Memory bytes in clean consumers. Task 6 does
+not publish, tag or push 0.6.
 The published fallback remains 0.5.1.
+
+## Historical 0.5 release evidence
 
 Historical release fact as of 2026-08-24: `simple-harness-memory-sdk` 0.5.1 is published. It requires Harness
 `>=0.4,<0.6`; this metadata-only expansion does not change

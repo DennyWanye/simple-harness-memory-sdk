@@ -7,9 +7,9 @@
 
 认知记忆 SDK，为运行时 consumer 提供独立、product-neutral 的持久记忆系统。
 
-当前 source candidate：**0.5.2**（Python 3.11–3.13；尚未发布；已发布 fallback 为 0.5.1）。
+当前 source candidate：**0.6.0**（Python 3.11–3.13；尚未发布；已发布 fallback 为 0.5.1）。
 
-**基于认知科学三层模型 + 数字孪生体 + 世界对象，使用 RRF 混合召回。**
+**原始证据 + 五类长期记忆系统 + 跨系统过程 + 认知投影；工作记忆由 Host Context 承担。**
 
 架构设计详见：[docs/architecture.md](docs/architecture.md)
 
@@ -21,7 +21,6 @@
 pip install simple-harness-memory-sdk                 # 基础（仅核心）
 pip install "simple-harness-memory-sdk[embeddings]"   # BGE-M3 语义嵌入 + CrossEncoder 重排
 pip install "simple-harness-memory-sdk[world]"        # 联网新闻/天气 provider
-pip install "simple-harness-memory-sdk[openai]"       # LLM 事实提取
 pip install "simple-harness-memory-sdk[harness]"      # Simple Harness Agent Memory v1 一等集成
 pip install "simple-harness-memory-sdk[all]"          # 以上全部
 ```
@@ -33,10 +32,9 @@ extras 与功能的对应关系（与 `pyproject.toml` 的 `[project.optional-de
 |--------------|--------------------------------|----------|
 | `embeddings` | `torch`、`sentence-transformers` | BGE-M3 语义向量（`embedder="bge"`）、CrossEncoder 重排；运行时只读本地权重，不下载 |
 | `world`      | `httpx`、`python-dateutil`      | 联网的新闻/天气 provider（NewsAPI / OpenWeatherMap） |
-| `openai`     | `openai`                        | LLM 事实提取（需自备 OpenAI 客户端，见 `features/facts.py` 的 `LLMFactExtractor`） |
-| `harness`    | `simple-harness-sdk>=0.4,<0.7` | `MemoryManager` 直接实现 Harness `AgentMemoryPort` |
+| `harness`    | `simple-harness-sdk>=0.7,<0.8` | Harness 主模型提交严格结构化 analysis；Memory 验证、审计并应用 |
 | `dev`        | `pytest` 等                     | 开发 / 测试 |
-| `all`        | 上述四个运行时 extra            | 完整功能 |
+| `all`        | 上述三个运行时 extra            | 完整功能 |
 
 ## 快速上手
 
@@ -50,7 +48,7 @@ from simple_harness_memory import MemoryManager
 
 async def main():
     # SQLite fresh schema v4；默认 HashEmbedder 仅需基础安装。
-    memory = await MemoryManager.build("memory.db", enable_facts=True)
+    memory = await MemoryManager.build("memory.db")
 
     # user_id 是稳定产品主体；source_event_id 是 consumer 生成的确定性幂等键。
     applied = await memory.append_message(
@@ -68,10 +66,7 @@ async def main():
     )
     assert hits, "recall 应返回命中结果"
 
-    facts = await memory.get_facts(user_id="user-001")
-    assert facts, "应提取到 facts"
-
-    print(f"OK: 召回 {len(hits)} 条，提取 {len(facts)} 条事实")
+    print(f"OK: 召回 {len(hits)} 条")
 
     await memory.close()
 
@@ -84,11 +79,11 @@ asyncio.run(main())
 `session_id` 可在不同 user/deployment 共存，但同一 deployment 内首次绑定后不可改绑。
 Harness 消费者不再创建 Memory Adapter，也不手动 recall/append。安装 `[harness]` 后，直接把
 `MemoryManager` 传给 Harness production ports；Harness canonical DTO 仅在 integration 方法调用时
-lazy import。Harness 0.4 现在也是基础依赖，用于共享 import-pure 的 observability wire contract；
+lazy import。Harness 0.7 是精确的基础依赖范围，用于共享 typed analysis 与 observability contract；
 Memory 不复制事件 schema，也不导入 Harness runtime/provider/tool 实现：
 
 ```python fragment
-memory = await MemoryManager.build("memory.db", enable_facts=True)
+memory = await MemoryManager.build("memory.db")
 ports = ConsumerRuntimePorts(memory=memory)  # direct AgentMemoryPort
 ```
 
@@ -97,20 +92,23 @@ ports = ConsumerRuntimePorts(memory=memory)  # direct AgentMemoryPort
 `MemoryManager` 的直接构造、`build()`、`build_development()`、`build_production()`，以及
 `MockMemoryBackend` / `SQLiteMemoryBackend` 直接构造均接受可选 `observability_sink=` 与
 `correlation=`。未注入 sink 时使用共享 Noop 路径；sink 失败只进入有界丢弃/错误计数，不改变召回、
-提交、fact job 或恢复结果。
+提交或恢复结果。
 
-`await memory.diagnostics_snapshot()` 返回稳定、有界的聚合状态，包括 recall stage、turn receipt、
-fact-job queue/retry/dead-letter/recovery 与 sink counters。SQLite 查询只读取状态、时间和稳定错误码列，
+`await memory.diagnostics_snapshot()` 返回稳定、有界的聚合状态，包括 recall stage、turn receipt 与
+sink counters。SQLite 查询只读取状态、时间和稳定错误码列，
 不会选择 query/content/response/fact/payload/embedding/path 或异常文本。
 
-官方路径以 committed user→assistant Turn 为写入单位：receipt、两条消息和 durable fact job 在同一
-SQLite 事务创建；事实提取在事务外执行，结果与 job ack 再原子提交。
+官方路径以 committed user→assistant Turn 为写入单位：receipt 与两条消息在同一 SQLite 事务创建。
+0.6 production package 不包含 legacy fact worker，Mock/SQLite 也不暴露 recover/claim/apply/fail
+mutation seam；LLM 结构化分析只通过 Harness 0.7 的可审计 analysis contract 进入新 repository。
 
 完整的 identity/scope ownership、稳定失败码和生命周期边界见
 [`docs/agent-memory-v1.md`](docs/agent-memory-v1.md)。当前消费者验证状态见
 [`docs/integration-status.md`](docs/integration-status.md)。
 
-截至 2026-08-23，`simple_harness` 已换入 Harness 0.4.0 / Memory 0.5.0 exact-wheel 版本对；
+### 历史发布记录（不代表 0.6 current contract）
+
+截至 2026-08-23，`simple_harness` 曾换入 Harness 0.4.0 / Memory 0.5.0 exact-wheel 版本对；
 AIPhone、K6/AgentOS、NovelTagSystem 仍未修改或测试，仅保留 SDK 接口就绪状态。
 tag `v0.5.0` 指向验证过的 `9c92ede` candidate，wheel SHA 为 `c274fa6b…`；
 source、`main` 与 tag 已推送，冻结 wheel/sdist 已正式发布到
@@ -159,7 +157,9 @@ fact = await memory.read_fact(principal, fact_id)
 
 `source_event_id` 在 deployment 内幂等；相同 canonical content/metadata 重放返回同一 ID，内容、
 `salience`、`pinned` 或 `tier` 变化均抛 `MemoryIdempotencyConflict`。`tier` 只接受
-`auto|working|long_term|identity`，分别稳定映射为 `explicit|event|learning|profile` category。
+`auto|working|long_term|identity`，分别稳定映射为 `explicit|event|learning|profile` category；这些
+category 仅为兼容标签，不决定保留周期。兼容 Fact 的 `decay_rate` 为 neutral `0.0`，普通维护不会按
+category 自动遗忘 Fact。
 跨 principal 读取返回 `None`；遗忘后 receipt 保留且重放不会复活 fact。
 principal 遗忘动作把现有 `reason` 正式解释为 action `source_event_id`，也可显式传
 `source_event_id=` 与可选 `payload_hash=`。首次成功返回 `True`，同 action 重放返回相同结果；新的
@@ -192,9 +192,8 @@ action 遗忘已删除 fact 返回并持久化稳定 `False` no-op。同 action 
   仅允许 manager 关闭后执行，并在替换原库前完成独立完整性校验。
 - `recall_bounded()` 对 `(deployment_id, context_query_id)` 保存 canonical 结果；不同 deployment 可安全
   复用 query ID，commit 后重试不重新计算。
-- `delete_all()` 仅保留为 deprecated compatibility symbol，调用稳定抛出
-  `runtime_delete_disabled`，不会执行全库 mutation。开发 reset 应在 consumer 停服后删除其精确配置的
-  SQLite storage set（主文件及 sidecars），再创建 fresh v4 数据库。
+- `delete_session()`、`delete_old_sessions()` 和 `delete_all()` 不在 0.6 public API。原始 evidence 不由
+  runtime 物理删除；普通使用通过 append-only suppression directive 失效。
 
 > **默认 HashEmbedder 前提说明**：未安装 `[embeddings]` extra 时，development builder 默认使用
 > `HashEmbedder`——一种确定性的哈希伪向量（字符 n-gram 哈希 + 符号累加，非语义
@@ -226,7 +225,6 @@ memory = await MemoryManager.build_production(
     "memory.db",
     embedder=embedder,
     resource_path="/opt/models/bge-m3",
-    enable_facts=True,
 )
 ```
 
@@ -251,10 +249,7 @@ pip install -e ".[world]"
 ```
 
 ```python fragment
-memory = await MemoryManager.build(
-    enable_facts=True,
-    enable_world_model=True,
-)
+memory = await MemoryManager.build(enable_world_model=True)
 
 ctx = await memory.world.get_temporal_context()
 print(f"今天是 {ctx.date_str}，{ctx.weekday}")
@@ -262,16 +257,9 @@ print(f"今天是 {ctx.date_str}，{ctx.weekday}")
 
 ## 架构概览
 
-```
-L1: 工作记忆 (Working Memory)  — 当前会话上下文
-L2: 情景记忆 (Episodic Memory) — Messages 表 + 遗忘曲线
-L3: 语义记忆 (Semantic Memory) — Facts 表 + 实体关系
-
-数字孪生体 (Digital Twin)      — 用户完整认知模型
-世界对象   (World Model)       — 时间/事件/地理/知识边界
-
-召回引擎   (RRF Retriever)     — 六路信号融合
-```
+0.6 将不可变 evidence 与 episodic / semantic / procedural / prospective / conditioned-affective
+长期状态分开。工作记忆是 Host 组装的有界 Context，不是第六张长期存储表。
+LLM 只提出 typed operations；Memory repository 依据 durable phase capability 决定是否应用。
 
 ## 开发路线图
 

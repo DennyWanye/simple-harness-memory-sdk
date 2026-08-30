@@ -3,7 +3,7 @@
 > Release unit：S2（Memory SDK）  
 > 高风险子系统：fresh SQLite schema、append-only privacy/audit、worker/outbox（3）  
 > 覆盖：HM-AC-1/2/7/8
-> 实施进度：Task 1—5 complete；Task 5 最终提交 `83ce301` 在候选链 `71066b69`→`3929669`→`4f58793` 上完成 repository 四阶段 authority、generic/mutation audit 隔离、同 request/attempt 恢复且 Provider 不重放。focused 75/75，strict mypy/ruff 通过，三轮独立缺陷复核后 P0/P1/P2=0。Task 6 进行中。
+> 实施进度：Task 1—5 complete；Task 5 最终提交 `83ce301` 在候选链 `71066b69`→`3929669`→`4f58793` 上完成 repository 四阶段 authority、generic/mutation audit 隔离、同 request/attempt 恢复且 Provider 不重放。Task 6 source 已收口：旧 regex extractor/worker 已移出 production package，Mock/SQLite job mutation seam、category half-life 与 public physical delete 已断开；0.6.0 + exact Harness `>=0.7,<0.8` source/CI contract 已更新，全仓与非最终 artifact gate 已绿。仍须从审阅后的 clean commit 重建/复验 candidate bytes，不得把 dirty-worktree artifact 记为冻结 candidate。
 
 ## 交付边界
 

@@ -140,7 +140,7 @@ CREATE TABLE facts (
     evidence TEXT NOT NULL DEFAULT '',
     source_msg_id INTEGER NOT NULL,
     created_at REAL NOT NULL,
-    decay_rate REAL NOT NULL DEFAULT 0.01,
+    decay_rate REAL NOT NULL DEFAULT 0.0,
     pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
     last_decay_at REAL,
     superseded_by INTEGER,
@@ -464,10 +464,8 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
         db_path: str,
         *,
         embedder=None,
-        fact_extractor=None,
         reranker=None,
         summarizer=None,
-        auto_extract_facts: bool = False,
         bounds: MemoryResourceBounds | None = None,
         max_content_chars: int | None = None,
         max_fact_value_chars: int | None = None,
@@ -479,10 +477,8 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
     ) -> None:
         super().__init__(
             embedder=embedder,
-            fact_extractor=fact_extractor,
             reranker=reranker,
             summarizer=summarizer,
-            auto_extract_facts=auto_extract_facts,
             bounds=bounds,
             max_content_chars=max_content_chars,
             max_fact_value_chars=max_fact_value_chars,
@@ -1289,12 +1285,11 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             )
             if rejected:
                 return status, receipt_id
-            message_ids: list[int] = []
             deployment_key = hashlib.sha256(principal.deployment_id.encode()).hexdigest()[:16]
             for role, content in (("user", user_text), ("assistant", assistant_text)):
                 source_event_id = f"agent-turn/v1/{deployment_key}/{turn_id}/{role}"
                 row_hash = hashlib.sha256(f"{payload_hash}\x1f{role}".encode()).hexdigest()
-                cursor = await self._conn.execute(
+                await self._conn.execute(
                     "INSERT INTO messages "
                     "(user_id, deployment_id, household_id, actor_id, scope_kind, "
                     "scope_owner, session_id, role, content, created_at, salience, decay_rate, "
@@ -1317,197 +1312,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                         row_hash,
                     ),
                 )
-                message_ids.append(int(cursor.lastrowid or 0))
-            if self._auto_extract_facts:
-                job_id = hashlib.sha256(
-                    f"fact-job\x1f{principal.deployment_id}\x1f{turn_id}".encode()
-                ).hexdigest()
-                await self._conn.execute(
-                    "INSERT INTO fact_jobs "
-                    "(job_id, turn_id, deployment_id, household_id, actor_id, session_id, "
-                    "scope_kind, scope_owner, source_msg_id, payload, payload_hash, "
-                    "erasure_epoch, state, next_attempt_at, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
-                    (
-                        job_id,
-                        turn_id,
-                        principal.deployment_id,
-                        principal.household_id,
-                        principal.actor_id,
-                        principal.session_id,
-                        scope.kind.value,
-                        scope.owner_id,
-                        message_ids[0],
-                        user_text,
-                        hashlib.sha256(user_text.encode()).hexdigest(),
-                        epoch,
-                        now,
-                        now,
-                        now,
-                    ),
-                )
             return status, receipt_id
-
-    async def recover_fact_jobs(self) -> int:
-        async with self._transaction():
-            cursor = await self._conn.execute(
-                "UPDATE fact_jobs SET state = 'pending', lease_until = NULL, "
-                "lease_token = NULL, updated_at = ? WHERE state = 'claimed' "
-                "AND lease_until <= ?",
-                (time.time(), time.time()),
-            )
-            return max(0, int(cursor.rowcount))
-
-    async def claim_fact_job(self, *, lease_seconds: float = 30.0) -> dict[str, object] | None:
-        now = time.time()
-        token = uuid.uuid4().hex
-        async with self._transaction():
-            async with self._conn.execute(
-                "SELECT job_id FROM fact_jobs WHERE "
-                "(state = 'pending' OR (state = 'claimed' AND lease_until <= ?)) "
-                "AND next_attempt_at <= ? ORDER BY created_at, job_id LIMIT 1",
-                (now, now),
-            ) as cursor:
-                candidate = await cursor.fetchone()
-            if candidate is None:
-                return None
-            job_id = str(candidate[0])
-            await self._conn.execute(
-                "UPDATE fact_jobs SET state = 'claimed', lease_until = ?, lease_token = ?, "
-                "attempts = attempts + 1, updated_at = ? WHERE job_id = ?",
-                (now + lease_seconds, token, now, job_id),
-            )
-            async with self._conn.execute(
-                "SELECT * FROM fact_jobs WHERE job_id = ?", (job_id,)
-            ) as cursor:
-                row = await cursor.fetchone()
-            if row is None:
-                raise MemoryCorruptionError("claimed fact job disappeared")
-            return {key: row[key] for key in row.keys()}
-
-    async def apply_fact_job(
-        self,
-        job: dict[str, object],
-        facts: list[Fact],
-        *,
-        extractor_lineage: str,
-    ) -> str:
-        """Atomically apply a canonical extraction snapshot and acknowledge its job."""
-
-        snapshot = [
-            {
-                "subject": fact.subject,
-                "key": fact.key,
-                "value": fact.value,
-                "category": fact.category,
-                "confidence": fact.confidence,
-                "evidence": fact.evidence,
-            }
-            for fact in facts[: self._bounds.maintenance_batch_size]
-        ]
-        snapshot_json = json.dumps(
-            snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-        )
-        extraction_hash = hashlib.sha256(snapshot_json.encode()).hexdigest()
-        now = time.time()
-        async with self._transaction():
-            async with self._conn.execute(
-                "SELECT state, lease_token, erasure_epoch, deployment_id, household_id, "
-                "scope_kind, scope_owner, source_msg_id FROM fact_jobs WHERE job_id = ?",
-                (job["job_id"],),
-            ) as cursor:
-                current = await cursor.fetchone()
-            if current is None:
-                return "erased"
-            if str(current[0]) == "applied":
-                return "applied"
-            if str(current[0]) != "claimed" or str(current[1]) != str(job["lease_token"]):
-                return "lost_lease"
-            async with self._conn.execute(
-                "SELECT epoch FROM erasure_epochs WHERE deployment_id = ? AND household_id = ? "
-                "AND scope_kind = ? AND scope_owner = ?",
-                (current[3], current[4], current[5], current[6]),
-            ) as cursor:
-                epoch_row = await cursor.fetchone()
-            if epoch_row is None or int(epoch_row[0]) != int(current[2]):
-                await self._conn.execute(
-                    "UPDATE fact_jobs SET state = 'erased', payload = NULL, lease_token = NULL, "
-                    "lease_until = NULL, updated_at = ? WHERE job_id = ?",
-                    (now, job["job_id"]),
-                )
-                return "erased"
-            for index, fact in enumerate(facts[: self._bounds.maintenance_batch_size]):
-                deterministic_id = hashlib.sha256(
-                    f"{job['job_id']}\x1f{index}\x1f{extraction_hash}".encode()
-                ).hexdigest()
-                async with self._conn.execute(
-                    "SELECT 1 FROM fact_tombstones WHERE deterministic_id = ?",
-                    (deterministic_id,),
-                ) as cursor:
-                    if await cursor.fetchone() is not None:
-                        continue
-                await self._conn.execute(
-                    "INSERT INTO facts "
-                    "(user_id, deployment_id, household_id, actor_id, scope_kind, scope_owner, "
-                    "deterministic_id, extractor_lineage, subject, key, value, category, "
-                    "confidence, evidence, source_msg_id, created_at, decay_rate, pinned) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) "
-                    "ON CONFLICT(deterministic_id) DO NOTHING",
-                    (
-                        self._principal_key(
-                            MemoryPrincipal(
-                                str(job["deployment_id"]),
-                                str(job["household_id"]),
-                                str(job["actor_id"]),
-                                str(job["session_id"]),
-                            )
-                        ),
-                        job["deployment_id"],
-                        job["household_id"],
-                        job["actor_id"],
-                        job["scope_kind"],
-                        job["scope_owner"],
-                        deterministic_id,
-                        extractor_lineage,
-                        fact.subject,
-                        fact.key,
-                        fact.value,
-                        fact.category,
-                        fact.confidence,
-                        fact.evidence,
-                        current[7],
-                        now,
-                        fact.decay_rate,
-                    ),
-                )
-            await self._conn.execute(
-                "UPDATE fact_jobs SET state = 'applied', payload = NULL, lease_until = NULL, "
-                "lease_token = NULL, extractor_lineage = ?, extraction_hash = ?, "
-                "updated_at = ? WHERE job_id = ?",
-                (extractor_lineage, extraction_hash, now, job["job_id"]),
-            )
-        return "applied"
-
-    async def fail_fact_job(self, job: dict[str, object], *, stable_code: str) -> str:
-        now = time.time()
-        attempts = int(str(job.get("attempts") or 1))
-        state = "dead_letter" if attempts >= 5 else "pending"
-        backoff = min(300.0, 2.0**attempts)
-        async with self._transaction():
-            await self._conn.execute(
-                "UPDATE fact_jobs SET state = ?, lease_until = NULL, lease_token = NULL, "
-                "next_attempt_at = ?, last_error_code = ?, updated_at = ? "
-                "WHERE job_id = ? AND lease_token = ?",
-                (
-                    state,
-                    now + backoff,
-                    stable_code,
-                    now,
-                    job["job_id"],
-                    job["lease_token"],
-                ),
-            )
-        return state
 
     async def diagnostics_snapshot(self) -> dict[str, object]:
         """Aggregate operational state using status/time columns only."""
@@ -1919,7 +1724,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
                     content,
                     source_msg_id,
                     now,
-                    0.0 if pinned else 0.01,
+                    0.0,
                     int(pinned),
                 ),
             )
@@ -2994,6 +2799,7 @@ class SQLiteMemoryBackend(BaseMemoryBackend):
             evidence=row["evidence"],
             source_msg_id=row["source_msg_id"],
             created_at=row["created_at"],
+            decay_rate=row["decay_rate"],
             pinned=bool(row["pinned"]),
             last_decay_at=row["last_decay_at"],
             superseded_by=row["superseded_by"],

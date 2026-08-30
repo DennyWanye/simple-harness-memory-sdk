@@ -17,9 +17,9 @@ from simple_harness.observability import CorrelationContext, RecordingSink
 from simple_harness_memory import MemoryManager, MemoryPrincipal, MemoryScope
 from simple_harness_memory.backends.mock import MockMemoryBackend
 from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
-from simple_harness_memory.core.fact_jobs import FactJobWorker
 from simple_harness_memory.core.models import Fact
 from simple_harness_memory.core.observability import MemoryObservability
+from tests.fixtures.legacy_fact_jobs import LegacyFactJobWorker
 
 IDENTITY = AgentIdentity("deployment-observe", "house-observe", "actor-observe", "session-observe")
 CORRELATION = CorrelationContext(
@@ -120,7 +120,6 @@ async def test_sink_failure_and_sensitive_canaries_never_change_business_result(
 async def test_status_matrix_snapshot_schema_bounds_and_privacy() -> None:
     sink = RecordingSink(capacity=128)
     manager = await MemoryManager.build(
-        enable_facts=True,
         observability_sink=sink,
         correlation=CORRELATION,
     )
@@ -139,7 +138,6 @@ async def test_status_matrix_snapshot_schema_bounds_and_privacy() -> None:
     turn = _turn()
     applied = await manager.record_committed_turn(turn)
     repeated = await manager.record_committed_turn(turn)
-    await manager.drain_fact_jobs()
     snapshot = await manager.diagnostics_snapshot()
     assert first.result_hash == replay.result_hash
     assert applied.status.value == "applied"
@@ -167,9 +165,6 @@ async def test_status_matrix_snapshot_schema_bounds_and_privacy() -> None:
         "memory.recall.released",
         "memory.committed_turn.applied",
         "memory.committed_turn.replayed",
-        "memory.fact_job.pending",
-        "memory.fact_job.claimed",
-        "memory.fact_job.applied",
     }.issubset(names)
     rendered = json.dumps([event.to_dict() for event in sink.events()], sort_keys=True)
     assert not any(canary in rendered for canary in CANARIES)
@@ -258,7 +253,7 @@ class _WorkerBackend:
 async def test_fact_job_authoritative_settlement_matrix(settle: str, expected: str) -> None:
     sink = RecordingSink()
     observer = MemoryObservability(sink, CORRELATION)
-    worker = FactJobWorker(_WorkerBackend(settle=settle), _Extractor(), observer)
+    worker = LegacyFactJobWorker(_WorkerBackend(settle=settle), _Extractor(), observer)
     assert await worker.drain_once()
     assert observer.runtime.flush(1.0)
     names = {event.event_name for event in sink.events()}
@@ -274,7 +269,7 @@ async def test_fact_job_authoritative_settlement_matrix(settle: str, expected: s
 async def test_fact_job_retry_and_dead_letter_matrix(state: str) -> None:
     sink = RecordingSink()
     observer = MemoryObservability(sink, CORRELATION)
-    worker = FactJobWorker(
+    worker = LegacyFactJobWorker(
         _WorkerBackend(fail_state=state), _Extractor(fail=True), observer
     )
     assert await worker.drain_once()
@@ -306,48 +301,6 @@ async def test_sqlite_snapshot_queries_never_select_sensitive_columns(tmp_path) 
             for forbidden in ("content", "payload", "embedding", "result_payload", "user_text")
         )
     await manager.close()
-
-
-@pytest.mark.asyncio
-async def test_reopen_recovery_preserves_injected_correlation(tmp_path) -> None:
-    path = str(tmp_path / "recovery.db")
-    backend = SQLiteMemoryBackend(path, auto_extract_facts=True, correlation=CORRELATION)
-    await backend.initialize()
-    principal = MemoryPrincipal(
-        IDENTITY.deployment_id,
-        IDENTITY.household_id,
-        IDENTITY.actor_id,
-        IDENTITY.session_id,
-    )
-    await backend.agent_record_turn(
-        principal=principal,
-        scope=MemoryScope.personal(IDENTITY.actor_id),
-        turn_id="turn-recovery",
-        payload_hash="d" * 64,
-        user_text=CANARIES[1],
-        assistant_text=CANARIES[2],
-        write_fence=None,
-        turn_started_at=time.time(),
-    )
-    claimed = await backend.claim_fact_job(lease_seconds=0)
-    assert claimed is not None
-    await backend.close()
-
-    sink = RecordingSink()
-    reopened = await MemoryManager.build(
-        path,
-        enable_facts=True,
-        observability_sink=sink,
-        correlation=CORRELATION,
-    )
-    await reopened.drain_fact_jobs()
-    assert reopened._observability.runtime.flush(1.0)
-    recovery = [event for event in sink.events() if event.event_name == "memory.fact_job.recovered"]
-    assert recovery
-    assert all(event.correlation == CORRELATION for event in recovery)
-    rendered = json.dumps([event.to_dict() for event in sink.events()], sort_keys=True)
-    assert not any(canary in rendered for canary in CANARIES)
-    await reopened.close()
 
 
 @pytest.mark.asyncio

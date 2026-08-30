@@ -94,7 +94,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--memory-wheel", required=True, type=Path)
     parser.add_argument("--memory-sha256")
-    parser.add_argument("--expected-memory-version", default="0.5.2")
+    parser.add_argument("--expected-memory-version", default="0.6.0")
     parser.add_argument("--harness-wheel", required=True, type=Path)
     parser.add_argument("--harness-sha256")
     parser.add_argument("--expected-harness-version", required=True)

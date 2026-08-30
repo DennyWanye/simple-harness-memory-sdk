@@ -7,7 +7,7 @@ from simple_harness_memory.core.models import MemoryApplyStatus
 
 @pytest.mark.asyncio
 async def test_same_event_same_payload_replays_and_conflict_rejects(tmp_path):
-    backend = SQLiteMemoryBackend(str(tmp_path / "memory.db"), auto_extract_facts=True)
+    backend = SQLiteMemoryBackend(str(tmp_path / "memory.db"))
     await backend.initialize()
     first = await backend.append_message(
         "s1",
@@ -46,5 +46,5 @@ async def test_same_event_same_payload_replays_and_conflict_rejects(tmp_path):
     ) as cursor:
         row = await cursor.fetchone()
         assert row is not None and row[0] == 1
-    assert len(await backend.get_facts(user_id="u1")) == 1
+    assert await backend.get_facts(user_id="u1") == []
     await backend.close()

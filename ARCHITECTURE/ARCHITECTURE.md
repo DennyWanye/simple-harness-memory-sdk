@@ -1,21 +1,24 @@
 <!-- last-calibrated: 46624b5c49f2c0a64a522eca64d6eb798823370e -->
 
-# ARCHITECTURE — simple-harness-memory-sdk（v0.5.2）
+# ARCHITECTURE — simple-harness-memory-sdk（v0.6.0 candidate）
 
 > 最后更新：2026-08-30
 > 当前事实：S3 runtime、四类 taxonomy offline migration、S4 storage/embedding、S5 candidate packaging
 > 与 S6 simple_harness 产品接线/真人测试均已完成；Memory observability S1+S2 已通过自动化验收。
 
-## Human Memory Program 实施前边界（2026-08-30）
+## Human Memory Program 当前边界（2026-08-30）
 
-以下是 `plans/2026-08-29-human-memory-digital-twin/` 开始实施前的代码事实，不是已完成能力：
+以下是 0.6 candidate 的已验证生产边界：
 
 - 长期模型仍以 `Message` 和单一 `Fact(category)` 为核心；`Episode`、`Semantic Claim`、`Procedure`、
   `Prospective Intent` 尚无独立 schema、状态机或公共 API。
-- backend 未显式注入 extractor 时使用 `RuleBasedFactExtractor`；simple_harness 当前虽启用 fact worker，
-  但没有注入主模型 extractor，所以普通事实仍由正则产生。
-- `delete_scope`、`forget_fact`、`delete_session` 与旧会话清理路径仍会物理删除 message/fact/session 行；
-  因而尚不满足新 program 的“原始业务证据永不物理删除 + suppression 控制普通使用”约束。
+- fresh `human-memory-v1` evidence row 不可覆盖；普通读由 append-only suppression authority 控制。
+- backend 与所有 production builders 都没有 fact extractor 参数或 worker 启动路径；旧 regex
+  extractor 只存在于 `tests/fixtures`，不进入 source distribution 的生产包或 wheel。Harness 0.7 typed
+  analysis 是新的 LLM 边界。
+- 兼容 `Fact` 的 `category` 只作标签，`decay_rate` 为显式 neutral 值；category 不再决定保留周期，
+  `daily_decay()` 也不再按 category 自动遗忘 Fact。
+- public `MemoryManager`、`MemoryBackend` 与 `BaseMemoryBackend` 不存在会话物理删除方法。
 - 召回协议仍只接受 query text、personal/family scopes 与统一结果 payload；尚无 `RecallPlan`、认知类型、
   recipient/purpose、epistemic/conflict/expiry 或跨 TaskScope 命中审计。
 - `DigitalTwin` 仍是 Fact 聚合对象和 JSON 快照；没有展示专用的可追溯 graph projection，也没有
@@ -26,9 +29,9 @@
 
 ```text
 src/simple_harness_memory/
-├── core/         # MemoryManager、standalone identity/scope、Agent backend port、fact worker
+├── core/         # MemoryManager、standalone identity/scope、Agent backend port、durable analysis kernel
 ├── backends/     # BaseMemoryBackend + Mock + SQLite fresh-v4
-├── features/     # facts 提取 / Python 内有界候选融合 / reranker / summarizer
+├── features/     # Python 内有界候选融合 / reranker / summarizer（无 fact extractor）
 ├── cognitive/    # 遗忘曲线 / 显著性 / 会话亲和 / 孪生体构建
 ├── embedders/    # hash 默认 / bge 可选 / cloud
 └── world/        # WorldModelPort + temporal/events/geography/knowledge
@@ -45,19 +48,18 @@ src/simple_harness_memory/
 - default write scope 是 actor personal；recall 可读取 actor personal + household family。Memory 内容只作为
   带 scope provenance 的数据返回，instruction trust 投影由 Harness S1 负责。
 
-## Observability S1+S2
+## 当前 Observability 边界
 
-- 基础依赖为 `simple-harness-sdk>=0.4,<0.7`，本地开发仍由 `uv.sources` 指向 sibling checkout。
+- 基础依赖为 `simple-harness-sdk>=0.7,<0.8`，本地开发仍由 `uv.sources` 指向 sibling checkout。
   Memory 只复用 import-pure `simple_harness.observability` envelope、correlation、runtime 与 sinks；没有
   复制 wire schema，也不让 observability 成为授权、重试、CAS、事务或恢复 authority。
 - `MemoryManager` direct init、三个 builders，以及 Mock/SQLite direct backend constructors 接受可选
-  `observability_sink` / `correlation`。manager、backend 与 fact worker 共享单一 runtime；Noop 默认路径
-  保持旧行为，sink construction/emit/close failure 只增加共享 runtime counters。
+  `observability_sink` / `correlation`。Noop 默认路径保持旧行为，sink construction/emit/close failure
+  只增加共享 runtime counters。
 - recall 发射 accepted/started/replayed/degraded/succeeded/released/cleanup/failed；committed turn 在权威
-  receipt 可见后发射 applied/replayed/rejected；fact worker 在权威返回可见处发射 pending/claimed/
-  recovered/retrying/dead-letter/applied/erased/lost-lease。
-- correlation 未新增 durable 列：recall `query_id`、receipt/fact job `turn_id`、`job_id` 与 `session_id`
-  已足以生成 bounded opaque identity；Host 显式注入时原样贯穿，close/reopen recovery 可重建同一链。
+  receipt 可见后发射 applied/replayed/rejected。0.6 production path 不启动 legacy fact worker。
+- correlation 未新增 durable 列：recall `query_id`、receipt `turn_id` 与 `session_id` 足以生成 bounded
+  opaque identity；Host 显式注入时原样贯穿。
 - `diagnostics_snapshot()` 的 schema 固定且有界。Mock 从内存状态聚合；SQLite 仅 GROUP BY/COUNT/MIN
   `state/status/created_at/last_error_code`，100ms query timeout、250ms manager deadline，错误与 close
   返回 degraded/closed schema 而不影响业务。禁止查询 content、result_payload、fact value、embedding、
@@ -120,20 +122,19 @@ src/simple_harness_memory/
 - recall 先在短事务读取 erasure epoch/fence，再做embedding与候选ranking；embedding timeout/corruption或
   后续查询故障都通过task-local fence传入稳定Harness error。删除可以安全跨越embedding边界，旧fence的
   committed turn仍会被拒绝。
-- `record_committed_turn` 在一个事务中写 turn receipt、user row、assistant row和可选 fact job；任一步失败
-  全部回滚。幂等键为deployment+turn；同deployment下同turn+hash且完整identity/scope相同返回
+- `record_committed_turn` 在一个事务中写 turn receipt、user row和assistant row；任一步失败全部回滚。
+  production builder 不创建 legacy fact job。幂等键为deployment+turn；同deployment下同turn+hash且完整identity/scope相同返回
   `already_applied`，payload或owner/scope不同返回conflict。
 - fence 过期返回 hash-only `rejected_erased`。无 fence时，仅可信 `turn_started_at` 严格晚于最新
   `erased_at` 且不超当前可信时钟才可绑定当前 epoch；早于、相等或时钟回退均 fail closed。
 
-## Durable fact worker
+## Legacy Fact compatibility storage
 
-- committed user row只创建 durable `pending` job。worker 用 claim/lease/attempt/backoff 状态机；启动时
-  回收过期 `claimed`，5 次失败进入 `dead_letter`，close 做有界 drain。
-- extractor 在事务外运行并携带 versioned lineage；canonical extraction hash、deterministic fact ids、
-  facts 与 job `applied` 在一个事务提交。提交前复核 erasure epoch 和 fact tombstone，删除/forget 之后的
-  late worker只能进入 erased/no-op，不能复活内容。
-- 旧 standalone `append_message` 保留兼容行为；官方自动 Memory 生命周期只走 committed-turn worker。
+- 旧 v4 Fact/job 表只保留为 dormant compatibility storage、只读 diagnostics 与 erasure cleanup；
+  production Mock/SQLite 不暴露 recover/claim/apply/fail mutation seam。
+- regex extractor 与 legacy worker 都已完全移到 `tests/fixtures`，不打入 wheel/sdist 的 production package。
+- 显式 `remember_fact()` 仍可写兼容 Fact；category 仅作标签，写入 neutral `decay_rate=0.0`，普通
+  `daily_decay()` 不再扫描、衰减或自动遗忘 Fact。
 
 ## Privacy lifecycle
 
@@ -158,14 +159,18 @@ src/simple_harness_memory/
 
 ## Release candidate identity
 
-- 唯一版本事实源为`src/simple_harness_memory/__init__.py`，当前 source candidate 为0.5.2；wheel metadata、README、公开API
+- 唯一版本事实源为`src/simple_harness_memory/__init__.py`，当前 source candidate 为0.6.0；wheel metadata、README、公开API
   snapshot、changelog与candidate `BUILD_INFO.txt`必须一致。
-- base wheel metadata 直接要求 `simple-harness-sdk>=0.4,<0.7`，`[harness]` 保持同一范围；clean
-  resolver gate 接受真实 Harness 0.4.0 / 0.5.0 wheel，0.3.x 与 0.6.x 均必须拒绝。
+- base wheel metadata 直接要求 `simple-harness-sdk>=0.7,<0.8`，`[harness]` 保持同一范围；当前 clean
+  resolver gate 只接受 exact Harness 0.7 artifact，`<0.7` 与 `>=0.8` 必须拒绝。
 - CI只build一次candidate wheel/sdist并记录source commit与SHA-256；Python 3.11/3.12/3.13及Windows x64、
-  macOS ARM64、Linux ARM64 downstream只下载/验证同一artifact，不允许重建。release workflow仍只验证并
-  交接冻结bytes。Memory tag `v0.4.0` 指向 `3d4247b` 的同一冻结 candidate；2026-08-23 source、`main`
-  与 tag 已推送；本地冻结 wheel/sdist 已正式发布到 GitHub Release，并通过公开稳定 URL 下载回验。
+  macOS ARM64、Linux ARM64 downstream只下载/验证同一 Memory artifact 与同一 pinned Harness 0.7
+  artifact，不允许重建。0.6 当前只生成候选制品，不调用旧 release workflow，也不 tag/push/publish。
+
+### 历史发布事实（不代表 0.6 current contract）
+
+- Memory tag `v0.4.0` 指向 `3d4247b` 的冻结 candidate；2026-08-23 source、`main` 与 tag 已推送；
+  当时的 wheel/sdist 已正式发布到 GitHub Release，并通过公开稳定 URL 下载回验。
 - 0.5.0 已发布：tag 指向 `9c92ede`，wheel SHA-256 为
   `c274fa6b2db538c29897f684b3f2f85775cb4b3a6870018e83792ff90b51ea46`；公开下载回验通过。
   base 与 `[harness]` metadata 均要求 `simple-harness-sdk>=0.4,<0.5`。
@@ -182,7 +187,14 @@ src/simple_harness_memory/
 
 ## 验证状态
 
-- Observability S1+S2 targeted：privacy canary、sink failure isolation、public/direct composition、recall/
+- 0.6.0 Task 6 source audit：冻结 Harness 0.7 下全仓 `493 passed, 8 skipped`；Ruff、项目 mypy
+  `97 source files`、3 个发布脚本 strict mypy 与 REUSE 全绿。非最终 dirty-tree wheel/sdist 通过 Twine，
+  public/artifact/clean-consumer gate `17 passed`；wheel 明确不含 `core/fact_jobs.py`、legacy worker 或 backend
+  recover/claim/apply/fail seam，并消费 Harness wheel
+  `b9421ddf…6037d7b`；这组 Memory bytes 只证明 source contract，不具 promotion authority。只有从审阅后的
+  clean commit 重建并复验的 bytes 才能成为最终 candidate。候选制品未 tag/push/publish。
+
+- 以下为 0.5 历史 observability/release 证据，不代表 0.6 fact-worker production path：privacy canary、sink failure isolation、public/direct composition、recall/
   receipt/fact-job 状态矩阵、snapshot schema/bounds/SQL denylist、close/reopen recovery correlation 均通过；
   `tests/integration/test_observability.py` 13 passed。Harness candidate `bc6ae8d` 声明 0.4.0，Memory installed
   metadata 确认 base/extra 均解析 `simple-harness-sdk>=0.4,<0.5`。

@@ -20,7 +20,7 @@ from simple_harness_memory.core.errors import (
     MemoryIdempotencyConflict,
     MemoryOwnershipConflict,
 )
-from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope, ScopeKind
+from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
 from simple_harness_memory.core.models import (
     Fact,
     MemoryApplyResult,
@@ -51,10 +51,8 @@ class MockMemoryBackend(BaseMemoryBackend):
         self,
         *,
         embedder=None,
-        fact_extractor=None,
         reranker=None,
         summarizer=None,
-        auto_extract_facts: bool = False,
         bounds: MemoryResourceBounds | None = None,
         observability_sink=None,
         correlation: CorrelationInput = None,
@@ -62,10 +60,8 @@ class MockMemoryBackend(BaseMemoryBackend):
     ) -> None:
         super().__init__(
             embedder=embedder,
-            fact_extractor=fact_extractor,
             reranker=reranker,
             summarizer=summarizer,
-            auto_extract_facts=auto_extract_facts,
             bounds=bounds,
             observability_sink=observability_sink,
             correlation=correlation,
@@ -333,7 +329,6 @@ class MockMemoryBackend(BaseMemoryBackend):
         )
         if rejected:
             return status, receipt_id
-        ids: list[int] = []
         deployment_key = hashlib.sha256(principal.deployment_id.encode()).hexdigest()[:16]
         for role, content in (("user", user_text), ("assistant", assistant_text)):
             message_id = self._next_msg_id
@@ -357,108 +352,7 @@ class MockMemoryBackend(BaseMemoryBackend):
                 scope.kind.value,
                 scope.owner_id,
             )
-            ids.append(message_id)
-        if self._auto_extract_facts:
-            job_id = hashlib.sha256(
-                f"fact-job\x1f{principal.deployment_id}\x1f{turn_id}".encode()
-            ).hexdigest()
-            self._fact_jobs[job_id] = {
-                "job_id": job_id,
-                "turn_id": turn_id,
-                "deployment_id": principal.deployment_id,
-                "household_id": principal.household_id,
-                "actor_id": principal.actor_id,
-                "session_id": principal.session_id,
-                "scope_kind": scope.kind.value,
-                "scope_owner": scope.owner_id,
-                "source_msg_id": ids[0],
-                "payload": user_text,
-                "payload_hash": hashlib.sha256(user_text.encode()).hexdigest(),
-                "erasure_epoch": epoch,
-                "state": "pending",
-                "attempts": 0,
-                "next_attempt_at": time.time(),
-                "created_at": time.time(),
-            }
         return status, receipt_id
-
-    async def recover_fact_jobs(self) -> int:
-        recovered = 0
-        for job in self._fact_jobs.values():
-            if job["state"] == "claimed":
-                job["state"] = "pending"
-                recovered += 1
-        return recovered
-
-    async def claim_fact_job(self, *, lease_seconds: float = 30.0) -> dict[str, object] | None:
-        del lease_seconds
-        for job in self._fact_jobs.values():
-            if job["state"] == "pending" and _as_float(job["next_attempt_at"]) <= time.time():
-                job["state"] = "claimed"
-                job["attempts"] = _as_int(job["attempts"]) + 1
-                job["lease_token"] = uuid.uuid4().hex
-                return dict(job)
-        return None
-
-    async def apply_fact_job(
-        self, job: dict[str, object], facts: list[Fact], *, extractor_lineage: str
-    ) -> str:
-        current = self._fact_jobs.get(str(job["job_id"]))
-        if current is None:
-            return "erased"
-        if current["state"] == "applied":
-            return "applied"
-        if current["state"] != "claimed" or current.get("lease_token") != job.get("lease_token"):
-            return "lost_lease"
-        principal = MemoryPrincipal(
-            str(job["deployment_id"]),
-            str(job["household_id"]),
-            str(job["actor_id"]),
-            str(job["session_id"]),
-        )
-        scope = MemoryScope(ScopeKind(str(job["scope_kind"])), str(job["scope_owner"]))
-        if self._epoch(principal, scope)[0] != _as_int(job["erasure_epoch"]):
-            current["state"] = "erased"
-            current["payload"] = None
-            return "erased"
-        extraction_hash = hashlib.sha256(
-            json.dumps([(fact.key, fact.value) for fact in facts], ensure_ascii=False).encode()
-        ).hexdigest()
-        for index, fact in enumerate(facts):
-            deterministic = hashlib.sha256(
-                f"{job['job_id']}\x1f{index}\x1f{extraction_hash}".encode()
-            ).hexdigest()
-            if deterministic in self._fact_tombstones:
-                continue
-            fact.id = self._next_fact_id
-            self._next_fact_id += 1
-            fact.user_id = self._agent_user(principal)
-            fact.source_msg_id = _as_int(job["source_msg_id"])
-            self._facts.append(fact)
-            self._agent_fact_meta[fact.id] = (
-                principal.deployment_id,
-                principal.household_id,
-                principal.actor_id,
-                scope.kind.value,
-                scope.owner_id,
-                deterministic,
-                None,
-            )
-        current.update(
-            state="applied",
-            payload=None,
-            extractor_lineage=extractor_lineage,
-            extraction_hash=extraction_hash,
-        )
-        return "applied"
-
-    async def fail_fact_job(self, job: dict[str, object], *, stable_code: str) -> str:
-        current = self._fact_jobs[str(job["job_id"])]
-        attempts = _as_int(current["attempts"])
-        current["state"] = "dead_letter" if attempts >= 5 else "pending"
-        current["next_attempt_at"] = time.time() + 2**attempts
-        current["last_error_code"] = stable_code
-        return str(current["state"])
 
     async def diagnostics_snapshot(self) -> dict[str, object]:
         now = time.time()

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "simple-harness-memory-sdk"
 dynamic = ["version"]
-description = "Cognitive memory SDK for Simple Harness — three-tier model, Digital Twin, World Model, RRF recall"
+description = "Evidence-first human memory SDK for Simple Harness"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 license = "BUSL-1.1"
@@ -29,9 +29,6 @@ world = [
     "httpx>=0.27",
     "python-dateutil>=2.9",
 ]
-openai = [
-    "openai>=1.0",
-]
 harness = [
     "simple-harness-sdk>=0.7,<0.8",
 ]
@@ -43,9 +40,7 @@ dev = [
     "mypy==1.20.2",
     "simple-harness-sdk>=0.7,<0.8",
 ]
-all = [
-    "simple-harness-memory-sdk[embeddings,world,openai,harness]",
-]
+all = ["simple-harness-memory-sdk[embeddings,world,harness]"]
 
 [dependency-groups]
 dev = [
@@ -58,7 +53,7 @@ dev = [
 ]
 
 [tool.uv.sources]
-simple-harness-sdk = { path = "../simple-harness-sdk" }
+simple-harness-sdk = { path = "../simple-harness-sdk-memory-program" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/simple_harness_memory"]

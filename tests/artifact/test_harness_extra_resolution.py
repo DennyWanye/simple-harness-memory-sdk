@@ -57,17 +57,17 @@ def _fake_harness_wheel(directory: Path, version: str) -> Path:
     return wheel
 
 
-def test_base_metadata_accepts_harness_0_4_through_0_6(exact_wheel: Path) -> None:
+def test_base_metadata_accepts_only_harness_0_7(exact_wheel: Path) -> None:
     metadata = _wheel_metadata(exact_wheel)
     requirements = metadata.get_all("Requires-Dist") or []
     harness_requirements = [item for item in requirements if item.startswith("simple-harness-sdk")]
     assert harness_requirements
     assert any(
-        "simple-harness-sdk<0.7,>=0.4" in item and "extra ==" not in item
+        "simple-harness-sdk<0.8,>=0.7" in item and "extra ==" not in item
         for item in harness_requirements
     )
     assert any(
-        "simple-harness-sdk<0.7,>=0.4" in item and "extra == 'harness'" in item
+        "simple-harness-sdk<0.8,>=0.7" in item and "extra == 'harness'" in item
         for item in harness_requirements
     )
 
@@ -89,7 +89,7 @@ def test_base_requirement_accepts_exact_supported_harness_wheel(
         text=True,
     )
     python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    for version in ("0.3.999", "0.6.0"):
+    for version in ("0.6.999", "0.8.0"):
         invalid = tmp_path / f"invalid-{version}"
         invalid.mkdir()
         invalid_wheel = _fake_harness_wheel(invalid, version)
@@ -112,7 +112,7 @@ def test_base_requirement_accepts_exact_supported_harness_wheel(
         assert rejected.returncode != 0
         assert "No solution found" in rejected.stderr or "conflict" in rejected.stderr.lower()
     harness_version = str(_wheel_metadata(exact_harness_wheel)["Version"])
-    assert harness_version in {"0.4.0", "0.5.0"}
+    assert harness_version == "0.7.0"
     subprocess.run(
         (
             "uv",

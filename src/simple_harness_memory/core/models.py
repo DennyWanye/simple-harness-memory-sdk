@@ -1,19 +1,13 @@
-"""核心数据模型：Message / Fact / Hit。
-
-基于认知科学设计：
-- Message 携带 salience（显著性）和 decay_rate（遗忘曲线）
-- Fact 按 category 差异化衰减率，支持演化链（superseded_by）
-- Hit 携带六路召回信号，用于 RRF 融合
-"""
+"""Compatibility Message / Fact / Hit models."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
 # ─────────────────────────────────────────────
-# L2: 情景记忆单元
+# Legacy conversation record
 # ─────────────────────────────────────────────
 
 
@@ -52,50 +46,33 @@ class Message:
 
 
 # ─────────────────────────────────────────────
-# L3: 语义记忆单元
+# Legacy fact record
 # ─────────────────────────────────────────────
-
-# Fact 分类 → 默认衰减率（基于认知科学）
-FACT_DECAY_DEFAULTS: dict[str, float] = {
-    "profile": 0.0,  # 永久（身份信息）
-    "preference": 0.005,  # ~200天（偏好/习惯）
-    "project": 0.01,  # ~70天（正在进行的项目）
-    "event": 0.05,  # ~14天（情景记忆）
-    "reflection": 0.02,  # ~35天（自我认知）
-    "episodic_summary": 0.01,  # ~70天（情景压缩）
-    "goal": 0.005,  # ~200天（前瞻性记忆）
-    "decision": 0.002,  # ~1年（程序性记忆）
-    "constraint": 0.001,  # 最慢（规则/限制）
-    "learning": 0.01,  # ~70天（习得知识）
-}
-
 
 @dataclass
 class Fact:
-    """从对话中自动提取的结构化事实（语义记忆）。"""
+    """Compatibility structured fact with no category-derived retention policy."""
 
     id: int | None
     user_id: str  # SQL 隔离主体
     subject: str  # 主体，如 "user"
     key: str  # 属性 key（英文 snake_case），如 "pet_name"
     value: str  # 值（保留原始语言），如 "Max"
-    category: str  # 见 FACT_DECAY_DEFAULTS
+    category: str
     confidence: float  # LLM 提取的置信度 0.0-1.0
     evidence: str  # 原文引用（verbatim）
     source_msg_id: int
     created_at: float  # Unix timestamp
 
     # 认知特性
-    decay_rate: float = field(init=False)
+    # Compatibility-only explicit value. Category never supplies retention policy.
+    decay_rate: float = 0.0
     pinned: bool = False  # 用户手动钉住（跳过衰减）
     last_decay_at: float | None = None
 
     # 演化（冲突 / 替换）
     superseded_by: int | None = None  # 被哪个 fact 替代
     forgotten_at: float | None = None  # 显式遗忘时间
-
-    def __post_init__(self) -> None:
-        self.decay_rate = FACT_DECAY_DEFAULTS.get(self.category, 0.01)
 
     @property
     def is_active(self) -> bool:

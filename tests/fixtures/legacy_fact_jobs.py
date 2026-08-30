@@ -1,4 +1,4 @@
-"""Durable, leased fact-extraction worker for committed turns."""
+"""Legacy fact worker retained exclusively for observability regression tests."""
 
 from __future__ import annotations
 
@@ -11,14 +11,14 @@ import structlog
 from simple_harness_memory.core.models import Fact
 from simple_harness_memory.core.observability import MemoryObservability
 
-logger = structlog.get_logger("simple_harness_memory.core.fact_jobs")
+logger = structlog.get_logger("tests.fixtures.legacy_fact_jobs")
 
 
 class _FactExtractor(Protocol):
     async def extract(self, content: str, **kwargs: object) -> list[Fact]: ...
 
 
-class FactJobWorker:
+class LegacyFactJobWorker:
     def __init__(
         self,
         backend: object,
@@ -35,8 +35,7 @@ class FactJobWorker:
     async def start(self) -> None:
         if self._task is not None:
             return
-        recover = getattr(self._backend, "recover_fact_jobs")
-        recovered = await recover()
+        recovered = await getattr(self._backend, "recover_fact_jobs")()
         if isinstance(recovered, int) and recovered:
             self._observability.emit(
                 "memory.fact_job.recovered",
@@ -51,7 +50,7 @@ class FactJobWorker:
                     "history_complete": False,
                 },
             )
-        self._task = asyncio.create_task(self._run(), name="memory-fact-worker")
+        self._task = asyncio.create_task(self._run(), name="legacy-memory-fact-worker-test")
         self._wake.set()
 
     def notify(self) -> None:
@@ -66,8 +65,7 @@ class FactJobWorker:
         return f"{type(self._extractor).__module__}.{type(self._extractor).__qualname__}:{version}"
 
     async def drain_once(self) -> bool:
-        claim = getattr(self._backend, "claim_fact_job")
-        job = await claim()
+        job = await getattr(self._backend, "claim_fact_job")()
         if job is None:
             return False
         entity_id = str(job["job_id"])
@@ -78,10 +76,7 @@ class FactJobWorker:
             outcome="started",
             entity_id=entity_id,
             session_id=session_id,
-            attributes={
-                "stage": "claimed",
-                "attempt": int(job.get("attempts") or 0),
-            },
+            attributes={"stage": "claimed", "attempt": int(job.get("attempts") or 0)},
         )
         try:
             facts = await self._extractor.extract(
@@ -92,8 +87,9 @@ class FactJobWorker:
                 subject="user",
                 user_id=str(job["actor_id"]),
             )
-            apply_job = getattr(self._backend, "apply_fact_job")
-            status = await apply_job(job, list(facts), extractor_lineage=self.lineage)
+            status = await getattr(self._backend, "apply_fact_job")(
+                job, list(facts), extractor_lineage=self.lineage
+            )
             event_name = {
                 "applied": "memory.fact_job.applied",
                 "erased": "memory.fact_job.erased",
@@ -122,8 +118,9 @@ class FactJobWorker:
         except asyncio.CancelledError:
             raise
         except Exception:
-            fail = getattr(self._backend, "fail_fact_job")
-            state = await fail(job, stable_code="fact_extraction_failed")
+            state = await getattr(self._backend, "fail_fact_job")(
+                job, stable_code="fact_extraction_failed"
+            )
             terminal = state == "dead_letter"
             self._observability.emit(
                 "memory.fact_job.dead_letter" if terminal else "memory.fact_job.retrying",
@@ -169,6 +166,3 @@ class FactJobWorker:
         with suppress(asyncio.CancelledError):
             await self._task
         self._task = None
-
-
-__all__ = ("FactJobWorker",)

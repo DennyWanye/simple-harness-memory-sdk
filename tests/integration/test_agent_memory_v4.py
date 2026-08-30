@@ -247,25 +247,23 @@ async def test_production_embeddings_create_incrementally_and_recover_missing_wo
 
 
 @pytest.mark.asyncio
-async def test_sqlite_pair_receipt_and_job_are_atomic_and_worker_applies(tmp_path):
+async def test_sqlite_pair_receipt_does_not_enqueue_legacy_fact_job(tmp_path):
     manager = await MemoryManager.build(
-        backend=SQLiteMemoryBackend(str(tmp_path / "memory.db"), auto_extract_facts=True),
-        enable_facts=True,
+        backend=SQLiteMemoryBackend(str(tmp_path / "memory.db")),
     )
     recall = await manager.recall_for_turn(recall_request())
     receipt = await manager.record_committed_turn(
         committed_turn("turn-facts", fence=recall.write_fence)
     )
     assert receipt.status is CommittedTurnStatus.APPLIED
-    await manager.drain_fact_jobs()
     async with manager.backend._conn.execute(
         "SELECT (SELECT COUNT(*) FROM messages), (SELECT COUNT(*) FROM turn_receipts), "
-        "(SELECT COUNT(*) FROM fact_jobs WHERE state='applied'), "
+        "(SELECT COUNT(*) FROM fact_jobs), "
         "(SELECT COUNT(*) FROM facts)"
     ) as cursor:
         row = await cursor.fetchone()
     assert row is not None
-    assert tuple(row) == (2, 1, 1, 2)
+    assert tuple(row) == (2, 1, 0, 0)
     await manager.close()
 
 
@@ -693,18 +691,18 @@ async def test_delete_can_cross_embedding_boundary_and_stale_fence_is_rejected(t
 @pytest.mark.asyncio
 async def test_personal_family_and_cross_household_isolation(tmp_path):
     manager = await MemoryManager.build(
-        backend=SQLiteMemoryBackend(str(tmp_path / "memory.db"), auto_extract_facts=True),
-        enable_facts=True,
+        backend=SQLiteMemoryBackend(str(tmp_path / "memory.db")),
     )
     a_recall = await manager.recall_for_turn(recall_request())
     await manager.record_committed_turn(committed_turn("scope-turn", fence=a_recall.write_fence))
-    await manager.drain_fact_jobs()
-    async with manager.backend._conn.execute("SELECT id FROM facts ORDER BY id LIMIT 1") as cursor:
-        row = await cursor.fetchone()
-    assert row is not None
-    await manager.share_fact(
-        MemoryPrincipal("deployment-a", "house-a", "actor-a", "session-a"), int(row[0])
+    principal = MemoryPrincipal("deployment-a", "house-a", "actor-a", "session-a")
+    fact_id = await manager.remember_fact(
+        principal,
+        "Prefer concise replies",
+        source_event_id="scope-explicit-fact",
+        tier="long_term",
     )
+    await manager.share_fact(principal, fact_id)
 
     actor_b = AgentIdentity("deployment-a", "house-a", "actor-b", "session-b")
     house_b = AgentIdentity("deployment-b", "house-b", "actor-c", "session-c")
@@ -717,10 +715,9 @@ async def test_personal_family_and_cross_household_isolation(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_export_delete_and_late_fact_job_do_not_resurrect(tmp_path):
+async def test_export_and_delete_scope_leave_no_legacy_fact_job(tmp_path):
     manager = await MemoryManager.build(
-        backend=SQLiteMemoryBackend(str(tmp_path / "memory.db"), auto_extract_facts=True),
-        enable_facts=True,
+        backend=SQLiteMemoryBackend(str(tmp_path / "memory.db")),
     )
     recall = await manager.recall_for_turn(recall_request())
     await manager.record_committed_turn(committed_turn("privacy-turn", fence=recall.write_fence))
@@ -730,33 +727,9 @@ async def test_export_delete_and_late_fact_job_do_not_resurrect(tmp_path):
     assert all("embedding" not in record for record in exported.records)
     receipt = await manager.delete_scope(principal, (MemoryScope.personal("actor-a"),))
     assert receipt.deleted_messages == 2
-    await manager.drain_fact_jobs()
     async with manager.backend._conn.execute(
         "SELECT (SELECT COUNT(*) FROM messages), (SELECT COUNT(*) FROM facts), "
-        "(SELECT COUNT(*) FROM fact_tombstones)"
-    ) as cursor:
-        row = await cursor.fetchone()
-    assert row is not None and tuple(row) == (0, 0, 1)
-    await manager.close()
-
-
-@pytest.mark.asyncio
-async def test_committed_turn_fault_rolls_back_receipt_pair_and_job(tmp_path):
-    manager = await MemoryManager.build(
-        backend=SQLiteMemoryBackend(str(tmp_path / "memory.db"), auto_extract_facts=True)
-    )
-    recall = await manager.recall_for_turn(recall_request())
-    await manager.backend._conn.execute(
-        "CREATE TRIGGER fail_fact_job BEFORE INSERT ON fact_jobs "
-        "BEGIN SELECT RAISE(ABORT, 'injected'); END"
-    )
-    with pytest.raises(AgentMemoryError):
-        await manager.record_committed_turn(
-            committed_turn("atomic-fault", fence=recall.write_fence)
-        )
-    async with manager.backend._conn.execute(
-        "SELECT (SELECT COUNT(*) FROM turn_receipts), "
-        "(SELECT COUNT(*) FROM messages), (SELECT COUNT(*) FROM fact_jobs)"
+        "(SELECT COUNT(*) FROM fact_jobs)"
     ) as cursor:
         row = await cursor.fetchone()
     assert row is not None and tuple(row) == (0, 0, 0)
@@ -764,53 +737,47 @@ async def test_committed_turn_fault_rolls_back_receipt_pair_and_job(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_fact_claim_recovered_after_restart(tmp_path):
-    path = str(tmp_path / "memory.db")
-    backend = SQLiteMemoryBackend(path, auto_extract_facts=True)
-    manager = await MemoryManager.build(backend=backend)
+async def test_committed_turn_never_reaches_legacy_fact_job_trigger(tmp_path):
+    manager = await MemoryManager.build(
+        backend=SQLiteMemoryBackend(str(tmp_path / "memory.db"))
+    )
     recall = await manager.recall_for_turn(recall_request())
-    await manager.record_committed_turn(committed_turn("restart-job", fence=recall.write_fence))
-    claimed = await backend.claim_fact_job()
-    assert claimed is not None
-    await backend._conn.execute(
-        "UPDATE fact_jobs SET lease_until = 0 WHERE job_id = ?", (claimed["job_id"],)
+    await manager.backend._conn.execute(
+        "CREATE TRIGGER fail_fact_job BEFORE INSERT ON fact_jobs "
+        "BEGIN SELECT RAISE(ABORT, 'injected'); END"
     )
-    await manager.close()
-
-    reopened = await MemoryManager.build(
-        backend=SQLiteMemoryBackend(path, auto_extract_facts=True), enable_facts=True
+    receipt = await manager.record_committed_turn(
+        committed_turn("atomic-fault", fence=recall.write_fence)
     )
-    await reopened.drain_fact_jobs()
-    async with reopened.backend._conn.execute(
-        "SELECT state, payload, attempts FROM fact_jobs"
+    assert receipt.status is CommittedTurnStatus.APPLIED
+    async with manager.backend._conn.execute(
+        "SELECT (SELECT COUNT(*) FROM turn_receipts), "
+        "(SELECT COUNT(*) FROM messages), (SELECT COUNT(*) FROM fact_jobs)"
     ) as cursor:
         row = await cursor.fetchone()
-    assert row is not None and row[0] == "applied" and row[1] is None and row[2] == 2
-    await reopened.close()
+    assert row is not None and tuple(row) == (1, 2, 0)
+    await manager.close()
 
 
 @pytest.mark.asyncio
 async def test_forget_fact_removes_family_projection_and_leaves_tombstone(tmp_path):
     manager = await MemoryManager.build(
-        backend=SQLiteMemoryBackend(str(tmp_path / "memory.db"), auto_extract_facts=True),
-        enable_facts=True,
+        backend=SQLiteMemoryBackend(str(tmp_path / "memory.db")),
     )
-    recall = await manager.recall_for_turn(recall_request())
-    await manager.record_committed_turn(committed_turn("forget-turn", fence=recall.write_fence))
-    await manager.drain_fact_jobs()
-    async with manager.backend._conn.execute("SELECT id FROM facts ORDER BY id LIMIT 1") as cursor:
-        row = await cursor.fetchone()
-    assert row is not None
-    fact_id = int(row[0])
     principal = MemoryPrincipal("deployment-a", "house-a", "actor-a", "session-a")
+    fact_id = await manager.remember_fact(
+        principal,
+        "Prefer concise replies",
+        source_event_id="forget-explicit-fact",
+        tier="long_term",
+    )
     await manager.share_fact(principal, fact_id)
     assert await manager.forget_fact(fact_id, principal=principal)
     async with manager.backend._conn.execute(
         "SELECT (SELECT COUNT(*) FROM facts), (SELECT COUNT(*) FROM fact_tombstones)"
     ) as cursor:
         counts = await cursor.fetchone()
-    assert counts is not None and tuple(counts) == (1, 1)
-    # The second extracted fact remains; the personal fact and its family projection are gone.
+    assert counts is not None and tuple(counts) == (0, 1)
     await manager.close()
 
 
@@ -818,17 +785,18 @@ async def test_forget_fact_removes_family_projection_and_leaves_tombstone(tmp_pa
 @pytest.mark.parametrize("backend_kind", ["mock", "sqlite"])
 async def test_public_share_is_idempotent_owned_and_forget_cascades(tmp_path, backend_kind):
     backend = (
-        MockMemoryBackend(auto_extract_facts=True)
+        MockMemoryBackend()
         if backend_kind == "mock"
-        else SQLiteMemoryBackend(str(tmp_path / "share.db"), auto_extract_facts=True)
+        else SQLiteMemoryBackend(str(tmp_path / "share.db"))
     )
-    manager = await MemoryManager.build(backend=backend, enable_facts=True)
-    recall = await manager.recall_for_turn(recall_request(query_id=f"share-{backend_kind}"))
-    await manager.record_committed_turn(
-        committed_turn(f"share-{backend_kind}", fence=recall.write_fence)
-    )
-    await manager.drain_fact_jobs()
+    manager = await MemoryManager.build(backend=backend)
     principal = MemoryPrincipal("deployment-a", "house-a", "actor-a", "session-a")
+    fact_id = await manager.remember_fact(
+        principal,
+        "Prefer concise replies",
+        source_event_id=f"share-explicit-{backend_kind}",
+        tier="long_term",
+    )
 
     if isinstance(backend, SQLiteMemoryBackend):
         async with backend._conn.execute(
@@ -836,12 +804,8 @@ async def test_public_share_is_idempotent_owned_and_forget_cascades(tmp_path, ba
         ) as cursor:
             source_row = await cursor.fetchone()
         assert source_row is not None
-        fact_id, origin = int(source_row[0]), str(source_row[1])
-        async with backend._conn.execute("SELECT job_id FROM fact_jobs LIMIT 1") as cursor:
-            job_row = await cursor.fetchone()
-        assert job_row is not None
-        late_job: dict[str, object] = {"job_id": str(job_row[0])}
-        late_facts = []
+        assert int(source_row[0]) == fact_id
+        origin = str(source_row[1])
     else:
         fact_id, meta = next(
             (fact_id, meta)
@@ -849,9 +813,6 @@ async def test_public_share_is_idempotent_owned_and_forget_cascades(tmp_path, ba
             if meta[3:5] == ("personal", "actor-a")
         )
         origin = meta[5]
-        late_job = dict(next(iter(backend._fact_jobs.values())))
-        source = next(fact for fact in backend._facts if fact.id == fact_id)
-        late_facts = [source]
 
     first = await manager.share_fact(principal, fact_id)
     assert await manager.share_fact(principal, fact_id) == first
@@ -878,10 +839,6 @@ async def test_public_share_is_idempotent_owned_and_forget_cascades(tmp_path, ba
         assert projections[0][3:7] == ("family", "house-a", first, origin)
 
     assert await manager.forget_fact(fact_id, principal=principal)
-    assert (
-        await backend.apply_fact_job(late_job, late_facts, extractor_lineage="late-replay")
-        == "applied"
-    )
     if isinstance(backend, SQLiteMemoryBackend):
         async with backend._conn.execute(
             "SELECT (SELECT COUNT(*) FROM facts WHERE deterministic_id = ? OR projection_of = ?), "
