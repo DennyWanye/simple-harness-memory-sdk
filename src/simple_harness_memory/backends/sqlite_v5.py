@@ -3751,6 +3751,7 @@ class SQLiteHumanMemoryBackend:
 
     async def _read_ingested_record(self, evidence_id: str) -> IngestedEvidenceRecord | None:
         from simple_harness.runtime import (
+            COGNITIVE_MEMORY_SCHEMA_VERSION,
             EvidenceRef,
             SanitizedEvidenceEnvelope,
             SanitizedEvidenceReceipt,
@@ -3785,7 +3786,7 @@ class SQLiteHumanMemoryBackend:
         ) as cursor:
             item_rows = await cursor.fetchall()
         envelope_payload: dict[str, object] = {
-            "schema_version": 1,
+            "schema_version": COGNITIVE_MEMORY_SCHEMA_VERSION,
             "evidence_id": str(row["evidence_id"]),
             "run_id": str(row["run_id"]),
             "subject": str(row["subject"]),
