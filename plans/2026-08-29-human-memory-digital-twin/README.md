@@ -1,7 +1,7 @@
 # Human Memory Digital Twin Plan Workspace
 
 > 创建日期：2026-08-29
-> 状态：验收契约与跨仓架构基线已冻结，Phase 2 挑战与五项 disposable spike 已完成，等待 closure review
+> 状态：用户已批准直接实施；V0 已闭合，S1 审计修复与 S2 fresh-schema 实现进行中
 > 主计划仓库：`simple-harness-memory-sdk`
 > Worktree：`/Users/denny/projects/simple-harness-memory-sdk-memory-plan`
 > 分支：`feat/human-memory-plan`
@@ -185,6 +185,8 @@ SDK 当前生产事实以本仓库的 `ARCHITECTURE/`、`src/simple_harness_memo
 
 ## 当前阶段
 
-初版本产品级核心设定、验收契约、跨仓架构基线和代码级 program plan 已形成；Phase 2 完成 8 个专项挑战簇，
-新增实施前 V0 authority，并运行五项关键假设 spike。当前执行 closure diff；用户批准定稿后，按 V0+S1—S6
-七个 release unit 在三个仓库实施，并完成自动化、真实模型与桌面 UI 验收。
+初版本产品级核心设定、验收契约、跨仓架构基线和代码级 program plan 已冻结，用户已批准直接实施。
+V0 authority、旧 Session oracle lineage 和五项关键假设 spike 已闭合；S1 Harness SDK 0.7.0 已进入独立
+安全审计后的修复轮，尚未获得 release-unit PASS；S2 Memory SDK 0.6.0 只启动了不依赖业务状态机的
+fresh-schema 初始化子任务。S3—S6 未开始，program 的 15 个最终场景仍保持 `NOT_RUN`，只有全部实现、
+自动化、真实模型、桌面 UI 和 machine `finalize` 完成后才能宣称 program 完成。

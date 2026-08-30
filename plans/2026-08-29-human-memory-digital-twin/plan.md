@@ -1,6 +1,6 @@
 # Program Plan：Human Memory Digital Twin / 单一主对话与 Memory Program
 
-> 状态：DRAFT — plan-test Phase 2 challenge revision  
+> 状态：APPROVED / EXECUTION IN PROGRESS — V0 complete；S1 audit repair；S2 fresh-schema started
 > 行为策略：`preserve-approved`  
 > 唯一真相：`acceptance.md` + `assurance-contract.json`  
 > 实施仓库：`simple-harness-sdk` → `simple-harness-memory-sdk` → `simple_harness`
