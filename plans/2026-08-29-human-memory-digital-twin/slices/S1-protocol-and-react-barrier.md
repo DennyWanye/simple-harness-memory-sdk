@@ -3,6 +3,8 @@
 > Release unit：S1（Harness SDK）  
 > 高风险子系统：公共 API、ReAct 状态机、effect authority（3）  
 > 覆盖：HM-AC-3/4/7/8
+> 状态：COMPLETE — source candidate `9677cf948da9245b2aa4845f97dbc668e87f29ff`；未发布、未完成 Host 产品集成
+> 最终候选物：wheel `ef4e5a21128adede553ccd4fe8cfc726c37def329a2bc5217af0346466f23dad`；sdist `19f927708f456fb843127462e6ae09b5ecece0c02aecac5af2b42b63df7836a4`
 
 ## 交付边界
 
