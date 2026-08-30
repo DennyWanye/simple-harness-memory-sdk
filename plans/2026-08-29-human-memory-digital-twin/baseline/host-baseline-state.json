@@ -1,0 +1,11 @@
+{
+  "results": {
+    "backend-a": {
+      "detail": "[Errno 2] No such file or directory: 'backend/.venv/bin/python'",
+      "elapsed_s": 0,
+      "id": "backend-a",
+      "status": "error"
+    }
+  },
+  "updated_at": "2026-08-30T04:55:06+0800"
+}

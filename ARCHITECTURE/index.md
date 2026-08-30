@@ -15,4 +15,7 @@ direct backends、recall/committed-turn/fact-job/recovery 与 aggregate diagnost
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 包结构、分层、本地后端与召回/认知/世界对象的生产边界 |
 
-<!-- last-updated: 2026-08-24 -->
+Human Memory Program 的实施前差距和目标边界已在 `ARCHITECTURE.md` 单独标为“未实现”，避免把计划能力
+误写成生产事实。
+
+<!-- last-updated: 2026-08-30 -->

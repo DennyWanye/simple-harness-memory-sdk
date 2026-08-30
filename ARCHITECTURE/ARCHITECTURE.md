@@ -1,10 +1,26 @@
-<!-- last-calibrated: 9c92edeaf028d332b59a1e096307032fa2a31e70 -->
+<!-- last-calibrated: 46624b5c49f2c0a64a522eca64d6eb798823370e -->
 
-# ARCHITECTURE — simple-harness-memory-sdk（v0.5.2 candidate）
+# ARCHITECTURE — simple-harness-memory-sdk（v0.5.2）
 
-> 最后更新：2026-08-24
+> 最后更新：2026-08-30
 > 当前事实：S3 runtime、四类 taxonomy offline migration、S4 storage/embedding、S5 candidate packaging
 > 与 S6 simple_harness 产品接线/真人测试均已完成；Memory observability S1+S2 已通过自动化验收。
+
+## Human Memory Program 实施前边界（2026-08-30）
+
+以下是 `plans/2026-08-29-human-memory-digital-twin/` 开始实施前的代码事实，不是已完成能力：
+
+- 长期模型仍以 `Message` 和单一 `Fact(category)` 为核心；`Episode`、`Semantic Claim`、`Procedure`、
+  `Prospective Intent` 尚无独立 schema、状态机或公共 API。
+- backend 未显式注入 extractor 时使用 `RuleBasedFactExtractor`；simple_harness 当前虽启用 fact worker，
+  但没有注入主模型 extractor，所以普通事实仍由正则产生。
+- `delete_scope`、`forget_fact`、`delete_session` 与旧会话清理路径仍会物理删除 message/fact/session 行；
+  因而尚不满足新 program 的“原始业务证据永不物理删除 + suppression 控制普通使用”约束。
+- 召回协议仍只接受 query text、personal/family scopes 与统一结果 payload；尚无 `RecallPlan`、认知类型、
+  recipient/purpose、epistemic/conflict/expiry 或跨 TaskScope 命中审计。
+- `DigitalTwin` 仍是 Fact 聚合对象和 JSON 快照；没有展示专用的可追溯 graph projection，也没有
+  “不得进入 Agent Context/召回/动作”的机器边界。
+- 本 program 不迁移 v4 内容数据；它必须以 fresh schema 初始化，旧数据库由 loader 稳定拒绝。
 
 ## 分层
 

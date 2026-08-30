@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "manifest_sha256": "13a2f2b5a1f4d74993a573bac31ffdddd228dd782a78c31411eea04caaf3c326",
+  "runtime_bridge": {
+    "passed": true,
+    "counts": {
+      "source": 5,
+      "host": 5,
+      "receipts": 5,
+      "distinct_sequence": 5,
+      "terminal_watermark": 5
+    },
+    "host_expected_hash": "51f01f62afd6302960fe0f25c822e845b5bdc67b61a17df8bed94e12f17ffb94",
+    "harness_request_hash": "51f01f62afd6302960fe0f25c822e845b5bdc67b61a17df8bed94e12f17ffb94",
+    "adapter_payload_hash": "51f01f62afd6302960fe0f25c822e845b5bdc67b61a17df8bed94e12f17ffb94",
+    "same_snapshot_replay": true,
+    "selected_protocol": "source-ledger outbox + Host receipt/cursor + terminal watermark; per-turn Host snapshot receipt before reservation"
+  },
+  "provider_continuation": {
+    "passed": true,
+    "canary_absence": {
+      "HIDDEN_COT_CANARY": true,
+      "sk-spike-secret": true,
+      "Bearer spike-token": true
+    },
+    "receipt": {
+      "source_hash": "a75e66543b13da8dce53e3edf83fbc548c40c5c3bacab3f8930530e7c7326839",
+      "sanitized_hash": "f45cadc7073151f25a97d8d94996e160267b7951786d0dc39afd787f59840a46",
+      "filter_policy_version": "spike-v1",
+      "removed_count": 3,
+      "removed_types": [
+        "credential_or_hidden_reasoning"
+      ]
+    },
+    "provider_policy": {
+      "openai": "reasoning disabled unless opaque resumable reference is implemented",
+      "anthropic": "reasoning disabled unless opaque resumable reference is implemented",
+      "gemini": "reasoning disabled unless opaque resumable reference is implemented",
+      "qwen": "reasoning disabled unless opaque resumable reference is implemented"
+    },
+    "selected_protocol": "allowlisted durable provider record; transport reasoning ephemeral; opaque reference or reasoning-disabled admission"
+  },
+  "cross_db_trigger": {
+    "passed": true,
+    "occurrence_count": 1,
+    "event_cursor": 1000,
+    "snapshot_hash_replay": true,
+    "pending_not_lost": true,
+    "no_recall_gate": {
+      "before_ack": false,
+      "after_ack": true
+    },
+    "suppression_fail_closed": {
+      "occurrence_id": "suppressed",
+      "content": null,
+      "deny_reason": "SUPPRESSED"
+    },
+    "selected_protocol": "Memory registration outbox -> sole Host scheduler -> durable occurrence inbox -> pre-provider/pre-terminal gate"
+  },
+  "passed": true
+}

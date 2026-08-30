@@ -1,0 +1,204 @@
+{
+  "profile": "standard",
+  "acceptance_ids": [
+    "HM-AC-1",
+    "HM-AC-2",
+    "HM-AC-3",
+    "HM-AC-4",
+    "HM-AC-5",
+    "HM-AC-6",
+    "HM-AC-7",
+    "HM-AC-8"
+  ],
+  "protected_assets": [
+    {
+      "id": "ASSET-RAW-EVIDENCE",
+      "description": "新原型唯一主对话、Turn、Tool Result、LLM 调用和决策原始证据的永久完整性"
+    },
+    {
+      "id": "ASSET-MEMORY-TRUTH",
+      "description": "明确事实、观察、外部资料和 LLM 推断的来源、状态与演化真实性"
+    },
+    {
+      "id": "ASSET-SCOPE-PRIVACY",
+      "description": "用户、recipient、purpose、敏感级别与 suppression 的资格边界；V1 普通认知记忆可跨 TaskScope/workspace 成为候选，但不得因此越权披露"
+    },
+    {
+      "id": "ASSET-AUDIT-LINEAGE",
+      "description": "LLM 提案、代码裁决、状态变化、召回和投影的不可覆盖审计链"
+    },
+    {
+      "id": "ASSET-AVAILABILITY-BUDGET",
+      "description": "跨仓记忆链路的可恢复性、响应时限以及 item、byte、Token 和费用预算"
+    },
+    {
+      "id": "ASSET-TASK-CONTEXT",
+      "description": "单一主对话内 TaskScope 隔离、最近窗口因果完整性、短时域召回与最终 ContextSnapshot 正确性"
+    },
+    {
+      "id": "ASSET-TASK-CONTINUITY",
+      "description": "TaskScope 完整事件档案、README/STATUS/checkpoint 的可追溯性以及长期任务发现和恢复正确性"
+    },
+    {
+      "id": "ASSET-TASK-FOLDER-AUTHORITY",
+      "description": "TaskScope managed task_home 与一个或多个 exact workspace roots 的可信、append-only 版本化绑定，以及每个项目 effect 对 exact binding-set revision 的归属"
+    },
+    {
+      "id": "ASSET-FOREGROUND-RUN-ORDER",
+      "description": "单一 foreground Agent ReAct Run、普通消息 durable FIFO 与 stop/pause/cancel 即时控制语义"
+    },
+    {
+      "id": "ASSET-DISPLAY-ONLY-TWIN",
+      "description": "数字孪生体知识图谱仅作可追溯展示，不成为 Agent Context、召回、回答、工具或动作的隐式输入"
+    }
+  ],
+  "trusted_assumptions": [
+    {
+      "id": "TRUST-LOCAL-HOST",
+      "description": "本地开发者账户、OS/kernel 与系统绝对路径程序可信"
+    },
+    {
+      "id": "TRUST-AUTH-CONTEXT",
+      "description": "Host 传入的已认证 subject identity 可信，但其 Scope、recipient 和 purpose 仍由 SDK 校验"
+    },
+    {
+      "id": "TRUST-FRESH-DATA-DIR",
+      "description": "原型验收可使用全新本地数据目录，不要求读取、迁移或兼容任何旧数据库"
+    }
+  ],
+  "in_scope_failures": [
+    {
+      "id": "FAIL-DATA-LOSS",
+      "description": "逻辑遗忘、retention、维护、故障或容量处理物理删除或覆盖新原型原始证据"
+    },
+    {
+      "id": "FAIL-FALSE-MEMORY",
+      "description": "无证据或 LLM 推断被作为用户明确事实激活"
+    },
+    {
+      "id": "FAIL-STALE-CONFLICT",
+      "description": "信息变化后继续投影旧值，或对含糊冲突静默选边"
+    },
+    {
+      "id": "FAIL-RECALL-MISS",
+      "description": "任务所需记忆、时间事件强触发或审计证据被漏召回"
+    },
+    {
+      "id": "FAIL-PRIVACY-RECALL",
+      "description": "跨主体或不适当 recipient/purpose 召回私人记忆，或把 V1 的跨 TaskScope/workspace 全局候选误当成披露许可"
+    },
+    {
+      "id": "FAIL-HALF-STATE",
+      "description": "LLM 非法载荷、并发或重试留下重复记忆、半事务或不完整 lineage"
+    },
+    {
+      "id": "FAIL-LLM-PAYLOAD",
+      "description": "LLM timeout、拒答、乱序、重复、schema 违约或超长载荷绕过验证、扩大权限/召回或破坏可恢复性"
+    },
+    {
+      "id": "FAIL-PROTOCOL-REPLAY",
+      "description": "跨仓协议版本漂移或 canonical hash 缺字段导致错误 replay 或不安全行为"
+    },
+    {
+      "id": "FAIL-AUDIT-SECRET",
+      "description": "审计链缺失、被覆盖，或 API key、token、cookie 等认证材料进入证据库"
+    },
+    {
+      "id": "FAIL-LATENCY-COST",
+      "description": "无召回路径产生额外调用，或召回超过 deadline、item、byte、Token 或费用预算"
+    },
+    {
+      "id": "FAIL-HIGH-RISK-ACTION",
+      "description": "推断出的 Procedure/Prospective 越过 Host 权限护栏执行高风险外部动作"
+    },
+    {
+      "id": "FAIL-TASK-CONTAMINATION",
+      "description": "单一主对话中的相似任务、项目或实体互相污染，或 TaskScope 切换后继续使用错误上下文"
+    },
+    {
+      "id": "FAIL-CONTEXT-OVERFLOW",
+      "description": "最近窗口、工具结果、短时域和长期记忆未按预算组装，造成超限、因果链破坏或重复注入"
+    },
+    {
+      "id": "FAIL-PRIMARY-STREAM-SPLIT",
+      "description": "空目录初始化、中断恢复或并发导致同一用户出现多条可写主对话或半初始化状态"
+    },
+    {
+      "id": "FAIL-TASK-RESUME-LOSS",
+      "description": "TaskScope 丢失对话、操作、步骤、修改取消原因、文件或测试 evidence，导致长期后无法可信恢复"
+    },
+    {
+      "id": "FAIL-TASK-SEARCH-AUTHORITY",
+      "description": "向量检索错误候选被直接当作 canonical TaskScope，造成错误任务切换、项目授权或历史混入"
+    },
+    {
+      "id": "FAIL-TASK-FOLDER-REBIND",
+      "description": "模型提案、公共父目录、路径 alias、symlink、目录移动或重试使 TaskScope 静默替换/扩大 workspace set，或在 binding 前执行项目 effect"
+    },
+    {
+      "id": "FAIL-AUTO-MODE-ESCALATION",
+      "description": "模型自行开启 Auto、伪造 mode snapshot，或把免除 folder-append 确认扩大成高风险工具和不可逆动作授权"
+    },
+    {
+      "id": "FAIL-FOREGROUND-RUN-CONCURRENCY",
+      "description": "同一永久主对话出现第二个 foreground Agent Run、普通消息丢失或乱序，或 stop/pause/cancel 被错误排入普通 FIFO"
+    },
+    {
+      "id": "FAIL-TWIN-INFLUENCE",
+      "description": "展示图谱的派生结论进入 Provider Context、改变召回排序、回答、工具选择或动作，或纠正/遗忘后继续显示旧值"
+    },
+    {
+      "id": "FAIL-READ-VIEW-GROWTH",
+      "description": "README/STATUS 无界增长，或拆分概括时丢失 canonical facts、evidence refs 与恢复索引"
+    },
+    {
+      "id": "FAIL-PRIVACY-STALE",
+      "description": "隐私资格门或状态资格门任一失效，使不适合 recipient/purpose、已 superseded、contested、expired 或 suppressed 的内容进入普通召回、Context、TaskScope 视图或数字孪生体"
+    },
+    {
+      "id": "FAIL-SEMANTIC-CLOSURE",
+      "description": "客观运行事件已入账但目标、决定、计划、阶段或恢复语义未由 mutation/no-mutation closure 收口，或 CAS/retry 造成重复和丢失状态变化"
+    }
+  ],
+  "in_scope_adversaries": [
+    {
+      "id": "ADV-LLM-OUTPUT",
+      "description": "把 LLM 输出视为可能乱序、重复、拒答、超长、schema 违约或语义错误的不可信输入"
+    },
+    {
+      "id": "ADV-NATURAL-LANGUAGE",
+      "description": "把用户自然语言视为可能含糊、冲突或携带诱导越 Scope 指令的输入"
+    }
+  ],
+  "out_of_scope_conditions": [
+    {
+      "id": "OOS-COMPROMISED-HOST",
+      "description": "宿主 OS、开发者账户或进程已被攻陷"
+    },
+    {
+      "id": "OOS-CLOUD-SYNC",
+      "description": "云端多设备同步、跨用户共享和服务端集中画像"
+    },
+    {
+      "id": "OOS-LEGACY-DATA",
+      "description": "旧数据库、旧 Message/Fact、旧 Session 的迁移、导入、兼容读取和 UI 展示"
+    },
+    {
+      "id": "OOS-HOST-EXECUTOR",
+      "description": "外部日历/通知 provider、跨设备事件总线和动作执行器自身的业务正确性；Host 单主对话与 Context 集成仍在范围内"
+    },
+    {
+      "id": "OOS-MULTI-AGENT-RUN",
+      "description": "同一 Session 多 foreground Agent Run、subagent parent/child 执行、并行 workspace effect 与结果合并"
+    },
+    {
+      "id": "OOS-TWIN-BEHAVIOR",
+      "description": "让数字孪生体主动影响 Agent 决策、代替用户行动或形成自治策略"
+    },
+    {
+      "id": "OOS-GRAPH-DATABASE",
+      "description": "为了展示图谱而强制引入独立图数据库；V1 允许从 canonical relation projection 生成图数据"
+    }
+  ],
+  "maximum_acceptable_impact": "派生处理可以 fail-closed、拒绝或延迟，但原始证据不得丢失；不确定或冲突信息不得作为 active 事实执行；隐私不当召回与高风险程序自动执行为零容忍。"
+}

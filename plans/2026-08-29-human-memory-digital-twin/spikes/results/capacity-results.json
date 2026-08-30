@@ -1,0 +1,219 @@
+{
+  "schema_version": 1,
+  "manifest_sha256": "13a2f2b5a1f4d74993a573bac31ffdddd228dd782a78c31411eea04caaf3c326",
+  "vector": {
+    "passed": true,
+    "selected_backend": "SQLite metadata/FTS5 plus rebuildable numpy float32 generation cache exact scan",
+    "new_native_dependency": false,
+    "degradation": "If generation cache cannot open within deadline, use permission-filtered FTS/entity/time candidates and record VECTOR_DEGRADED; never use stale generation.",
+    "tiers": [
+      {
+        "records": 1000,
+        "dimension": 64,
+        "queries": 200,
+        "required_type_recall": 1.0,
+        "extra_type_rate": 0.0,
+        "privacy_correctness": 1.0,
+        "hard_trigger_correctness": 1.0,
+        "warm_p50_ms": 0.009541399776935577,
+        "warm_p95_ms": 0.010833190754055977,
+        "hard_max_ms": 0.20766607485711575,
+        "cold_open_first_query_ms": 12.567749945446849,
+        "index_bytes": 256128,
+        "build_write_ms": 0.27070799842476845,
+        "stale_resurrection_count": 0,
+        "passed": true
+      },
+      {
+        "records": 10000,
+        "dimension": 64,
+        "queries": 200,
+        "required_type_recall": 1.0,
+        "extra_type_rate": 0.0,
+        "privacy_correctness": 1.0,
+        "hard_trigger_correctness": 1.0,
+        "warm_p50_ms": 0.059083569794893265,
+        "warm_p95_ms": 0.0716478913091123,
+        "hard_max_ms": 0.08087512105703354,
+        "cold_open_first_query_ms": 4.643833031877875,
+        "index_bytes": 2560128,
+        "build_write_ms": 1.5387500170618296,
+        "stale_resurrection_count": 0,
+        "passed": true
+      },
+      {
+        "records": 100000,
+        "dimension": 64,
+        "queries": 200,
+        "required_type_recall": 1.0,
+        "extra_type_rate": 0.0,
+        "privacy_correctness": 1.0,
+        "hard_trigger_correctness": 1.0,
+        "warm_p50_ms": 0.6751039763912559,
+        "warm_p95_ms": 0.7748305797576903,
+        "hard_max_ms": 0.8570840582251549,
+        "cold_open_first_query_ms": 13.839999912306666,
+        "index_bytes": 25600128,
+        "build_write_ms": 28.464042115956545,
+        "stale_resurrection_count": 0,
+        "passed": true
+      }
+    ]
+  },
+  "context": {
+    "passed": true,
+    "selected": {
+      "recent_causal_groups": 10,
+      "large_tool_results": "typed summary + exact artifact/evidence ref",
+      "generation_reserve": {
+        "4096": 1024,
+        "8192": 2048,
+        "32768": 4096
+      },
+      "safety_margin": "max(256 tokens, 10% context window)",
+      "crop_priority": [
+        "attachments",
+        "long_term_to_one",
+        "short_horizon"
+      ]
+    },
+    "cases": {
+      "4096": {
+        "effective_input_tokens": 2662,
+        "estimated_tokens": 2615,
+        "provider_usage_oracle": 776,
+        "estimator_underestimated": false,
+        "recent_group_ids": [
+          "g-14",
+          "g-15",
+          "g-16",
+          "g-17",
+          "g-18",
+          "g-19",
+          "g-20",
+          "g-21",
+          "g-22",
+          "g-23"
+        ],
+        "recent_groups_exactly_10": true,
+        "tool_pairs_complete": true,
+        "protected_and_current_present": true,
+        "active_scope": "scope-beta",
+        "payload_bytes": 3039,
+        "crop_order": [],
+        "passed": true,
+        "replay_hash_stable": true
+      },
+      "8192": {
+        "effective_input_tokens": 5324,
+        "estimated_tokens": 2615,
+        "provider_usage_oracle": 776,
+        "estimator_underestimated": false,
+        "recent_group_ids": [
+          "g-14",
+          "g-15",
+          "g-16",
+          "g-17",
+          "g-18",
+          "g-19",
+          "g-20",
+          "g-21",
+          "g-22",
+          "g-23"
+        ],
+        "recent_groups_exactly_10": true,
+        "tool_pairs_complete": true,
+        "protected_and_current_present": true,
+        "active_scope": "scope-beta",
+        "payload_bytes": 3039,
+        "crop_order": [],
+        "passed": true,
+        "replay_hash_stable": true
+      },
+      "32768": {
+        "effective_input_tokens": 25395,
+        "estimated_tokens": 2615,
+        "provider_usage_oracle": 776,
+        "estimator_underestimated": false,
+        "recent_group_ids": [
+          "g-14",
+          "g-15",
+          "g-16",
+          "g-17",
+          "g-18",
+          "g-19",
+          "g-20",
+          "g-21",
+          "g-22",
+          "g-23"
+        ],
+        "recent_groups_exactly_10": true,
+        "tool_pairs_complete": true,
+        "protected_and_current_present": true,
+        "active_scope": "scope-beta",
+        "payload_bytes": 3039,
+        "crop_order": [],
+        "passed": true,
+        "replay_hash_stable": true
+      }
+    },
+    "payload_hashes": {
+      "4096": "23c6561db5faab5457ed9eb340d762c0be638ddd5a75487f9012c557155a4c40",
+      "8192": "23c6561db5faab5457ed9eb340d762c0be638ddd5a75487f9012c557155a4c40",
+      "32768": "23c6561db5faab5457ed9eb340d762c0be638ddd5a75487f9012c557155a4c40"
+    },
+    "remaining_real_provider_gate": "Calibrate estimator against actual provider usage; any underestimate blocks S5."
+  },
+  "documents": {
+    "passed": true,
+    "selected": {
+      "readme_bytes_max": 16384,
+      "status_bytes_max": 12288,
+      "resume_bytes_max": 24576,
+      "page_bytes_max": 32768,
+      "events_per_evidence_page": 500
+    },
+    "tiers": [
+      {
+        "events": 1000,
+        "pages": 2,
+        "sizes_bytes": {
+          "readme": 227,
+          "status": 3032,
+          "resume": 479
+        },
+        "generation_ms": 0.008584000170230865,
+        "field_recovery_oracle": true,
+        "stable_page_refs": true,
+        "passed": true
+      },
+      {
+        "events": 10000,
+        "pages": 20,
+        "sizes_bytes": {
+          "readme": 229,
+          "status": 3113,
+          "resume": 1138
+        },
+        "generation_ms": 0.008624978363513947,
+        "field_recovery_oracle": true,
+        "stable_page_refs": true,
+        "passed": true
+      },
+      {
+        "events": 100000,
+        "pages": 200,
+        "sizes_bytes": {
+          "readme": 231,
+          "status": 3194,
+          "resume": 7899
+        },
+        "generation_ms": 0.015167053788900375,
+        "field_recovery_oracle": true,
+        "stable_page_refs": true,
+        "passed": true
+      }
+    ]
+  },
+  "passed": true
+}

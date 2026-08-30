@@ -1,0 +1,53 @@
+{
+  "results": {
+    "backend-a": {
+      "elapsed_s": 4.1,
+      "exit_code": 0,
+      "id": "backend-a",
+      "last_line": "88 passed in 2.65s",
+      "output_lines": 3,
+      "status": "pass"
+    },
+    "backend-b": {
+      "elapsed_s": 2.0,
+      "exit_code": 0,
+      "id": "backend-b",
+      "last_line": "57 passed in 1.32s",
+      "output_lines": 2,
+      "status": "pass"
+    },
+    "backend-c": {
+      "elapsed_s": 10.2,
+      "exit_code": 0,
+      "id": "backend-c",
+      "last_line": "438 passed, 1 warning in 9.54s",
+      "output_lines": 14,
+      "status": "pass"
+    },
+    "backend-d-f": {
+      "elapsed_s": 81.8,
+      "exit_code": 0,
+      "id": "backend-d-f",
+      "last_line": "1199 passed, 9 skipped, 2 warnings in 80.80s (0:01:20)",
+      "output_lines": 28,
+      "status": "pass"
+    },
+    "backend-g-l": {
+      "elapsed_s": 11.7,
+      "exit_code": 0,
+      "id": "backend-g-l",
+      "last_line": "217 passed, 1 warning in 10.99s",
+      "output_lines": 11,
+      "status": "pass"
+    },
+    "backend-m-r": {
+      "elapsed_s": 45.1,
+      "exit_code": 1,
+      "id": "backend-m-r",
+      "last_line": "1 failed, 1496 passed, 26 skipped, 1 deselected, 2 warnings in 43.45s",
+      "output_lines": 41,
+      "status": "fail"
+    }
+  },
+  "updated_at": "2026-08-30T05:09:24+0800"
+}

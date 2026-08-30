@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "seed": 20260830,
+  "spikes": {
+    "SPIKE-RUNTIME-BRIDGE": {
+      "fault_points": ["source_commit", "host_evidence_commit", "receipt_commit", "provider_reservation"],
+      "required": ["no_event_gap", "no_duplicate", "terminal_watermark", "triple_payload_hash", "same_snapshot_replay"]
+    },
+    "SPIKE-PROVIDER-CONTINUATION": {
+      "durable_forbidden_canaries": ["HIDDEN_COT_CANARY", "sk-spike-secret", "Bearer spike-token"],
+      "policy": "opaque_public_reference_or_reasoning_disabled"
+    },
+    "SPIKE-CROSS-DB-TRIGGER": {
+      "fault_points": ["registration_commit", "occurrence_commit", "snapshot_commit", "ack_commit"],
+      "required": ["one_occurrence_per_revision_event", "pending_not_lost", "snapshot_hash_replay", "suppression_fail_closed"]
+    },
+    "SPIKE-VECTOR": {
+      "record_counts": [1000, 10000, 100000],
+      "dimension": 64,
+      "queries_per_tier": 200,
+      "required_type_recall_min": 0.9,
+      "extra_type_rate_max": 0.15,
+      "privacy_and_hard_trigger_min": 1.0,
+      "warm_p95_ms_max": 500,
+      "hard_query_ms_max": 2000,
+      "cold_first_query_ms_max": 2000,
+      "stale_resurrection_max": 0
+    },
+    "SPIKE-CONTEXT-DOC": {
+      "causal_groups": 24,
+      "recent_group_limit": 10,
+      "context_windows": [4096, 8192, 32768],
+      "large_tool_result_bytes": 1048576,
+      "task_event_counts": [1000, 10000, 100000],
+      "readme_bytes_max": 16384,
+      "status_bytes_max": 12288,
+      "resume_bytes_max": 24576,
+      "page_bytes_max": 32768,
+      "token_estimator_underestimate_allowed": false
+    }
+  }
+}
