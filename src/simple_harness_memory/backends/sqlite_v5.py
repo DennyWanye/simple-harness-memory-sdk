@@ -64,6 +64,13 @@ if TYPE_CHECKING:
         EvidenceIngestionReceipt,
         IngestedEvidenceRecord,
     )
+    from simple_harness_memory.core.jobs import (
+        AnalysisApplication,
+        AnalysisBatchClaim,
+        AnalysisResultCommit,
+        MemoryJobWorkerConfig,
+        WorkerRunOutcome,
+    )
     from simple_harness_memory.core.suppression import (
         OrdinaryMemoryPurpose,
         SealedAuditAccessDecision,
@@ -114,6 +121,19 @@ SUPPRESSION_FAULT_POINTS = (
     "suppression.after_outbox",
     "suppression.before_commit",
     "suppression.after_commit",
+)
+JOB_FAULT_POINTS = (
+    "job.claim.after_begin",
+    "job.claim.before_commit",
+    "job.claim.after_commit",
+    "job.result.before_commit",
+    "job.result.after_commit",
+    "job.apply.before_commit",
+    "job.apply.after_commit",
+    "job.finalize.before_commit",
+    "job.finalize.after_commit",
+    "job.fail.before_commit",
+    "job.fail.after_commit",
 )
 logger = structlog.get_logger("simple_harness_memory.backends.sqlite_v5")
 _DEFAULT_FILTER_POLICIES = frozenset({"credential-filter/v1"})
@@ -241,6 +261,12 @@ class SQLiteHumanMemoryBackend:
             "evidence-ingestion", principal_id, envelope.source_ref, envelope.envelope_hash
         )
         mutation_job_id = _stable_id("evidence-mutation-job", envelope.evidence_id)
+        mutation_batch_key = _stable_id(
+            "evidence-analysis-batch-key",
+            principal_id,
+            envelope.run_id,
+            envelope.disclosure_context.context_hash,
+        )
         outbox_id = _stable_id("evidence-mutation-outbox", envelope.evidence_id)
         ingestion_receipt = EvidenceIngestionReceipt(
             ingestion_receipt_id,
@@ -367,13 +393,15 @@ class SQLiteHumanMemoryBackend:
                 )
                 self._fault("ingestion.after_receipt")
                 await self._db.execute(
-                    "INSERT INTO jobs(job_id,principal_id,job_kind,idempotency_key,payload,"
-                    "payload_hash,state,next_attempt_at,created_at,updated_at) "
-                    "VALUES(?,?,?,?,?,?,'pending',?,?,?)",
+                    "INSERT INTO jobs(job_id,principal_id,job_kind,batch_key,evidence_watermark,"
+                    "idempotency_key,payload,payload_hash,state,next_attempt_at,created_at,"
+                    "updated_at) VALUES(?,?,?,?,?,?,?,?, 'pending',?,?,?)",
                     (
                         mutation_job_id,
                         principal_id,
                         "analyze_evidence",
+                        mutation_batch_key,
+                        envelope.evidence_id,
                         envelope.evidence_id,
                         mutation_payload_json,
                         mutation_payload_hash,
@@ -762,6 +790,1003 @@ class SQLiteHumanMemoryBackend:
         ) as cursor:
             row = await cursor.fetchone()
         return None if row is None else _suppression_decision_from_row(row)
+
+    async def claim_analysis_batch(
+        self,
+        config: MemoryJobWorkerConfig,
+        worker_id: str,
+    ) -> AnalysisBatchClaim | None:
+        from simple_harness.runtime import DisclosureContext, EvidenceRef, MemoryAnalysisRequest
+
+        from simple_harness_memory.core.jobs import MemoryJobWorkerConfig
+
+        if type(config) is not MemoryJobWorkerConfig:
+            raise TypeError("config must use MemoryJobWorkerConfig")
+        _audit_identifier(worker_id, "worker_id")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v5 backend is not initialized")
+        now = _timestamp(self._now())
+        lease_token = f"analysis-lease-{uuid4().hex}"
+        lease_expires_at = now + config.lease_seconds
+        async with self._write_lock:
+            await self._db.execute("BEGIN IMMEDIATE")
+            self._fault("job.claim.after_begin")
+            committed = False
+            try:
+                async with self._db.execute(
+                    "SELECT DISTINCT b.batch_id FROM analysis_batches b "
+                    "JOIN analysis_batch_members m ON m.batch_id=b.batch_id "
+                    "JOIN jobs j ON j.job_id=m.job_id WHERE j.state='claimed' AND "
+                    "j.lease_expires_at<=? "
+                    "ORDER BY b.created_at,b.batch_id LIMIT 1",
+                    (now,),
+                ) as cursor:
+                    recover_row = await cursor.fetchone()
+                if recover_row is not None:
+                    batch_id = str(recover_row["batch_id"])
+                    await self._db.execute(
+                        "UPDATE jobs SET lease_owner=?,lease_token=?,lease_expires_at=?,"
+                        "updated_at=? WHERE job_id IN (SELECT job_id FROM analysis_batch_members "
+                        "WHERE batch_id=?) AND state='claimed'",
+                        (worker_id, lease_token, lease_expires_at, now, batch_id),
+                    )
+                    await self._db.execute(
+                        "UPDATE job_attempts SET lease_token=? WHERE batch_id=? "
+                        "AND state!='applied'",
+                        (lease_token, batch_id),
+                    )
+                    await self._append_batch_events_unlocked(
+                        batch_id, "reclaimed", "analysis_lease_reclaimed", now
+                    )
+                    self._fault("job.claim.before_commit")
+                    await self._db.execute("COMMIT")
+                    committed = True
+                    self._fault("job.claim.after_commit")
+                    return await self._read_analysis_claim_unlocked(
+                        batch_id, lease_token, lease_expires_at
+                    )
+
+                threshold = now - config.max_batch_wait_seconds
+                async with self._db.execute(
+                    "SELECT principal_id,batch_key,COUNT(*) AS job_count,"
+                    "MIN(created_at) AS oldest FROM jobs WHERE state='pending' "
+                    "AND next_attempt_at<=? GROUP BY principal_id,batch_key "
+                    "HAVING COUNT(*)>=? OR MIN(created_at)<=? "
+                    "ORDER BY oldest,principal_id,batch_key LIMIT 1",
+                    (now, config.batch_size, threshold),
+                ) as cursor:
+                    group_row = await cursor.fetchone()
+                if group_row is None:
+                    await self._db.execute("COMMIT")
+                    committed = True
+                    return None
+                subject = str(group_row["principal_id"])
+                batch_key = str(group_row["batch_key"])
+                async with self._db.execute(
+                    "SELECT * FROM jobs WHERE state='pending' AND next_attempt_at<=? "
+                    "AND principal_id=? AND batch_key=? ORDER BY created_at,job_id LIMIT ?",
+                    (now, subject, batch_key, config.batch_size),
+                ) as cursor:
+                    job_rows = await cursor.fetchall()
+                if not job_rows:
+                    raise MemoryCorruptionError("eligible analysis batch has no jobs")
+                evidence_refs: list[EvidenceRef] = []
+                run_id: str | None = None
+                disclosure: DisclosureContext | None = None
+                member_attempts: list[int] = []
+                for ordinal, job_row in enumerate(job_rows, start=1):
+                    payload = json.loads(str(job_row["payload"]))
+                    if not isinstance(payload, dict) or not isinstance(
+                        payload.get("evidence_id"), str
+                    ):
+                        raise MemoryCorruptionError("analysis job payload is malformed")
+                    payload_json = canonical_json(payload)
+                    if (
+                        hashlib.sha256(payload_json.encode()).hexdigest()
+                        != str(job_row["payload_hash"])
+                        or str(job_row["evidence_watermark"]) != payload["evidence_id"]
+                    ):
+                        raise MemoryCorruptionError("analysis job payload hash differs")
+                    evidence_id = str(payload["evidence_id"])
+                    async with self._db.execute(
+                        "SELECT run_id,subject,sanitized_hash,disclosure_json,source_ref,"
+                        "envelope_hash,source_hash "
+                        "FROM evidence_envelopes WHERE evidence_id=?",
+                        (evidence_id,),
+                    ) as cursor:
+                        evidence_row = await cursor.fetchone()
+                    if evidence_row is None or str(evidence_row["subject"]) != subject:
+                        raise MemoryCorruptionError("analysis job evidence is unavailable")
+                    expected_payload: dict[str, JsonValue] = {
+                        "schema_version": 1,
+                        "evidence_id": evidence_id,
+                        "envelope_hash": str(evidence_row["envelope_hash"]),
+                        "source_hash": str(evidence_row["source_hash"]),
+                    }
+                    if payload != expected_payload:
+                        raise MemoryCorruptionError("analysis job evidence lineage differs")
+                    current_run = str(evidence_row["run_id"])
+                    current_disclosure_json = json.loads(str(evidence_row["disclosure_json"]))
+                    if not isinstance(current_disclosure_json, dict):
+                        raise MemoryCorruptionError("analysis disclosure is malformed")
+                    current_disclosure = DisclosureContext.from_json(current_disclosure_json)
+                    if run_id is None:
+                        run_id = current_run
+                        disclosure = current_disclosure
+                    elif current_run != run_id or current_disclosure != disclosure:
+                        raise MemoryCorruptionError("analysis batch authority differs")
+                    evidence_refs.append(
+                        EvidenceRef(
+                            evidence_id,
+                            str(evidence_row["sanitized_hash"]),
+                            ordinal,
+                        )
+                    )
+                    member_attempts.append(int(job_row["attempt_count"]) + 1)
+                assert run_id is not None and disclosure is not None
+                batch_attempt = max(member_attempts)
+                member_identity = canonical_json(
+                    [
+                        {"job_id": str(row["job_id"]), "attempt": attempt}
+                        for row, attempt in zip(job_rows, member_attempts, strict=True)
+                    ]
+                )
+                batch_id = _stable_id("analysis-batch", subject, batch_key, member_identity)
+                request = MemoryAnalysisRequest(
+                    batch_id,
+                    run_id,
+                    subject,
+                    tuple(evidence_refs),
+                    config.prompt_version,
+                    config.result_schema_version,
+                    config.policy_version,
+                    config.provider_id,
+                    config.model_id,
+                    config.model_config_hash,
+                    batch_attempt,
+                    config.analysis_budget,
+                    disclosure,
+                    batch_id,
+                )
+                await self._db.execute(
+                    "INSERT INTO analysis_batches(batch_id,principal_id,batch_key,"
+                    "evidence_watermark,attempt,"
+                    "request_json,request_hash,state,created_at,updated_at) "
+                    "VALUES(?,?,?,?,?,?,?,'handed_off',?,?)",
+                    (
+                        batch_id,
+                        subject,
+                        batch_key,
+                        evidence_refs[-1].evidence_id,
+                        batch_attempt,
+                        canonical_json(request.to_json()),
+                        request.request_hash,
+                        now,
+                        now,
+                    ),
+                )
+                for ordinal, (job_row, evidence_ref, member_attempt) in enumerate(
+                    zip(job_rows, evidence_refs, member_attempts, strict=True), start=1
+                ):
+                    job_id = str(job_row["job_id"])
+                    await self._db.execute(
+                        "UPDATE jobs SET state='claimed',lease_owner=?,lease_token=?,"
+                        "lease_expires_at=?,attempt_count=?,updated_at=? WHERE job_id=? "
+                        "AND state='pending'",
+                        (
+                            worker_id,
+                            lease_token,
+                            lease_expires_at,
+                            member_attempt,
+                            now,
+                            job_id,
+                        ),
+                    )
+                    await self._db.execute(
+                        "INSERT INTO analysis_batch_members(batch_id,ordinal,job_id,job_attempt,"
+                        "evidence_id,content_hash) VALUES(?,?,?,?,?,?)",
+                        (
+                            batch_id,
+                            ordinal,
+                            job_id,
+                            member_attempt,
+                            evidence_ref.evidence_id,
+                            evidence_ref.content_hash,
+                        ),
+                    )
+                    await self._db.execute(
+                        "INSERT INTO job_attempts(job_id,attempt,batch_id,lease_token,request_hash,"
+                        "state,started_at) VALUES(?,?,?,?,?,'handed_off',?)",
+                        (
+                            job_id,
+                            member_attempt,
+                            batch_id,
+                            lease_token,
+                            request.request_hash,
+                            now,
+                        ),
+                    )
+                await self._append_batch_events_unlocked(
+                    batch_id, "provider_handoff", "analysis_provider_handoff", now
+                )
+                self._fault("job.claim.before_commit")
+                await self._db.execute("COMMIT")
+                committed = True
+                self._fault("job.claim.after_commit")
+                return await self._read_analysis_claim_unlocked(
+                    batch_id, lease_token, lease_expires_at
+                )
+            finally:
+                if not committed:
+                    with suppress(Exception):
+                        await self._db.execute("ROLLBACK")
+
+    async def _read_analysis_claim_unlocked(
+        self,
+        batch_id: str,
+        lease_token: str,
+        lease_expires_at: float,
+    ) -> AnalysisBatchClaim:
+        from simple_harness.runtime import MemoryAnalysisRequest, MemoryAnalysisResult
+
+        from simple_harness_memory.core.jobs import AnalysisBatchClaim
+
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT * FROM analysis_batches WHERE batch_id=?", (batch_id,)
+        ) as cursor:
+            batch = await cursor.fetchone()
+        if batch is None:
+            raise MemoryCorruptionError("analysis batch disappeared")
+        request_json = json.loads(str(batch["request_json"]))
+        if not isinstance(request_json, dict):
+            raise MemoryCorruptionError("stored analysis request is malformed")
+        request = MemoryAnalysisRequest.from_json(request_json)
+        if request.request_hash != str(batch["request_hash"]):
+            raise MemoryCorruptionError("stored analysis request hash differs")
+        result: MemoryAnalysisResult | None = None
+        if batch["result_json"] is not None:
+            result_json = json.loads(str(batch["result_json"]))
+            if not isinstance(result_json, dict):
+                raise MemoryCorruptionError("stored analysis result is malformed")
+            result = MemoryAnalysisResult.from_json(result_json)
+            if result.result_hash != str(batch["result_hash"]):
+                raise MemoryCorruptionError("stored analysis result hash differs")
+        async with self._db.execute(
+            "SELECT * FROM analysis_batch_members WHERE batch_id=? ORDER BY ordinal",
+            (batch_id,),
+        ) as cursor:
+            members = tuple(await cursor.fetchall())
+        if (
+            not members
+            or str(batch["evidence_watermark"]) != str(members[-1]["evidence_id"])
+        ):
+            raise MemoryCorruptionError("analysis evidence watermark differs")
+        application = None
+        if batch["application_receipt_json"] is not None:
+            application = await self._application_from_batch_unlocked(batch, request, result)
+        return AnalysisBatchClaim(
+            batch_id,
+            str(batch["principal_id"]),
+            str(batch["batch_key"]),
+            str(batch["evidence_watermark"]),
+            tuple(str(item["job_id"]) for item in members),
+            lease_token,
+            lease_expires_at,
+            request,
+            result,
+            application,
+        )
+
+    async def _append_batch_events_unlocked(
+        self,
+        batch_id: str,
+        event_kind: str,
+        reason_code: str,
+        occurred_at: float,
+        result_hash: str | None = None,
+    ) -> None:
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT b.request_hash,m.job_id,m.job_attempt FROM analysis_batches b "
+            "JOIN analysis_batch_members m ON m.batch_id=b.batch_id "
+            "WHERE b.batch_id=? ORDER BY m.ordinal",
+            (batch_id,),
+        ) as cursor:
+            members = await cursor.fetchall()
+        if not members:
+            raise MemoryCorruptionError("analysis batch has no members")
+        for member in members:
+            event_id = f"job-event-{uuid4().hex}"
+            payload: dict[str, JsonValue] = {
+                "schema_version": 1,
+                "event_id": event_id,
+                "batch_id": batch_id,
+                "job_id": str(member["job_id"]),
+                "attempt": int(member["job_attempt"]),
+                "event_kind": event_kind,
+                "reason_code": reason_code,
+                "request_hash": str(member["request_hash"]),
+                "result_hash": result_hash,
+                "occurred_at": occurred_at,
+            }
+            await self._db.execute(
+                "INSERT INTO job_attempt_events(event_id,batch_id,job_id,attempt,event_kind,"
+                "reason_code,request_hash,result_hash,occurred_at,event_hash) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (
+                    event_id,
+                    batch_id,
+                    member["job_id"],
+                    member["job_attempt"],
+                    event_kind,
+                    reason_code,
+                    member["request_hash"],
+                    result_hash,
+                    occurred_at,
+                    hashlib.sha256(canonical_json(payload).encode()).hexdigest(),
+                ),
+            )
+
+    async def _analysis_claim_is_current_unlocked(self, claim: AnalysisBatchClaim) -> bool:
+        assert self._db is not None
+        placeholders = ",".join("?" for _ in claim.job_ids)
+        async with self._db.execute(
+            f"SELECT COUNT(*) FROM jobs WHERE job_id IN ({placeholders}) "
+            "AND state='claimed' AND lease_token=?",
+            (*claim.job_ids, claim.lease_token),
+        ) as cursor:
+            row = await cursor.fetchone()
+        return row is not None and int(row[0]) == len(claim.job_ids)
+
+    async def commit_analysis_result(
+        self, claim: AnalysisBatchClaim, result: MemoryAnalysisResult
+    ) -> AnalysisResultCommit:
+        from simple_harness.runtime import MemoryAnalysisResult
+
+        from simple_harness_memory.core.audit import freeze_public_audit_object
+        from simple_harness_memory.core.jobs import (
+            AnalysisBatchClaim,
+            AnalysisResultCommit,
+            AnalysisResultCommitOutcome,
+        )
+
+        if type(claim) is not AnalysisBatchClaim or type(result) is not MemoryAnalysisResult:
+            raise TypeError("claim and result must use analysis protocol types")
+        decoded = MemoryAnalysisResult.from_json(result.to_json())
+        if decoded.result_hash != result.result_hash:
+            raise MemoryValidationError("analysis_result_hash_differs")
+        if (
+            result.job_id != claim.request.job_id
+            or result.run_id != claim.request.run_id
+            or result.request_hash != claim.request.request_hash
+        ):
+            raise MemoryValidationError("analysis_result_lineage_differs")
+        freeze_public_audit_object(result.structured_result)
+        assert self._db is not None
+        now = _timestamp(self._now())
+        async with self._write_lock:
+            await self._db.execute("BEGIN IMMEDIATE")
+            committed = False
+            try:
+                if not await self._analysis_claim_is_current_unlocked(claim):
+                    await self._append_batch_events_unlocked(
+                        claim.batch_id,
+                        "result_out_of_order",
+                        "analysis_stale_lease_result_ignored",
+                        now,
+                        result.result_hash,
+                    )
+                    await self._db.execute("COMMIT")
+                    committed = True
+                    return AnalysisResultCommit(
+                        AnalysisResultCommitOutcome.STALE_LEASE, None
+                    )
+                async with self._db.execute(
+                    "SELECT result_json,result_hash FROM analysis_batches WHERE batch_id=?",
+                    (claim.batch_id,),
+                ) as cursor:
+                    row = await cursor.fetchone()
+                if row is None:
+                    raise MemoryCorruptionError("analysis batch disappeared")
+                if row["result_json"] is not None:
+                    stored_value = json.loads(str(row["result_json"]))
+                    if not isinstance(stored_value, dict):
+                        raise MemoryCorruptionError("stored analysis result malformed")
+                    canonical = MemoryAnalysisResult.from_json(stored_value)
+                    if canonical.result_hash != str(row["result_hash"]):
+                        raise MemoryCorruptionError("stored analysis result hash differs")
+                    if canonical.result_hash == result.result_hash:
+                        outcome = AnalysisResultCommitOutcome.REPLAYED
+                        event_kind = "result_replayed"
+                        reason = "analysis_result_replayed"
+                    else:
+                        outcome = AnalysisResultCommitOutcome.DIVERGENT
+                        event_kind = "result_divergent"
+                        reason = "analysis_divergent_result_ignored"
+                    await self._append_batch_events_unlocked(
+                        claim.batch_id, event_kind, reason, now, result.result_hash
+                    )
+                    self._fault("job.result.before_commit")
+                    await self._db.execute("COMMIT")
+                    committed = True
+                    self._fault("job.result.after_commit")
+                    return AnalysisResultCommit(outcome, canonical)
+                await self._db.execute(
+                    "UPDATE analysis_batches SET result_json=?,result_hash=?,"
+                    "state='result_committed',updated_at=? WHERE batch_id=?",
+                    (canonical_json(result.to_json()), result.result_hash, now, claim.batch_id),
+                )
+                await self._db.execute(
+                    "UPDATE job_attempts SET result_hash=?,state='result_committed' "
+                    "WHERE batch_id=?",
+                    (result.result_hash, claim.batch_id),
+                )
+                await self._append_batch_events_unlocked(
+                    claim.batch_id,
+                    "result_committed",
+                    "analysis_result_committed",
+                    now,
+                    result.result_hash,
+                )
+                self._fault("job.result.before_commit")
+                await self._db.execute("COMMIT")
+                committed = True
+                self._fault("job.result.after_commit")
+                return AnalysisResultCommit(AnalysisResultCommitOutcome.COMMITTED, result)
+            finally:
+                if not committed:
+                    with suppress(Exception):
+                        await self._db.execute("ROLLBACK")
+
+    async def reject_analysis_result(
+        self, claim: AnalysisBatchClaim, result_hash: str, reason_code: str
+    ) -> WorkerRunOutcome:
+        from simple_harness_memory.core.jobs import AnalysisBatchClaim, WorkerRunOutcome
+
+        if type(claim) is not AnalysisBatchClaim:
+            raise TypeError("claim must use AnalysisBatchClaim")
+        _audit_identifier(reason_code, "reason_code")
+        if not isinstance(result_hash, str) or len(result_hash) != 64:
+            raise MemoryValidationError("result_hash_invalid")
+        assert self._db is not None
+        now = _timestamp(self._now())
+        async with self._write_lock:
+            await self._db.execute("BEGIN IMMEDIATE")
+            committed = False
+            try:
+                if not await self._analysis_claim_is_current_unlocked(claim):
+                    await self._db.execute("COMMIT")
+                    committed = True
+                    return WorkerRunOutcome.STALE_LEASE
+                await self._db.execute(
+                    "UPDATE jobs SET state='dead_letter',lease_owner=NULL,lease_token=NULL,"
+                    "lease_expires_at=NULL,last_error_code=?,updated_at=? WHERE job_id IN "
+                    "(SELECT job_id FROM analysis_batch_members WHERE batch_id=?)",
+                    (reason_code, now, claim.batch_id),
+                )
+                await self._db.execute(
+                    "UPDATE job_attempts SET state='failed',reason_code=?,completed_at=? "
+                    "WHERE batch_id=?",
+                    (reason_code, now, claim.batch_id),
+                )
+                await self._db.execute(
+                    "UPDATE analysis_batches SET state='failed',updated_at=? WHERE batch_id=?",
+                    (now, claim.batch_id),
+                )
+                await self._db.execute(
+                    "UPDATE outbox SET state='dead_letter',updated_at=? WHERE "
+                    "idempotency_key IN (SELECT idempotency_key FROM jobs WHERE job_id IN "
+                    "(SELECT job_id FROM analysis_batch_members WHERE batch_id=?))",
+                    (now, claim.batch_id),
+                )
+                await self._append_batch_events_unlocked(
+                    claim.batch_id, "dead_letter", reason_code, now, result_hash
+                )
+                self._fault("job.fail.before_commit")
+                await self._db.execute("COMMIT")
+                committed = True
+                self._fault("job.fail.after_commit")
+                return WorkerRunOutcome.DEAD_LETTER
+            finally:
+                if not committed:
+                    with suppress(Exception):
+                        await self._db.execute("ROLLBACK")
+
+    async def fail_analysis_batch(
+        self,
+        claim: AnalysisBatchClaim,
+        reason_code: str,
+        config: MemoryJobWorkerConfig,
+    ) -> WorkerRunOutcome:
+        from simple_harness_memory.core.jobs import (
+            AnalysisBatchClaim,
+            MemoryJobWorkerConfig,
+            WorkerRunOutcome,
+        )
+
+        if type(claim) is not AnalysisBatchClaim or type(config) is not MemoryJobWorkerConfig:
+            raise TypeError("claim and config must use analysis job protocol types")
+        _audit_identifier(reason_code, "reason_code")
+        assert self._db is not None
+        now = _timestamp(self._now())
+        async with self._write_lock:
+            await self._db.execute("BEGIN IMMEDIATE")
+            committed = False
+            try:
+                if not await self._analysis_claim_is_current_unlocked(claim):
+                    await self._db.execute("COMMIT")
+                    committed = True
+                    return WorkerRunOutcome.STALE_LEASE
+                async with self._db.execute(
+                    "SELECT job_id,attempt_count FROM jobs WHERE job_id IN "
+                    "(SELECT job_id FROM analysis_batch_members WHERE batch_id=?)",
+                    (claim.batch_id,),
+                ) as cursor:
+                    rows = await cursor.fetchall()
+                all_dead = True
+                for row in rows:
+                    attempt = int(row["attempt_count"])
+                    dead = attempt >= config.max_attempts
+                    all_dead = all_dead and dead
+                    retry_at = now if dead else now + config.retry_delays_seconds[attempt - 1]
+                    await self._db.execute(
+                        "UPDATE jobs SET state=?,lease_owner=NULL,lease_token=NULL,"
+                        "lease_expires_at=NULL,last_error_code=?,next_attempt_at=?,updated_at=? "
+                        "WHERE job_id=?",
+                        (
+                            "dead_letter" if dead else "pending",
+                            reason_code,
+                            retry_at,
+                            now,
+                            row["job_id"],
+                        ),
+                    )
+                await self._db.execute(
+                    "UPDATE job_attempts SET state='failed',reason_code=?,completed_at=? "
+                    "WHERE batch_id=?",
+                    (reason_code, now, claim.batch_id),
+                )
+                await self._db.execute(
+                    "UPDATE analysis_batches SET state='failed',updated_at=? WHERE batch_id=?",
+                    (now, claim.batch_id),
+                )
+                if all_dead:
+                    await self._db.execute(
+                        "UPDATE outbox SET state='dead_letter',updated_at=? WHERE "
+                        "idempotency_key IN (SELECT idempotency_key FROM jobs WHERE job_id IN "
+                        "(SELECT job_id FROM analysis_batch_members WHERE batch_id=?))",
+                        (now, claim.batch_id),
+                    )
+                await self._append_batch_events_unlocked(
+                    claim.batch_id,
+                    "dead_letter" if all_dead else "retry_scheduled",
+                    reason_code,
+                    now,
+                )
+                self._fault("job.fail.before_commit")
+                await self._db.execute("COMMIT")
+                committed = True
+                self._fault("job.fail.after_commit")
+                return (
+                    WorkerRunOutcome.DEAD_LETTER
+                    if all_dead
+                    else WorkerRunOutcome.RETRY_SCHEDULED
+                )
+            finally:
+                if not committed:
+                    with suppress(Exception):
+                        await self._db.execute("ROLLBACK")
+
+    async def prepare_analysis_application(
+        self,
+        claim: AnalysisBatchClaim,
+        result: MemoryAnalysisResult,
+        validator_version: str,
+    ) -> AnalysisApplication:
+        from simple_harness.runtime import (
+            AnalysisValidationStatus,
+            EvidenceReasonCode,
+            MemoryAnalysisReceipt,
+            MemoryMutationPlan,
+        )
+
+        from simple_harness_memory.core.jobs import AnalysisBatchClaim
+
+        if type(claim) is not AnalysisBatchClaim:
+            raise TypeError("claim must use AnalysisBatchClaim")
+        _audit_identifier(validator_version, "validator_version")
+        assert self._db is not None
+        now = _timestamp(self._now())
+        async with self._write_lock:
+            await self._db.execute("BEGIN IMMEDIATE")
+            committed = False
+            try:
+                if not await self._analysis_claim_is_current_unlocked(claim):
+                    raise MemoryWriterConflict("analysis_application_lease_stale")
+                async with self._db.execute(
+                    "SELECT * FROM analysis_batches WHERE batch_id=?", (claim.batch_id,)
+                ) as cursor:
+                    batch = await cursor.fetchone()
+                if batch is None or str(batch["result_hash"]) != result.result_hash:
+                    raise MemoryWriterConflict("analysis_result_not_canonical")
+                if batch["application_receipt_json"] is not None:
+                    application = await self._application_from_batch_unlocked(
+                        batch, claim.request, result
+                    )
+                    await self._db.execute("COMMIT")
+                    committed = True
+                    return application
+
+                plan: MemoryMutationPlan | None = None
+                no_mutation = False
+                try:
+                    structured = thaw_json(cast(FrozenJsonValue, result.structured_result))
+                    if not isinstance(structured, dict):
+                        raise ValueError("structured result is not an object")
+                    no_mutation = (
+                        set(structured) == {"outcome", "operations"}
+                        and structured.get("outcome") == "no_mutation"
+                        and structured.get("operations") == []
+                    )
+                    if not no_mutation:
+                        plan = MemoryMutationPlan.from_json(structured)
+                except (KeyError, TypeError, ValueError):
+                    plan = None
+                    no_mutation = False
+                valid = no_mutation or plan is not None
+                if plan is not None:
+                    valid = (
+                        plan.run_id == claim.request.run_id
+                        and plan.subject == claim.request.subject
+                        and plan.idempotency_key == claim.request.idempotency_key
+                        and plan.disclosure_context == claim.request.disclosure_context
+                        and plan.evidence_refs == claim.request.ordered_evidence_refs
+                        and all(
+                            all(
+                                claim.request.ordered_evidence_refs[ref.ordinal - 1] == ref
+                                for ref in operation.evidence_refs
+                            )
+                            for operation in plan.operations
+                        )
+                    )
+                await self._db.execute(
+                    "INSERT INTO analysis_apply_heads(principal_id,revision,updated_at) "
+                    "VALUES(?,1,?) ON CONFLICT(principal_id) DO NOTHING",
+                    (claim.subject, now),
+                )
+                async with self._db.execute(
+                    "SELECT revision FROM analysis_apply_heads WHERE principal_id=?",
+                    (claim.subject,),
+                ) as cursor:
+                    head_row = await cursor.fetchone()
+                if head_row is None:
+                    raise MemoryCorruptionError("analysis apply head missing")
+                base_revision = int(head_row["revision"])
+                valid = valid and (
+                    no_mutation
+                    or (plan is not None and plan.base_revision == base_revision)
+                )
+                committed_revision: int | None = None
+                if valid:
+                    committed_revision = base_revision + 1
+                    update = await self._db.execute(
+                        "UPDATE analysis_apply_heads SET revision=?,updated_at=? "
+                        "WHERE principal_id=? AND revision=?",
+                        (committed_revision, now, claim.subject, base_revision),
+                    )
+                    if update.rowcount != 1:
+                        valid = False
+                        committed_revision = None
+                    elif plan is not None:
+                        await self._db.execute(
+                            "INSERT INTO accepted_analysis_plans(batch_id,principal_id,"
+                            "base_revision,committed_revision,plan_json,plan_hash,created_at) "
+                            "VALUES(?,?,?,?,?,?,?)",
+                            (
+                                claim.batch_id,
+                                claim.subject,
+                                plan.base_revision,
+                                committed_revision,
+                                canonical_json(plan.to_json()),
+                                plan.plan_hash,
+                                now,
+                            ),
+                        )
+                    else:
+                        no_mutation_value: dict[str, JsonValue] = {
+                            "outcome": "no_mutation",
+                            "operations": [],
+                        }
+                        no_mutation_json = canonical_json(no_mutation_value)
+                        await self._db.execute(
+                            "INSERT INTO accepted_analysis_plans(batch_id,principal_id,"
+                            "base_revision,committed_revision,plan_json,plan_hash,created_at) "
+                            "VALUES(?,?,?,?,?,?,?)",
+                            (
+                                claim.batch_id,
+                                claim.subject,
+                                base_revision,
+                                committed_revision,
+                                no_mutation_json,
+                                hashlib.sha256(no_mutation_json.encode()).hexdigest(),
+                                now,
+                            ),
+                        )
+                receipt = MemoryAnalysisReceipt(
+                    _stable_id(
+                        "analysis-application-receipt",
+                        claim.batch_id,
+                        claim.request.request_hash,
+                        result.result_hash,
+                    ),
+                    claim.request.job_id,
+                    claim.request.run_id,
+                    claim.request.request_hash,
+                    result.result_hash,
+                    validator_version,
+                    (
+                        AnalysisValidationStatus.ACCEPTED
+                        if valid
+                        else AnalysisValidationStatus.REJECTED
+                    ),
+                    (
+                        EvidenceReasonCode.VALIDATOR_ACCEPTED,
+                    )
+                    if valid
+                    else (EvidenceReasonCode.VALIDATOR_REJECTED,),
+                    committed_revision,
+                    now,
+                )
+                await self._db.execute(
+                    "UPDATE analysis_batches SET state='audit_pending',"
+                    "application_receipt_json=?,application_receipt_hash=?,updated_at=? "
+                    "WHERE batch_id=?",
+                    (
+                        canonical_json(receipt.to_json()),
+                        receipt.receipt_hash,
+                        now,
+                        claim.batch_id,
+                    ),
+                )
+                await self._db.execute(
+                    "UPDATE job_attempts SET state='audit_pending' WHERE batch_id=?",
+                    (claim.batch_id,),
+                )
+                await self._append_batch_events_unlocked(
+                    claim.batch_id,
+                    "application_staged" if valid else "application_rejected",
+                    "analysis_validator_accepted" if valid else "analysis_validator_rejected",
+                    now,
+                    result.result_hash,
+                )
+                self._fault("job.apply.before_commit")
+                await self._db.execute("COMMIT")
+                committed = True
+                self._fault("job.apply.after_commit")
+                async with self._db.execute(
+                    "SELECT * FROM analysis_batches WHERE batch_id=?", (claim.batch_id,)
+                ) as cursor:
+                    stored_batch = await cursor.fetchone()
+                if stored_batch is None:
+                    raise MemoryCorruptionError("analysis batch disappeared after application")
+                return await self._application_from_batch_unlocked(
+                    stored_batch, claim.request, result
+                )
+            finally:
+                if not committed:
+                    with suppress(Exception):
+                        await self._db.execute("ROLLBACK")
+
+    async def _application_from_batch_unlocked(
+        self,
+        batch: aiosqlite.Row,
+        request: MemoryAnalysisRequest,
+        result: MemoryAnalysisResult | None,
+    ) -> AnalysisApplication:
+        from simple_harness.runtime import (
+            AnalysisValidationStatus,
+            MemoryAnalysisReceipt,
+            MemoryMutationPlan,
+        )
+
+        from simple_harness_memory.core.audit import DecisionLedgerEntry, DecisionOutcome
+        from simple_harness_memory.core.jobs import AnalysisApplication
+        from simple_harness_memory.core.suppression import SuppressionScopeKind
+
+        if result is None or batch["application_receipt_json"] is None:
+            raise MemoryCorruptionError("analysis application is incomplete")
+        receipt_value = json.loads(str(batch["application_receipt_json"]))
+        if not isinstance(receipt_value, dict):
+            raise MemoryCorruptionError("stored analysis receipt is malformed")
+        receipt = MemoryAnalysisReceipt.from_json(receipt_value)
+        if receipt.receipt_hash != str(batch["application_receipt_hash"]):
+            raise MemoryCorruptionError("stored analysis receipt hash differs")
+        now = receipt.committed_at
+        decisions: list[DecisionLedgerEntry] = []
+        if receipt.validation_status is AnalysisValidationStatus.ACCEPTED:
+            assert self._db is not None
+            async with self._db.execute(
+                "SELECT * FROM accepted_analysis_plans WHERE batch_id=?",
+                (str(batch["batch_id"]),),
+            ) as cursor:
+                plan_row = await cursor.fetchone()
+            if plan_row is None:
+                raise MemoryCorruptionError("accepted analysis plan is missing")
+            plan_value = json.loads(str(plan_row["plan_json"]))
+            if not isinstance(plan_value, dict):
+                raise MemoryCorruptionError("accepted analysis plan is malformed")
+            if (
+                set(plan_value) == {"outcome", "operations"}
+                and plan_value.get("outcome") == "no_mutation"
+                and plan_value.get("operations") == []
+            ):
+                expected_hash = hashlib.sha256(canonical_json(plan_value).encode()).hexdigest()
+                if expected_hash != str(plan_row["plan_hash"]):
+                    raise MemoryCorruptionError("accepted no-mutation hash differs")
+                plan = None
+            else:
+                plan = MemoryMutationPlan.from_json(plan_value)
+                if plan.plan_hash != str(plan_row["plan_hash"]):
+                    raise MemoryCorruptionError("accepted analysis plan hash differs")
+            if plan is not None:
+                operations = plan.operations
+            else:
+                operations = ()
+            for operation in operations:
+                assert plan is not None
+                target_ref = operation.target_memory_id or _stable_id(
+                    "proposed-memory", plan.plan_id, operation.operation_id
+                )
+                decisions.append(
+                    DecisionLedgerEntry(
+                        _stable_id(
+                            "analysis-decision",
+                            str(batch["batch_id"]),
+                            operation.operation_id,
+                        ),
+                        operation.operation_id,
+                        operation.kind.value,
+                        DecisionOutcome.ACCEPTED,
+                        SuppressionScopeKind.MEMORY,
+                        target_ref,
+                        operation.to_json(),
+                        () if operation.target_memory_id is None else (operation.target_memory_id,),
+                        (
+                            f"analysis-plan:{plan.plan_hash}:revision:"
+                            f"{receipt.committed_revision}",
+                        ),
+                        operation.evidence_refs or plan.evidence_refs,
+                        "analysis_operation_staged",
+                        now,
+                    )
+                )
+        else:
+            decisions.append(
+                DecisionLedgerEntry(
+                    _stable_id("analysis-decision-rejected", str(batch["batch_id"])),
+                    _stable_id("analysis-operation-rejected", str(batch["batch_id"])),
+                    "analysis_plan",
+                    DecisionOutcome.REJECTED,
+                    SuppressionScopeKind.SUBJECT,
+                    request.subject,
+                    {},
+                    (),
+                    (),
+                    request.ordered_evidence_refs,
+                    "analysis_validator_rejected",
+                    now,
+                )
+            )
+        batch_id = str(batch["batch_id"])
+        return AnalysisApplication(
+            _stable_id("analysis-invocation", batch_id, request.request_hash),
+            _stable_id("analysis-batch-turn", batch_id),
+            receipt,
+            tuple(decisions),
+        )
+
+    async def finalize_analysis_application(
+        self, claim: AnalysisBatchClaim, application: AnalysisApplication
+    ) -> bool:
+        from simple_harness_memory.core.jobs import AnalysisApplication, AnalysisBatchClaim
+
+        if type(claim) is not AnalysisBatchClaim or type(application) is not AnalysisApplication:
+            raise TypeError("claim and application must use analysis protocol types")
+        assert self._db is not None
+        now = _timestamp(self._now())
+        async with self._write_lock:
+            await self._db.execute("BEGIN IMMEDIATE")
+            committed = False
+            try:
+                async with self._db.execute(
+                    "SELECT state,application_receipt_hash FROM analysis_batches "
+                    "WHERE batch_id=?",
+                    (claim.batch_id,),
+                ) as cursor:
+                    batch = await cursor.fetchone()
+                if batch is None:
+                    raise MemoryCorruptionError("analysis batch disappeared")
+                if str(batch["application_receipt_hash"]) != application.receipt.receipt_hash:
+                    raise MemoryIdempotencyConflict("analysis_application_receipt_differs")
+                if str(batch["state"]) == "applied":
+                    await self._db.execute("COMMIT")
+                    committed = True
+                    return True
+                if not await self._analysis_claim_is_current_unlocked(claim):
+                    await self._db.execute("COMMIT")
+                    committed = True
+                    return False
+                async with self._db.execute(
+                    "SELECT host_receipt_hash FROM llm_invocations WHERE invocation_id=?",
+                    (application.invocation_id,),
+                ) as cursor:
+                    invocation = await cursor.fetchone()
+                if (
+                    invocation is None
+                    or str(invocation["host_receipt_hash"]) != application.receipt.receipt_hash
+                ):
+                    raise MemoryWriterConflict("analysis_audit_not_durable")
+                await self._db.execute(
+                    "UPDATE jobs SET state='applied',lease_owner=NULL,lease_token=NULL,"
+                    "lease_expires_at=NULL,last_error_code=NULL,updated_at=? WHERE job_id IN "
+                    "(SELECT job_id FROM analysis_batch_members WHERE batch_id=?)",
+                    (now, claim.batch_id),
+                )
+                await self._db.execute(
+                    "UPDATE job_attempts SET state='applied',completed_at=? WHERE batch_id=?",
+                    (now, claim.batch_id),
+                )
+                async with self._db.execute(
+                    "SELECT o.*,j.job_id,j.payload AS job_payload FROM outbox o JOIN jobs j "
+                    "ON j.principal_id=o.principal_id AND j.idempotency_key=o.idempotency_key "
+                    "WHERE j.job_id IN (SELECT job_id FROM analysis_batch_members "
+                    "WHERE batch_id=?)",
+                    (claim.batch_id,),
+                ) as cursor:
+                    outbox_rows = tuple(await cursor.fetchall())
+                if len(outbox_rows) != len(claim.job_ids):
+                    raise MemoryCorruptionError("analysis outbox membership differs")
+                for outbox_row in outbox_rows:
+                    outbox_value = json.loads(str(outbox_row["payload"]))
+                    job_value = json.loads(str(outbox_row["job_payload"]))
+                    if (
+                        not isinstance(outbox_value, dict)
+                        or not isinstance(job_value, dict)
+                        or str(outbox_row["topic"]) != "memory.mutation.requested"
+                        or str(outbox_row["principal_id"]) != claim.subject
+                        or outbox_value != {**job_value, "job_id": str(outbox_row["job_id"])}
+                        or hashlib.sha256(canonical_json(outbox_value).encode()).hexdigest()
+                        != str(outbox_row["payload_hash"])
+                    ):
+                        raise MemoryCorruptionError("analysis outbox payload differs")
+                await self._db.execute(
+                    "UPDATE outbox SET state='applied',lease_owner=NULL,lease_token=NULL,"
+                    "lease_expires_at=NULL,updated_at=? WHERE idempotency_key IN "
+                    "(SELECT idempotency_key FROM jobs WHERE job_id IN "
+                    "(SELECT job_id FROM analysis_batch_members WHERE batch_id=?))",
+                    (now, claim.batch_id),
+                )
+                await self._db.execute(
+                    "UPDATE analysis_batches SET state='applied',updated_at=? WHERE batch_id=?",
+                    (now, claim.batch_id),
+                )
+                await self._append_batch_events_unlocked(
+                    claim.batch_id,
+                    "applied",
+                    "analysis_application_applied",
+                    now,
+                    claim.result.result_hash if claim.result is not None else None,
+                )
+                self._fault("job.finalize.before_commit")
+                await self._db.execute("COMMIT")
+                committed = True
+                self._fault("job.finalize.after_commit")
+                return True
+            finally:
+                if not committed:
+                    with suppress(Exception):
+                        await self._db.execute("ROLLBACK")
 
     async def record_memory_analysis(
         self,

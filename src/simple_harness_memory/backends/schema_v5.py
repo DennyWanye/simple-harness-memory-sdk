@@ -302,6 +302,8 @@ CREATE TABLE jobs (
     job_id TEXT PRIMARY KEY,
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
     job_kind TEXT NOT NULL,
+    batch_key TEXT NOT NULL,
+    evidence_watermark TEXT NOT NULL,
     idempotency_key TEXT NOT NULL,
     payload BLOB NOT NULL,
     payload_hash TEXT NOT NULL,
@@ -310,6 +312,7 @@ CREATE TABLE jobs (
     lease_token TEXT,
     lease_expires_at REAL,
     attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    last_error_code TEXT,
     next_attempt_at REAL NOT NULL CHECK (next_attempt_at >= 0),
     created_at REAL NOT NULL CHECK (created_at >= 0),
     updated_at REAL NOT NULL CHECK (updated_at >= 0),
@@ -318,14 +321,82 @@ CREATE TABLE jobs (
 CREATE TABLE job_attempts (
     job_id TEXT NOT NULL REFERENCES jobs(job_id),
     attempt INTEGER NOT NULL CHECK (attempt >= 1),
+    batch_id TEXT NOT NULL,
+    lease_token TEXT NOT NULL,
     request_hash TEXT NOT NULL,
     result_hash TEXT,
-    state TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (
+        state IN ('handed_off', 'result_committed', 'audit_pending', 'applied', 'failed')
+    ),
     reason_code TEXT,
     started_at REAL NOT NULL CHECK (started_at >= 0),
     completed_at REAL,
     PRIMARY KEY (job_id, attempt)
 );
+CREATE TABLE analysis_batches (
+    batch_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    batch_key TEXT NOT NULL,
+    evidence_watermark TEXT NOT NULL,
+    attempt INTEGER NOT NULL CHECK (attempt >= 1),
+    request_json BLOB NOT NULL,
+    request_hash TEXT NOT NULL UNIQUE,
+    result_json BLOB,
+    result_hash TEXT UNIQUE,
+    state TEXT NOT NULL CHECK (
+        state IN ('handed_off', 'result_committed', 'audit_pending', 'applied', 'failed')
+    ),
+    application_receipt_json BLOB,
+    application_receipt_hash TEXT UNIQUE,
+    created_at REAL NOT NULL CHECK (created_at >= 0),
+    updated_at REAL NOT NULL CHECK (updated_at >= 0)
+);
+CREATE TABLE analysis_batch_members (
+    batch_id TEXT NOT NULL REFERENCES analysis_batches(batch_id),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 1),
+    job_id TEXT NOT NULL REFERENCES jobs(job_id),
+    job_attempt INTEGER NOT NULL CHECK (job_attempt >= 1),
+    evidence_id TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    PRIMARY KEY (batch_id, ordinal),
+    UNIQUE (batch_id, job_id)
+);
+CREATE TABLE job_attempt_events (
+    event_id TEXT PRIMARY KEY,
+    batch_id TEXT NOT NULL REFERENCES analysis_batches(batch_id),
+    job_id TEXT NOT NULL REFERENCES jobs(job_id),
+    attempt INTEGER NOT NULL CHECK (attempt >= 1),
+    event_kind TEXT NOT NULL,
+    reason_code TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    result_hash TEXT,
+    occurred_at REAL NOT NULL CHECK (occurred_at >= 0),
+    event_hash TEXT NOT NULL UNIQUE
+);
+CREATE INDEX job_attempt_event_lookup
+    ON job_attempt_events(job_id, attempt, occurred_at, event_id);
+CREATE TRIGGER job_attempt_events_immutable_update
+BEFORE UPDATE ON job_attempt_events BEGIN SELECT RAISE(ABORT, 'immutable job event'); END;
+CREATE TRIGGER job_attempt_events_immutable_delete
+BEFORE DELETE ON job_attempt_events BEGIN SELECT RAISE(ABORT, 'immutable job event'); END;
+CREATE TABLE analysis_apply_heads (
+    principal_id TEXT PRIMARY KEY REFERENCES principals(principal_id),
+    revision INTEGER NOT NULL CHECK (revision >= 1),
+    updated_at REAL NOT NULL CHECK (updated_at >= 0)
+);
+CREATE TABLE accepted_analysis_plans (
+    batch_id TEXT PRIMARY KEY REFERENCES analysis_batches(batch_id),
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    base_revision INTEGER NOT NULL CHECK (base_revision >= 1),
+    committed_revision INTEGER NOT NULL CHECK (committed_revision > base_revision),
+    plan_json BLOB NOT NULL,
+    plan_hash TEXT NOT NULL,
+    created_at REAL NOT NULL CHECK (created_at >= 0)
+);
+CREATE TRIGGER accepted_analysis_plans_immutable_update
+BEFORE UPDATE ON accepted_analysis_plans BEGIN SELECT RAISE(ABORT, 'immutable job apply'); END;
+CREATE TRIGGER accepted_analysis_plans_immutable_delete
+BEFORE DELETE ON accepted_analysis_plans BEGIN SELECT RAISE(ABORT, 'immutable job apply'); END;
 CREATE TABLE outbox (
     outbox_id TEXT PRIMARY KEY,
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
@@ -414,6 +485,11 @@ REQUIRED_TABLES = frozenset(
         "audit_trace_access_events",
         "jobs",
         "job_attempts",
+        "analysis_batches",
+        "analysis_batch_members",
+        "job_attempt_events",
+        "analysis_apply_heads",
+        "accepted_analysis_plans",
         "outbox",
         "embedding_lineages",
         "embedding_generations",
