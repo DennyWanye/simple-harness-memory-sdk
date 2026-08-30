@@ -50,6 +50,9 @@ closure→terminal evidence→Memory outbox。UI 只需现有 chat 可驱动，�
   unknown/ambiguous/external/stale/conflict 对敏感 recall fail-closed 或 clarification。
 - search candidate→exact open 分步；ambiguity 影响项目/权限/关键事实时产生用户 clarification，不影响时保守回答。
 - 所有 invocation/route/search/open/recall validation 产生 Host+Memory linked decisions。
+- 同一 authenticated Host interaction 管线持久化 Manual workspace-binding 的 user evidence 与 decision facts；分别绑定
+  subject/scope/proposal/root/base revision/channel/nonce/interaction/validity 和 challenge/nonce/actor/decision/time，供 S4
+  constructor-bound authority 重启后重建。自然语言、模型 tool args 或 route metadata 不能代替 authenticated interaction。
 - 验证：HM-S1/HM-S2/HM-S10，active scope inertia、false resume、memory/scope conflation、permission by retrieval。
 
 ### Task 3 — Recall observation 与同 Run continuation [HM-AC-4/6/8]
@@ -72,6 +75,9 @@ closure→terminal evidence→Memory outbox。UI 只需现有 chat 可驱动，�
 - digital twin graph DTO 不得成为 assembler source；添加 import/dependency/serialized payload negative test。
 - Harness provider reservation 前必须持久验证 receipt；验证 Host expected hash = Harness request fingerprint = adapter captured
   payload hash，以及 20+ turns、大 tool、两 TaskScope+resume、token estimator drift、snapshot replay、twin influence zero。
+- `ProductRunContextAuthority` 和 `ProductRuntimeDecisionSink` 的 durable fact source 在本 Task 建立：immutable context snapshot/
+  revision/hash、route decision、no-recall decision、binding receipt 与 current Run lineage 同事务或 receipt-linked 持久化；
+  `prepare_snapshot`/`record_no_recall` 只能读取这些 Host facts，禁止从 caller metadata 或测试 fixture 补权。
 
 ### Task 5 — TaskExecutionEnvelope 与 workspace effect gate [HM-AC-3/7]
 
@@ -96,6 +102,10 @@ closure→terminal evidence→Memory outbox。UI 只需现有 chat 可驱动，�
 - terminal commit 同事务写 Host sanitized raw evidence links + Memory ingestion outbox；调用 S3 exact wheel，receipt 回写 Host event。
 - 实现 `MemoryAnalysisExecutorPort`：按 job 绑定的 originating foreground Run provider/model/config 做独立 post-turn 主模型调用，
   永久记录 reserved/handed_off/succeeded/failed/unknown attempt 与 request/result/validator receipt；不新建独立 extractor client。
+- Host executor 在任何 Provider execution 前按 `request_hash+attempt` 查询 durable attempt；已有成功/未知后确认成功的 result
+  必须返回同一 durable row，不能再次调用 Provider。`MemoryAnalysisDeliveryAuthorityPort` 必须从同一 store 暴露 exact
+  claim/request/attempt/envelope/result 事实给 Memory SDK；瞬时 authority 重试仍查同一行，构造新 attempt 只能遵守显式
+  unknown-call taxonomy，不能掩盖第二次 Provider 调用。
 - accepted Prospective registration/invalidation 由 Memory outbox 投影至现有 Host ReminderScheduler 衍生的唯一 scheduler；
   event cursor 与 occurrence claim/presented/acknowledged/settled 分离，模型拒绝不标 processed。
 - explicit remember/correct/forget 标高优先 job，并确保 forget suppression receipt 在普通后续读取前生效；普通 batch 异步。
@@ -106,7 +116,19 @@ closure→terminal evidence→Memory outbox。UI 只需现有 chat 可驱动，�
 ### Task 8 — 生产 composition、版本锁与集成回归 [HM-AC-8]
 
 - Host 锁定 S1/S3 clean wheels exact version/hash；删除生产 `enable_facts=True` 无 extractor 的旧默认路径。
-- 更新 tool manifest/schema migration、composition assertions、critical+affected surface smoke。
+- `_build_product_sdk_runtime_stack()` 是 Harness 0.7 runtime 的唯一生产 composition owner。它必须构造并注入
+  `ProductRunContextAuthority`、`ProductRuntimeDecisionSink`（`sdk_adapters/context_authority.py`）和
+  `ProductTaskExecutionAuthority`（`sdk_adapters/tool_authority.py`）三个 concrete port；分别连接 Task 4 durable
+  context/route ledger，以及 exact Run tool authority、route receipt、binding receipt、project binding 与 physical workspace
+  validator。缺任一 store/authority/validator 必须在 startup stable fail，禁止 Noop、fake、metadata-derived 或测试 fallback。
+- 同一 composition 还必须注入 S4 Manual authenticated-interaction authority、S4/S5 Auto current-fact authority，以及 Task 7
+  real `MemoryAnalysisExecutorPort`/`MemoryAnalysisDeliveryAuthorityPort`；重启后只靠 durable stores 重建，不依赖进程内 map。
+- 更新 tool manifest/schema migration、composition assertions、critical+affected surface smoke。真实 exact-wheel 构造测试必须
+  捕获三个 concrete class 与 durable dependency identity；逐项移除 prerequisite 均 fail-closed。
+- 黑盒生产链测试：provider snapshot fingerprint 与 Host expected hash 相等；context_route 持久 route/binding 并让同 Run
+  continuation 使用 exact snapshot；project effect 到 physical executor 的 envelope 含 exact run/route/scope/binding/root/hash；
+  same-batch pre-route effect 在 mutation 前 barrier reject；no-recall=一次 Provider、Memory 零查询、durable decision；route receipt
+  后 kill/replay 不重复 effect；Manual/Auto authority restart 后仍按 durable facts 判定。
 - backend 全量测试、真实 provider value smoke（先用主 checkout ignored `.env` 的 APIKEY，仅进进程，不打印/复制）；证据本地 ignored。
 - 完成后更新 Host ARCHITECTURE/PROJECT_STATUS，但 UI 仍标 S6 pending。
 

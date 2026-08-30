@@ -3,7 +3,7 @@
 > Release unit：S4（Host）  
 > 高风险子系统：Host persistent state、filesystem authority、foreground scheduler（3）  
 > 覆盖：HM-AC-1/3/7/8
-> 实施进度：Task 1—3 complete；Task 4 blocked on S1 `a2-001` typed authority amendment。Task 3 最终提交 `f509a475ea330dff13bfbeab143506de3408df4e`，独立审计 P0/P1/P2=0。
+> 实施进度：Task 1—3 complete；S1 `a2-001` typed authority 已闭合。Task 4 候选 `47895a25` 经审计后由 `13dbef17` 补齐 store-level Manual/Auto freshness、identity、replay 与 fail-closed seam；当前按 `a2-004` 冻结 durable authority 生命周期和 S5 production composition 后再终审。Task 3 最终提交 `f509a475ea330dff13bfbeab143506de3408df4e`，独立审计 P0/P1/P2=0。
 
 ## 交付边界
 
@@ -65,7 +65,20 @@
 - canonicalize/realpath + platform filesystem identity；拒绝 workspace root 本身、公共父目录、symlink escape、identity drift。
 - Manual append 要 structured user authorization receipt；Auto mode 只从 trusted Run snapshot 取得，且只允许 configured
   workspace root 的真实后代；Auto 不扩大高风险 action 权限。
-- 验证：HM-S9 全矩阵，每个 effect 读取 exact frozen revision。
+- Manual challenge 必须通过 constructor-bound authority 读取 Host durable authenticated user evidence，绑定 subject、scope、
+  proposal/root、base binding revision、channel、nonce、interaction ID 与 validity interval；decision 再读取绑定 exact
+  challenge/nonce/actor/decision/time 的 authenticated interaction。相同 payload replay 原子返回原 receipt，divergent replay
+  拒绝。已经决定并持久化的 exact Manual receipt 是该次 append 的 durable authority，不按 Auto expiry 失效；但未提交 append
+  每次都重载 proposal/challenge/decision/grant，重启后 verifier 或事实缺失必须 fail-closed。
+- Auto snapshot 只能从 Host durable current facts 构造：active Run lifecycle、subject/scope/run revision、frozen binding-set
+  revision、context snapshot ID/revision/hash、configuration revision、AUTO mode、configured-root canonical filesystem identity、
+  issued/expiry。authorize 与 append 都重载 exact proposal/grant/request/snapshot 和 live facts，复核 configured/proposed root
+  identity，并在 commit 前 CAS unchanged base revision。unused grant 在 expiry、terminal、lineage/context/config drift 或
+  filesystem replacement 后失效；已提交的 exact grant 只可幂等返回原 immutable receipt，不得创建新 revision 或刷新 effect
+  authority，原 Run 仍只能使用 route 冻结的旧 binding receipt。
+- 验证：HM-S9 全矩阵、Manual/Auto durable authority restart reconstruction、缺 verifier/store、append-time drift/expiry、
+  committed exact replay，每个 effect 读取 exact frozen revision。测试 fake 只证明 port policy，S5 Task 8 的真实 composition
+  通过前不得宣称 production authority 闭合。
 
 ### Task 5 — 六 bounded 阅读视图与 checkpoint [HM-AC-3/7]
 
@@ -89,6 +102,8 @@
 - scheduler policy `max_foreground_runs_per_session=1`；普通新 turn 先永久入账并 FIFO；active terminal 后按 sequence 启动。
 - stop/pause/cancel 是 immediate control signal，不进入普通 queue；background workers 不获 Agent effect/semantic authority。
 - run/queue/lease/terminal 均 durable，恢复不重复启动或丢 turn；事实模型保留 run_id/CAS seam 但不实现并行。
+- 本 Task 同时提供 Auto binding authority 的唯一 durable Run fact source：active/terminal lifecycle、subject、TaskScope、run
+  revision、frozen binding-set revision 与当前 route lineage；不能从 DTO metadata、模型参数或进程内 cache 推导。
 - 验证：并发输入排序、crash/restart、duplicate delivery、control overtaking、worker coexistence。
 
 ### Task 8 — Host-only integration、旧入口 fence 与 recovery [HM-AC-1/3/8]

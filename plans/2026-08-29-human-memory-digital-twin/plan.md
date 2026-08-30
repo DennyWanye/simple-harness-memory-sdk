@@ -2,7 +2,7 @@
 
 <!-- plan-status: finalized -->
 
-> 状态：APPROVED / EXECUTION IN PROGRESS — V0/S1 complete；S2/S4 in progress
+> 状态：APPROVED / EXECUTION IN PROGRESS — V0/S1 complete；S2/S4 authority revalidation in progress
 > 行为策略：`preserve-approved`  
 > 唯一真相：`acceptance.md` + `assurance-contract.json`  
 > 实施仓库：`simple-harness-sdk` → `simple-harness-memory-sdk` → `simple_harness`
@@ -101,6 +101,15 @@ S6 依赖所有服务端读取 API 稳定。
   candidate/unverified，exact explicit-user assertion 和注册 typed observation 才可按冻结规则 active；歧义为 contested。
 - Prospective 只在 Memory 保存 canonical intent；Host 是唯一 timer/event scheduler authority。durable registration/occurrence/
   cursor/receipt 进入不可跳过的 pre-provider 与 pre-terminal gate，`no_recall` 只在 mandatory inbox 已清空后成立。
+- Memory analysis 的真实 delivery receipt 仍不是 mutation authority：repository 必须以
+  `handed_off → result_committed → audit_pending → applied` 单向状态机签发逐 phase、单次、exact application-bound
+  capability；caller-created validation receipt/decisions、乱序与跨 application replay 全部 fail-closed。
+- Workspace Manual 与 Auto 是两条 authority 生命周期：Manual 来自 Host durable authenticated interaction，决定后的 exact
+  receipt 可用于该次 append；Auto 每次使用前都要和 durable current Run/context/config/root facts 比较 freshness。已提交 exact
+  replay 只返回原 receipt，不得刷新 binding/effect authority。
+- Host `_build_product_sdk_runtime_stack()` 是 exact Harness runtime 唯一生产 composition owner；必须注入 concrete
+  `ProductRunContextAuthority`、`ProductRuntimeDecisionSink`、`ProductTaskExecutionAuthority` 及其 durable dependencies，缺失即
+  startup fail，禁止 Noop/fake/metadata fallback。
 
 ## Complexity inventory
 

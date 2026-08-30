@@ -1,7 +1,7 @@
 # Human Memory Digital Twin Plan Workspace
 
 > 创建日期：2026-08-29
-> 状态：用户已批准直接实施；V0、S1 已闭合，S2 与 S4 并行实施中
+> 状态：用户已批准直接实施；V0、S1 已闭合，S2 与 S4 候选进入 Phase 2 authority 重审收口
 > 主计划仓库：`simple-harness-memory-sdk`
 > Worktree：`/Users/denny/projects/simple-harness-memory-sdk-memory-plan`
 > 分支：`feat/human-memory-plan`
@@ -189,11 +189,12 @@ SDK 当前生产事实以本仓库的 `ARCHITECTURE/`、`src/simple_harness_memo
 V0 authority、旧 Session oracle lineage 和五项关键假设 spike 已闭合；S1 Harness SDK 0.7.0 最终 source
 `8f1027d2` 已完成 `a2-001` typed workspace binding authority 与 `a2-002` Host-durable analysis delivery
 协议，三轮独立安全审计 P0/P1/P2=0，exact candidate wheel SHA-256 为 `b9421ddf…`；仍未 tag/publish。
-S2 Memory SDK 已完成 fresh schema、永久 evidence ingestion、suppression authority 与 LLM audit ledger；Task 5
-`71066b69` 已使用 exact S1 wheel 验证正常 worker 的 delivery/validation receipt 分离和崩溃重放并关闭
-`a2-002`，但独立审计又证明公开 repository seam 可绕过 Host authority 持久化伪造 issuer，因此按 `a2-003`
-重新打开 Task 5 并暂停 0.6.0 candidate 收口，当前正在封闭底层 mutation authority。S4 Host 已完成 primary evidence、
-Canonical TaskScope Archive 和经路径竞态审计的目录 provisioning，正在接入 append-only multi-root binding authority；
-只有 Host consumer 通过后才关闭 `a2-001`。
+S2 Memory SDK 已完成 fresh schema、永久 evidence ingestion、suppression authority 与 LLM audit ledger；Task 5 候选链
+`71066b69`→`3929669`→`4f58793` 已验证 constructor-bound Host delivery、同 request/attempt 瞬时恢复和 Provider 不重放，
+但独立审计又证明 mutation audit 尚可绕过 repository-generated application/phase，因此 `a2-003` 保持打开并暂停
+0.6.0 candidate 收口。S4 Host 已完成 primary evidence、Canonical TaskScope Archive、目录 provisioning，并在候选
+`13dbef17` 关闭 store-level Manual/Auto freshness、identity 和 replay seam；`a2-004` 仍要求把 durable Manual interaction、
+current Run/context/config facts 与 production adapters 明确装配。Phase 2 综合审查另确认 Host exact Harness 0.7 production
+composition 缺少三个 mandatory authority port，定为 P0，必须在 S5 由唯一 composition owner 实装且 fail-closed。
 S3、S5、S6 未开始，program 的 15 个最终场景仍保持 `NOT_RUN`，只有全部实现、
 自动化、真实模型、桌面 UI 和 machine `finalize` 完成后才能宣称 program 完成。

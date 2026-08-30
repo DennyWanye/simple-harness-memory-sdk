@@ -3,7 +3,7 @@
 > Release unit：S2（Memory SDK）  
 > 高风险子系统：fresh SQLite schema、append-only privacy/audit、worker/outbox（3）  
 > 覆盖：HM-AC-1/2/7/8
-> 实施进度：Task 1—4 complete；Task 5 在独立审计发现 repository authority bypass 后按 `a2-003` 重新打开，Task 6 暂停。`71066b69` 已完成正常 worker 的 Host durable delivery 适配并关闭 `a2-002`，但尚不是 Task 5 最终提交。
+> 实施进度：Task 1—4 complete；Task 5 在独立审计发现 repository phase authority bypass 后按 `a2-003` 重新打开，Task 6 暂停。候选链 `71066b69`→`3929669`→`4f58793` 已完成 Host durable delivery、constructor-bound authority、同 request/attempt 瞬时恢复且 Provider 不重放，但 mutation audit 仍须收口为下面冻结的单一 repository 状态机，尚不是 Task 5 最终提交。
 
 ## 交付边界
 
@@ -58,6 +58,9 @@ schema 明确拒绝。原始业务 evidence 从第一条起永久保留，所有
   timing/token/cost/request ID、accepted/rejected operations、before/after refs、stable reason。
 - 不保存 hidden chain-of-thought；reasoning item 只保存 provider public ID/type/hash/必要 continuation ref。
 - `export_audit_trace()` 按 turn/invocation/decision/evidence ID 分页组合，普通面应用 suppression，sealed 面必须 access receipt。
+- 本 Task 的 generic invocation/decision ledger 只证明“调用发生及公开结果如何被验证”，不得被 Task 5 mutation worker
+  当作 apply authority。会改变 Memory canonical state 的 audit 必须引用 Task 5 repository 生成的 exact
+  `AnalysisApplication`、phase capability 与 application receipt，调用方自造的 receipt/decisions 即使 hash 自洽也无权写入。
 - 验证：lineage 不可覆盖、分页稳定、非法 output 仍有 rejected record、普通/审计权限隔离。
 
 ### Task 5 — Durable worker/outbox kernel [HM-AC-2/8]
@@ -76,6 +79,19 @@ schema 明确拒绝。原始业务 evidence 从第一条起永久保留，所有
   issuer/attempt/hash、admission 跨 claim/重放必须 fail-closed。Host authority verification 必须仍在 SQLite transaction 外，
   unsafe/oversize body 与 credential canary 在 DB/WAL/audit/export/log 中零落盘，同时保留安全公共
   delivery/validation metadata；瞬时 verifier timeout/不可用按显式 taxonomy 重试，确定性 contract rejection 才 dead-letter。
+- mutation worker 的唯一合法 durable phase 为
+  `handed_off → result_committed → audit_pending → applied`；每一步只由 repository 在验证当前 durable row 后签发
+  单次 capability，绑定 exact claim、request hash、attempt、delivery envelope/result、repository-generated
+  `AnalysisApplication` 与 application receipt。不得从 `handed_off` 直接 audit/apply，也不得复用 commit/audit capability。
+- `record_memory_analysis()` 必须核对 batch 当前 phase、`application_receipt_hash` 和 repository 生成的 accepted/rejected
+  decisions；调用方提供的 validation receipt 或 decisions 只能作为待验证输入，不能成为 authority。任何跨 claim、跨
+  application、改 decision、audit-before-result、audit-before-application 都 stable reject 且不产生 canonical mutation。
+- Host authority 瞬时不可用时，恢复必须查回同一 Host durable `request_hash+attempt` 的既有 result，Provider 第二次调用数为
+  0；维持同 batch/request/result/attempt，按 bounded retry 后写 terminal public audit/dead-letter。任何未经验证 body 在
+  DB/WAL/audit/export/log 中仍为零落盘。
+- 追加故障矩阵：在每个 phase capability consume 前后与 transaction commit 前后 kill/reopen；验证单次 phase 推进、exact
+  replay 收敛、divergent replay 拒绝、无半状态。新增 caller-created accepted/rejected receipt、changed decisions、
+  cross-claim/application replay 的 repository-level negative tests。
 
 ### Task 6 — 移除旧默认行为并发布 candidate [HM-AC-2/8]
 
