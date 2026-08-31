@@ -28,11 +28,11 @@
       ]
     },
     "input_hashes": {
-      "acceptance": "e2b22671613821174960aa7d5d6eaff5053b3dcccec80dd59355ba9f45fe1df3",
+      "acceptance": "c482949678ca1faf6e6116d84bb8aba40254f241e0b55f5b62486261cfce2e46",
       "assurance_contract": "7e47e55b3b2dfd9a397f3d2e9b9703af2e7c892a169f13fd24e4470e9e9ea9ad",
-      "reuse_report": "a692600b9dccba9d9ea9d50a4197e5bc7df53ffffea4867859dae56de272bbdc",
+      "reuse_report": "4d1baebdf087e775eb051dc56562fa810cd60559ab36cc897149648a4931bdb8",
       "testcase_inventory": "4b8c63f15b2e246d86374c86783254ae948ace30eb4857a02d191b6c38ef713c",
-      "verification_spec": "49f59068817fb152607a7b9326ed075386eee7af1a43690bbabbd14f2fa5b264"
+      "verification_spec": "42230016f3356d73e321f8fa97ac495fb1b015bb68ac58523105af176ac4c85e"
     },
     "input_paths": {
       "acceptance": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/acceptance.md",
@@ -41,7 +41,7 @@
       "testcase_inventory": "/Users/denny/projects/simple_harness-memory-plan/testcase/index.json",
       "verification_spec": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification-spec.json"
     },
-    "seal_sha256": "30d66a63f5d1a2afcc860381be1b00c459925c39df2fbc574605399fe0aea0e7",
+    "seal_sha256": "21d2aa0e32e020f086ee882a6eeeadc2c407bb58d240d4e92e76aa9d3196bd4e",
     "selected_testcase_ids": [
       "TC-HM-08",
       "TC-HM-12"
@@ -65,7 +65,7 @@
     "must_ac_count": 4,
     "parent_program": "human-memory-digital-twin",
     "plan_lines": 251,
-    "scope_hash": "8c9d56b2e4407e11238fa2a163d17095795195c2c41bc4c8c77bdf69b0a70f9c",
+    "scope_hash": "db170e30d1727350072ae824606b9781909f234c957380ce74f16aa0100440f5",
     "slice_id": "S3-T6-RELATION",
     "task_count": 7
   },
@@ -214,7 +214,7 @@
       "manual_required": false,
       "min_root_runs": 1,
       "oracle_pins": {
-        "runner_sha256": "9a965002079b44bb694a74c1c570d6f76c36c3b58bde22515405cd2c3bfdaabe"
+        "runner_sha256": "b67c978cb3e344193a3bea9b3feee1405b5ae8b8c612bbbd35482890aa72aedc"
       },
       "required": true,
       "scenario_id": "REL-REGRESSION",
@@ -246,7 +246,7 @@
     "integrity_runner_sha256": "6ec3b646700eab44321630b1fb5dd185759a2d8cb62e35e6016c5ba7fc75055f",
     "public_runner_sha256": "8a8d4bdc169f3cbc2e254f8b888d350e8e9245c749bad564ef8affa19ce3e1b0",
     "real_llm_quality": "NOT_RUN/BLOCKED",
-    "regression_runner_sha256": "9a965002079b44bb694a74c1c570d6f76c36c3b58bde22515405cd2c3bfdaabe"
+    "regression_runner_sha256": "b67c978cb3e344193a3bea9b3feee1405b5ae8b8c612bbbd35482890aa72aedc"
   },
   "source_request_text": "采用，记得使用更新过的plan-test skill来继续做",
   "structured_audit_required": true,

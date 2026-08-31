@@ -34,7 +34,7 @@ Semantic Memory，同时普通数字孪生体只能投影当前允许展示的�
 | HM-AC-2 | strict v5 公共协议能表达并验证一等 Semantic relation；Memory 只接受有证据、合法主体、合法 exact endpoints 与合法状态的 plan，任何失败不得产生半状态或孤边。 |
 | HM-AC-6 | exact wheels 经 package-root 公共 API 在一个原子 plan 创建两个 canonical nodes 与一条 `applies_to` edge；relation node 数为 0；relation 或任一 endpoint 被 suppress 后 edge 为 0，close/reopen 不复活。 |
 | HM-AC-7 | canonical relation revision、derivative row、receipt/manifest/trace 与 stable reason code 可关联；旧 evidence/row 永不物理删除；图谱只作展示，不进入 recall/Context。 |
-| HM-AC-8 | fresh schema v7、重放、事务故障、生命周期、腐败重开与跨 exact-wheel consumer contract 全部 fail-closed/可恢复；两仓 full pytest、ruff、mypy 通过，wheel 两次构建字节一致。 |
+| HM-AC-8 | fresh schema v7、重放、事务故障、生命周期、腐败重开与跨 exact-wheel consumer contract 全部 fail-closed/可恢复；两仓 full pytest/ruff、Memory 全包 mypy 与 Harness 本次变更公共协议 surface mypy 通过，wheel 两次构建字节一致。Harness 全仓 mypy 的既存红基线必须显式披露，不在本增量伪装为 PASS 或扩张修复。 |
 
 ## 测试义务
 

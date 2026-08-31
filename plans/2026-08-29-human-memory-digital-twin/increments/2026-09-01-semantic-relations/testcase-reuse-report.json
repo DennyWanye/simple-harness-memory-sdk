@@ -2,10 +2,10 @@
   "schema_version": "1.0",
   "historical_pass_inherited": false,
   "testcase_challenge": {
-    "iterations": 9,
+    "iterations": 10,
     "final_verdict": "PASS",
-    "reviewer": "gate-metadata-schema-review",
-    "evidence": "verification/testcase-iteration-09.md",
+    "reviewer": "baseline-aware-regression-review",
+    "evidence": "verification/testcase-iteration-10.md",
     "independent_closure_review": "verification/testcase-iteration-08.md",
     "remaining_product_gate": "PASS_EXACT_WHEEL_SDK_SCOPE"
   },
