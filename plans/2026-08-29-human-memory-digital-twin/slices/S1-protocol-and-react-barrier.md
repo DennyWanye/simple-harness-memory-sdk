@@ -130,6 +130,10 @@ candidate hash；上一 candidate hash 永久作为失效证据保留，不覆�
   fail-closed，全 plan 原子，不允许部分应用。
 - `RecallPlan` 必须绑定 exact Host `RecallContext.context_hash`，event/environment/task phase、memory types、scope/time/entity、
   disclosure 与预算只能相对 Host 缩窄；公开 filtered count 只表示全部权限门后的候选数。
+- `RecallDecision` 使用独立 v3 wire：`RECALL` 的 `selected_*` 只表示可进入 Context 的已选事实；
+  `NEEDS_USER_CONFIRMATION` 必须改用 Harness-owned typed `RecallConfirmationItem(conflict_group_ref,
+  memory_type,memory_ref)`，同组至少两个不同 current eligible refs，禁止 Memory SDK 自建 confirmation wrapper。
+  confirmation 与普通 recall 一样先过 disclosure/privacy/suppression/status/time gate，且 canonical sort/hash 可重放。
 - 冻结 Host-authenticated `ConversationEvidenceMetadata`：primary conversation、causal group ID/sequence/ordinal、role、
   occurred_at、TaskScope、tool causal link、entities；模型不能构造或扩大，缺失/非法 metadata 的 evidence 永久保存但不入短时域。
 - privacy class 由 Host/Memory policy 决定下限；LLM 只可提议更严格等级，不能放宽。unknown/external recipient 默认 deny。
@@ -149,3 +153,8 @@ binding consumer 与 `a2-002` 的 Memory durable-delivery consumer 必须各自�
 `a2-003` 已闭合：全仓 `1635 passed, 2 skipped`，scoped ruff/mypy PASS，三轮独立审计最终
 P0/P1/P2=0；reproducible wheel `49e42eaa189d7a6e238b17d39bf4c4ebb5352e9113b67f539cbbeda949eaf18b`。
 上一轮 candidate bytes 继续永久失效；当前 candidate 仍未 tag/publish，且只证明 S1 协议/Runtime 边界。
+
+`a2-004` 执行期回炉：独立挑战证明 v2 `RecallDecision` 强制非 `RECALL` outcome 的 selected refs 为空，
+无法同时表达“冲突双方 + 需要确认”；把双方塞进 selected refs 会把待确认候选误标为事实，在 Memory SDK
+另建 wrapper 又会制造第二套 wire。用户已批准升级独立 RecallDecision v3 和 typed confirmation item；原
+`64d409d`/wheel `49e42eaa…` 因此仅保留历史 S1 证据，不再是 program candidate。

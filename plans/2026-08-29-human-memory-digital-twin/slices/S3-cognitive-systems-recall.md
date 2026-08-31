@@ -79,7 +79,9 @@ Memory 只以 RecallDecision/ContextFragment 表达，不建长期表。数字�
   `DisclosureContext`/identity，模型字段只能进一步收窄。
 - pipeline：validate→permission/status/suppression/expiry filter→per-type candidates→typed rank→dedupe/conflict/minimal
   selection→durable RecallDecision。普通 memory 跨 TaskScope 全局可候选但记录 cross-scope provenance。
-- task depends on contested fact 时返回双方+确认需要；不依赖时不投影。no_recall 不进入本 API。
+- task depends on contested fact 时，repository 验证 durable conflict group、current revision 与双方 eligibility 后，
+  通过 Harness v3 typed `RecallConfirmationItem` 返回双方+确认需要；这些 refs 不得进入普通 selected facts。
+  任一侧被 suppression/privacy/status/time gate 拒绝时不得泄露单侧或隐藏侧存在。不依赖时不投影；no_recall 不进入本 API。
 - 验证：冻结 route set；hard-trigger/隐私禁止 100%，required type≥90%，no extra type≤15%，预算/deadline。
 
 ### Task 6 — Display-only digital twin graph [HM-AC-6/7]
