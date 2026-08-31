@@ -23,6 +23,7 @@ if TYPE_CHECKING:
         RecallResultPageV1,
     )
 
+from simple_harness_memory.cognitive.twin_builder import TwinGraphView
 from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
 from simple_harness_memory.core.lifecycle_results import (
     ProcedureObservationApplyResult,
@@ -352,3 +353,7 @@ class CognitiveMemoryBackend(Protocol):
         request: RecallContextUseAuthorizationRequestV1,
         now: float | None = None,
     ) -> RecallContextUseReceiptV1: ...
+
+    async def get_twin_graph_view(
+        self, *, principal: MemoryPrincipal
+    ) -> TwinGraphView: ...

@@ -79,6 +79,10 @@ if TYPE_CHECKING:
         SanitizedEvidenceReceipt,
     )
 
+    from simple_harness_memory.cognitive.twin_builder import (
+        TwinGraphRecordInput,
+        TwinGraphView,
+    )
     from simple_harness_memory.core.audit import (
         AuditTraceCursor,
         AuditTraceItem,
@@ -704,6 +708,210 @@ class SQLiteHumanMemoryBackend:
         from simple_harness_memory.core.suppression import OrdinaryMemoryPurpose
 
         return await self._visible_evidence_ids(subject, OrdinaryMemoryPurpose.PROJECTION)
+
+    async def get_twin_graph_view(self, *, principal: MemoryPrincipal) -> TwinGraphView:
+        """Return a suppression-first, display-only graph over canonical memory rows."""
+
+        from simple_harness_memory.cognitive.twin_builder import (
+            TwinGraphRelationInput,
+            build_twin_graph_view,
+        )
+        from simple_harness_memory.core.identity import MemoryPrincipal
+
+        if type(principal) is not MemoryPrincipal:
+            raise TypeError("principal must use MemoryPrincipal")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v6 backend is not initialized")
+        generated_at = _timestamp(self._now())
+        async with self._write_lock:
+            await self._authorize_short_horizon_principal_unlocked(principal)
+            async with self._db.execute(
+                "SELECT g.group_id,m.ordinal,h.current_revision AS head_revision,"
+                "h.memory_type,r.* FROM cognitive_conflict_groups g "
+                "JOIN cognitive_conflict_members m ON m.group_id=g.group_id "
+                "JOIN cognitive_memory_heads h ON h.memory_id=m.memory_id "
+                "JOIN cognitive_memory_revisions r ON r.memory_id=m.memory_id "
+                "AND r.revision=m.revision "
+                "LEFT JOIN cognitive_conflict_resolutions x ON x.group_id=g.group_id "
+                "WHERE g.principal_id=? AND h.principal_id=? AND h.deployment_id=? "
+                "AND h.household_id=? AND h.current_revision=g.challenger_revision "
+                "AND x.group_id IS NULL ORDER BY g.group_id,m.ordinal",
+                (
+                    principal.actor_id,
+                    principal.actor_id,
+                    principal.deployment_id,
+                    principal.household_id,
+                ),
+            ) as cursor:
+                conflict_rows = tuple(await cursor.fetchall())
+            conflict_keys = {
+                (str(row["memory_id"]), int(row["revision"])) for row in conflict_rows
+            }
+            async with self._db.execute(
+                "SELECT h.current_revision AS head_revision,h.memory_type,r.* "
+                "FROM cognitive_memory_heads h JOIN cognitive_memory_revisions r "
+                "ON r.memory_id=h.memory_id AND r.revision=h.current_revision "
+                "WHERE h.principal_id=? AND h.deployment_id=? AND h.household_id=? "
+                "ORDER BY h.memory_id",
+                (
+                    principal.actor_id,
+                    principal.deployment_id,
+                    principal.household_id,
+                ),
+            ) as cursor:
+                current_rows = tuple(await cursor.fetchall())
+            records = [
+                await self._twin_graph_record_input_unlocked(
+                    row, conflict_group_id=str(row["group_id"])
+                )
+                for row in conflict_rows
+            ]
+            records.extend(
+                [
+                    await self._twin_graph_record_input_unlocked(
+                        row, conflict_group_id=None
+                    )
+                    for row in current_rows
+                    if (str(row["memory_id"]), int(row["revision"])) not in conflict_keys
+                ]
+            )
+            async with self._db.execute(
+                "SELECT rel.* FROM cognitive_relations rel "
+                "JOIN cognitive_memory_heads source ON source.memory_id=rel.source_memory_id "
+                "JOIN cognitive_memory_heads target ON target.memory_id=rel.target_memory_id "
+                "WHERE rel.principal_id=? AND source.principal_id=? "
+                "AND target.principal_id=? AND source.deployment_id=? "
+                "AND target.deployment_id=? AND source.household_id=? "
+                "AND target.household_id=? ORDER BY rel.relation_id",
+                (
+                    principal.actor_id,
+                    principal.actor_id,
+                    principal.actor_id,
+                    principal.deployment_id,
+                    principal.deployment_id,
+                    principal.household_id,
+                    principal.household_id,
+                ),
+            ) as cursor:
+                relation_rows = tuple(await cursor.fetchall())
+            relations = tuple(
+                TwinGraphRelationInput(
+                    str(row["relation_id"]),
+                    str(row["relation_kind"]),
+                    str(row["source_memory_id"]),
+                    int(row["source_revision"]),
+                    str(row["target_memory_id"]),
+                    int(row["target_revision"]),
+                    str(row["relation_hash"]),
+                )
+                for row in relation_rows
+            )
+        return build_twin_graph_view(
+            subject=principal.actor_id,
+            generated_at=generated_at,
+            records=tuple(records),
+            relations=relations,
+        )
+
+    async def _twin_graph_record_input_unlocked(
+        self, row: aiosqlite.Row, *, conflict_group_id: str | None
+    ) -> TwinGraphRecordInput:
+        from simple_harness_memory.cognitive.twin_builder import (
+            TwinGraphRecordInput,
+            TwinGraphSourceRef,
+        )
+        from simple_harness_memory.core.suppression import (
+            OrdinaryMemoryPurpose,
+            SuppressionCandidate,
+        )
+
+        assert self._db is not None
+        memory_id = str(row["memory_id"])
+        revision = int(row["revision"])
+        content_json = str(row["content_json"])
+        try:
+            content = json.loads(content_json)
+            attributes = json.loads(str(row["information_attributes_json"]))
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise MemoryCorruptionError("twin graph canonical record is invalid") from exc
+        if (
+            not isinstance(content, dict)
+            or canonical_json(content) != content_json
+            or hashlib.sha256(content_json.encode("utf-8")).hexdigest()
+            != str(row["content_hash"])
+            or not isinstance(attributes, list)
+            or not all(isinstance(item, str) for item in attributes)
+        ):
+            raise MemoryCorruptionError("twin graph canonical record differs")
+        async with self._db.execute(
+            "SELECT evidence_id,span_id,source_kind,quote_hash "
+            "FROM cognitive_evidence_spans WHERE memory_id=? AND revision=? "
+            "ORDER BY evidence_id,span_id",
+            (memory_id, revision),
+        ) as cursor:
+            source_rows = tuple(await cursor.fetchall())
+        if not source_rows:
+            raise MemoryCorruptionError("twin graph canonical record has no source")
+        source_refs = tuple(
+            TwinGraphSourceRef(
+                hashlib.sha256(str(source["evidence_id"]).encode("utf-8")).hexdigest(),
+                hashlib.sha256(str(source["span_id"]).encode("utf-8")).hexdigest(),
+                str(source["source_kind"]),
+                str(source["quote_hash"]),
+            )
+            for source in source_rows
+        )
+        entity_ids = self._mutation_entity_ids_from_content_json(content_json)
+        suppressed = (
+            await self._resolve_suppression_unlocked(
+                SuppressionCandidate(
+                    str(row["principal_id"]),
+                    memory_id=memory_id,
+                    entity_ids=entity_ids,
+                ),
+                OrdinaryMemoryPurpose.PROJECTION,
+            )
+        ).denied
+        for source in source_rows:
+            suppressed = suppressed or (
+                await self._resolve_suppression_unlocked(
+                    SuppressionCandidate(
+                        str(row["principal_id"]), evidence_id=str(source["evidence_id"])
+                    ),
+                    OrdinaryMemoryPurpose.PROJECTION,
+                )
+            ).denied
+        sensitive_attributes = {
+            "identity",
+            "relationship",
+            "family",
+            "health",
+            "location",
+            "financial",
+        }
+        redact_content = str(row["effective_privacy_class"]) in {
+            "sensitive",
+            "restricted",
+        } or bool(sensitive_attributes.intersection(attributes))
+        suppressed = suppressed or str(row["effective_privacy_class"]) == "restricted"
+        return TwinGraphRecordInput(
+            memory_id,
+            revision,
+            int(row["head_revision"]),
+            str(row["memory_type"]),
+            str(row["lifecycle_state"]),
+            str(row["epistemic_status"]),
+            str(row["conflict_status"]),
+            str(row["verification_state"]),
+            None if row["valid_from"] is None else float(row["valid_from"]),
+            None if row["valid_to"] is None else float(row["valid_to"]),
+            content,
+            str(row["content_hash"]),
+            source_refs,
+            conflict_group_id,
+            suppressed,
+            redact_content,
+        )
 
     async def _ordinary_evidence_record(
         self, evidence_id: str, purpose: OrdinaryMemoryPurpose

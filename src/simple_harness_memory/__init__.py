@@ -9,6 +9,8 @@
     Message, Fact, Hit, DigitalTwin
 """
 
+from typing import TYPE_CHECKING
+
 from simple_harness_memory.config import MemoryResourceBounds
 from simple_harness_memory.core.errors import (
     MemoryIdempotencyConflict,
@@ -47,11 +49,35 @@ from simple_harness_memory.core.short_horizon import (
 from simple_harness_memory.core.twin import DigitalTwin
 from simple_harness_memory.world.port import WorldModelPort
 
+if TYPE_CHECKING:
+    from simple_harness_memory.cognitive.twin_builder import (
+        TwinGraphEdge,
+        TwinGraphNode,
+        TwinGraphSourceRef,
+        TwinGraphView,
+    )
+
+_TWIN_GRAPH_EXPORTS = frozenset(
+    {"TwinGraphEdge", "TwinGraphNode", "TwinGraphSourceRef", "TwinGraphView"}
+)
+
+
+def __getattr__(name: str) -> object:
+    if name in _TWIN_GRAPH_EXPORTS:
+        from simple_harness_memory.cognitive import twin_builder
+
+        return getattr(twin_builder, name)
+    raise AttributeError(name)
+
 __all__ = [
     "MemoryManager",
     "MemoryBackend",
     "CognitiveMemoryBackend",
     "TypedRecallExecution",
+    "TwinGraphEdge",
+    "TwinGraphNode",
+    "TwinGraphSourceRef",
+    "TwinGraphView",
     "WorldModelPort",
     "Message",
     "Fact",

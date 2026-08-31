@@ -52,6 +52,10 @@
     "ShortHorizonProjectionBuildResult",
     "ShortHorizonRecallHit",
     "ShortHorizonRecallResult",
+    "TwinGraphEdge",
+    "TwinGraphNode",
+    "TwinGraphSourceRef",
+    "TwinGraphView",
     "TypedRecallExecution",
     "WorldModelPort"
   ],

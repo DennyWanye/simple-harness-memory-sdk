@@ -45,6 +45,7 @@ if TYPE_CHECKING:
         RecallResultPageV1,
     )
 
+    from simple_harness_memory.cognitive.twin_builder import TwinGraphView
     from simple_harness_memory.core.recall import TypedRecallExecution
     from simple_harness_memory.core.short_horizon import (
         ShortHorizonGenerationBuildResult,
@@ -152,6 +153,14 @@ class MemoryManager:
     ) -> RecallContextUseReceiptV1:
         operation = getattr(self._backend, "authorize_recall_context_use")
         return await operation(principal=principal, request=request, now=now)
+
+    async def get_twin_graph_view(
+        self, *, principal: MemoryPrincipal
+    ) -> TwinGraphView:
+        """Build the display-only cognitive graph; never an Agent context input."""
+
+        operation = getattr(self._backend, "get_twin_graph_view")
+        return await operation(principal=principal)
 
     async def rebuild_short_horizon_projection(
         self, *, principal: MemoryPrincipal, now: float | None = None

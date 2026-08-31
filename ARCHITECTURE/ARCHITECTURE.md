@@ -3,7 +3,7 @@
 # ARCHITECTURE — simple-harness-memory-sdk（v0.6.0 candidate）
 
 > 最后更新：2026-08-31
-> 当前事实：Human Memory V0/S1/S2 与 S3 Task 1/2/3/4/5 已闭合；S3 Task 6—7、Host/UI 接线与最终 candidate
+> 当前事实：Human Memory V0/S1/S2 与 S3 Task 1/2/3/4/5/6 已闭合；S3 Task 7、Host/UI 接线与最终 candidate
 > packaging 尚未完成。旧 Agent Memory v1 能力仍保留，但不是新认知 mutation 的 authority。
 
 ## Human Memory Program 当前边界（2026-08-31）
@@ -56,8 +56,19 @@
 - durable result 只是审计/分页能力，不自动授权模型 Context。每个 provider attempt 必须经 final current-use fence
   重验 epoch/policy、run/turn/context、current head/group、expiry/classification/disclosure/suppression 与 Procedure/
   Prospective authority，并取得 immutable exact-replay receipt。
-- `DigitalTwin` 仍是 Fact 聚合对象和 JSON 快照；没有展示专用的可追溯 graph projection，也没有
-  “不得进入 Agent Context/召回/动作”的机器边界。
+- public `MemoryManager.get_twin_graph_view` 是唯一 cognitive graph 入口。它在 trusted clock 下从 canonical current
+  cognitive heads/revisions、完整 unresolved conflict groups、evidence lineage 与 relation rows 即时重建 immutable
+  display-only projection；不建立 graph/cache authority 表，close→reopen 对同一 canonical state 重建相同 payload hash。
+- graph node 提供 memory type、effective status、display confidence 及 basis、hash-only source refs 和 current-head
+  correction/forget capability；confidence 是明确的确定性展示 heuristic，不反写 canonical record，也不参与 eligibility、
+  recall、ranking、Context 或 action authority。关系只有在同 deployment/household/principal 的两个可见 current endpoint
+  都存在时才展示。
+- ordinary projection policy 在构图前执行 current-head、active/inferred lifecycle、half-open validity、完整 conflict group
+  与 suppression gate。RESTRICTED 记录及 incident edge 完全不可见；SENSITIVE/敏感 attribute 仅显示固定 generic label，
+  tooltip/edge/source refs 不携带内容或原始 evidence/span ID。suppressed、superseded、expired 或不完整 conflict group 不得
+  通过 label、tooltip、hash-only refs 或 relation 泄露。
+- 架构测试固定单向依赖：`core.recall` 不得 import twin projection，`cognitive.twin_builder` 不得 import Host runtime、
+  recall candidate、Context fragment、ranking 或 current-use authorization。DTO 没有到 recall/context/action 的转换方法。
 - 本 program 不迁移旧内容数据；schema v6 必须 fresh 初始化，旧数据库由 loader 稳定拒绝。
 
 ## 分层
@@ -249,6 +260,11 @@ src/simple_harness_memory/
   相关 tamper、immediate close/reopen、close-vs-recall、concurrent queue deadline 均 fail-closed。focused `17 passed`，
   全仓 `864 passed, 8 skipped`。真实 200-query semantic quality corpus 仍为 `NOT_RUN/BLOCKED`；Typed RecallPlan、
   graph 与 Host/UI 仍未完成。
+
+- Human Memory S3 Task 6：display-only twin graph 的 builder、SQLite on-demand projection、public
+  `MemoryManager`/port 与 import-isolation guard 已闭合。focused DTO/policy/correction/forget/conflict/reopen/public-API
+  `11 passed`；全仓 `1006 passed, 8 skipped`，Ruff `src tests`、mypy `58 source files` 与 `git diff --check` 全绿。
+  该证据证明 Memory library projection，不代表尚未实现的 Host/UI 接线或交互验收。
 
 - 0.6.0 Task 6 source audit：冻结 Harness 0.7 下全仓 `493 passed, 8 skipped`；Ruff、项目 mypy
   `97 source files`、3 个发布脚本 strict mypy 与 REUSE 全绿。非最终 dirty-tree wheel/sdist 通过 Twine，
