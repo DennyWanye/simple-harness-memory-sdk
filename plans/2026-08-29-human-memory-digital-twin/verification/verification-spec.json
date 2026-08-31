@@ -244,6 +244,43 @@
       }
     },
     {
+      "scenario_id": "HM-S13A",
+      "required": true,
+      "testcase_ids": ["TC-HM-13"],
+      "gate_type": "positive-value",
+      "input_class": "typed-recall-result-bound-disclosure",
+      "ui": false,
+      "manual_required": false,
+      "min_root_runs": 1,
+      "impact_paths": [],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe"],
+        "required_artifact_kinds": ["business-result", "execution-log"],
+        "required_identity": ["root_run_id"],
+        "required_timestamps": true,
+        "required_business_facts": ["business_terminal", "decision_result_hash_bound", "mixed_short_only_roundtrip", "naked_ref_read_zero", "complete_confirmation_atomic", "eligibility_disclosure_matrix_passed"]
+      }
+    },
+    {
+      "scenario_id": "HM-S13B",
+      "required": true,
+      "testcase_ids": ["TC-HM-13"],
+      "gate_type": "negative-safety",
+      "input_class": "typed-recall-fail-closed-replay-recovery",
+      "ui": false,
+      "manual_required": false,
+      "min_root_runs": 1,
+      "lanes": ["temporal-fault"],
+      "impact_paths": [],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe"],
+        "required_artifact_kinds": ["execution-log", "fault-recovery-log"],
+        "required_identity": ["root_run_id"],
+        "required_timestamps": true,
+        "required_business_facts": ["recovered_state", "incomplete_conflict_zero_disclosure", "unsupported_candidate_query_zero", "context_use_linearized", "exact_conflicting_replay_checked", "half_state_zero", "durable_hash_rebuild_checked", "budget_deadline_boundaries_checked"]
+      }
+    },
+    {
       "scenario_id": "HM-X01",
       "required": true,
       "testcase_ids": ["TC-HM-X01"],

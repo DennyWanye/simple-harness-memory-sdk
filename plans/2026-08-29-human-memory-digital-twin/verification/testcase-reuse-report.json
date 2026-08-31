@@ -16,14 +16,14 @@
       "obligation_id": "HM-TO-A1",
       "decision": "create-new",
       "candidates": ["TC-PS-08"],
-      "selected_testcases": ["TC-HM-07@rev1", "TC-HM-X01@rev1"],
+      "selected_testcases": ["TC-HM-07@rev1", "TC-HM-X01@rev2"],
       "reason": "旧迁移用例以物理删除为成功标准；新用例共同证明永久 raw evidence、逻辑遗忘和 fresh init。"
     },
     {
       "obligation_id": "HM-TO-A2",
       "decision": "create-new",
       "candidates": [],
-      "selected_testcases": ["TC-HM-03@rev1", "TC-HM-08@rev1", "TC-HM-X01@rev1"],
+      "selected_testcases": ["TC-HM-03@rev1", "TC-HM-08@rev1", "TC-HM-X01@rev2"],
       "reason": "现有 Fact 用例没有四认知系统、epistemic 状态和 schema 化 LLM proposal oracle。"
     },
     {
@@ -37,8 +37,8 @@
       "obligation_id": "HM-TO-A4",
       "decision": "create-new",
       "candidates": ["TC-PS-03", "TC-PS-05"],
-      "selected_testcases": ["TC-HM-01@rev1", "TC-HM-02@rev1", "TC-HM-03@rev1", "TC-HM-06@rev1", "TC-HM-08@rev1", "TC-HM-10@rev1"],
-      "reason": "必须证明五路 route、no-recall、候选 search 后 exact open 和类型化 recall，旧 Session 导航不能复用。"
+      "selected_testcases": ["TC-HM-01@rev1", "TC-HM-02@rev1", "TC-HM-03@rev1", "TC-HM-06@rev1", "TC-HM-08@rev1", "TC-HM-10@rev1", "TC-HM-13@rev1"],
+      "reason": "必须证明五路 route、no-recall、候选 search 后 exact open，以及 long/short/mixed 类型化 decision-result、原子冲突确认和 result-bound page-in；旧 Session 导航不能复用。"
     },
     {
       "obligation_id": "HM-TO-A5",
@@ -58,56 +58,56 @@
       "obligation_id": "HM-TO-A7",
       "decision": "create-new",
       "candidates": [],
-      "selected_testcases": ["TC-HM-02@rev1", "TC-HM-07@rev1", "TC-HM-12@rev1"],
-      "reason": "旧日志用例未覆盖全部 LLM decision、受控审计读取和 canonical facts 到六视图的 lineage。"
+      "selected_testcases": ["TC-HM-02@rev1", "TC-HM-07@rev1", "TC-HM-12@rev1", "TC-HM-13@rev1"],
+      "reason": "旧日志用例未覆盖全部 LLM decision、受控审计读取、typed decision/result/page/use binding 和 canonical facts 到六视图的 lineage。"
     },
     {
       "obligation_id": "HM-TO-A8",
       "decision": "create-new",
       "candidates": ["TC-GS-08"],
-      "selected_testcases": ["TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-11@rev1", "TC-HM-X01@rev1"],
-      "reason": "旧并发用例创建多个 Session，与唯一主对话冲突；新集合覆盖三仓契约、初始化、恢复、质量和性能。"
+      "selected_testcases": ["TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-11@rev1", "TC-HM-13@rev1", "TC-HM-X01@rev2"],
+      "reason": "旧并发用例创建多个 Session，与唯一主对话冲突；新集合覆盖三仓契约、typed recall 原子终态/恢复、初始化、质量和性能。"
     },
     {
       "obligation_id": "HM-TO-R1",
       "decision": "create-new",
       "candidates": ["TC-PS-08"],
-      "selected_testcases": ["TC-HM-07@rev1", "TC-HM-X01@rev1"],
+      "selected_testcases": ["TC-HM-07@rev1", "TC-HM-X01@rev2"],
       "reason": "以 raw row count 和逐项 hash 对 retention、forget、maintenance、test cleanup 和 rebuild 做零物理删除断言。"
     },
     {
       "obligation_id": "HM-TO-R2",
       "decision": "reuse-with-extension",
-      "candidates": ["TC-HM-03@rev1", "TC-HM-04@rev1", "TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-11@rev1", "TC-GS-06@rev2", "TC-GS-08@rev2", "TC-GS-10@rev3"],
-      "selected_testcases": ["TC-HM-03@rev1", "TC-HM-04@rev1", "TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-11@rev1", "TC-GS-06@rev2", "TC-GS-08@rev2", "TC-GS-10@rev3"],
-      "reason": "在 HM 状态机 fault lanes 外，复用并扩展全局 Skill publish、lost-ACK 和 Run/UI 收敛的原子幂等回归。"
+      "candidates": ["TC-HM-03@rev1", "TC-HM-04@rev1", "TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-11@rev1", "TC-HM-13@rev1", "TC-GS-06@rev2", "TC-GS-08@rev2", "TC-GS-10@rev3"],
+      "selected_testcases": ["TC-HM-03@rev1", "TC-HM-04@rev1", "TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-11@rev1", "TC-HM-13@rev1", "TC-GS-06@rev2", "TC-GS-08@rev2", "TC-GS-10@rev3"],
+      "reason": "在 HM 状态机 fault lanes 外，新增 typed decision/result final transaction、restart/replay 原子性，并复用全局 Skill publish、lost-ACK 和 Run/UI 收敛回归。"
     },
     {
       "obligation_id": "HM-TO-R3",
       "decision": "create-new",
       "candidates": [],
-      "selected_testcases": ["TC-HM-03@rev1", "TC-HM-06@rev1", "TC-HM-07@rev1", "TC-HM-10@rev1", "TC-HM-12@rev1"],
-      "reason": "跨 recipient、contested/superseded/suppressed、旧 checkpoint、Context 和图谱的 stale privacy 风险没有旧统一 oracle。"
+      "selected_testcases": ["TC-HM-03@rev1", "TC-HM-06@rev1", "TC-HM-07@rev1", "TC-HM-10@rev1", "TC-HM-12@rev1", "TC-HM-13@rev1"],
+      "reason": "跨 recipient、contested/superseded/suppressed、旧 checkpoint、Context、page-in 和图谱的 stale privacy 风险没有旧统一 oracle；TC-HM-13 冻结完整/残缺冲突组零泄露和使用时再授权。"
     },
     {
       "obligation_id": "HM-TO-R4",
       "decision": "reuse-with-extension",
-      "candidates": ["TC-HM-01@rev1", "TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-X01@rev1", "TC-GS-03@rev1", "TC-GS-04@rev2", "TC-GS-05@rev2", "TC-GS-07@rev2", "TC-GS-08@rev2", "TC-GS-09@rev3", "TC-GS-10@rev3"],
-      "selected_testcases": ["TC-HM-01@rev1", "TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-X01@rev1", "TC-GS-03@rev1", "TC-GS-04@rev2", "TC-GS-05@rev2", "TC-GS-07@rev2", "TC-GS-08@rev2", "TC-GS-09@rev3", "TC-GS-10@rev3"],
-      "reason": "新的 durable protocol hash/version 之外，复用并扩展 global Skill/Tool snapshot、cold restart、authorization 与 convergence 回归。"
+      "candidates": ["TC-HM-01@rev1", "TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-13@rev1", "TC-HM-X01@rev2", "TC-GS-03@rev1", "TC-GS-04@rev2", "TC-GS-05@rev2", "TC-GS-07@rev2", "TC-GS-08@rev2", "TC-GS-09@rev3", "TC-GS-10@rev3"],
+      "selected_testcases": ["TC-HM-01@rev1", "TC-HM-08@rev1", "TC-HM-09@rev1", "TC-HM-13@rev1", "TC-HM-X01@rev2", "TC-GS-03@rev1", "TC-GS-04@rev2", "TC-GS-05@rev2", "TC-GS-07@rev2", "TC-GS-08@rev2", "TC-GS-09@rev3", "TC-GS-10@rev3"],
+      "reason": "新的 durable protocol hash/version、strict v3 rejection、exact/conflicting replay 之外，复用并扩展 global Skill/Tool snapshot、cold restart、authorization 与 convergence 回归。"
     },
     {
       "obligation_id": "HM-TO-R5",
       "decision": "create-new",
       "candidates": [],
-      "selected_testcases": ["TC-HM-06@rev1", "TC-HM-07@rev1", "TC-HM-12@rev1", "TC-HM-X01@rev1"],
-      "reason": "受控审计、普通导出与 credentials/hidden reasoning 全域零命中必须合并验证。"
+      "selected_testcases": ["TC-HM-06@rev1", "TC-HM-07@rev1", "TC-HM-12@rev1", "TC-HM-13@rev1", "TC-HM-X01@rev2"],
+      "reason": "受控审计、typed decision/result/page/use lineage、普通导出与 credentials/hidden reasoning 全域零命中必须合并验证。"
     },
     {
       "obligation_id": "HM-TO-R6",
       "decision": "create-new",
       "candidates": [],
-      "selected_testcases": ["TC-HM-04@rev1", "TC-HM-05@rev1", "TC-HM-08@rev1", "TC-HM-X01@rev1"],
+      "selected_testcases": ["TC-HM-04@rev1", "TC-HM-05@rev1", "TC-HM-08@rev1", "TC-HM-X01@rev2"],
       "reason": "固定 LLM 乱序、重复、拒答、schema、超长、timeout 与 embedding/outbox 故障矩阵。"
     },
     {

@@ -28,6 +28,8 @@
         "HM-S10",
         "HM-S11",
         "HM-S12",
+        "HM-S13A",
+        "HM-S13B",
         "HM-S2",
         "HM-S3",
         "HM-S4",
@@ -42,9 +44,9 @@
     "input_hashes": {
       "acceptance": "ab4dbe080e27ab4a29bf4be74b539363b489f9ad165eadf748fb3b8019cbc067",
       "assurance_contract": "d828f016110bd876c364c9b17fdf2c316557988a7be6f8195d25aa0eb1b3e6a8",
-      "reuse_report": "2d65d1a702ae7166b5ed3cf18430da166b045a6acb2dfaa490cac8e50204fed9",
-      "testcase_inventory": "15713fb27d038ed48f5a34106ec7a1fc78a7c6a584b3fade50bcfccee8fa52ca",
-      "verification_spec": "a626a557ee15388582a43ae9f7fa0a6894997f49c4c160adc95c947a4eadbd27"
+      "reuse_report": "28928856ba2c2d0437ac837019f5340e649634c7fbd20bf6d0dc57712be9045d",
+      "testcase_inventory": "cebc1b330520158bf99173dac5b08c21375744e486eb0626f0bf0a5334d9f6df",
+      "verification_spec": "7441e105099e317b64e3088c4aa7a3bb06e9f5ca2f2c1f4cadbb01fafa97fc6b"
     },
     "input_paths": {
       "acceptance": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/acceptance.md",
@@ -53,7 +55,7 @@
       "testcase_inventory": "/Users/denny/projects/simple_harness-memory-plan/testcase/index.json",
       "verification_spec": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/verification/verification-spec.json"
     },
-    "seal_sha256": "dd9ef30e1df054330250fd65f1afee756b0347c46e125f37e6e21b87b4f7e0ed",
+    "seal_sha256": "141b2ad233212fb5f5d350b6403b18bf63f09e978b3614959e2345b1b6999f2e",
     "selected_testcase_ids": [
       "TC-GS-03",
       "TC-GS-04",
@@ -75,6 +77,7 @@
       "TC-HM-10",
       "TC-HM-11",
       "TC-HM-12",
+      "TC-HM-13",
       "TC-HM-X01"
     ],
     "tool_version": "1.5.0"
@@ -553,6 +556,81 @@
       "ui": true
     },
     {
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "decision_result_hash_bound",
+          "mixed_short_only_roundtrip",
+          "naked_ref_read_zero",
+          "complete_confirmation_atomic",
+          "eligibility_disclosure_matrix_passed"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "positive-value",
+      "impact_paths": [],
+      "input_class": "typed-recall-result-bound-disclosure",
+      "manual_required": false,
+      "min_root_runs": 1,
+      "required": true,
+      "scenario_id": "HM-S13A",
+      "testcase_ids": [
+        "TC-HM-13"
+      ],
+      "ui": false
+    },
+    {
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "recovered_state",
+          "incomplete_conflict_zero_disclosure",
+          "unsupported_candidate_query_zero",
+          "context_use_linearized",
+          "exact_conflicting_replay_checked",
+          "half_state_zero",
+          "durable_hash_rebuild_checked",
+          "budget_deadline_boundaries_checked"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "negative-safety",
+      "impact_paths": [],
+      "input_class": "typed-recall-fail-closed-replay-recovery",
+      "lanes": [
+        "temporal-fault"
+      ],
+      "manual_required": false,
+      "min_root_runs": 1,
+      "required": true,
+      "scenario_id": "HM-S13B",
+      "testcase_ids": [
+        "TC-HM-13"
+      ],
+      "ui": false
+    },
+    {
       "cold_start": true,
       "evidence_contract": {
         "producer_types": [
@@ -710,6 +788,7 @@
     "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-10-routing-resume.md",
     "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-11-single-run-context.md",
     "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-12-digital-twin-views.md",
+    "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-13-typed-recall-result.md",
     "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-X01-contract-init-quality.md"
   ]
 }
