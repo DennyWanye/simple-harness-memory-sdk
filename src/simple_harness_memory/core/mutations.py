@@ -9,9 +9,11 @@ commits the whole plan atomically.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hashlib
+from dataclasses import dataclass, field
 from typing import Final
 
+from simple_harness.contracts import JsonValue, canonical_json
 from simple_harness.runtime import (
     ConflictStatus,
     EpisodeLifecycleState,
@@ -19,6 +21,7 @@ from simple_harness.runtime import (
     EvidenceActorRole,
     EvidenceProvenance,
     EvidenceSupportKind,
+    ExistingMemoryTarget,
     InformationAttribute,
     LongTermMemoryType,
     MemoryMutationApplyMode,
@@ -42,6 +45,18 @@ _PRIVACY_ORDER: Final[dict[PrivacyClass, int]] = {
     PrivacyClass.SENSITIVE: 2,
     PrivacyClass.RESTRICTED: 3,
 }
+
+
+def _policy_identifier(value: object, name: str) -> str:
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or "\x00" in value
+        or len(value.encode("utf-8")) > 1024
+    ):
+        raise MemoryValidationError(f"{name}_invalid")
+    return value
+
 
 _INITIAL_LIFECYCLES: Final[dict[LongTermMemoryType, frozenset[CognitiveLifecycleState]]] = {
     LongTermMemoryType.EPISODE: frozenset(
@@ -154,9 +169,7 @@ _LIFECYCLE_TRANSITIONS: Final[
             }
         ),
         ProcedureLifecycleState.REVISED: frozenset({ProcedureLifecycleState.DRAFT}),
-        ProcedureLifecycleState.INAPPLICABLE: frozenset(
-            {ProcedureLifecycleState.DRAFT}
-        ),
+        ProcedureLifecycleState.INAPPLICABLE: frozenset({ProcedureLifecycleState.DRAFT}),
         ProcedureLifecycleState.SUPERSEDED: frozenset(),
         ProcedureLifecycleState.FORGOTTEN: frozenset(),
     },
@@ -224,6 +237,60 @@ class EffectiveInformationClassification:
 
 
 @dataclass(frozen=True, slots=True)
+class InformationClassificationPolicy:
+    """Memory-owned explicit authority floor for every cognitive mutation."""
+
+    policy_id: str
+    policy_version: str
+    authority_ref: str
+    required_privacy_class: PrivacyClass
+    required_information_attributes: tuple[InformationAttribute, ...]
+    schema_version: int = 1
+    policy_hash: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if self.schema_version != 1:
+            raise MemoryValidationError("classification_policy_schema_unsupported")
+        for value, name in (
+            (self.policy_id, "classification_policy_id"),
+            (self.policy_version, "classification_policy_version"),
+            (self.authority_ref, "classification_policy_authority_ref"),
+        ):
+            _policy_identifier(value, name)
+        privacy = PrivacyClass(self.required_privacy_class)
+        try:
+            attributes = tuple(
+                sorted(
+                    {InformationAttribute(item) for item in self.required_information_attributes},
+                    key=lambda item: item.value,
+                )
+            )
+        except (TypeError, ValueError) as exc:
+            raise MemoryValidationError("classification_policy_attributes_invalid") from exc
+        if len(attributes) != len(self.required_information_attributes) or len(attributes) > 32:
+            raise MemoryValidationError("classification_policy_attributes_invalid")
+        object.__setattr__(self, "required_privacy_class", privacy)
+        object.__setattr__(self, "required_information_attributes", attributes)
+        object.__setattr__(
+            self,
+            "policy_hash",
+            hashlib.sha256(canonical_json(self.to_json()).encode("utf-8")).hexdigest(),
+        )
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "schema_version": self.schema_version,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "authority_ref": self.authority_ref,
+            "required_privacy_class": self.required_privacy_class.value,
+            "required_information_attributes": [
+                item.value for item in self.required_information_attributes
+            ],
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class CompiledMemoryMutationOperation:
     """An exact Harness operation that passed pure semantic validation."""
 
@@ -269,9 +336,7 @@ def join_information_classification(
         raise MemoryValidationError("trusted_privacy_floor_required")
     floors = tuple(PrivacyClass(item) for item in trusted_privacy_floors)
     attributes = {
-        InformationAttribute(item)
-        for values in trusted_attribute_sets
-        for item in values
+        InformationAttribute(item) for values in trusted_attribute_sets for item in values
     }
     attributes.update(operation.proposed_information_attributes)
     return EffectiveInformationClassification(
@@ -298,6 +363,14 @@ def validate_lifecycle_transition(
     memory_type = LongTermMemoryType(memory_type)
     if operation.memory_type is not memory_type:
         raise MemoryValidationError("mutation_target_memory_type_mismatch")
+    if operation.kind is MemoryMutationKind.CONTEST:
+        if not isinstance(operation.target, ExistingMemoryTarget):
+            raise MemoryValidationError("mutation_contest_exact_target_required")
+        if operation.lifecycle_state != current_lifecycle:
+            raise MemoryValidationError("mutation_contest_lifecycle_must_be_unchanged")
+        if operation.conflict_status is not ConflictStatus.CONTESTED:
+            raise MemoryValidationError("mutation_contest_requires_contested_state")
+        return
     transitions = _LIFECYCLE_TRANSITIONS[memory_type]
     if current_lifecycle not in transitions:
         raise MemoryValidationError("mutation_current_lifecycle_type_mismatch")
@@ -337,9 +410,7 @@ def _validate_operation(operation: MemoryMutationOperation) -> None:
     _validate_epistemic_provenance(operation)
 
 
-def _validate_kind_lifecycle(
-    operation: MemoryMutationOperation, *, is_create: bool
-) -> None:
+def _validate_kind_lifecycle(operation: MemoryMutationOperation, *, is_create: bool) -> None:
     lifecycle = operation.lifecycle_state
     if is_create:
         if lifecycle not in _INITIAL_LIFECYCLES[operation.memory_type]:
@@ -353,6 +424,8 @@ def _validate_kind_lifecycle(
         if lifecycle.value != "superseded":
             raise MemoryValidationError("mutation_supersede_requires_superseded")
     elif operation.kind is MemoryMutationKind.CONTEST:
+        if not isinstance(operation.target, ExistingMemoryTarget):
+            raise MemoryValidationError("mutation_contest_exact_target_required")
         is_contested = (
             lifecycle is EpisodeLifecycleState.DISPUTED
             or operation.conflict_status is ConflictStatus.CONTESTED
@@ -366,40 +439,106 @@ def _validate_kind_lifecycle(
 
 def _validate_epistemic_provenance(operation: MemoryMutationOperation) -> None:
     spans = operation.evidence_spans
-    supports = {span.support_kind for span in spans}
-
-    if operation.epistemic_status is EpistemicStatus.EXPLICIT_USER:
-        explicit = {
+    authenticated_user_assertion = any(
+        span.support_kind
+        in {
             EvidenceSupportKind.EXPLICIT_USER_ASSERTION,
             EvidenceSupportKind.EXPLICIT_USER_CORRECTION,
         }
-        if not any(
-            span.support_kind in explicit
-            and span.actor_role is EvidenceActorRole.USER
-            and span.provenance is EvidenceProvenance.AUTHENTICATED_USER
-            for span in spans
-        ):
+        and span.actor_role is EvidenceActorRole.USER
+        and span.provenance is EvidenceProvenance.AUTHENTICATED_USER
+        for span in spans
+    )
+    authenticated_user_correction = any(
+        span.support_kind is EvidenceSupportKind.EXPLICIT_USER_CORRECTION
+        and span.actor_role is EvidenceActorRole.USER
+        and span.provenance is EvidenceProvenance.AUTHENTICATED_USER
+        for span in spans
+    )
+    trusted_external_observation = any(
+        span.support_kind is EvidenceSupportKind.TYPED_OBSERVATION
+        and span.typed_observation is not None
+        and span.actor_role is EvidenceActorRole.EXTERNAL
+        and span.provenance is EvidenceProvenance.EXTERNAL_SOURCE
+        for span in spans
+    )
+    trusted_behavior_observation = any(
+        (
+            span.support_kind is EvidenceSupportKind.TYPED_OBSERVATION
+            and span.typed_observation is not None
+            and span.actor_role is EvidenceActorRole.TOOL
+            and span.provenance is EvidenceProvenance.TRUSTED_TOOL
+        )
+        or (
+            span.support_kind is EvidenceSupportKind.RUNTIME_EVENT
+            and span.actor_role is EvidenceActorRole.RUNTIME
+            and span.provenance is EvidenceProvenance.HOST_RUNTIME
+        )
+        for span in spans
+    )
+    trusted_typed_observation = any(
+        span.support_kind is EvidenceSupportKind.TYPED_OBSERVATION
+        and span.typed_observation is not None
+        and span.provenance in {EvidenceProvenance.TRUSTED_TOOL, EvidenceProvenance.EXTERNAL_SOURCE}
+        and span.actor_role in {EvidenceActorRole.TOOL, EvidenceActorRole.EXTERNAL}
+        for span in spans
+    )
+
+    if operation.epistemic_status is EpistemicStatus.EXPLICIT_USER:
+        if not authenticated_user_assertion:
             raise MemoryValidationError("mutation_explicit_user_provenance_required")
-        if (
-            operation.kind is MemoryMutationKind.SUPERSEDE
-            and EvidenceSupportKind.EXPLICIT_USER_CORRECTION not in supports
-        ):
-            raise MemoryValidationError("mutation_supersede_requires_explicit_correction")
+
+    if operation.epistemic_status is EpistemicStatus.VERIFIED_EXTERNAL:
+        if not trusted_external_observation:
+            raise MemoryValidationError("mutation_verified_external_authority_required")
+        if operation.verification_state is not VerificationState.SOURCE_VERIFIED:
+            raise MemoryValidationError("mutation_verified_external_state_invalid")
+
+    if operation.epistemic_status is EpistemicStatus.OBSERVED_BEHAVIOR:
+        if not trusted_behavior_observation:
+            raise MemoryValidationError("mutation_observed_behavior_authority_required")
+
+    if operation.epistemic_status is EpistemicStatus.UNKNOWN:
+        if operation.kind in {
+            MemoryMutationKind.SUPERSEDE,
+            MemoryMutationKind.SUPPRESS,
+        }:
+            raise MemoryValidationError("mutation_unknown_cannot_change_authority")
+        if operation.lifecycle_state.value not in {"candidate", "draft"}:
+            raise MemoryValidationError("mutation_unknown_cannot_be_authoritative")
+        if operation.verification_state is not VerificationState.UNVERIFIED:
+            raise MemoryValidationError("mutation_unknown_must_be_unverified")
 
     if operation.epistemic_status is EpistemicStatus.LLM_INFERENCE:
-        if EvidenceSupportKind.MODEL_INFERENCE not in supports:
+        if not any(
+            span.support_kind is EvidenceSupportKind.MODEL_INFERENCE
+            and span.actor_role is EvidenceActorRole.ASSISTANT
+            and span.provenance is EvidenceProvenance.MODEL_OUTPUT
+            for span in spans
+        ):
             raise MemoryValidationError("mutation_inference_provenance_required")
         if operation.lifecycle_state.value not in {"candidate", "draft"}:
             raise MemoryValidationError("mutation_inference_cannot_be_authoritative")
         if operation.verification_state is not VerificationState.UNVERIFIED:
             raise MemoryValidationError("mutation_inference_must_be_unverified")
 
-    if operation.verification_state in {
-        VerificationState.SOURCE_VERIFIED,
-        VerificationState.REPEATED_OBSERVATION,
-    }:
-        if EvidenceSupportKind.TYPED_OBSERVATION not in supports:
-            raise MemoryValidationError("mutation_verified_requires_typed_observation")
+    if (
+        operation.verification_state
+        in {
+            VerificationState.SOURCE_VERIFIED,
+            VerificationState.REPEATED_OBSERVATION,
+        }
+        and not trusted_typed_observation
+    ):
+        raise MemoryValidationError("mutation_verified_requires_typed_observation")
+
+    if operation.kind is MemoryMutationKind.SUPPRESS and not authenticated_user_correction:
+        raise MemoryValidationError("mutation_suppress_requires_user_forget_authority")
+
+    if operation.kind is MemoryMutationKind.SUPERSEDE and not (
+        authenticated_user_correction or trusted_external_observation
+    ):
+        raise MemoryValidationError("mutation_supersede_authority_required")
 
     if (
         operation.memory_type is LongTermMemoryType.PROSPECTIVE
@@ -420,6 +559,7 @@ __all__ = (
     "CompiledMemoryMutationOperation",
     "CompiledMemoryMutationPlan",
     "EffectiveInformationClassification",
+    "InformationClassificationPolicy",
     "compile_memory_mutation_plan",
     "join_information_classification",
     "validate_lifecycle_transition",

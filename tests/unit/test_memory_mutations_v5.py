@@ -36,6 +36,7 @@ from simple_harness.runtime import (
     ProcedureLifecycleState,
     ProcedureMemoryPayload,
     ProcedureRiskLevel,
+    ProposedTypedObservationRef,
     ProspectiveLifecycleState,
     ProspectiveMemoryPayload,
     ProspectiveTimeTrigger,
@@ -85,6 +86,7 @@ def _span(
     support_kind: EvidenceSupportKind = EvidenceSupportKind.EXPLICIT_USER_ASSERTION,
     actor_role: EvidenceActorRole = EvidenceActorRole.USER,
     provenance: EvidenceProvenance = EvidenceProvenance.AUTHENTICATED_USER,
+    typed_observation: ProposedTypedObservationRef | None = None,
 ) -> EvidenceSpanRef:
     quote = "Python 3.12"
     return EvidenceSpanRef(
@@ -94,11 +96,13 @@ def _span(
         sanitized_hash="c" * 64,
         admission_receipt_id="admission-1",
         admission_receipt_hash="d" * 64,
-        source_kind=(
-            EvidenceSourceKind.USER_MESSAGE
-            if actor_role is EvidenceActorRole.USER
-            else EvidenceSourceKind.ASSISTANT_MESSAGE
-        ),
+        source_kind={
+            EvidenceActorRole.USER: EvidenceSourceKind.USER_MESSAGE,
+            EvidenceActorRole.ASSISTANT: EvidenceSourceKind.ASSISTANT_MESSAGE,
+            EvidenceActorRole.TOOL: EvidenceSourceKind.TOOL_RESULT,
+            EvidenceActorRole.RUNTIME: EvidenceSourceKind.RUNTIME_EVENT,
+            EvidenceActorRole.EXTERNAL: EvidenceSourceKind.PROVIDER_RECORD,
+        }[actor_role],
         item_ordinal=1,
         item_id="message-1",
         item_json_pointer="/public_text",
@@ -111,7 +115,20 @@ def _span(
         actor_role=actor_role,
         provenance=provenance,
         support_kind=support_kind,
-        typed_observation=None,
+        typed_observation=typed_observation,
+    )
+
+
+def _typed_observation() -> ProposedTypedObservationRef:
+    return ProposedTypedObservationRef(
+        schema_id="observation/user-preference",
+        schema_version=1,
+        registered_schema_hash="1" * 64,
+        observation_receipt_id="observation-receipt-1",
+        observation_receipt_hash="2" * 64,
+        authority_issuer_id="host-observation-authority",
+        json_pointer="/public_text",
+        value_hash="3" * 64,
     )
 
 
@@ -123,6 +140,7 @@ def _semantic_operation(
     depends_on: tuple[str, ...] = (),
     lifecycle_state: SemanticLifecycleState = SemanticLifecycleState.ACTIVE,
     epistemic_status: EpistemicStatus = EpistemicStatus.EXPLICIT_USER,
+    conflict_status: ConflictStatus = ConflictStatus.UNCONTESTED,
     verification_state: VerificationState = VerificationState.SOURCE_BOUND,
     evidence_spans: tuple[EvidenceSpanRef, ...] | None = None,
 ) -> MemoryMutationOperation:
@@ -140,7 +158,7 @@ def _semantic_operation(
         depends_on_operation_ids=depends_on,
         lifecycle_state=lifecycle_state,
         epistemic_status=epistemic_status,
-        conflict_status=ConflictStatus.UNCONTESTED,
+        conflict_status=conflict_status,
         verification_state=verification_state,
         valid_time_interval=ValidTimeInterval(10.0, None),
         proposed_privacy_class=PrivacyClass.PERSONAL,
@@ -154,6 +172,7 @@ def _plan(*operations: MemoryMutationOperation) -> MemoryMutationPlan:
     return MemoryMutationPlan(
         plan_id="mutation-plan-1",
         run_id="run-1",
+        turn_id="turn-1",
         subject="user-1",
         base_revision=4,
         outcome=MemoryMutationPlanOutcome.MUTATE,
@@ -184,9 +203,7 @@ def _plan(*operations: MemoryMutationOperation) -> MemoryMutationPlan:
         ),
         (
             LongTermMemoryType.SEMANTIC,
-            SemanticMemoryPayload(
-                "user:self", "runtime_preference", "Python 3.12", ("primary",)
-            ),
+            SemanticMemoryPayload("user:self", "runtime_preference", "Python 3.12", ("primary",)),
             SemanticLifecycleState.ACTIVE,
         ),
         (
@@ -235,17 +252,25 @@ def test_exact_harness_four_payloads_and_lifecycles_compile(
 
 def test_forward_dependency_is_stably_topologically_compiled() -> None:
     create = _semantic_operation("create")
-    revise = _semantic_operation(
-        "revise",
-        kind=MemoryMutationKind.REVISE,
-        target=CreatedByOperationTarget("create"),
+    dependent_create = _semantic_operation(
+        "dependent-create",
         depends_on=("create",),
     )
-    compiled = compile_memory_mutation_plan(_plan(revise, create))
+    compiled = compile_memory_mutation_plan(_plan(dependent_create, create))
     assert tuple(item.operation_id for item in compiled.operations) == (
         "create",
-        "revise",
+        "dependent-create",
     )
+
+
+def test_protected_action_rejects_created_by_operation_target() -> None:
+    with pytest.raises(ValueError, match="exact ExistingMemoryTarget"):
+        _semantic_operation(
+            "revise",
+            kind=MemoryMutationKind.REVISE,
+            target=CreatedByOperationTarget("create"),
+            depends_on=("create",),
+        )
 
 
 def test_exact_harness_wire_rejects_unknown_self_cycle_and_created_type_mismatch() -> None:
@@ -288,9 +313,10 @@ def test_exact_harness_wire_rejects_unknown_self_cycle_and_created_type_mismatch
     )
     semantic_consumer = _semantic_operation(
         "semantic-consumer",
-        kind=MemoryMutationKind.REVISE,
+        kind=MemoryMutationKind.CONTEST,
         target=CreatedByOperationTarget("episode-create"),
         depends_on=("episode-create",),
+        conflict_status=ConflictStatus.CONTESTED,
     )
     with pytest.raises(ValueError, match="same memory_type"):
         _plan(semantic_consumer, episode_create)
@@ -300,8 +326,6 @@ def test_exact_harness_wire_rejects_unknown_self_cycle_and_created_type_mismatch
             _semantic_operation(),
             lifecycle_state=cast(SemanticLifecycleState, EpisodeLifecycleState.ACTIVE),
         )
-
-
 def test_compiler_is_strict_atomic_when_one_operation_is_invalid() -> None:
     valid = _semantic_operation("valid")
     inference_span = _span(
@@ -316,38 +340,163 @@ def test_compiler_is_strict_atomic_when_one_operation_is_invalid() -> None:
         verification_state=VerificationState.UNVERIFIED,
         evidence_spans=(inference_span,),
     )
-    with pytest.raises(
-        MemoryValidationError, match="mutation_inference_cannot_be_authoritative"
-    ):
+    with pytest.raises(MemoryValidationError, match="mutation_inference_cannot_be_authoritative"):
         compile_memory_mutation_plan(_plan(valid, invalid))
 
 
 def test_inference_provenance_conflicts_are_rejected_not_downgraded() -> None:
-    inferred = _semantic_operation(
-        lifecycle_state=SemanticLifecycleState.CANDIDATE,
-        epistemic_status=EpistemicStatus.LLM_INFERENCE,
-        verification_state=VerificationState.UNVERIFIED,
-    )
-    with pytest.raises(
-        MemoryValidationError, match="mutation_inference_provenance_required"
-    ):
-        compile_memory_mutation_plan(_plan(inferred))
-
     inference_span = _span(
         support_kind=EvidenceSupportKind.MODEL_INFERENCE,
         actor_role=EvidenceActorRole.ASSISTANT,
         provenance=EvidenceProvenance.MODEL_OUTPUT,
     )
-    falsely_verified = replace(
-        inferred,
+    inferred = _semantic_operation(
+        lifecycle_state=SemanticLifecycleState.CANDIDATE,
+        epistemic_status=EpistemicStatus.LLM_INFERENCE,
+        verification_state=VerificationState.UNVERIFIED,
         evidence_spans=(inference_span,),
-        verification_state=VerificationState.USER_CONFIRMED,
     )
+    assert compile_memory_mutation_plan(_plan(inferred)).operations
+    with pytest.raises(ValueError, match="llm_inference requires model inference evidence"):
+        _semantic_operation(
+            lifecycle_state=SemanticLifecycleState.CANDIDATE,
+            epistemic_status=EpistemicStatus.LLM_INFERENCE,
+            verification_state=VerificationState.UNVERIFIED,
+        )
+    falsely_verified = replace(inferred, verification_state=VerificationState.USER_CONFIRMED)
     with pytest.raises(MemoryValidationError, match="mutation_inference_must_be_unverified"):
         compile_memory_mutation_plan(_plan(falsely_verified))
 
-    valid_candidate = replace(inferred, evidence_spans=(inference_span,))
-    assert compile_memory_mutation_plan(_plan(valid_candidate)).operations
+
+def test_unknown_status_never_grants_authoritative_lifecycle_or_mutation() -> None:
+    unknown_active = replace(
+        _semantic_operation(),
+        epistemic_status=EpistemicStatus.UNKNOWN,
+        verification_state=VerificationState.UNVERIFIED,
+    )
+    with pytest.raises(MemoryValidationError, match="mutation_unknown_cannot_be_authoritative"):
+        compile_memory_mutation_plan(_plan(unknown_active))
+
+    unknown_candidate = replace(unknown_active, lifecycle_state=SemanticLifecycleState.CANDIDATE)
+    assert compile_memory_mutation_plan(_plan(unknown_candidate)).operations
+
+    unknown_supersede = replace(
+        unknown_candidate,
+        kind=MemoryMutationKind.SUPERSEDE,
+        target=ExistingMemoryTarget("semantic-1", 1),
+        lifecycle_state=SemanticLifecycleState.SUPERSEDED,
+        evidence_spans=(_span(support_kind=EvidenceSupportKind.EXPLICIT_USER_CORRECTION),),
+    )
+    with pytest.raises(MemoryValidationError, match="mutation_unknown_cannot_change_authority"):
+        compile_memory_mutation_plan(_plan(unknown_supersede))
+
+
+def test_verified_external_requires_exact_external_typed_authority() -> None:
+    with pytest.raises(ValueError, match="verified_external requires external typed authority"):
+        replace(
+            _semantic_operation(),
+            epistemic_status=EpistemicStatus.VERIFIED_EXTERNAL,
+            verification_state=VerificationState.SOURCE_VERIFIED,
+        )
+
+    external_span = _span(
+        support_kind=EvidenceSupportKind.TYPED_OBSERVATION,
+        actor_role=EvidenceActorRole.EXTERNAL,
+        provenance=EvidenceProvenance.EXTERNAL_SOURCE,
+        typed_observation=_typed_observation(),
+    )
+    verified = replace(
+        _semantic_operation(),
+        epistemic_status=EpistemicStatus.VERIFIED_EXTERNAL,
+        verification_state=VerificationState.SOURCE_VERIFIED,
+        evidence_spans=(external_span,),
+    )
+    assert compile_memory_mutation_plan(_plan(verified)).operations
+
+    with pytest.raises(ValueError, match="verified_external requires source_verified state"):
+        replace(verified, verification_state=VerificationState.SOURCE_BOUND)
+
+
+def test_observed_behavior_requires_trusted_tool_or_host_runtime_evidence() -> None:
+    with pytest.raises(
+        ValueError, match="observed_behavior requires trusted Tool or Runtime evidence"
+    ):
+        replace(_semantic_operation(), epistemic_status=EpistemicStatus.OBSERVED_BEHAVIOR)
+
+    tool_span = _span(
+        support_kind=EvidenceSupportKind.TYPED_OBSERVATION,
+        actor_role=EvidenceActorRole.TOOL,
+        provenance=EvidenceProvenance.TRUSTED_TOOL,
+        typed_observation=_typed_observation(),
+    )
+    observed = replace(
+        _semantic_operation(),
+        epistemic_status=EpistemicStatus.OBSERVED_BEHAVIOR,
+        evidence_spans=(tool_span,),
+    )
+    assert compile_memory_mutation_plan(_plan(observed)).operations
+
+    runtime_span = _span(
+        support_kind=EvidenceSupportKind.RUNTIME_EVENT,
+        actor_role=EvidenceActorRole.RUNTIME,
+        provenance=EvidenceProvenance.HOST_RUNTIME,
+    )
+    assert compile_memory_mutation_plan(
+        _plan(replace(observed, evidence_spans=(runtime_span,)))
+    ).operations
+
+    active_procedure = replace(
+        observed,
+        memory_type=LongTermMemoryType.PROCEDURE,
+        payload=ProcedureMemoryPayload(
+            "release", ("repository",), ("test",), ProcedureRiskLevel.LOW
+        ),
+        lifecycle_state=ProcedureLifecycleState.ACTIVE,
+    )
+    with pytest.raises(MemoryValidationError, match="mutation_observed_procedure_cannot_activate"):
+        compile_memory_mutation_plan(_plan(active_procedure))
+
+
+def test_suppress_and_supersede_require_action_specific_authority() -> None:
+    suppress = replace(
+        _semantic_operation(),
+        kind=MemoryMutationKind.SUPPRESS,
+        payload=None,
+        target=ExistingMemoryTarget("semantic-1", 1),
+        lifecycle_state=SemanticLifecycleState.FORGOTTEN,
+    )
+    with pytest.raises(
+        MemoryValidationError, match="mutation_suppress_requires_user_forget_authority"
+    ):
+        compile_memory_mutation_plan(_plan(suppress))
+
+    correction = _span(support_kind=EvidenceSupportKind.EXPLICIT_USER_CORRECTION)
+    assert compile_memory_mutation_plan(
+        _plan(replace(suppress, evidence_spans=(correction,)))
+    ).operations
+
+    supersede = replace(
+        _semantic_operation(),
+        kind=MemoryMutationKind.SUPERSEDE,
+        target=ExistingMemoryTarget("semantic-1", 1),
+        lifecycle_state=SemanticLifecycleState.SUPERSEDED,
+    )
+    with pytest.raises(MemoryValidationError, match="mutation_supersede_authority_required"):
+        compile_memory_mutation_plan(_plan(supersede))
+
+    external_span = _span(
+        support_kind=EvidenceSupportKind.TYPED_OBSERVATION,
+        actor_role=EvidenceActorRole.EXTERNAL,
+        provenance=EvidenceProvenance.EXTERNAL_SOURCE,
+        typed_observation=_typed_observation(),
+    )
+    external_supersede = replace(
+        supersede,
+        epistemic_status=EpistemicStatus.VERIFIED_EXTERNAL,
+        verification_state=VerificationState.SOURCE_VERIFIED,
+        evidence_spans=(external_span,),
+    )
+    assert compile_memory_mutation_plan(_plan(external_supersede)).operations
 
 
 def test_privacy_floor_and_information_attributes_only_join_upward() -> None:
@@ -380,9 +529,7 @@ def test_repository_resolved_transition_tuple_is_validated_without_authority_map
         kind=MemoryMutationKind.SUPERSEDE,
         target=ExistingMemoryTarget("semantic-1", 7),
         lifecycle_state=SemanticLifecycleState.SUPERSEDED,
-        evidence_spans=(
-            _span(support_kind=EvidenceSupportKind.EXPLICIT_USER_CORRECTION),
-        ),
+        evidence_spans=(_span(support_kind=EvidenceSupportKind.EXPLICIT_USER_CORRECTION),),
     )
     validate_lifecycle_transition(
         memory_type=LongTermMemoryType.SEMANTIC,
@@ -407,6 +554,7 @@ def test_no_mutation_compiles_to_an_empty_strict_plan() -> None:
     plan = MemoryMutationPlan(
         plan_id="no-mutation-plan",
         run_id="run-1",
+        turn_id="turn-1",
         subject="user-1",
         base_revision=4,
         outcome=MemoryMutationPlanOutcome.NO_MUTATION,

@@ -248,7 +248,7 @@ async def _ingest(
 ) -> EvidenceRef:
     envelope, receipt = _authority(evidence_id)
     await backend.ingest_committed_evidence(envelope, receipt)
-    return EvidenceRef(evidence_id, envelope.sanitized_hash, 1)
+    return EvidenceRef(evidence_id, envelope.envelope_hash, 1)
 
 
 @pytest.mark.asyncio

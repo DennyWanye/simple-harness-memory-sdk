@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from simple_harness_memory.embedders.base import (
     EMBEDDING_FORMAT_FINGERPRINT,
@@ -51,8 +51,10 @@ class BGEM3Embedder(Embedder):
     @property
     def dim(self) -> int:
         if hasattr(self._model, "get_embedding_dimension"):
-            return int(self._model.get_embedding_dimension())
-        return int(self._model.get_sentence_embedding_dimension())
+            dimension = self._model.get_embedding_dimension()
+        else:
+            dimension = self._model.get_sentence_embedding_dimension()
+        return int(cast(int, dimension))
 
     @property
     def lineage(self) -> EmbeddingLineage:

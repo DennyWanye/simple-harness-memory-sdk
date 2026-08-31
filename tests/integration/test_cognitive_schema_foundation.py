@@ -27,6 +27,17 @@ def _column_not_null(connection: sqlite3.Connection, table: str, column: str) ->
     return bool(next(row[3] for row in rows if row[1] == column))
 
 
+def _unique_indexes(connection: sqlite3.Connection, table: str) -> set[tuple[str, ...]]:
+    result: set[tuple[str, ...]] = set()
+    for row in connection.execute(f"PRAGMA index_list({table})"):
+        if not bool(row[2]):
+            continue
+        result.add(
+            tuple(str(column[2]) for column in connection.execute(f"PRAGMA index_info({row[1]})"))
+        )
+    return result
+
+
 def test_cognitive_schema_has_independent_apply_head_and_privacy_dimensions(
     connection: sqlite3.Connection,
 ) -> None:
@@ -36,20 +47,25 @@ def test_cognitive_schema_has_independent_apply_head_and_privacy_dimensions(
         "updated_at",
     }
     assert {
+        "principal_id",
+        "plan_id",
+        "plan_hash",
+        "operation_id",
         "effective_privacy_class",
         "information_attributes_json",
     } <= _columns(connection, "cognitive_memory_revisions")
-    assert not _column_not_null(
-        connection, "cognitive_memory_revisions", "valid_from"
-    ), "Harness ValidTimeInterval permits an unknown start"
+    unique_indexes = _unique_indexes(connection, "cognitive_memory_revisions")
+    assert ("operation_id",) not in unique_indexes
+    assert ("principal_id", "plan_id", "operation_id") in unique_indexes
+    assert not _column_not_null(connection, "cognitive_memory_revisions", "valid_from"), (
+        "Harness ValidTimeInterval permits an unknown start"
+    )
     connection.execute(
         "INSERT INTO principals VALUES(?,?,?,?,?)",
         ("principal-1", "deployment-1", "household-1", "actor-1", 1.0),
     )
     connection.execute("INSERT INTO analysis_apply_heads VALUES(?,?,?)", ("principal-1", 2, 1.0))
-    connection.execute(
-        "INSERT INTO cognitive_apply_heads VALUES(?,?,?)", ("principal-1", 7, 1.0)
-    )
+    connection.execute("INSERT INTO cognitive_apply_heads VALUES(?,?,?)", ("principal-1", 7, 1.0))
     assert connection.execute(
         "SELECT revision FROM analysis_apply_heads WHERE principal_id='principal-1'"
     ).fetchone() == (2,)
@@ -96,6 +112,24 @@ def test_task_scope_provenance_is_bound_to_host_conversation_registration(
     }
 
 
+def test_relation_identity_is_principal_and_plan_scoped(
+    connection: sqlite3.Connection,
+) -> None:
+    assert {"principal_id", "plan_id", "plan_hash", "operation_id"} <= _columns(
+        connection, "cognitive_relations"
+    )
+    assert (
+        "principal_id",
+        "plan_id",
+        "operation_id",
+        "relation_kind",
+        "source_memory_id",
+        "source_revision",
+        "target_memory_id",
+        "target_revision",
+    ) in _unique_indexes(connection, "cognitive_relations")
+
+
 def test_mutation_receipt_is_strict_atomic_not_partial(
     connection: sqlite3.Connection,
 ) -> None:
@@ -108,10 +142,42 @@ def test_mutation_receipt_is_strict_atomic_not_partial(
         "plan_json",
         "canonical_operation_ids_json",
         "apply_mode",
+        "classification_decision_refs_json",
+        "classification_decisions_hash",
         "committed_at",
     } <= columns
     assert "accepted_count" not in columns
     assert "rejected_count" not in columns
+
+
+def test_classification_and_rejection_audits_have_explicit_authority_inputs(
+    connection: sqlite3.Connection,
+) -> None:
+    assert {
+        "policy_id",
+        "policy_version",
+        "policy_authority_ref",
+        "policy_hash",
+        "target_privacy_class",
+        "proposed_privacy_class",
+        "effective_privacy_class",
+        "decision_hash",
+    } <= _columns(connection, "cognitive_classification_decisions")
+    assert {
+        "span_hash",
+        "authority_schema_version",
+        "authority_id",
+        "authority_hash",
+        "classification_authority_ref",
+        "required_privacy_class",
+        "required_attributes_json",
+    } <= _columns(connection, "cognitive_classification_evidence_authorities")
+    assert {
+        "plan_hash",
+        "policy_hash",
+        "reason_code",
+        "rejection_hash",
+    } <= _columns(connection, "memory_mutation_rejection_audits")
 
 
 def test_recall_decision_binds_exact_context_and_evidence(
@@ -238,9 +304,9 @@ def test_expiring_projection_does_not_delete_registration_or_raw_evidence(
 
     connection.execute("DELETE FROM short_horizon_chunks WHERE chunk_id='chunk-1'")
 
-    assert connection.execute(
-        "SELECT count(*) FROM short_horizon_chunk_evidence"
-    ).fetchone() == (0,)
+    assert connection.execute("SELECT count(*) FROM short_horizon_chunk_evidence").fetchone() == (
+        0,
+    )
     assert connection.execute("SELECT count(*) FROM evidence_envelopes").fetchone() == (1,)
     assert connection.execute(
         "SELECT count(*) FROM conversation_evidence_registrations"

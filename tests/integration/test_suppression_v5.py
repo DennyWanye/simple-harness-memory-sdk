@@ -233,9 +233,28 @@ async def test_scope_and_purpose_matching_is_exact(tmp_path: Path) -> None:
     evidence = SuppressionCandidate("actor-1", evidence_id="evidence-1")
     assert (await backend.resolve_suppression(evidence, OrdinaryMemoryPurpose.RECALL)).denied
     assert not (await backend.resolve_suppression(evidence, OrdinaryMemoryPurpose.EXPORT)).denied
+    assert not (await backend.resolve_suppression(evidence, OrdinaryMemoryPurpose.MUTATION)).denied
+    await backend.suppress(
+        SuppressionRequest(
+            "forget-mutation-only",
+            "actor-1",
+            SuppressionScopeKind.EVIDENCE,
+            "evidence-2",
+            "user_forget",
+            33.5,
+            OrdinaryMemoryPurpose.MUTATION,
+        )
+    )
+    mutation_evidence = SuppressionCandidate("actor-1", evidence_id="evidence-2")
+    assert (
+        await backend.resolve_suppression(mutation_evidence, OrdinaryMemoryPurpose.MUTATION)
+    ).denied
+    assert not (
+        await backend.resolve_suppression(mutation_evidence, OrdinaryMemoryPurpose.READ)
+    ).denied
     assert not (
         await backend.resolve_suppression(
-            SuppressionCandidate("actor-1", evidence_id="evidence-2"),
+            SuppressionCandidate("actor-1", evidence_id="evidence-3"),
             OrdinaryMemoryPurpose.RECALL,
         )
     ).denied

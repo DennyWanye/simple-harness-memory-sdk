@@ -39,6 +39,7 @@ class OrdinaryMemoryPurpose(StrEnum):
     READ = "read"
     SEARCH = "search"
     RECALL = "recall"
+    MUTATION = "mutation"
     EXPORT = "export"
     PROJECTION = "projection"
 

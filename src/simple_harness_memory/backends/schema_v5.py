@@ -422,6 +422,19 @@ CREATE TABLE outbox (
     updated_at REAL NOT NULL CHECK (updated_at >= 0),
     UNIQUE (principal_id, topic, idempotency_key)
 );
+CREATE TRIGGER outbox_identity_immutable_update
+BEFORE UPDATE ON outbox
+WHEN NEW.outbox_id != OLD.outbox_id
+ OR NEW.principal_id != OLD.principal_id
+ OR NEW.topic != OLD.topic
+ OR NEW.idempotency_key != OLD.idempotency_key
+ OR NEW.payload != OLD.payload
+ OR NEW.payload_hash != OLD.payload_hash
+ OR NEW.created_at != OLD.created_at
+BEGIN SELECT RAISE(ABORT, 'immutable outbox identity'); END;
+CREATE TRIGGER outbox_immutable_delete
+BEFORE DELETE ON outbox
+BEGIN SELECT RAISE(ABORT, 'immutable outbox'); END;
 CREATE TABLE embedding_lineages (
     lineage_id TEXT PRIMARY KEY,
     kind TEXT NOT NULL,
@@ -473,8 +486,11 @@ CREATE INDEX cognitive_memory_head_lookup
     ON cognitive_memory_heads(principal_id, memory_type, updated_at, memory_id);
 CREATE TABLE cognitive_memory_revisions (
     memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
     revision INTEGER NOT NULL CHECK (revision >= 1),
-    operation_id TEXT NOT NULL UNIQUE,
+    plan_id TEXT NOT NULL,
+    plan_hash TEXT NOT NULL,
+    operation_id TEXT NOT NULL,
     task_scope_id TEXT,
     lifecycle_state TEXT NOT NULL,
     epistemic_status TEXT NOT NULL,
@@ -490,6 +506,7 @@ CREATE TABLE cognitive_memory_revisions (
     valid_to REAL,
     created_at REAL NOT NULL CHECK (created_at >= 0),
     PRIMARY KEY (memory_id, revision),
+    UNIQUE (principal_id, plan_id, operation_id),
     CHECK (valid_to IS NULL OR valid_from IS NULL OR valid_to >= valid_from)
 );
 CREATE INDEX cognitive_memory_revision_lookup
@@ -664,6 +681,8 @@ BEGIN SELECT RAISE(ABORT, 'immutable cognitive task scope origin'); END;
 CREATE TABLE cognitive_relations (
     relation_id TEXT PRIMARY KEY,
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    plan_id TEXT NOT NULL,
+    plan_hash TEXT NOT NULL,
     source_memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
     source_revision INTEGER NOT NULL,
     relation_kind TEXT NOT NULL CHECK (
@@ -674,7 +693,10 @@ CREATE TABLE cognitive_relations (
     operation_id TEXT NOT NULL,
     created_at REAL NOT NULL CHECK (created_at >= 0),
     relation_hash TEXT NOT NULL UNIQUE,
-    UNIQUE (operation_id, relation_kind, source_memory_id, target_memory_id),
+    UNIQUE (
+        principal_id, plan_id, operation_id, relation_kind,
+        source_memory_id, source_revision, target_memory_id, target_revision
+    ),
     FOREIGN KEY (source_memory_id, source_revision)
         REFERENCES cognitive_memory_revisions(memory_id, revision),
     FOREIGN KEY (target_memory_id, target_revision)
@@ -686,6 +708,70 @@ BEGIN SELECT RAISE(ABORT, 'immutable cognitive relation'); END;
 CREATE TRIGGER cognitive_relations_immutable_delete
 BEFORE DELETE ON cognitive_relations
 BEGIN SELECT RAISE(ABORT, 'immutable cognitive relation'); END;
+CREATE TABLE cognitive_classification_decisions (
+    classification_decision_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    plan_id TEXT NOT NULL,
+    plan_hash TEXT NOT NULL,
+    operation_id TEXT NOT NULL,
+    memory_id TEXT NOT NULL,
+    memory_revision INTEGER NOT NULL,
+    policy_id TEXT NOT NULL,
+    policy_version TEXT NOT NULL,
+    policy_authority_ref TEXT NOT NULL,
+    policy_hash TEXT NOT NULL,
+    policy_privacy_class TEXT NOT NULL,
+    policy_attributes_json BLOB NOT NULL,
+    target_memory_id TEXT,
+    target_revision INTEGER,
+    target_privacy_class TEXT,
+    target_attributes_json BLOB NOT NULL,
+    proposed_privacy_class TEXT NOT NULL,
+    proposed_attributes_json BLOB NOT NULL,
+    effective_privacy_class TEXT NOT NULL,
+    effective_attributes_json BLOB NOT NULL,
+    decision_json BLOB NOT NULL,
+    decision_hash TEXT NOT NULL UNIQUE,
+    created_at REAL NOT NULL CHECK (created_at >= 0),
+    UNIQUE (principal_id, plan_id, operation_id),
+    FOREIGN KEY (memory_id, memory_revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision),
+    CHECK (
+        (target_memory_id IS NULL AND target_revision IS NULL
+            AND target_privacy_class IS NULL)
+        OR
+        (target_memory_id IS NOT NULL AND target_revision >= 1
+            AND target_privacy_class IS NOT NULL)
+    )
+);
+CREATE TRIGGER cognitive_classification_decisions_immutable_update
+BEFORE UPDATE ON cognitive_classification_decisions
+BEGIN SELECT RAISE(ABORT, 'immutable cognitive classification decision'); END;
+CREATE TRIGGER cognitive_classification_decisions_immutable_delete
+BEFORE DELETE ON cognitive_classification_decisions
+BEGIN SELECT RAISE(ABORT, 'immutable cognitive classification decision'); END;
+CREATE TABLE cognitive_classification_evidence_authorities (
+    classification_decision_id TEXT NOT NULL
+        REFERENCES cognitive_classification_decisions(classification_decision_id),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 1),
+    span_hash TEXT NOT NULL,
+    evidence_id TEXT NOT NULL REFERENCES evidence_envelopes(evidence_id),
+    authority_schema_version INTEGER NOT NULL CHECK (authority_schema_version >= 1),
+    authority_id TEXT NOT NULL,
+    authority_hash TEXT NOT NULL,
+    issuer_ref TEXT NOT NULL,
+    classification_authority_ref TEXT NOT NULL,
+    required_privacy_class TEXT NOT NULL,
+    required_attributes_json BLOB NOT NULL,
+    PRIMARY KEY (classification_decision_id, ordinal),
+    UNIQUE (classification_decision_id, span_hash)
+);
+CREATE TRIGGER cognitive_classification_evidence_authorities_immutable_update
+BEFORE UPDATE ON cognitive_classification_evidence_authorities
+BEGIN SELECT RAISE(ABORT, 'immutable cognitive classification evidence authority'); END;
+CREATE TRIGGER cognitive_classification_evidence_authorities_immutable_delete
+BEFORE DELETE ON cognitive_classification_evidence_authorities
+BEGIN SELECT RAISE(ABORT, 'immutable cognitive classification evidence authority'); END;
 CREATE TABLE memory_mutation_receipts (
     receipt_id TEXT PRIMARY KEY,
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
@@ -701,10 +787,16 @@ CREATE TABLE memory_mutation_receipts (
     committed_revision INTEGER NOT NULL CHECK (committed_revision >= base_revision),
     canonical_operation_ids_json BLOB NOT NULL,
     apply_mode TEXT NOT NULL CHECK (apply_mode = 'strict_atomic'),
+    classification_decision_refs_json BLOB NOT NULL,
+    classification_decisions_hash TEXT NOT NULL,
+    action_authority_refs_json BLOB NOT NULL,
+    action_authorities_hash TEXT NOT NULL,
+    transaction_started_at REAL NOT NULL CHECK (transaction_started_at >= 0),
     receipt_json BLOB NOT NULL,
     receipt_hash TEXT NOT NULL UNIQUE,
     committed_at REAL NOT NULL CHECK (committed_at >= 0),
     UNIQUE (principal_id, idempotency_key),
+    CHECK (transaction_started_at <= committed_at),
     CHECK (committed_revision IN (base_revision, base_revision + 1))
 );
 CREATE TRIGGER memory_mutation_receipts_immutable_update
@@ -713,6 +805,41 @@ BEGIN SELECT RAISE(ABORT, 'immutable mutation receipt'); END;
 CREATE TRIGGER memory_mutation_receipts_immutable_delete
 BEFORE DELETE ON memory_mutation_receipts
 BEGIN SELECT RAISE(ABORT, 'immutable mutation receipt'); END;
+CREATE TABLE memory_action_authority_consumptions (
+    consumption_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    plan_id TEXT NOT NULL,
+    plan_hash TEXT NOT NULL,
+    plan_intent_hash TEXT NOT NULL,
+    operation_id TEXT NOT NULL,
+    canonical_operation_index INTEGER NOT NULL CHECK (canonical_operation_index >= 1),
+    action_kind TEXT NOT NULL CHECK (action_kind IN ('revise', 'supersede', 'suppress')),
+    target_memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
+    target_revision INTEGER NOT NULL CHECK (target_revision >= 1),
+    intent_json BLOB NOT NULL,
+    intent_hash TEXT NOT NULL,
+    authority_ref_json BLOB NOT NULL,
+    authority_ref_hash TEXT NOT NULL,
+    authority_schema_version INTEGER NOT NULL CHECK (authority_schema_version >= 1),
+    authority_id TEXT NOT NULL,
+    authority_hash TEXT NOT NULL,
+    issuer_ref TEXT NOT NULL,
+    nonce TEXT NOT NULL,
+    replay_identity TEXT NOT NULL UNIQUE,
+    authority_json BLOB NOT NULL,
+    issued_at REAL NOT NULL CHECK (issued_at >= 0),
+    expires_at REAL NOT NULL CHECK (expires_at > issued_at),
+    consumed_at REAL NOT NULL CHECK (consumed_at >= issued_at AND consumed_at < expires_at),
+    consumption_hash TEXT NOT NULL UNIQUE,
+    UNIQUE (issuer_ref, nonce),
+    UNIQUE (principal_id, plan_id, operation_id)
+);
+CREATE TRIGGER memory_action_authority_consumptions_immutable_update
+BEFORE UPDATE ON memory_action_authority_consumptions
+BEGIN SELECT RAISE(ABORT, 'immutable memory action authority consumption'); END;
+CREATE TRIGGER memory_action_authority_consumptions_immutable_delete
+BEFORE DELETE ON memory_action_authority_consumptions
+BEGIN SELECT RAISE(ABORT, 'immutable memory action authority consumption'); END;
 CREATE TABLE memory_mutation_decisions (
     decision_id TEXT PRIMARY KEY,
     receipt_id TEXT NOT NULL REFERENCES memory_mutation_receipts(receipt_id),
@@ -721,13 +848,69 @@ CREATE TABLE memory_mutation_decisions (
     reason_code TEXT NOT NULL,
     before_ref TEXT,
     after_ref TEXT,
+    classification_decision_id TEXT NOT NULL
+        REFERENCES cognitive_classification_decisions(classification_decision_id),
+    classification_decision_hash TEXT NOT NULL,
+    action_authority_consumption_id TEXT
+        REFERENCES memory_action_authority_consumptions(consumption_id),
+    action_authority_consumption_hash TEXT,
     decision_json BLOB NOT NULL,
     decision_hash TEXT NOT NULL UNIQUE,
-    UNIQUE (receipt_id, operation_id)
+    UNIQUE (receipt_id, operation_id),
+    CHECK (
+        (action_authority_consumption_id IS NULL
+            AND action_authority_consumption_hash IS NULL)
+        OR
+        (action_authority_consumption_id IS NOT NULL
+            AND action_authority_consumption_hash IS NOT NULL)
+    )
 );
 CREATE TRIGGER memory_mutation_decisions_immutable_update
 BEFORE UPDATE ON memory_mutation_decisions
 BEGIN SELECT RAISE(ABORT, 'immutable mutation decision'); END;
+CREATE TABLE memory_mutation_rejection_audits (
+    rejection_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL,
+    plan_id TEXT NOT NULL,
+    plan_hash TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    base_revision INTEGER NOT NULL CHECK (base_revision >= 1),
+    policy_id TEXT,
+    policy_hash TEXT,
+    reason_code TEXT NOT NULL,
+    rejection_json BLOB NOT NULL,
+    rejection_hash TEXT NOT NULL UNIQUE,
+    rejected_at REAL NOT NULL CHECK (rejected_at >= 0),
+    UNIQUE (principal_id, idempotency_key, plan_hash)
+);
+CREATE TRIGGER memory_mutation_rejection_audits_immutable_update
+BEFORE UPDATE ON memory_mutation_rejection_audits
+BEGIN SELECT RAISE(ABORT, 'immutable mutation rejection audit'); END;
+CREATE TRIGGER memory_mutation_rejection_audits_immutable_delete
+BEFORE DELETE ON memory_mutation_rejection_audits
+BEGIN SELECT RAISE(ABORT, 'immutable mutation rejection audit'); END;
+CREATE TABLE memory_mutation_apply_results (
+    result_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL,
+    plan_id TEXT NOT NULL,
+    plan_hash TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (
+        outcome IN ('committed', 'needs_user_confirmation', 'rejected')
+    ),
+    reason_code TEXT NOT NULL,
+    receipt_id TEXT REFERENCES memory_mutation_receipts(receipt_id),
+    result_json BLOB NOT NULL,
+    result_hash TEXT NOT NULL UNIQUE,
+    decided_at REAL NOT NULL CHECK (decided_at >= 0),
+    UNIQUE (principal_id, idempotency_key, plan_hash)
+);
+CREATE TRIGGER memory_mutation_apply_results_immutable_update
+BEFORE UPDATE ON memory_mutation_apply_results
+BEGIN SELECT RAISE(ABORT, 'immutable mutation apply result'); END;
+CREATE TRIGGER memory_mutation_apply_results_immutable_delete
+BEFORE DELETE ON memory_mutation_apply_results
+BEGIN SELECT RAISE(ABORT, 'immutable mutation apply result'); END;
 CREATE TRIGGER memory_mutation_decisions_immutable_delete
 BEFORE DELETE ON memory_mutation_decisions
 BEGIN SELECT RAISE(ABORT, 'immutable mutation decision'); END;
@@ -1002,8 +1185,13 @@ REQUIRED_TABLES = frozenset(
         "cognitive_evidence_spans",
         "cognitive_revision_task_scope_origins",
         "cognitive_relations",
+        "cognitive_classification_decisions",
+        "cognitive_classification_evidence_authorities",
         "memory_mutation_receipts",
+        "memory_action_authority_consumptions",
         "memory_mutation_decisions",
+        "memory_mutation_rejection_audits",
+        "memory_mutation_apply_results",
         "procedure_observations",
         "prospective_trigger_events",
         "conversation_evidence_registrations",

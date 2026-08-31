@@ -2,28 +2,42 @@
 
 # ARCHITECTURE — simple-harness-memory-sdk（v0.6.0 candidate）
 
-> 最后更新：2026-08-30
-> 当前事实：S3 runtime、四类 taxonomy offline migration、S4 storage/embedding、S5 candidate packaging
-> 与 S6 simple_harness 产品接线/真人测试均已完成；Memory observability S1+S2 已通过自动化验收。
+> 最后更新：2026-08-31
+> 当前事实：Human Memory V0/S1/S2 与 S3 Task 1/2 已闭合；S3 Task 3—7、Host/UI 接线与最终 candidate
+> packaging 尚未完成。旧 Agent Memory v1 能力仍保留，但不是新认知 mutation 的 authority。
 
-## Human Memory Program 当前边界（2026-08-30）
+## Human Memory Program 当前边界（2026-08-31）
 
 以下是 0.6 candidate 的已验证生产边界：
 
-- 长期模型仍以 `Message` 和单一 `Fact(category)` 为核心；`Episode`、`Semantic Claim`、`Procedure`、
-  `Prospective Intent` 尚无独立 schema、状态机或公共 API。
-- fresh `human-memory-v1` evidence row 不可覆盖；普通读由 append-only suppression authority 控制。
+- fresh `human-memory-v1` schema v5 保存不可覆盖的原始 evidence、conversation registration、suppression、
+  durable analysis，以及 Episode、Semantic、Procedure、Prospective 四类 typed revision/head/relation。Working
+  Memory 仍只存在于运行 Context，不建立长期存储表。
+- `MemoryMutationPlan` 只接受 Harness mutation schema v4；四类 payload、生命周期、epistemic/conflict/
+  verification/valid-time、classification 与 TaskScope origin 在同一 strict-atomic transaction 落库。
+- CREATE 依靠 exact admitted evidence 与 Memory classification policy；修改既有记忆的 REVISE、SUPERSEDE、
+  SUPPRESS 必须解析 Host `MemoryActionAuthority` schema v2，并精确绑定 subject、whole plan intent、canonical
+  operation index、target ID/revision、evidence/span、run/turn、expiry、issuer 与 replay identity。
+- 缺 action authority 返回 typed `NEEDS_USER_CONFIRMATION` 且不写认知状态；无效、过期、lookup miss、clock
+  rollback 或 nonce replay 返回 typed `REJECTED` 并写 durable rejection audit。成功消费在 mutation transaction
+  内以 `(issuer_ref, nonce)` 和 `replay_identity` 双唯一锁定；exact idempotent receipt replay不重复消费。
+- CONTEST 不是 action-authority 旁路：target payload、lifecycle、epistemic、verification 与 valid-time 必须完全
+  不变，只允许 conflict flag 进入 CONTESTED；否则原子拒绝。
+- evidence classification 由 Memory policy、全部 Host `EvidenceItemAuthority` floor、target 与 proposal 做单调
+  privacy max / attribute union。classification、action consumption、mutation decision、receipt 与 apply result
+  都是不可变 hash-bound 审计链；close→tamper→reopen resolver fail closed。
 - backend 与所有 production builders 都没有 fact extractor 参数或 worker 启动路径；旧 regex
   extractor 只存在于 `tests/fixtures`，不进入 source distribution 的生产包或 wheel。Harness 0.7 typed
   analysis 是新的 LLM 边界。
 - 兼容 `Fact` 的 `category` 只作标签，`decay_rate` 为显式 neutral 值；category 不再决定保留周期，
   `daily_decay()` 也不再按 category 自动遗忘 Fact。
 - public `MemoryManager`、`MemoryBackend` 与 `BaseMemoryBackend` 不存在会话物理删除方法。
-- 召回协议仍只接受 query text、personal/family scopes 与统一结果 payload；尚无 `RecallPlan`、认知类型、
+- 新认知召回 pipeline 尚未接入公开 manager/port；旧召回仍只接受 query text、personal/family scopes 与统一
+  结果 payload，尚无完整 `RecallPlan`、认知类型、
   recipient/purpose、epistemic/conflict/expiry 或跨 TaskScope 命中审计。
 - `DigitalTwin` 仍是 Fact 聚合对象和 JSON 快照；没有展示专用的可追溯 graph projection，也没有
   “不得进入 Agent Context/召回/动作”的机器边界。
-- 本 program 不迁移 v4 内容数据；它必须以 fresh schema 初始化，旧数据库由 loader 稳定拒绝。
+- 本 program 不迁移旧内容数据；schema v5 必须 fresh 初始化，旧数据库由 loader 稳定拒绝。
 
 ## 分层
 
@@ -186,6 +200,12 @@ src/simple_harness_memory/
   非 Prerelease。
 
 ## 验证状态
+
+- Human Memory S3 Task 1/2 candidate：Harness exact HEAD `baaefac2`（Mutation v4 / Action Authority v2）；
+  Memory 全仓 `758 passed, 9 skipped`，Ruff 全绿，mypy `107 source files` 全绿，`git diff --check` 通过。
+  独立 mutation/classification/action-authority closure audit 为 P0/P1/P2=0；focused `105 passed`，覆盖 missing/
+  invalid/expired/lookup-miss/clock-rollback/replay、CONTEST 旁路、late fault 原子回滚、principal attribution 与
+  receipt/ledger/decision corruption close→tamper→reopen。该证据只关闭 S3 Task 1/2，不代表 S3 整体完成。
 
 - 0.6.0 Task 6 source audit：冻结 Harness 0.7 下全仓 `493 passed, 8 skipped`；Ruff、项目 mypy
   `97 source files`、3 个发布脚本 strict mypy 与 REUSE 全绿。非最终 dirty-tree wheel/sdist 通过 Twine，

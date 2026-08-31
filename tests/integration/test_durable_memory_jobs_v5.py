@@ -14,6 +14,7 @@ from simple_harness.contracts import JsonValue, canonical_json
 from simple_harness.runtime import (
     AnalysisBudget,
     AnalysisValidationStatus,
+    ConflictStatus,
     DeliveryRecipient,
     DisclosureContext,
     DisclosureGeneration,
@@ -21,9 +22,15 @@ from simple_harness.runtime import (
     DisclosureReasonCode,
     DisclosureSource,
     DisclosureTrust,
+    EpistemicStatus,
+    EvidenceActorRole,
+    EvidenceProvenance,
     EvidenceReasonCode,
     EvidenceRef,
     EvidenceSourceKind,
+    EvidenceSpanRef,
+    EvidenceSupportKind,
+    InformationAttribute,
     IntendedAudience,
     LongTermMemoryType,
     MemoryAnalysisDeliveryAuthorityPort,
@@ -35,8 +42,17 @@ from simple_harness.runtime import (
     MemoryMutationKind,
     MemoryMutationOperation,
     MemoryMutationPlan,
+    MemoryMutationPlanOutcome,
+    PrivacyClass,
     SanitizedEvidenceEnvelope,
     SanitizedEvidenceReceipt,
+    SemanticLifecycleState,
+    SemanticMemoryPayload,
+    ValidTimeInterval,
+    VerificationState,
+)
+from simple_harness.runtime.evidence_protocol import (
+    EVIDENCE_NORMALIZATION_IDENTITY_UTF8_V1,
 )
 
 from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
@@ -83,6 +99,17 @@ def _hash(value: JsonValue) -> str:
     return hashlib.sha256(canonical_json(value).encode()).hexdigest()
 
 
+def _stable_id(namespace: str, *parts: str) -> str:
+    payload = canonical_json(
+        {
+            "schema_version": 1,
+            "namespace": namespace,
+            "parts": list(parts),
+        }
+    )
+    return f"{namespace}-{hashlib.sha256(payload.encode('utf-8')).hexdigest()}"
+
+
 def _disclosure() -> DisclosureContext:
     return DisclosureContext(
         "run-1",
@@ -100,7 +127,10 @@ def _disclosure() -> DisclosureContext:
 
 
 def _authority(index: int) -> tuple[SanitizedEvidenceEnvelope, SanitizedEvidenceReceipt]:
-    payload: dict[str, JsonValue] = {"public_text": f"preference-{index}"}
+    payload: dict[str, JsonValue] = {
+        "item_id": f"message-{index}",
+        "public_text": f"preference-{index}",
+    }
     envelope = SanitizedEvidenceEnvelope(
         f"evidence-{index}",
         "run-1",
@@ -187,24 +217,70 @@ class _Executor:
         elif self.no_mutation:
             structured = {"outcome": "no_mutation", "operations": []}
         else:
+            evidence_spans: list[EvidenceSpanRef] = []
+            for evidence_ref in request.ordered_evidence_refs:
+                record = await self.backend.read_ingested_evidence(evidence_ref.evidence_id)
+                envelope = record.envelope
+                receipt = record.admission_receipt
+                item_id = str(envelope.sanitized_payload["item_id"])
+                public_text = str(envelope.sanitized_payload["public_text"])
+                evidence_spans.append(
+                    EvidenceSpanRef(
+                        span_id=f"analysis-span-{evidence_ref.ordinal}",
+                        evidence_id=envelope.evidence_id,
+                        envelope_hash=envelope.envelope_hash,
+                        sanitized_hash=envelope.sanitized_hash,
+                        admission_receipt_id=receipt.receipt_id,
+                        admission_receipt_hash=receipt.receipt_hash,
+                        source_kind=envelope.source_kind,
+                        item_ordinal=1,
+                        item_id=item_id,
+                        item_json_pointer="/public_text",
+                        start_byte=0,
+                        end_byte=len(public_text.encode("utf-8")),
+                        exact_quote=public_text,
+                        quote_hash=hashlib.sha256(public_text.encode("utf-8")).hexdigest(),
+                        source_hash=envelope.source_hash,
+                        normalization_version=EVIDENCE_NORMALIZATION_IDENTITY_UTF8_V1,
+                        actor_role=EvidenceActorRole.USER,
+                        provenance=EvidenceProvenance.AUTHENTICATED_USER,
+                        support_kind=EvidenceSupportKind.EXPLICIT_USER_ASSERTION,
+                        typed_observation=None,
+                    )
+                )
             operation = MemoryMutationOperation(
-                "operation-1",
-                MemoryMutationKind.CREATE,
-                LongTermMemoryType.SEMANTIC,
-                None,
-                "User prefers concise answers.",
-                request.ordered_evidence_refs,
-                "explicit_user_preference",
+                operation_id="operation-1",
+                kind=MemoryMutationKind.CREATE,
+                memory_type=LongTermMemoryType.SEMANTIC,
+                payload=SemanticMemoryPayload(
+                    subject_entity="user:self",
+                    predicate="response_style",
+                    object_value="concise",
+                    qualifiers=("default",),
+                ),
+                target=None,
+                depends_on_operation_ids=(),
+                lifecycle_state=SemanticLifecycleState.ACTIVE,
+                epistemic_status=EpistemicStatus.EXPLICIT_USER,
+                conflict_status=ConflictStatus.UNCONTESTED,
+                verification_state=VerificationState.SOURCE_BOUND,
+                valid_time_interval=ValidTimeInterval(None, None),
+                proposed_privacy_class=PrivacyClass.PERSONAL,
+                proposed_information_attributes=(InformationAttribute.PREFERENCE,),
+                evidence_spans=tuple(evidence_spans),
+                reason_code="explicit_user_preference",
             )
             structured = MemoryMutationPlan(
-                "plan-1",
-                request.run_id,
-                request.subject,
-                self.base_revision,
-                (operation,),
-                request.disclosure_context,
-                request.ordered_evidence_refs,
-                request.idempotency_key,
+                plan_id="plan-1",
+                run_id=request.run_id,
+                turn_id=_stable_id("analysis-batch-turn", request.job_id),
+                subject=request.subject,
+                base_revision=self.base_revision,
+                outcome=MemoryMutationPlanOutcome.MUTATE,
+                operations=(operation,),
+                disclosure_context=request.disclosure_context,
+                evidence_refs=request.ordered_evidence_refs,
+                idempotency_key=request.idempotency_key,
             ).to_json()
         result = MemoryAnalysisResult(
             request.job_id,

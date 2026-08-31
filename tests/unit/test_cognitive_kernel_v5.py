@@ -18,6 +18,7 @@ from simple_harness.runtime.disclosure_protocol import (
     IntendedAudience,
 )
 from simple_harness.runtime.evidence_protocol import (
+    EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION,
     EVIDENCE_NORMALIZATION_IDENTITY_UTF8_V1,
     AdmittedEvidenceAuthority,
     EvidenceActorRole,
@@ -36,6 +37,8 @@ from simple_harness.runtime.memory_protocol import (
     EpisodeLifecycleState,
     EpisodeMemoryPayload,
     EpistemicStatus,
+    InformationAttribute,
+    PrivacyClass,
     ProcedureLifecycleState,
     ProcedureMemoryPayload,
     ProcedureRiskLevel,
@@ -153,6 +156,7 @@ def _span(
 
 def _item_authority(span: EvidenceSpanRef) -> EvidenceItemAuthority:
     return EvidenceItemAuthority(
+        schema_version=EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION,
         authority_id="item-authority-1",
         evidence_id=span.evidence_id,
         envelope_hash=span.envelope_hash,
@@ -165,6 +169,9 @@ def _item_authority(span: EvidenceSpanRef) -> EvidenceItemAuthority:
         normalization_version=span.normalization_version,
         actor_role=span.actor_role,
         provenance=span.provenance,
+        required_privacy_class=PrivacyClass.PERSONAL,
+        required_information_attributes=(InformationAttribute.PREFERENCE,),
+        classification_authority_ref="host-classification-1",
         issuer_ref="host-evidence-store-1",
     )
 
@@ -191,9 +198,7 @@ class _Verifier:
         return self.observation
 
 
-async def _verified(
-    *, support: EvidenceSupportKind = EvidenceSupportKind.EXPLICIT_USER_ASSERTION
-):
+async def _verified(*, support: EvidenceSupportKind = EvidenceSupportKind.EXPLICIT_USER_ASSERTION):
     envelope, receipt = _admitted("我现在住在上海")
     span = _span(envelope, receipt, support=support)
     verifier = _Verifier(AdmittedEvidenceAuthority(envelope, receipt, _item_authority(span)))
@@ -333,14 +338,17 @@ def test_procedure_requires_independent_runs_and_high_risk_never_auto_activates(
         _procedure_evidence(applicability, scope="task-1", receipt="receipt-1"),
         _procedure_evidence(applicability, scope="task-1", receipt="retry"),
     )
-    assert qualify_procedure(
-        procedure_revision=1,
-        applicability=applicability,
-        hazard=ProcedureHazard.NONE,
-        proposed_risk_level=ProcedureRiskLevel.LOW,
-        evidence=repeated,
-        now=100.0,
-    ).state is ProcedureLifecycleState.DRAFT
+    assert (
+        qualify_procedure(
+            procedure_revision=1,
+            applicability=applicability,
+            hazard=ProcedureHazard.NONE,
+            proposed_risk_level=ProcedureRiskLevel.LOW,
+            evidence=repeated,
+            now=100.0,
+        ).state
+        is ProcedureLifecycleState.DRAFT
+    )
 
     independent = repeated + (
         _procedure_evidence(applicability, scope="task-2", receipt="receipt-2"),
@@ -386,15 +394,18 @@ def test_procedure_failure_drift_and_exact_payload_state() -> None:
         now=100.0,
     )
     assert result.state is ProcedureLifecycleState.REVISED
-    assert qualify_procedure(
-        procedure_revision=1,
-        applicability=applicability,
-        hazard=ProcedureHazard.NONE,
-        proposed_risk_level=ProcedureRiskLevel.LOW,
-        evidence=(),
-        now=100.0,
-        current_applicability_fingerprint="f" * 64,
-    ).state is ProcedureLifecycleState.INAPPLICABLE
+    assert (
+        qualify_procedure(
+            procedure_revision=1,
+            applicability=applicability,
+            hazard=ProcedureHazard.NONE,
+            proposed_risk_level=ProcedureRiskLevel.LOW,
+            evidence=(),
+            now=100.0,
+            current_applicability_fingerprint="f" * 64,
+        ).state
+        is ProcedureLifecycleState.INAPPLICABLE
+    )
 
     state = ProcedureState(
         memory_id="procedure-1",
