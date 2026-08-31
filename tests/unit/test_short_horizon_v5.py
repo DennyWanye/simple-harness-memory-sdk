@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Mapping
 from dataclasses import replace
 from typing import cast
@@ -11,6 +10,9 @@ from typing import cast
 import pytest
 from simple_harness.contracts import FrozenJsonValue, JsonValue, fingerprint_json
 from simple_harness.runtime import (
+    EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION,
+    EVIDENCE_NORMALIZATION_IDENTITY_UTF8_V1,
+    AdmittedEvidenceAuthority,
     ConversationEvidenceMetadata,
     ConversationEvidenceMetadataReceipt,
     ConversationEvidenceRegistration,
@@ -23,22 +25,23 @@ from simple_harness.runtime import (
     DisclosureReasonCode,
     DisclosureSource,
     DisclosureTrust,
+    EvidenceActorRole,
+    EvidenceItemAuthority,
+    EvidenceProvenance,
     EvidenceReasonCode,
     EvidenceSourceKind,
+    InformationAttribute,
     IntendedAudience,
+    PrivacyClass,
     SanitizedEvidenceEnvelope,
     SanitizedEvidenceReceipt,
+    authorize_conversation_public_text,
 )
 
 from simple_harness_memory.core.short_horizon import (
     SHORT_HORIZON_RETENTION_SECONDS,
-    ExactVectorGenerationCache,
-    PermissionFilteredFtsCandidates,
-    ShortHorizonDegradationCode,
     ShortHorizonIndexError,
-    ShortHorizonSearchRow,
     build_short_horizon_chunks,
-    search_short_horizon,
 )
 
 
@@ -69,6 +72,7 @@ def _registration(
     payload: dict[str, JsonValue] = {
         "item_id": f"message-{sequence}",
         "public_text": f"Python project note {sequence}",
+        "private_note": f"never-index-this-{sequence}",
     }
     envelope = SanitizedEvidenceEnvelope(
         evidence_id=evidence_id,
@@ -99,29 +103,51 @@ def _registration(
         evidence_refs=(),
         admitted_at=occurred_at,
     )
-    metadata = ConversationEvidenceMetadata(
-        metadata_id=f"metadata-{sequence}",
-        authority_issuer_id="host-conversation-registry",
+    item_authority = EvidenceItemAuthority(
+        schema_version=EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION,
+        authority_id=f"item-authority-{sequence}",
         evidence_id=envelope.evidence_id,
         envelope_hash=envelope.envelope_hash,
-        admission_receipt_id=admission.receipt_id,
-        admission_receipt_hash=admission.receipt_hash,
-        run_id=envelope.run_id,
-        subject=envelope.subject,
-        source_hash=envelope.source_hash,
         sanitized_hash=envelope.sanitized_hash,
-        conversation_id=conversation_id,
-        primary_conversation_id="primary-conversation",
-        causal_group_id=f"group-{sequence}",
-        causal_group_sequence=sequence,
+        source_hash=envelope.source_hash,
+        source_kind=envelope.source_kind,
         item_ordinal=1,
-        group_item_count=group_item_count,
-        ordered_group_manifest_hash=f"{(sequence + 1) % 10}" * 64,
-        role=ConversationEvidenceRole.USER,
-        occurred_at=occurred_at,
-        task_scope_id=f"task-{sequence % 2}",
-        tool_causal_link=None,
-        entities=("python",),
+        item_id=f"message-{sequence}",
+        item_json_pointer="/public_text",
+        normalization_version=EVIDENCE_NORMALIZATION_IDENTITY_UTF8_V1,
+        actor_role=EvidenceActorRole.USER,
+        provenance=EvidenceProvenance.AUTHENTICATED_USER,
+        required_privacy_class=PrivacyClass.PERSONAL,
+        required_information_attributes=(InformationAttribute.WORK,),
+        classification_authority_ref="classification-authority-1",
+        issuer_ref="host-evidence-registry",
+    )
+    metadata = authorize_conversation_public_text(
+        ConversationEvidenceMetadata(
+            metadata_id=f"metadata-{sequence}",
+            authority_issuer_id="host-conversation-registry",
+            evidence_id=envelope.evidence_id,
+            envelope_hash=envelope.envelope_hash,
+            admission_receipt_id=admission.receipt_id,
+            admission_receipt_hash=admission.receipt_hash,
+            run_id=envelope.run_id,
+            subject=envelope.subject,
+            source_hash=envelope.source_hash,
+            sanitized_hash=envelope.sanitized_hash,
+            conversation_id=conversation_id,
+            primary_conversation_id="primary-conversation",
+            causal_group_id=f"group-{sequence}",
+            causal_group_sequence=sequence,
+            item_ordinal=1,
+            group_item_count=group_item_count,
+            ordered_group_manifest_hash=f"{(sequence + 1) % 10}" * 64,
+            role=ConversationEvidenceRole.USER,
+            occurred_at=occurred_at,
+            task_scope_id=f"task-{sequence % 2}",
+            tool_causal_link=None,
+            entities=("python",),
+        ),
+        AdmittedEvidenceAuthority(envelope, admission, item_authority),
     )
     metadata_receipt = ConversationEvidenceMetadataReceipt(
         receipt_id=f"metadata-receipt-{sequence}",
@@ -145,6 +171,7 @@ def _registration(
         admission,
         metadata,
         metadata_receipt,
+        item_authority,
     )
     reference = ConversationEvidenceRegistrationRef(
         registration.registration_id,
@@ -193,6 +220,10 @@ async def test_only_authority_registered_groups_outside_recent_ten_are_projected
     assert chunks[0].role_sequence == ("user",)
     assert chunks[0].task_scope_ids == ("task-1",)
     assert chunks[0].entity_refs == ("python",)
+    assert chunks[0].effective_privacy_class is PrivacyClass.PERSONAL
+    assert chunks[0].information_attributes == (InformationAttribute.WORK,)
+    assert chunks[0].classification_authority_refs == ("classification-authority-1",)
+    assert "never-index-this" not in chunks[0].content
     assert chunks[0].expires_at == now - 1 + SHORT_HORIZON_RETENTION_SECONDS
 
 
@@ -252,150 +283,4 @@ async def test_forged_secondary_or_incomplete_registration_is_fail_closed() -> N
             authority=_ProjectionAuthority((incomplete[0],)),
             now=now,
             recent_group_limit=0,
-        )
-
-
-class _FtsAuthority:
-    def __init__(self, result: PermissionFilteredFtsCandidates, *, delay: float = 0) -> None:
-        self.result = result
-        self.delay = delay
-
-    async def permission_filtered_fts_candidates(
-        self,
-        *,
-        query: str,
-        disclosure_context_hash: str,
-        active_generation_id: str,
-        now: float,
-    ) -> PermissionFilteredFtsCandidates:
-        assert query and disclosure_context_hash and active_generation_id and now >= 0
-        if self.delay:
-            await asyncio.sleep(self.delay)
-        return self.result
-
-
-def _search_row(
-    memory_ref: str, content: str, *, expires_at: float = 200.0
-) -> ShortHorizonSearchRow:
-    return ShortHorizonSearchRow(
-        memory_ref=memory_ref,
-        subject="actor-1",
-        content=content,
-        occurred_at=1.0,
-        expires_at=expires_at,
-    )
-
-
-@pytest.mark.asyncio
-async def test_stale_vector_generation_degrades_only_to_permission_filtered_fts() -> None:
-    context_hash = "a" * 64
-    permitted = _search_row("allowed", "python project")
-    candidates = PermissionFilteredFtsCandidates(context_hash, "b" * 64, (permitted,))
-    cache = ExactVectorGenerationCache(
-        generation_id="stale-generation",
-        lineage_id="lineage-1",
-        memory_refs=("allowed", "private"),
-        vectors=((1.0, 0.0), (1.0, 0.0)),
-    )
-
-    result = await search_short_horizon(
-        "python",
-        query_vector=(1.0, 0.0),
-        active_generation_id="active-generation",
-        cache=cache,
-        fts_authority=_FtsAuthority(candidates),
-        disclosure_context_hash=context_hash,
-        now=100.0,
-        limit=5,
-        deadline_ms=100,
-    )
-
-    assert [hit.memory_ref for hit in result.hits] == ["allowed"]
-    assert result.used_generation_id is None
-    assert result.degradation_code is ShortHorizonDegradationCode.VECTOR_DEGRADED
-    assert result.fts_authority_receipt_hash == "b" * 64
-
-
-@pytest.mark.asyncio
-async def test_active_generation_scan_cannot_read_a_row_omitted_by_permission_authority() -> None:
-    context_hash = "a" * 64
-    candidates = PermissionFilteredFtsCandidates(
-        context_hash,
-        "b" * 64,
-        (_search_row("allowed", "python"),),
-    )
-    cache = ExactVectorGenerationCache(
-        generation_id="active-generation",
-        lineage_id="lineage-1",
-        memory_refs=("allowed", "private"),
-        vectors=((0.9, 0.1), (1.0, 0.0)),
-    )
-    result = await search_short_horizon(
-        "python",
-        query_vector=(1.0, 0.0),
-        active_generation_id="active-generation",
-        cache=cache,
-        fts_authority=_FtsAuthority(candidates),
-        disclosure_context_hash=context_hash,
-        now=100.0,
-        limit=5,
-        deadline_ms=100,
-    )
-    assert [hit.memory_ref for hit in result.hits] == ["allowed"]
-    assert result.used_generation_id == "active-generation"
-    assert result.degradation_code is None
-
-
-@pytest.mark.asyncio
-async def test_expired_authority_row_and_hard_deadline_fail_closed() -> None:
-    context_hash = "a" * 64
-    expired = PermissionFilteredFtsCandidates(
-        context_hash,
-        "b" * 64,
-        (_search_row("expired", "python", expires_at=99.0),),
-    )
-    with pytest.raises(ShortHorizonIndexError, match="expired"):
-        await search_short_horizon(
-            "python",
-            query_vector=(1.0,),
-            active_generation_id="active",
-            cache=None,
-            fts_authority=_FtsAuthority(expired),
-            disclosure_context_hash=context_hash,
-            now=100.0,
-            limit=1,
-            deadline_ms=100,
-        )
-
-    permitted = PermissionFilteredFtsCandidates(
-        context_hash,
-        "b" * 64,
-        (_search_row("allowed", "python"),),
-    )
-    timed_out = await search_short_horizon(
-        "python",
-        query_vector=(1.0,),
-        active_generation_id="active",
-        cache=None,
-        fts_authority=_FtsAuthority(permitted, delay=0.02),
-        disclosure_context_hash=context_hash,
-        now=100.0,
-        limit=1,
-        deadline_ms=1,
-    )
-    assert timed_out.hits == ()
-    assert timed_out.fts_authority_receipt_hash is None
-    assert timed_out.degradation_code is ShortHorizonDegradationCode.VECTOR_DEGRADED
-
-    with pytest.raises(ShortHorizonIndexError, match="two-second"):
-        await search_short_horizon(
-            "python",
-            query_vector=(1.0,),
-            active_generation_id="active",
-            cache=None,
-            fts_authority=_FtsAuthority(permitted),
-            disclosure_context_hash=context_hash,
-            now=100.0,
-            limit=1,
-            deadline_ms=2_001,
         )

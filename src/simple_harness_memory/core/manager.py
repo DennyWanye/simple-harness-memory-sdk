@@ -33,9 +33,16 @@ if TYPE_CHECKING:
     from simple_harness import (
         CommittedTurn,
         CommittedTurnReceipt,
+        DisclosureContext,
         MemoryRecallRequest,
         MemoryRecallResult,
         MemoryReleaseRequest,
+    )
+
+    from simple_harness_memory.core.short_horizon import (
+        ShortHorizonGenerationBuildResult,
+        ShortHorizonProjectionBuildResult,
+        ShortHorizonRecallResult,
     )
 
 logger = structlog.get_logger("simple_harness_memory.core.manager")
@@ -86,6 +93,40 @@ class MemoryManager:
     @property
     def backend(self) -> MemoryBackend:
         return self._backend
+
+    async def recall_short_horizon(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        query: str,
+        disclosure_context: DisclosureContext,
+        limit: int = 10,
+        deadline_ms: int = 2_000,
+        now: float | None = None,
+    ) -> ShortHorizonRecallResult:
+        """Recall short-horizon context without exposing vector generations or caches."""
+
+        operation = getattr(self._backend, "recall_short_horizon")
+        return await operation(
+            principal=principal,
+            query=query,
+            disclosure_context=disclosure_context,
+            limit=limit,
+            deadline_ms=deadline_ms,
+            now=now,
+        )
+
+    async def rebuild_short_horizon_projection(
+        self, *, principal: MemoryPrincipal, now: float | None = None
+    ) -> ShortHorizonProjectionBuildResult:
+        operation = getattr(self._backend, "rebuild_short_horizon_projection")
+        return await operation(principal=principal, now=now)
+
+    async def rebuild_short_horizon_generation(
+        self, *, now: float | None = None
+    ) -> ShortHorizonGenerationBuildResult:
+        operation = getattr(self._backend, "rebuild_short_horizon_generation")
+        return await operation(now=now)
 
     @classmethod
     async def build(
@@ -384,9 +425,7 @@ class MemoryManager:
                 attributes={"stage": "released"},
             )
         except MemoryIdempotencyConflict as exc:
-            self._emit_failure(
-                "recall_release", request.query_id, None, "memory_conflict", started
-            )
+            self._emit_failure("recall_release", request.query_id, None, "memory_conflict", started)
             raise harness.AgentMemoryError(harness.AgentMemoryErrorCode.CONFLICT) from exc
         except Exception as exc:
             self._emit_failure(
@@ -522,9 +561,7 @@ class MemoryManager:
                 "observability": dict(self._observability.snapshot()),
             }
         try:
-            storage = await asyncio.wait_for(
-                self._backend.diagnostics_snapshot(), timeout=0.25
-            )
+            storage = await asyncio.wait_for(self._backend.diagnostics_snapshot(), timeout=0.25)
         except BaseException:
             storage = {"health": "degraded", "error_code": "memory_snapshot_unavailable"}
         observer = dict(self._observability.snapshot())

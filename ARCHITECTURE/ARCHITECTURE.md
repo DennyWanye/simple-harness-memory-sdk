@@ -3,7 +3,7 @@
 # ARCHITECTURE — simple-harness-memory-sdk（v0.6.0 candidate）
 
 > 最后更新：2026-08-31
-> 当前事实：Human Memory V0/S1/S2 与 S3 Task 1/2/3 已闭合；S3 Task 4—7、Host/UI 接线与最终 candidate
+> 当前事实：Human Memory V0/S1/S2 与 S3 Task 1/2/3/4 已闭合；S3 Task 5—7、Host/UI 接线与最终 candidate
 > packaging 尚未完成。旧 Agent Memory v1 能力仍保留，但不是新认知 mutation 的 authority。
 
 ## Human Memory Program 当前边界（2026-08-31）
@@ -198,6 +198,16 @@ src/simple_harness_memory/
 - 0.5.0 已发布：tag 指向 `9c92ede`，wheel SHA-256 为
   `c274fa6b2db538c29897f684b3f2f85775cb4b3a6870018e83792ff90b51ea46`；公开下载回验通过。
   base 与 `[harness]` metadata 均要求 `simple-harness-sdk>=0.4,<0.5`。
+- Short-Horizon registration 消费 Harness conversation evidence v3：无授权 registration/raw evidence 仍永久保存，
+  但只有 Host 唯一 RFC6901 `public_text` pointer/hash、item authority、effective privacy、information attributes 与
+  classification authority 全部 exact 的 item 才能进入派生索引；Memory 不扫描 payload 的其他字符串。
+- 最近 10 个完整 causal groups 保持直接上下文，较旧且不超过五天的完整 groups 才生成 disposable chunk；chunk
+  privacy 取最严格值、attributes/ref 做单调并集。到期与 suppression 只删除/排除 chunk/vector/FTS，registration 与
+  evidence 永不删除。
+- `recall_short_horizon` 不接受 generation/cache/query vector。SQLite repository 从 durable active generation/vector
+  rows 重建私有 exact cache；principal/disclosure/time/privacy/classification/suppression 先形成完整 universe，FTS、
+  entity-time 与 vector 在同一 universe 独立排序后融合。cold/stale/deadline 只降级到该 universe 的 FTS/entity-time，
+  不读取 stale vectors；gate/lane/selection/generation/manifest/degradation 均写 privacy-safe immutable audit。
 - 0.5.1 已发布：仅扩大 Harness metadata 范围并增加真实 wheel 矩阵，不改变 Memory 业务模块行为。
   released Harness 0.4.0 与 Harness 0.5.0 candidate/release 是两个强制 clean-venv 格；H0.5 wheel 未就绪时
   必须保持 pending，两个格均通过前不得发布。H0.4.0 released wheel 本地 clean-venv 格已通过，CI 使用
@@ -219,6 +229,11 @@ src/simple_harness_memory/
   receipt/ledger/decision corruption close→tamper→reopen。Task 3 focused `30 passed`，覆盖 Procedure qualification
   epoch/rolling window/first bind/CAS/fault/tamper 与 Prospective ACK/trigger/invalidation/expire/stale/replay/outbox/
   audit-chain；该证据只关闭 S3 Task 1—3，不代表 S3 整体完成。
+
+- Human Memory S3 Task 4：基于 exact Harness `aa45a51` conversation evidence v3；focused public/pointer/
+  projection/generation/reopen/fault/tamper/deadline `10 passed`，S3 schema/cognitive/lifecycle 回归 `481 passed`，
+  全仓 `855 passed, 8 skipped`。Ruff scoped/full source、mypy scoped 与 `git diff --check` 全绿。该证据只关闭
+  五天 Short-Horizon repository；真实 200-query semantic quality corpus、Typed RecallPlan、graph 与 Host/UI 仍未完成。
 
 - 0.6.0 Task 6 source audit：冻结 Harness 0.7 下全仓 `493 passed, 8 skipped`；Ruff、项目 mypy
   `97 source files`、3 个发布脚本 strict mypy 与 REUSE 全绿。非最终 dirty-tree wheel/sdist 通过 Twine，

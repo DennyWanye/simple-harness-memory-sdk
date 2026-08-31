@@ -3,7 +3,7 @@
 > Release unit：S3（Memory SDK）  
 > 高风险子系统：认知状态机、检索资格/排序、派生投影（3）  
 > 覆盖：HM-AC-2/4/5/6/7/8
-> 执行状态：Task 1/2/3 COMPLETE（Memory Task 3 `31ffb15` + `3e45194`，Harness exact authority `a553cf3`）；classification/action authority、Procedure qualification 与 Prospective scheduler-signal repository 已闭合；machine `a2-004` resolved；用户已批准 `a2-005` 修正架构，Task 4—7 继续实施
+> 执行状态：Task 1/2/3/4 COMPLETE（Memory Task 3 `31ffb15` + `3e45194`，Task 4 pending scoped commit；Harness exact authority `aa45a51`）；classification/action authority、Procedure/Prospective 与五天 Short-Horizon repository 已闭合；machine `a2-004` resolved；Task 5—7 继续实施
 
 ## 交付边界
 
@@ -77,6 +77,14 @@ replay/open/close 做 rooted exact-chain 校验。验证命令与结果同步记
 - 验证：发布/删除/付款/权限负例，跨任务独立证据，时间/事件 trigger replay/reschedule/cancel/expire。
 
 ### Task 4 — 五天 Short-Horizon Conversation Index [HM-AC-4/6/8]
+
+状态：COMPLETE。公开入口只接收 principal/query/disclosure/bounds；active generation 与 numpy cache 由 SQLite
+repository 私有持有并从 durable rows 重建。Host v3 registration 的唯一 public-text pointer/hash 与 classification
+authority 是索引资格根；无授权 registration 永久保存但不索引。完整 eligibility universe 先经过 identity、
+disclosure、time、privacy/classification 与 suppression，随后 FTS、entity-time、vector 独立排序并融合；stale/cold/
+deadline 只降级当前 universe，且 audit 保存 gate counts、hashed refs/content hashes、lane/selection scores 与 generation
+manifest。五天清理只删除派生 chunk/vector/FTS。Focused `10 passed`、S3 回归 `481 passed`、全仓
+`855 passed, 8 skipped`；真实 200-query semantic quality gate 仍归 S3 最终验收，未在本 Task 宣称 PASS。
 
 - `a2-005` 用户批准的修正架构：active generation/cache 只能由 Memory repository 从 durable DB snapshot
   加载并核验，公开入口不得接受调用方指定 generation 或 cache；permission/status/time/suppression 先形成完整

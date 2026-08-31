@@ -1202,13 +1202,41 @@ CREATE TABLE conversation_evidence_registrations (
     task_scope_id TEXT,
     tool_causal_link_json BLOB,
     entities_json BLOB NOT NULL,
+    conversation_schema_version INTEGER NOT NULL CHECK (conversation_schema_version = 3),
+    public_text_json_pointer TEXT,
+    public_text TEXT,
+    public_text_hash TEXT,
+    public_text_normalization_version TEXT,
+    evidence_item_authority_id TEXT,
+    evidence_item_authority_hash TEXT,
+    evidence_item_authority_json BLOB,
+    effective_privacy_class TEXT CHECK (
+        effective_privacy_class IN ('public', 'personal', 'sensitive', 'restricted')
+    ),
+    information_attributes_json BLOB,
+    classification_authority_ref TEXT,
     registration_json BLOB NOT NULL,
     registered_at REAL NOT NULL CHECK (registered_at >= 0),
     UNIQUE (
         principal_id, primary_conversation_id, causal_group_id, item_ordinal
     ),
     CHECK (conversation_id = primary_conversation_id),
-    CHECK ((role = 'tool') = (tool_causal_link_json IS NOT NULL))
+    CHECK ((role = 'tool') = (tool_causal_link_json IS NOT NULL)),
+    CHECK (
+        (public_text_json_pointer IS NULL AND public_text IS NULL AND public_text_hash IS NULL
+         AND public_text_normalization_version IS NULL
+         AND evidence_item_authority_id IS NULL AND evidence_item_authority_hash IS NULL
+         AND evidence_item_authority_json IS NULL AND effective_privacy_class IS NULL
+         AND information_attributes_json IS NULL AND classification_authority_ref IS NULL)
+        OR
+        (public_text_json_pointer IS NOT NULL AND public_text IS NOT NULL
+         AND public_text_hash IS NOT NULL AND public_text_normalization_version IS NOT NULL
+         AND evidence_item_authority_id IS NOT NULL
+         AND evidence_item_authority_hash IS NOT NULL
+         AND evidence_item_authority_json IS NOT NULL AND effective_privacy_class IS NOT NULL
+         AND information_attributes_json IS NOT NULL
+         AND classification_authority_ref IS NOT NULL)
+    )
 );
 CREATE INDEX conversation_evidence_group_lookup
     ON conversation_evidence_registrations(
@@ -1231,6 +1259,11 @@ CREATE TABLE short_horizon_chunks (
     task_scope_ids_json BLOB NOT NULL,
     entities_json BLOB NOT NULL,
     source_refs_json BLOB NOT NULL,
+    effective_privacy_class TEXT NOT NULL CHECK (
+        effective_privacy_class IN ('public', 'personal', 'sensitive', 'restricted')
+    ),
+    information_attributes_json BLOB NOT NULL,
+    classification_authority_refs_json BLOB NOT NULL,
     public_text TEXT NOT NULL,
     content_hash TEXT NOT NULL,
     occurred_at REAL NOT NULL CHECK (occurred_at >= 0),
@@ -1285,12 +1318,39 @@ CREATE TABLE short_horizon_generations (
 CREATE UNIQUE INDEX short_horizon_one_active
     ON short_horizon_generations(state) WHERE state = 'active';
 CREATE TABLE short_horizon_vectors (
-    chunk_id TEXT NOT NULL REFERENCES short_horizon_chunks(chunk_id),
+    chunk_id TEXT NOT NULL REFERENCES short_horizon_chunks(chunk_id) ON DELETE CASCADE,
     generation_id TEXT NOT NULL REFERENCES short_horizon_generations(generation_id),
     embedding BLOB NOT NULL,
     dimension INTEGER NOT NULL CHECK (dimension >= 1),
     PRIMARY KEY (chunk_id, generation_id)
 );
+CREATE TABLE short_horizon_audit (
+    audit_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    event_kind TEXT NOT NULL CHECK (
+        event_kind IN ('projection_rebuilt', 'generation_activated', 'recall', 'cleanup')
+    ),
+    disclosure_context_hash TEXT,
+    query_hash TEXT,
+    generation_id TEXT,
+    generation_state TEXT,
+    eligible_count INTEGER NOT NULL CHECK (eligible_count >= 0),
+    fts_count INTEGER NOT NULL CHECK (fts_count >= 0),
+    entity_time_count INTEGER NOT NULL CHECK (entity_time_count >= 0),
+    vector_count INTEGER NOT NULL CHECK (vector_count >= 0),
+    degradation_code TEXT,
+    audit_json BLOB NOT NULL,
+    audit_hash TEXT NOT NULL UNIQUE,
+    created_at REAL NOT NULL CHECK (created_at >= 0)
+);
+CREATE INDEX short_horizon_audit_lookup
+    ON short_horizon_audit(principal_id, created_at, audit_id);
+CREATE TRIGGER short_horizon_audit_immutable_update
+BEFORE UPDATE ON short_horizon_audit
+BEGIN SELECT RAISE(ABORT, 'immutable short horizon audit'); END;
+CREATE TRIGGER short_horizon_audit_immutable_delete
+BEFORE DELETE ON short_horizon_audit
+BEGIN SELECT RAISE(ABORT, 'immutable short horizon audit'); END;
 CREATE TABLE recall_decisions (
     decision_id TEXT PRIMARY KEY,
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
@@ -1430,6 +1490,7 @@ REQUIRED_TABLES = frozenset(
         "short_horizon_fts_config",
         "short_horizon_generations",
         "short_horizon_vectors",
+        "short_horizon_audit",
         "recall_decisions",
         "recall_decision_items",
     }

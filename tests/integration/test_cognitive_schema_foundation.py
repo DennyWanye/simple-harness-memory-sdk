@@ -237,7 +237,8 @@ def test_expiring_projection_does_not_delete_registration_or_raw_evidence(
             causal_group_id, causal_group_sequence, item_ordinal, group_item_count,
             ordered_group_manifest_hash, role, occurred_at, task_scope_id,
             tool_causal_link_json, entities_json, registration_json, registered_at
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            , conversation_schema_version
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             "registration-1",
@@ -270,11 +271,18 @@ def test_expiring_projection_does_not_delete_registration_or_raw_evidence(
             b"[]",
             b"{}",
             1.0,
+            3,
         ),
     )
     connection.execute(
         """
-        INSERT INTO short_horizon_chunks VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        INSERT INTO short_horizon_chunks(
+            chunk_id,principal_id,subject,primary_conversation_id,causal_group_id,
+            causal_group_sequence,roles_json,task_scope_ids_json,entities_json,
+            source_refs_json,effective_privacy_class,information_attributes_json,
+            classification_authority_refs_json,public_text,content_hash,occurred_at,
+            expires_at,created_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             "chunk-1",
@@ -287,6 +295,9 @@ def test_expiring_projection_does_not_delete_registration_or_raw_evidence(
             b"[]",
             b"[]",
             b"[]",
+            "public",
+            b"[]",
+            b'["classification-1"]',
             "user: hello",
             "4" * 64,
             1.0,

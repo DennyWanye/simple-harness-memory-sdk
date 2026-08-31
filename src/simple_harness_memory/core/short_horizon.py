@@ -10,7 +10,6 @@ may remove a chunk/vector/FTS row, but never the evidence or registration behind
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import math
@@ -22,16 +21,17 @@ from enum import StrEnum
 from typing import Protocol, cast
 
 import numpy as np
-from simple_harness.contracts import FrozenJsonValue, JsonValue, canonical_json, thaw_json
+from simple_harness.contracts import FrozenJsonValue, thaw_json
 from simple_harness.runtime import (
+    EVIDENCE_NORMALIZATION_IDENTITY_UTF8_V1,
     ConversationEvidenceAuthorityVerifierPort,
     ConversationEvidenceMetadata,
     ConversationEvidenceRegistration,
     ConversationEvidenceRegistrationRef,
+    InformationAttribute,
+    PrivacyClass,
     verify_conversation_evidence_registration,
 )
-
-from simple_harness_memory.features.lexical import lexical_similarity
 
 RECENT_CAUSAL_GROUP_LIMIT = 10
 SHORT_HORIZON_RETENTION_SECONDS = 5 * 24 * 60 * 60
@@ -40,6 +40,9 @@ SHORT_HORIZON_HARD_DEADLINE_MS = 2_000
 
 class ShortHorizonDegradationCode(StrEnum):
     VECTOR_DEGRADED = "VECTOR_DEGRADED"
+    NO_ACTIVE_GENERATION = "NO_ACTIVE_GENERATION"
+    STALE_ACTIVE_GENERATION = "STALE_ACTIVE_GENERATION"
+    DEADLINE_EXCEEDED = "DEADLINE_EXCEEDED"
 
 
 class ShortHorizonIndexError(ValueError):
@@ -85,33 +88,40 @@ def _finite_non_negative(value: float, name: str) -> float:
     return float(value)
 
 
-def _public_text_from_payload(payload: Mapping[str, FrozenJsonValue]) -> str:
-    """Render only already-sanitized string leaves in stable JSON traversal order."""
+def resolve_authorized_public_text(
+    payload: Mapping[str, FrozenJsonValue], metadata: ConversationEvidenceMetadata
+) -> str:
+    """Resolve the one Host-authorized RFC 6901 string; never scan sibling leaves."""
 
-    value = thaw_json(cast(FrozenJsonValue, payload))
-    leaves: list[str] = []
+    pointer = metadata.public_text_json_pointer
+    expected_hash = metadata.public_text_hash
+    normalization = metadata.public_text_normalization_version
+    if pointer is None or expected_hash is None or normalization is None:
+        raise ShortHorizonIndexError("conversation item has no authorized public text")
+    current: object = thaw_json(cast(FrozenJsonValue, payload))
+    for raw_token in pointer.split("/")[1:]:
+        token = raw_token.replace("~1", "/").replace("~0", "~")
+        if isinstance(current, Mapping):
+            if token not in current:
+                raise ShortHorizonIndexError("authorized public text pointer does not exist")
+            current = current[token]
+        elif isinstance(current, list):
+            if not token.isdigit() or int(token) >= len(current):
+                raise ShortHorizonIndexError("authorized public text array index is invalid")
+            current = current[int(token)]
+        else:
+            raise ShortHorizonIndexError("authorized public text pointer traverses a scalar")
+    if not isinstance(current, str):
+        raise ShortHorizonIndexError("authorized public text pointer must resolve to a string")
+    if normalization != EVIDENCE_NORMALIZATION_IDENTITY_UTF8_V1:
+        raise ShortHorizonIndexError("authorized public text normalization is unsupported")
+    rendered = _bounded_non_blank(current, "authorized public text", max_bytes=1_048_576)
+    if hashlib.sha256(rendered.encode("utf-8")).hexdigest() != expected_hash:
+        raise ShortHorizonIndexError("authorized public text hash differs")
+    return rendered
 
-    def visit(item: object) -> None:
-        if isinstance(item, str):
-            if item.strip():
-                leaves.append(item)
-            return
-        if isinstance(item, Mapping):
-            for key in sorted(item):
-                visit(item[key])
-            return
-        if isinstance(item, list):
-            for child in item:
-                visit(child)
 
-    visit(value)
-    rendered = "\n".join(leaves) if leaves else canonical_json(cast(JsonValue, value))
-    return _bounded_non_blank(rendered, "sanitized public text", max_bytes=1_048_576)
-
-
-class ShortHorizonProjectionAuthorityPort(
-    ConversationEvidenceAuthorityVerifierPort, Protocol
-):
+class ShortHorizonProjectionAuthorityPort(ConversationEvidenceAuthorityVerifierPort, Protocol):
     """Host/Memory authority required before evidence can enter a projection."""
 
     async def is_evidence_suppressed(self, *, evidence_id: str, subject: str) -> bool: ...
@@ -160,7 +170,9 @@ async def _resolve_verified_item(
         reference=reference,
         registration=registration,
         metadata=metadata,
-        public_text=_public_text_from_payload(registration.envelope.sanitized_payload),
+        public_text=resolve_authorized_public_text(
+            registration.envelope.sanitized_payload, metadata
+        ),
         suppressed=suppressed,
     )
 
@@ -186,6 +198,9 @@ class ShortHorizonChunk:
     task_scope_ids: tuple[str, ...]
     entity_refs: tuple[str, ...]
     tool_terminal_receipt_refs: tuple[str, ...]
+    effective_privacy_class: PrivacyClass
+    information_attributes: tuple[InformationAttribute, ...]
+    classification_authority_refs: tuple[str, ...]
 
     @property
     def byte_estimate(self) -> int:
@@ -280,8 +295,7 @@ async def build_short_horizon_chunks(
     for (subject, conversation_id), groups in groups_by_conversation.items():
         ordered = sorted(groups, key=lambda value: (value[0], value[1]), reverse=True)
         recent.update(
-            (subject, conversation_id, group_id)
-            for _, group_id in ordered[:recent_group_limit]
+            (subject, conversation_id, group_id) for _, group_id in ordered[:recent_group_limit]
         )
 
     chunks: list[ShortHorizonChunk] = []
@@ -293,10 +307,33 @@ async def build_short_horizon_chunks(
         expires_at = occurred_at + retention_seconds
         if occurred_at > now or now > expires_at:
             continue
-        content = "\n".join(
-            f"{item.metadata.role.value}: {item.public_text}" for item in items
-        )
+        content = "\n".join(f"{item.metadata.role.value}: {item.public_text}" for item in items)
         content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        privacy_rank = {
+            PrivacyClass.PUBLIC: 0,
+            PrivacyClass.PERSONAL: 1,
+            PrivacyClass.SENSITIVE: 2,
+            PrivacyClass.RESTRICTED: 3,
+        }
+        privacy_values = tuple(
+            cast(PrivacyClass, item.metadata.effective_privacy_class) for item in items
+        )
+        effective_privacy_class = max(privacy_values, key=privacy_rank.__getitem__)
+        information_attributes = tuple(
+            sorted(
+                {
+                    attribute
+                    for item in items
+                    for attribute in cast(
+                        tuple[InformationAttribute, ...], item.metadata.information_attributes
+                    )
+                },
+                key=lambda attribute: attribute.value,
+            )
+        )
+        classification_authority_refs = tuple(
+            sorted({cast(str, item.metadata.classification_authority_ref) for item in items})
+        )
         payload = {
             "subject": metadata.subject,
             "primary_conversation_id": metadata.primary_conversation_id,
@@ -346,6 +383,9 @@ async def build_short_horizon_chunks(
                         if item.metadata.tool_causal_link is not None
                     )
                 ),
+                effective_privacy_class=effective_privacy_class,
+                information_attributes=information_attributes,
+                classification_authority_refs=classification_authority_refs,
             )
         )
     return tuple(
@@ -362,74 +402,52 @@ async def build_short_horizon_chunks(
 
 
 @dataclass(frozen=True, slots=True)
-class ShortHorizonSearchRow:
-    memory_ref: str
-    subject: str
-    content: str
-    occurred_at: float
-    expires_at: float
-    task_scope_ids: tuple[str, ...] = ()
-    entity_refs: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        _bounded_non_blank(self.memory_ref, "memory_ref")
-        _bounded_non_blank(self.subject, "subject")
-        _bounded_non_blank(self.content, "content", max_bytes=1_048_576)
-        occurred_at = _finite_non_negative(self.occurred_at, "occurred_at")
-        expires_at = _finite_non_negative(self.expires_at, "expires_at")
-        if expires_at <= occurred_at:
-            raise ShortHorizonIndexError("expires_at must be after occurred_at")
-
-
-@dataclass(frozen=True, slots=True)
-class PermissionFilteredFtsCandidates:
-    """Repository authority result for one exact disclosure context."""
-
-    context_hash: str
-    authority_receipt_hash: str
-    rows: tuple[ShortHorizonSearchRow, ...]
-
-    def __post_init__(self) -> None:
-        _digest(self.context_hash, "context_hash")
-        _digest(self.authority_receipt_hash, "authority_receipt_hash")
-        rows = tuple(self.rows)
-        if not all(isinstance(row, ShortHorizonSearchRow) for row in rows):
-            raise TypeError("rows must contain ShortHorizonSearchRow values")
-        if len({row.memory_ref for row in rows}) != len(rows):
-            raise ShortHorizonIndexError("permission-filtered rows must be unique")
-        object.__setattr__(self, "rows", rows)
-
-
-class PermissionFilteredFtsAuthorityPort(Protocol):
-    """Repository seam that applies identity/privacy/status/suppression before FTS."""
-
-    async def permission_filtered_fts_candidates(
-        self,
-        *,
-        query: str,
-        disclosure_context_hash: str,
-        active_generation_id: str,
-        now: float,
-    ) -> PermissionFilteredFtsCandidates: ...
-
-
-@dataclass(frozen=True, slots=True)
 class VectorSearchHit:
     memory_ref: str
     score: float
 
 
 @dataclass(frozen=True, slots=True)
-class ShortHorizonSearchResult:
-    hits: tuple[VectorSearchHit, ...]
-    active_generation_id: str
+class ShortHorizonRecallHit:
+    chunk_ref: str
+    content: str
+    content_hash: str
+    score: float
+    occurred_at: float
+    effective_privacy_class: PrivacyClass
+    information_attributes: tuple[InformationAttribute, ...]
+    classification_authority_refs: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ShortHorizonRecallResult:
+    hits: tuple[ShortHorizonRecallHit, ...]
+    audit_id: str
+    eligible_count: int
+    fts_count: int
+    entity_time_count: int
+    vector_count: int
     used_generation_id: str | None
-    fts_authority_receipt_hash: str | None
     degradation_code: ShortHorizonDegradationCode | None
-    elapsed_ms: float
 
 
-class ExactVectorGenerationCache:
+@dataclass(frozen=True, slots=True)
+class ShortHorizonProjectionBuildResult:
+    projected_chunk_count: int
+    removed_chunk_count: int
+    audit_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ShortHorizonGenerationBuildResult:
+    generation_id: str | None
+    vector_count: int
+    activated: bool
+    replayed: bool
+    audit_id: str
+
+
+class _ExactVectorGenerationCache:
     """Read-only numpy float32 exact-scan cache for exactly one generation."""
 
     __slots__ = ("generation_id", "lineage_id", "memory_refs", "_matrix", "_row_by_ref")
@@ -509,114 +527,18 @@ class ExactVectorGenerationCache:
         return tuple(ranked[:limit])
 
 
-async def search_short_horizon(
-    query: str,
-    *,
-    query_vector: Sequence[float],
-    active_generation_id: str,
-    cache: ExactVectorGenerationCache | None,
-    fts_authority: PermissionFilteredFtsAuthorityPort,
-    disclosure_context_hash: str,
-    now: float,
-    limit: int,
-    deadline_ms: int,
-    monotonic: Callable[[], float] = time.monotonic,
-) -> ShortHorizonSearchResult:
-    """Search active vectors or degrade only through permission-filtered FTS rows."""
-
-    _bounded_non_blank(query, "query")
-    _bounded_non_blank(active_generation_id, "active_generation_id")
-    _digest(disclosure_context_hash, "disclosure_context_hash")
-    now = _finite_non_negative(now, "now")
-    if isinstance(deadline_ms, bool) or not 1 <= deadline_ms <= SHORT_HORIZON_HARD_DEADLINE_MS:
-        raise ShortHorizonIndexError("deadline_ms must be within the two-second hard deadline")
-    if isinstance(limit, bool) or limit < 1:
-        raise ShortHorizonIndexError("limit must be positive")
-
-    started = monotonic()
-    deadline = started + deadline_ms / 1_000
-    try:
-        candidates = await asyncio.wait_for(
-            fts_authority.permission_filtered_fts_candidates(
-                query=query,
-                disclosure_context_hash=disclosure_context_hash,
-                active_generation_id=active_generation_id,
-                now=now,
-            ),
-            timeout=max(0.0, deadline - monotonic()),
-        )
-    except TimeoutError:
-        return ShortHorizonSearchResult(
-            hits=(),
-            active_generation_id=active_generation_id,
-            used_generation_id=None,
-            fts_authority_receipt_hash=None,
-            degradation_code=ShortHorizonDegradationCode.VECTOR_DEGRADED,
-            elapsed_ms=max(0.0, (monotonic() - started) * 1_000),
-        )
-    if not isinstance(candidates, PermissionFilteredFtsCandidates):
-        raise TypeError("FTS authority returned an invalid result")
-    if candidates.context_hash != disclosure_context_hash:
-        raise ShortHorizonIndexError("permission filter context differs from disclosure context")
-    if any(row.expires_at < now for row in candidates.rows):
-        raise ShortHorizonIndexError("permission authority returned expired short-horizon rows")
-
-    eligible_refs = frozenset(row.memory_ref for row in candidates.rows)
-    if cache is not None:
-        try:
-            vector_hits = cache.exact_search(
-                query_vector,
-                active_generation_id=active_generation_id,
-                eligible_refs=eligible_refs,
-                limit=limit,
-                deadline_monotonic=deadline,
-                monotonic=monotonic,
-            )
-            return ShortHorizonSearchResult(
-                hits=vector_hits,
-                active_generation_id=active_generation_id,
-                used_generation_id=cache.generation_id,
-                fts_authority_receipt_hash=candidates.authority_receipt_hash,
-                degradation_code=None,
-                elapsed_ms=max(0.0, (monotonic() - started) * 1_000),
-            )
-        except (StaleVectorGeneration, VectorDeadlineExceeded):
-            pass
-
-    hits: list[VectorSearchHit] = []
-    for row in candidates.rows:
-        if monotonic() >= deadline:
-            break
-        score = lexical_similarity(query, row.content)
-        if score > 0:
-            hits.append(VectorSearchHit(row.memory_ref, score))
-    ranked = tuple(sorted(hits, key=lambda hit: (-hit.score, hit.memory_ref))[:limit])
-    return ShortHorizonSearchResult(
-        hits=ranked,
-        active_generation_id=active_generation_id,
-        used_generation_id=None,
-        fts_authority_receipt_hash=candidates.authority_receipt_hash,
-        degradation_code=ShortHorizonDegradationCode.VECTOR_DEGRADED,
-        elapsed_ms=max(0.0, (monotonic() - started) * 1_000),
-    )
-
-
 __all__ = (
     "RECENT_CAUSAL_GROUP_LIMIT",
     "SHORT_HORIZON_HARD_DEADLINE_MS",
     "SHORT_HORIZON_RETENTION_SECONDS",
-    "ExactVectorGenerationCache",
-    "PermissionFilteredFtsAuthorityPort",
-    "PermissionFilteredFtsCandidates",
     "ShortHorizonChunk",
     "ShortHorizonDegradationCode",
     "ShortHorizonIndexError",
     "ShortHorizonProjectionAuthorityPort",
-    "ShortHorizonSearchResult",
-    "ShortHorizonSearchRow",
-    "StaleVectorGeneration",
-    "VectorDeadlineExceeded",
-    "VectorSearchHit",
+    "ShortHorizonProjectionBuildResult",
+    "ShortHorizonGenerationBuildResult",
+    "ShortHorizonRecallHit",
+    "ShortHorizonRecallResult",
     "build_short_horizon_chunks",
-    "search_short_horizon",
+    "resolve_authorized_public_text",
 )

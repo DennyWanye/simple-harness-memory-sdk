@@ -36,6 +36,13 @@ from simple_harness_memory.core.models import (
     Message,
 )
 from simple_harness_memory.core.port import MemoryBackend
+from simple_harness_memory.core.short_horizon import (
+    ShortHorizonDegradationCode,
+    ShortHorizonGenerationBuildResult,
+    ShortHorizonProjectionBuildResult,
+    ShortHorizonRecallHit,
+    ShortHorizonRecallResult,
+)
 from simple_harness_memory.core.twin import DigitalTwin
 from simple_harness_memory.world.port import WorldModelPort
 
@@ -61,6 +68,11 @@ __all__ = [
     "LifecycleApplyOutcome",
     "ProcedureObservationApplyResult",
     "ProspectiveSignalApplyResult",
+    "ShortHorizonDegradationCode",
+    "ShortHorizonGenerationBuildResult",
+    "ShortHorizonProjectionBuildResult",
+    "ShortHorizonRecallHit",
+    "ShortHorizonRecallResult",
 ]
 
 __version__ = "0.6.0"

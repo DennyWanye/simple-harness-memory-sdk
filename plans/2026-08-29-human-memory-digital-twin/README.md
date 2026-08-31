@@ -1,7 +1,7 @@
 # Human Memory Digital Twin Plan Workspace
 
 > 创建日期：2026-08-29
-> 状态：用户已批准直接实施；V0、S1、S2 与 S3 Task 1/2/3 已闭合；Host-owned mutation/action/procedure/prospective authority + Memory 原子 consumer 已落库并通过门禁，machine `a2-004` resolved；用户已批准 `a2-005` 修正架构，S3 Task 4—7 继续实施
+> 状态：用户已批准直接实施；V0、S1、S2 与 S3 Task 1/2/3/4 已闭合；Host-owned mutation/action/procedure/prospective authority、Memory 原子 consumer 与五天 Short-Horizon repository 已通过门禁，machine `a2-004` resolved；S3 Task 5—7 继续实施
 > 主计划仓库：`simple-harness-memory-sdk`
 > Worktree：`/Users/denny/projects/simple-harness-memory-sdk-memory-plan`
 > 分支：`feat/human-memory-plan`
@@ -198,5 +198,5 @@ S4 Host 已完成 primary evidence、Canonical TaskScope Archive、目录 provis
 `13dbef17` 关闭 store-level Manual/Auto freshness、identity 和 replay seam；`a2-004` 仍要求把 durable Manual interaction、
 current Run/context/config facts 与 production adapters 明确装配。Phase 2 综合审查另确认 Host exact Harness 0.7 production
 composition 缺少三个 mandatory authority port，定为 P0，必须在 S5 由唯一 composition owner 实装且 fail-closed。
-S3 Task 1—3 已完成、Task 4—7 正在实施；S5、S6 未开始。program 的 15 个最终场景仍保持 `NOT_RUN`，只有全部实现、
+S3 Task 1—4 已完成、Task 5—7 正在实施；S5、S6 未开始。program 的 15 个最终场景仍保持 `NOT_RUN`，只有全部实现、
 自动化、真实模型、桌面 UI 和 machine `finalize` 完成后才能宣称 program 完成。

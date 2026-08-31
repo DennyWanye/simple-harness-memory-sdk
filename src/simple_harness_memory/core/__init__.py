@@ -9,6 +9,13 @@ from simple_harness_memory.core.models import (
     Message,
 )
 from simple_harness_memory.core.port import MemoryBackend
+from simple_harness_memory.core.short_horizon import (
+    ShortHorizonDegradationCode,
+    ShortHorizonGenerationBuildResult,
+    ShortHorizonProjectionBuildResult,
+    ShortHorizonRecallHit,
+    ShortHorizonRecallResult,
+)
 from simple_harness_memory.core.twin import DigitalTwin
 
 __all__ = [
@@ -20,4 +27,9 @@ __all__ = [
     "DigitalTwin",
     "MemoryApplyResult",
     "BoundedRecallResult",
+    "ShortHorizonDegradationCode",
+    "ShortHorizonGenerationBuildResult",
+    "ShortHorizonProjectionBuildResult",
+    "ShortHorizonRecallHit",
+    "ShortHorizonRecallResult",
 ]

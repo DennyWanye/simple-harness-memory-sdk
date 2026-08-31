@@ -49,6 +49,7 @@ from simple_harness_memory.core.errors import (
 if TYPE_CHECKING:
     from simple_harness.runtime import (
         ConversationEvidenceAuthorityVerifierPort,
+        DisclosureContext,
         EvidenceAuthorityVerifierPort,
         MemoryActionAuthority,
         MemoryActionAuthorityPort,
@@ -101,6 +102,11 @@ if TYPE_CHECKING:
         ProspectiveSignalApplyResult,
     )
     from simple_harness_memory.core.mutations import InformationClassificationPolicy
+    from simple_harness_memory.core.short_horizon import (
+        ShortHorizonGenerationBuildResult,
+        ShortHorizonProjectionBuildResult,
+        ShortHorizonRecallResult,
+    )
     from simple_harness_memory.core.suppression import (
         OrdinaryMemoryPurpose,
         SealedAuditAccessDecision,
@@ -111,6 +117,7 @@ if TYPE_CHECKING:
         SuppressionResolution,
         SuppressionRevokeRequest,
     )
+    from simple_harness_memory.embedders.base import Embedder
 
 FaultInjector = Callable[[str], None]
 _DDL = ddl_statements()
@@ -249,6 +256,7 @@ class SQLiteHumanMemoryBackend:
         memory_action_authority: MemoryActionAuthorityPort | None = None,
         procedure_observation_authority: ProcedureObservationAuthorityPort | None = None,
         prospective_signal_authority: ProspectiveSignalAuthorityPort | None = None,
+        short_horizon_embedder: Embedder | None = None,
     ) -> None:
         self._db_path = Path(db_path)
         self._fault_injector = fault_injector
@@ -276,6 +284,8 @@ class SQLiteHumanMemoryBackend:
         self._memory_action_authority = memory_action_authority
         self._procedure_observation_authority = procedure_observation_authority
         self._prospective_signal_authority = prospective_signal_authority
+        self._short_horizon_embedder = short_horizon_embedder
+        self._short_horizon_cache: object | None = None
         self._analysis_delivery_authority_registration: object | None = None
         if analysis_delivery_authority is not None:
             verify = getattr(analysis_delivery_authority, "verify_analysis_delivery", None)
@@ -314,9 +324,7 @@ class SQLiteHumanMemoryBackend:
         if memory_action_authority is not None and not callable(
             getattr(memory_action_authority, "resolve_memory_action_authority", None)
         ):
-            raise TypeError(
-                "memory_action_authority must implement MemoryActionAuthorityPort"
-            )
+            raise TypeError("memory_action_authority must implement MemoryActionAuthorityPort")
         if procedure_observation_authority is not None and not callable(
             getattr(
                 procedure_observation_authority,
@@ -325,8 +333,7 @@ class SQLiteHumanMemoryBackend:
             )
         ):
             raise TypeError(
-                "procedure_observation_authority must implement "
-                "ProcedureObservationAuthorityPort"
+                "procedure_observation_authority must implement ProcedureObservationAuthorityPort"
             )
         if prospective_signal_authority is not None and not callable(
             getattr(prospective_signal_authority, "resolve_prospective_signal_authority", None)
@@ -375,6 +382,7 @@ class SQLiteHumanMemoryBackend:
                     raise MemoryCorruptionError("WAL journal mode unavailable")
                 await self._db.execute(f"PRAGMA busy_timeout = {self._busy_timeout_ms}")
                 await self._validate_integrity()
+                await self._load_short_horizon_cache_unlocked()
                 self._audit_cursor_hmac_key = await self._read_audit_cursor_hmac_key()
                 verify_sqlite_path(self._secure_path)
                 self._receipt = receipt
@@ -394,6 +402,7 @@ class SQLiteHumanMemoryBackend:
                     self._db = None
                 self._receipt = None
                 self._audit_cursor_hmac_key = None
+                self._short_horizon_cache = None
                 async with self._admission_lock:
                     self._delivery_admissions.clear()
                 self._release_writer_lease()
@@ -940,6 +949,7 @@ class SQLiteHumanMemoryBackend:
 
         if type(reference) is not ConversationEvidenceRegistrationRef:
             raise TypeError("reference must use ConversationEvidenceRegistrationRef")
+        typed_reference = cast(ConversationEvidenceRegistrationRef, reference)
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v5 backend is not initialized")
         if self._conversation_evidence_authority is None:
@@ -956,12 +966,28 @@ class SQLiteHumanMemoryBackend:
                     raise ValueError("conversation registration reference changed")
                 return registration
 
-        try:
-            metadata = await verify_conversation_evidence_registration(
-                reference, cast(Any, _PinnedAuthority())
-            )
-        except (TypeError, ValueError) as exc:
-            raise MemoryValidationError("conversation_registration_authority_rejected") from exc
+        metadata = registration.metadata
+        expected_reference = (
+            registration.registration_id,
+            registration.registration_hash,
+            registration.envelope.evidence_id,
+            registration.envelope.envelope_hash,
+        )
+        actual_reference = (
+            typed_reference.registration_id,
+            typed_reference.registration_hash,
+            typed_reference.evidence_id,
+            typed_reference.envelope_hash,
+        )
+        if expected_reference != actual_reference:
+            raise MemoryValidationError("conversation_registration_authority_rejected")
+        if registration.short_horizon_eligible:
+            try:
+                metadata = await verify_conversation_evidence_registration(
+                    reference, cast(Any, _PinnedAuthority())
+                )
+            except (TypeError, ValueError) as exc:
+                raise MemoryValidationError("conversation_registration_authority_rejected") from exc
         envelope = registration.envelope
         admission = registration.admission_receipt
         metadata_receipt = registration.metadata_receipt
@@ -1009,6 +1035,16 @@ class SQLiteHumanMemoryBackend:
                     if metadata.tool_causal_link is None
                     else canonical_json(metadata.tool_causal_link.to_json())
                 )
+                item_authority = registration.recall_item_authority
+                from simple_harness_memory.core.short_horizon import (
+                    resolve_authorized_public_text,
+                )
+
+                public_text = (
+                    None
+                    if item_authority is None
+                    else resolve_authorized_public_text(envelope.sanitized_payload, metadata)
+                )
                 await self._db.execute(
                     "INSERT INTO conversation_evidence_registrations("
                     "registration_id,registration_hash,principal_id,evidence_id,envelope_hash,"
@@ -1017,8 +1053,14 @@ class SQLiteHumanMemoryBackend:
                     "metadata_receipt_json,authority_issuer_id,run_id,subject,conversation_id,"
                     "primary_conversation_id,causal_group_id,causal_group_sequence,item_ordinal,"
                     "group_item_count,ordered_group_manifest_hash,role,occurred_at,task_scope_id,"
-                    "tool_causal_link_json,entities_json,registration_json,registered_at) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "tool_causal_link_json,entities_json,conversation_schema_version,"
+                    "public_text_json_pointer,public_text,public_text_hash,"
+                    "public_text_normalization_version,evidence_item_authority_id,"
+                    "evidence_item_authority_hash,evidence_item_authority_json,"
+                    "effective_privacy_class,information_attributes_json,"
+                    "classification_authority_ref,registration_json,registered_at) VALUES("
+                    + ",".join("?" for _ in range(41))
+                    + ")",
                     (
                         registration.registration_id,
                         registration.registration_hash,
@@ -1048,6 +1090,25 @@ class SQLiteHumanMemoryBackend:
                         metadata.task_scope_id,
                         tool_causal_link_json,
                         canonical_json(list(metadata.entities)),
+                        registration.schema_version,
+                        metadata.public_text_json_pointer,
+                        public_text,
+                        metadata.public_text_hash,
+                        metadata.public_text_normalization_version,
+                        None if item_authority is None else item_authority.authority_id,
+                        None if item_authority is None else item_authority.authority_hash,
+                        None
+                        if item_authority is None
+                        else canonical_json(item_authority.to_json()),
+                        None
+                        if metadata.effective_privacy_class is None
+                        else metadata.effective_privacy_class.value,
+                        None
+                        if metadata.information_attributes is None
+                        else canonical_json(
+                            [item.value for item in metadata.information_attributes]
+                        ),
+                        metadata.classification_authority_ref,
                         canonical_json(registration.to_json()),
                         registered_at,
                     ),
@@ -1055,6 +1116,802 @@ class SQLiteHumanMemoryBackend:
                 await self._db.execute("COMMIT")
                 committed = True
                 return reference
+            finally:
+                if not committed:
+                    with suppress(Exception):
+                        await self._db.execute("ROLLBACK")
+
+    async def rebuild_short_horizon_projection(
+        self, *, principal: MemoryPrincipal, now: float | None = None
+    ) -> ShortHorizonProjectionBuildResult:
+        """Rebuild disposable five-day chunks from immutable Host registrations."""
+
+        from simple_harness.runtime import InformationAttribute, PrivacyClass
+
+        from simple_harness_memory.core.identity import MemoryPrincipal
+        from simple_harness_memory.core.short_horizon import (
+            RECENT_CAUSAL_GROUP_LIMIT,
+            SHORT_HORIZON_RETENTION_SECONDS,
+            ShortHorizonProjectionBuildResult,
+        )
+        from simple_harness_memory.core.suppression import (
+            OrdinaryMemoryPurpose,
+            SuppressionCandidate,
+        )
+
+        if type(principal) is not MemoryPrincipal:
+            raise TypeError("principal must use MemoryPrincipal")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v5 backend is not initialized")
+        effective_now = _timestamp(self._now() if now is None else now)
+        async with self._write_lock:
+            await self._authorize_short_horizon_principal_unlocked(principal)
+            async with self._db.execute(
+                "SELECT * FROM conversation_evidence_registrations "
+                "WHERE principal_id=? AND public_text IS NOT NULL "
+                "ORDER BY primary_conversation_id,"
+                "causal_group_sequence,item_ordinal",
+                (principal.actor_id,),
+            ) as cursor:
+                rows = tuple(await cursor.fetchall())
+            groups: dict[tuple[str, str], list[aiosqlite.Row]] = {}
+            for row in rows:
+                groups.setdefault(
+                    (str(row["primary_conversation_id"]), str(row["causal_group_id"])), []
+                ).append(row)
+            recent: set[tuple[str, str]] = set()
+            by_conversation: dict[str, list[tuple[int, str]]] = {}
+            for (conversation_id, group_id), items in groups.items():
+                first = items[0]
+                count = int(first["group_item_count"])
+                if len(items) != count or [int(item["item_ordinal"]) for item in items] != list(
+                    range(1, count + 1)
+                ):
+                    continue
+                by_conversation.setdefault(conversation_id, []).append(
+                    (int(first["causal_group_sequence"]), group_id)
+                )
+            for conversation_id, values in by_conversation.items():
+                recent.update(
+                    (conversation_id, group_id)
+                    for _, group_id in sorted(values, reverse=True)[:RECENT_CAUSAL_GROUP_LIMIT]
+                )
+            projection: list[dict[str, object]] = []
+            privacy_rank = {"public": 0, "personal": 1, "sensitive": 2, "restricted": 3}
+            for key, items in groups.items():
+                if key in recent:
+                    continue
+                first = items[0]
+                count = int(first["group_item_count"])
+                if len(items) != count or [int(item["item_ordinal"]) for item in items] != list(
+                    range(1, count + 1)
+                ):
+                    continue
+                occurred_at = max(float(item["occurred_at"]) for item in items)
+                expires_at = occurred_at + SHORT_HORIZON_RETENTION_SECONDS
+                if occurred_at > effective_now or effective_now > expires_at:
+                    continue
+                suppressed = False
+                for item in items:
+                    entities = tuple(json.loads(str(item["entities_json"])))
+                    resolution = await self._resolve_suppression_unlocked(
+                        SuppressionCandidate(
+                            subject=principal.actor_id,
+                            evidence_id=str(item["evidence_id"]),
+                            entity_ids=entities,
+                        ),
+                        OrdinaryMemoryPurpose.PROJECTION,
+                    )
+                    if resolution.denied:
+                        suppressed = True
+                        break
+                if suppressed:
+                    continue
+                content = "\n".join(f"{item['role']}: {item['public_text']}" for item in items)
+                content_hash = hashlib.sha256(content.encode()).hexdigest()
+                aggregate_privacy = max(
+                    (str(item["effective_privacy_class"]) for item in items),
+                    key=privacy_rank.__getitem__,
+                )
+                attributes = sorted(
+                    {
+                        value
+                        for item in items
+                        for value in json.loads(str(item["information_attributes_json"]))
+                    }
+                )
+                classification_refs = sorted(
+                    {str(item["classification_authority_ref"]) for item in items}
+                )
+                chunk_payload = {
+                    "subject": principal.actor_id,
+                    "primary_conversation_id": key[0],
+                    "causal_group_id": key[1],
+                    "registration_hashes": [str(item["registration_hash"]) for item in items],
+                    "content_hash": content_hash,
+                    "effective_privacy_class": aggregate_privacy,
+                    "information_attributes": attributes,
+                    "classification_authority_refs": classification_refs,
+                }
+                projection.append(
+                    {
+                        "chunk_id": "short:"
+                        + hashlib.sha256(
+                            canonical_json(cast(JsonValue, chunk_payload)).encode()
+                        ).hexdigest(),
+                        "items": items,
+                        "content": content,
+                        "content_hash": content_hash,
+                        "occurred_at": occurred_at,
+                        "expires_at": expires_at,
+                        "privacy": PrivacyClass(aggregate_privacy).value,
+                        "attributes": [InformationAttribute(value).value for value in attributes],
+                        "classification_refs": classification_refs,
+                    }
+                )
+            async with self._db.execute(
+                "SELECT chunk_id,content_hash FROM short_horizon_chunks "
+                "WHERE principal_id=? ORDER BY chunk_id",
+                (principal.actor_id,),
+            ) as cursor:
+                existing_projection = tuple(
+                    (str(row[0]), str(row[1])) for row in await cursor.fetchall()
+                )
+            desired_projection = tuple(
+                sorted((str(item["chunk_id"]), str(item["content_hash"])) for item in projection)
+            )
+            registration_manifest_hash = hashlib.sha256(
+                canonical_json(
+                    cast(
+                        JsonValue,
+                        [
+                            {
+                                "registration_id_hash": _opaque_hash(
+                                    str(row["registration_id"])
+                                ),
+                                "registration_hash": str(row["registration_hash"]),
+                            }
+                            for row in rows
+                        ],
+                    )
+                ).encode()
+            ).hexdigest()
+            projection_manifest_hash = hashlib.sha256(
+                canonical_json(
+                    cast(JsonValue, [list(item) for item in desired_projection])
+                ).encode()
+            ).hexdigest()
+            await self._db.execute("BEGIN IMMEDIATE")
+            committed = False
+            try:
+                async with self._db.execute(
+                    "SELECT COUNT(*) FROM short_horizon_chunks WHERE principal_id=?",
+                    (principal.actor_id,),
+                ) as cursor:
+                    count_row = await cursor.fetchone()
+                assert count_row is not None
+                previous = int(count_row[0])
+                if existing_projection == desired_projection:
+                    audit_id = await self._append_short_horizon_audit_unlocked(
+                        principal_id=principal.actor_id,
+                        event_kind="projection_rebuilt",
+                        eligible_count=len(projection),
+                        details={
+                            "registration_count": len(rows),
+                            "registration_manifest_hash": registration_manifest_hash,
+                            "chunk_manifest_hash": projection_manifest_hash,
+                            "removed_chunk_count": 0,
+                            "replayed": True,
+                        },
+                        created_at=effective_now,
+                    )
+                    await self._db.execute("COMMIT")
+                    committed = True
+                    return ShortHorizonProjectionBuildResult(len(projection), 0, audit_id)
+                await self._db.execute(
+                    "DELETE FROM short_horizon_chunks WHERE principal_id=?",
+                    (principal.actor_id,),
+                )
+                for projection_item in projection:
+                    items = cast(list[aiosqlite.Row], projection_item["items"])
+                    first = items[0]
+                    await self._db.execute(
+                        "INSERT INTO short_horizon_chunks(chunk_id,principal_id,subject,"
+                        "primary_conversation_id,causal_group_id,causal_group_sequence,roles_json,"
+                        "task_scope_ids_json,entities_json,source_refs_json,"
+                        "effective_privacy_class,information_attributes_json,"
+                        "classification_authority_refs_json,public_text,content_hash,occurred_at,"
+                        "expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (
+                            projection_item["chunk_id"],
+                            principal.actor_id,
+                            principal.actor_id,
+                            first["primary_conversation_id"],
+                            first["causal_group_id"],
+                            first["causal_group_sequence"],
+                            canonical_json(
+                                cast(JsonValue, [str(row["role"]) for row in items])
+                            ),
+                            canonical_json(
+                                cast(JsonValue, sorted(
+                                    {
+                                        str(row["task_scope_id"])
+                                        for row in items
+                                        if row["task_scope_id"] is not None
+                                    }
+                                ))
+                            ),
+                            canonical_json(
+                                cast(JsonValue, sorted(
+                                    {
+                                        value
+                                        for row in items
+                                        for value in json.loads(str(row["entities_json"]))
+                                    }
+                                ))
+                            ),
+                            canonical_json(
+                                cast(
+                                    JsonValue,
+                                    [str(row["registration_id"]) for row in items],
+                                )
+                            ),
+                            projection_item["privacy"],
+                            canonical_json(cast(JsonValue, projection_item["attributes"])),
+                            canonical_json(
+                                cast(JsonValue, projection_item["classification_refs"])
+                            ),
+                            projection_item["content"],
+                            projection_item["content_hash"],
+                            projection_item["occurred_at"],
+                            projection_item["expires_at"],
+                            effective_now,
+                        ),
+                    )
+                    for row in items:
+                        await self._db.execute(
+                            "INSERT INTO short_horizon_chunk_evidence(chunk_id,item_ordinal,"
+                            "registration_id,evidence_id,envelope_hash) VALUES(?,?,?,?,?)",
+                            (
+                                projection_item["chunk_id"],
+                                row["item_ordinal"],
+                                row["registration_id"],
+                                row["evidence_id"],
+                                row["envelope_hash"],
+                            ),
+                        )
+                self._fault("short_horizon.projection.before_audit")
+                audit_id = await self._append_short_horizon_audit_unlocked(
+                    principal_id=principal.actor_id,
+                    event_kind="projection_rebuilt",
+                    eligible_count=len(projection),
+                    details={
+                        "registration_count": len(rows),
+                        "registration_manifest_hash": registration_manifest_hash,
+                        "chunk_manifest_hash": projection_manifest_hash,
+                        "removed_chunk_count": max(0, previous - len(projection)),
+                        "replayed": False,
+                    },
+                    created_at=effective_now,
+                )
+                self._fault("short_horizon.projection.before_commit")
+                await self._db.execute("COMMIT")
+                committed = True
+                self._short_horizon_cache = None
+                return ShortHorizonProjectionBuildResult(
+                    len(projection), max(0, previous - len(projection)), audit_id
+                )
+            finally:
+                if not committed:
+                    with suppress(Exception):
+                        await self._db.execute("ROLLBACK")
+
+    async def rebuild_short_horizon_generation(
+        self, *, now: float | None = None
+    ) -> ShortHorizonGenerationBuildResult:
+        """Build and atomically activate the repository's exact durable vector generation."""
+
+        from simple_harness_memory.core.short_horizon import ShortHorizonGenerationBuildResult
+        from simple_harness_memory.embedders.base import EMBEDDING_FORMAT_VERSION, encode_vector
+
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v5 backend is not initialized")
+        if self._short_horizon_embedder is None:
+            raise MemoryValidationError("short_horizon_embedder_required")
+        effective_now = _timestamp(self._now() if now is None else now)
+        embedder = self._short_horizon_embedder
+        async with self._write_lock:
+            async with self._db.execute(
+                "SELECT chunk_id,public_text,content_hash FROM short_horizon_chunks "
+                "ORDER BY chunk_id"
+            ) as cursor:
+                rows = tuple(await cursor.fetchall())
+            manifest_hash = self._short_horizon_manifest_hash(rows)
+            lineage = embedder.lineage
+            async with self._db.execute(
+                "SELECT generation_id FROM short_horizon_generations "
+                "WHERE state='active' AND lineage_id=? AND content_hash=?",
+                (lineage.lineage_id, manifest_hash),
+            ) as cursor:
+                existing = await cursor.fetchone()
+            if existing is not None:
+                await self._load_short_horizon_cache_unlocked()
+                audit_id = await self._append_short_horizon_audit_transaction(
+                    principal_id="system",
+                    event_kind="generation_activated",
+                    generation_id=str(existing[0]),
+                    generation_state="active",
+                    vector_count=len(rows),
+                    details={
+                        "chunk_manifest_hash": manifest_hash,
+                        "lineage_id_hash": _opaque_hash(lineage.lineage_id),
+                        "replayed": True,
+                    },
+                    created_at=effective_now,
+                )
+                return ShortHorizonGenerationBuildResult(
+                    str(existing[0]), len(rows), True, True, audit_id
+                )
+            if not rows:
+                audit_id = await self._append_short_horizon_audit_transaction(
+                    principal_id="system",
+                    event_kind="generation_activated",
+                    generation_state="empty",
+                    details={
+                        "chunk_manifest_hash": manifest_hash,
+                        "lineage_id_hash": _opaque_hash(lineage.lineage_id),
+                        "replayed": False,
+                    },
+                    created_at=effective_now,
+                )
+                return ShortHorizonGenerationBuildResult(None, 0, False, False, audit_id)
+            vectors = await embedder.embed_batch([str(row["public_text"]) for row in rows])
+            embedder.validate_vectors(vectors, expected_count=len(rows))
+            generation_id = f"short-gen:{uuid4().hex}"
+            await self._db.execute("BEGIN IMMEDIATE")
+            committed = False
+            try:
+                await self._ensure_system_principal_unlocked(effective_now)
+                await self._db.execute(
+                    "INSERT INTO embedding_lineages(lineage_id,kind,provider,model,revision,"
+                    "dimension,normalized,format_version,fingerprint,created_at) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(lineage_id) DO NOTHING",
+                    (
+                        lineage.lineage_id,
+                        lineage.kind,
+                        lineage.provider,
+                        lineage.model,
+                        lineage.revision,
+                        lineage.dimension,
+                        1 if lineage.normalization == "l2" else 0,
+                        EMBEDDING_FORMAT_VERSION,
+                        lineage.format_fingerprint,
+                        effective_now,
+                    ),
+                )
+                await self._db.execute(
+                    "INSERT INTO short_horizon_generations(generation_id,lineage_id,state,"
+                    "content_hash,created_at) VALUES(?,?,'building',?,?)",
+                    (generation_id, lineage.lineage_id, manifest_hash, effective_now),
+                )
+                for row, vector in zip(rows, vectors, strict=True):
+                    await self._db.execute(
+                        "INSERT INTO short_horizon_vectors(chunk_id,generation_id,embedding,"
+                        "dimension) VALUES(?,?,?,?)",
+                        (row["chunk_id"], generation_id, encode_vector(vector), lineage.dimension),
+                    )
+                self._fault("short_horizon.generation.before_activate")
+                await self._db.execute(
+                    "UPDATE short_horizon_generations SET state='retired' WHERE state='active'"
+                )
+                await self._db.execute(
+                    "UPDATE short_horizon_generations SET state='active',activated_at=? "
+                    "WHERE generation_id=? AND state='building'",
+                    (effective_now, generation_id),
+                )
+                audit_id = await self._append_short_horizon_audit_unlocked(
+                    principal_id="system",
+                    event_kind="generation_activated",
+                    generation_id=generation_id,
+                    generation_state="active",
+                    vector_count=len(rows),
+                    details={
+                        "chunk_manifest_hash": manifest_hash,
+                        "lineage_id_hash": _opaque_hash(lineage.lineage_id),
+                        "replayed": False,
+                    },
+                    created_at=effective_now,
+                )
+                self._fault("short_horizon.generation.before_commit")
+                await self._db.execute("COMMIT")
+                committed = True
+            finally:
+                if not committed:
+                    with suppress(Exception):
+                        await self._db.execute("ROLLBACK")
+            await self._load_short_horizon_cache_unlocked()
+            return ShortHorizonGenerationBuildResult(
+                generation_id, len(rows), True, False, audit_id
+            )
+
+    async def recall_short_horizon(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        query: str,
+        disclosure_context: DisclosureContext,
+        limit: int = 10,
+        deadline_ms: int = 2_000,
+        now: float | None = None,
+    ) -> ShortHorizonRecallResult:
+        """Recall from one gated universe; generation and cache stay repository-private."""
+
+        from simple_harness.runtime import (
+            DeliveryRecipient,
+            DisclosureContext,
+            DisclosureGeneration,
+            DisclosureTrust,
+            InformationAttribute,
+            PrivacyClass,
+        )
+
+        from simple_harness_memory.core.identity import MemoryPrincipal
+        from simple_harness_memory.core.short_horizon import (
+            SHORT_HORIZON_HARD_DEADLINE_MS,
+            ShortHorizonDegradationCode,
+            ShortHorizonRecallHit,
+            ShortHorizonRecallResult,
+            _ExactVectorGenerationCache,
+        )
+        from simple_harness_memory.core.suppression import (
+            OrdinaryMemoryPurpose,
+            SuppressionCandidate,
+        )
+
+        if type(principal) is not MemoryPrincipal:
+            raise TypeError("principal must use MemoryPrincipal")
+        if type(disclosure_context) is not DisclosureContext:
+            raise TypeError("disclosure_context must use DisclosureContext")
+        disclosure = cast(Any, disclosure_context)
+        disclosure_allowed = (
+            disclosure.subject == principal.actor_id
+            and disclosure.trust is DisclosureTrust.TRUSTED_AUTHORITY
+            and disclosure.generation is DisclosureGeneration.CURRENT
+        )
+        if not isinstance(query, str) or not query.strip() or "\x00" in query:
+            raise MemoryValidationError("short_horizon_query_invalid")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise MemoryLimitError("short_horizon_limit_invalid")
+        if (
+            isinstance(deadline_ms, bool)
+            or not isinstance(deadline_ms, int)
+            or not 1 <= deadline_ms <= SHORT_HORIZON_HARD_DEADLINE_MS
+        ):
+            raise MemoryLimitError("short_horizon_deadline_invalid")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v5 backend is not initialized")
+        effective_now = _timestamp(self._now() if now is None else now)
+        started = time.monotonic()
+        deadline = started + deadline_ms / 1000
+        async with self._write_lock:
+            await self._authorize_short_horizon_principal_unlocked(principal)
+            if not disclosure_allowed:
+                await self._append_short_horizon_audit_transaction(
+                    principal_id=principal.actor_id,
+                    event_kind="recall",
+                    disclosure_context_hash=disclosure.context_hash,
+                    query_hash=hashlib.sha256(query.encode()).hexdigest(),
+                    eligible_count=0,
+                    degradation_code="DISCLOSURE_REJECTED",
+                    details={
+                        "candidate_count": 0,
+                        "time_filtered_count": 0,
+                        "privacy_filtered_count": 0,
+                        "classification_filtered_count": 0,
+                        "suppression_filtered_count": 0,
+                        "eligible": [],
+                        "fts_lane": [],
+                        "entity_time_lane": [],
+                        "vector_lane": [],
+                        "selected": [],
+                        "gate_outcome": "disclosure_rejected",
+                    },
+                    created_at=effective_now,
+                )
+                raise MemoryOwnershipConflict("short_horizon_disclosure_rejected")
+            async with self._db.execute(
+                "SELECT COUNT(*) FROM short_horizon_chunks WHERE principal_id=?",
+                (principal.actor_id,),
+            ) as cursor:
+                total_row = await cursor.fetchone()
+            assert total_row is not None
+            total_count = int(total_row[0])
+            async with self._db.execute(
+                "SELECT * FROM short_horizon_chunks WHERE principal_id=? "
+                "AND occurred_at<=? AND expires_at>=? ORDER BY occurred_at DESC,chunk_id",
+                (principal.actor_id, effective_now, effective_now),
+            ) as cursor:
+                candidate_rows = tuple(await cursor.fetchall())
+            universe: list[aiosqlite.Row] = []
+            privacy_filtered_count = 0
+            suppression_filtered_count = 0
+            self_delivery = (
+                disclosure.recipient is DeliveryRecipient.USER_SELF
+                and disclosure.recipient_id == principal.actor_id
+            )
+            for row in candidate_rows:
+                privacy = PrivacyClass(str(row["effective_privacy_class"]))
+                if privacy is not PrivacyClass.PUBLIC and not self_delivery:
+                    privacy_filtered_count += 1
+                    continue
+                attributes = json.loads(str(row["information_attributes_json"]))
+                classification_refs = json.loads(str(row["classification_authority_refs_json"]))
+                if (
+                    not isinstance(attributes, list)
+                    or any(not isinstance(value, str) for value in attributes)
+                    or not isinstance(classification_refs, list)
+                    or not classification_refs
+                ):
+                    raise MemoryCorruptionError("short horizon classification binding invalid")
+                tuple(InformationAttribute(value) for value in attributes)
+                async with self._db.execute(
+                    "SELECT e.evidence_id,r.entities_json FROM short_horizon_chunk_evidence e "
+                    "JOIN conversation_evidence_registrations r "
+                    "ON r.registration_id=e.registration_id WHERE e.chunk_id=?",
+                    (row["chunk_id"],),
+                ) as cursor:
+                    evidence_rows = tuple(await cursor.fetchall())
+                suppressed = False
+                for evidence in evidence_rows:
+                    resolution = await self._resolve_suppression_unlocked(
+                        SuppressionCandidate(
+                            subject=principal.actor_id,
+                            evidence_id=str(evidence["evidence_id"]),
+                            memory_id=str(row["chunk_id"]),
+                            entity_ids=tuple(json.loads(str(evidence["entities_json"]))),
+                        ),
+                        OrdinaryMemoryPurpose.RECALL,
+                    )
+                    if resolution.denied:
+                        suppressed = True
+                        break
+                if not suppressed:
+                    universe.append(row)
+                else:
+                    suppression_filtered_count += 1
+            universe_by_ref = {str(row["chunk_id"]): row for row in universe}
+            fts_refs: list[str] = []
+            if time.monotonic() < deadline and universe:
+                terms = tuple(dict.fromkeys(re.findall(r"[\w]+", query.casefold())))
+                if terms:
+                    fts_query = " OR ".join(
+                        f'"{term.replace(chr(34), chr(34) * 2)}"' for term in terms
+                    )
+                    await self._db.execute(
+                        "CREATE TEMP TABLE IF NOT EXISTS short_horizon_eligible_tmp("
+                        "chunk_id TEXT PRIMARY KEY) WITHOUT ROWID"
+                    )
+                    await self._db.execute("DELETE FROM short_horizon_eligible_tmp")
+                    await self._db.executemany(
+                        "INSERT INTO short_horizon_eligible_tmp(chunk_id) VALUES(?)",
+                        ((chunk_id,) for chunk_id in universe_by_ref),
+                    )
+                    async with self._db.execute(
+                        "SELECT f.chunk_id FROM short_horizon_fts f "
+                        "JOIN short_horizon_eligible_tmp e ON e.chunk_id=f.chunk_id "
+                        "WHERE short_horizon_fts MATCH ?",
+                        (fts_query,),
+                    ) as cursor:
+                        fts_refs = [str(row[0]) for row in await cursor.fetchall()]
+            query_terms = set(re.findall(r"[\w]+", query.casefold()))
+            entity_time_refs = sorted(
+                universe_by_ref,
+                key=lambda ref: (
+                    -len(
+                        query_terms
+                        & {
+                            str(value).casefold()
+                            for value in json.loads(str(universe_by_ref[ref]["entities_json"]))
+                        }
+                    ),
+                    -float(universe_by_ref[ref]["occurred_at"]),
+                    ref,
+                ),
+            )
+            vector_hits: tuple[Any, ...] = ()
+            used_generation_id: str | None = None
+            degradation: ShortHorizonDegradationCode | None = None
+            active_generation_id = await self._active_short_horizon_generation_unlocked()
+            current_manifest = await self._current_short_horizon_manifest_hash_unlocked()
+            active_lineage_id: str | None = None
+            if active_generation_id is None:
+                degradation = ShortHorizonDegradationCode.NO_ACTIVE_GENERATION
+            else:
+                async with self._db.execute(
+                    "SELECT content_hash,lineage_id FROM short_horizon_generations "
+                    "WHERE generation_id=?",
+                    (active_generation_id,),
+                ) as cursor:
+                    active_row = await cursor.fetchone()
+                if active_row is not None:
+                    active_lineage_id = str(active_row["lineage_id"])
+                if active_row is None or str(active_row[0]) != current_manifest:
+                    degradation = ShortHorizonDegradationCode.STALE_ACTIVE_GENERATION
+                elif time.monotonic() >= deadline:
+                    degradation = ShortHorizonDegradationCode.DEADLINE_EXCEEDED
+                elif isinstance(self._short_horizon_cache, _ExactVectorGenerationCache):
+                    try:
+                        if self._short_horizon_embedder is None:
+                            raise MemoryValidationError("short_horizon_embedder_required")
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise TimeoutError
+                        query_vector = await asyncio.wait_for(
+                            self._short_horizon_embedder.embed(query), timeout=remaining
+                        )
+                        vector_hits = self._short_horizon_cache.exact_search(
+                            query_vector,
+                            active_generation_id=active_generation_id,
+                            eligible_refs=frozenset(universe_by_ref),
+                            limit=max(limit * 4, limit),
+                            deadline_monotonic=deadline,
+                        )
+                        used_generation_id = active_generation_id
+                    except (TimeoutError, ValueError):
+                        degradation = ShortHorizonDegradationCode.DEADLINE_EXCEEDED
+                else:
+                    degradation = ShortHorizonDegradationCode.VECTOR_DEGRADED
+            ranks: dict[str, float] = {}
+            for lane in (
+                fts_refs,
+                entity_time_refs,
+                [hit.memory_ref for hit in vector_hits],
+            ):
+                for rank, ref in enumerate(lane, start=1):
+                    ranks[ref] = ranks.get(ref, 0.0) + 1.0 / (60 + rank)
+            ranked_refs = sorted(ranks, key=lambda ref: (-ranks[ref], ref))[:limit]
+            hits = tuple(
+                ShortHorizonRecallHit(
+                    chunk_ref=ref,
+                    content=str(universe_by_ref[ref]["public_text"]),
+                    content_hash=str(universe_by_ref[ref]["content_hash"]),
+                    score=ranks[ref],
+                    occurred_at=float(universe_by_ref[ref]["occurred_at"]),
+                    effective_privacy_class=PrivacyClass(
+                        str(universe_by_ref[ref]["effective_privacy_class"])
+                    ),
+                    information_attributes=tuple(
+                        InformationAttribute(value)
+                        for value in json.loads(
+                            str(universe_by_ref[ref]["information_attributes_json"])
+                        )
+                    ),
+                    classification_authority_refs=tuple(
+                        json.loads(str(universe_by_ref[ref]["classification_authority_refs_json"]))
+                    ),
+                )
+                for ref in ranked_refs
+            )
+            audit_id = await self._append_short_horizon_audit_transaction(
+                principal_id=principal.actor_id,
+                event_kind="recall",
+                disclosure_context_hash=disclosure.context_hash,
+                query_hash=hashlib.sha256(query.encode()).hexdigest(),
+                generation_id=used_generation_id or active_generation_id,
+                generation_state="used" if used_generation_id else "degraded",
+                eligible_count=len(universe),
+                fts_count=len(fts_refs),
+                entity_time_count=len(entity_time_refs),
+                vector_count=len(vector_hits),
+                degradation_code=None if degradation is None else degradation.value,
+                details={
+                    "candidate_count": total_count,
+                    "time_filtered_count": total_count - len(candidate_rows),
+                    "privacy_filtered_count": privacy_filtered_count,
+                    "classification_filtered_count": 0,
+                    "suppression_filtered_count": suppression_filtered_count,
+                    "eligible": [
+                        {
+                            "chunk_ref_hash": _opaque_hash(ref),
+                            "content_hash": str(row["content_hash"]),
+                        }
+                        for ref, row in sorted(universe_by_ref.items())
+                    ],
+                    "fts_lane": [
+                        {"chunk_ref_hash": _opaque_hash(ref), "rank": rank}
+                        for rank, ref in enumerate(fts_refs, start=1)
+                    ],
+                    "entity_time_lane": [
+                        {"chunk_ref_hash": _opaque_hash(ref), "rank": rank}
+                        for rank, ref in enumerate(entity_time_refs, start=1)
+                    ],
+                    "vector_lane": [
+                        {
+                            "chunk_ref_hash": _opaque_hash(hit.memory_ref),
+                            "score": hit.score,
+                            "rank": rank,
+                        }
+                        for rank, hit in enumerate(vector_hits, start=1)
+                    ],
+                    "selected": [
+                        {
+                            "chunk_ref_hash": _opaque_hash(ref),
+                            "score": ranks[ref],
+                            "rank": rank,
+                        }
+                        for rank, ref in enumerate(ranked_refs, start=1)
+                    ],
+                    "active_generation_id_hash": (
+                        None
+                        if active_generation_id is None
+                        else _opaque_hash(active_generation_id)
+                    ),
+                    "used_generation_id_hash": (
+                        None
+                        if used_generation_id is None
+                        else _opaque_hash(used_generation_id)
+                    ),
+                    "lineage_id_hash": (
+                        None if active_lineage_id is None else _opaque_hash(active_lineage_id)
+                    ),
+                    "manifest_hash": current_manifest,
+                    "deadline_ms": deadline_ms,
+                    "elapsed_ms": max(0.0, (time.monotonic() - started) * 1_000),
+                },
+                created_at=effective_now,
+            )
+            return ShortHorizonRecallResult(
+                hits,
+                audit_id,
+                len(universe),
+                len(fts_refs),
+                len(entity_time_refs),
+                len(vector_hits),
+                used_generation_id,
+                degradation,
+            )
+
+    async def cleanup_short_horizon(
+        self, *, principal: MemoryPrincipal, now: float | None = None
+    ) -> int:
+        """Delete only expired derived rows; immutable registration/evidence remains."""
+
+        from simple_harness_memory.core.identity import MemoryPrincipal
+
+        if type(principal) is not MemoryPrincipal:
+            raise TypeError("principal must use MemoryPrincipal")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v5 backend is not initialized")
+        effective_now = _timestamp(self._now() if now is None else now)
+        async with self._write_lock:
+            await self._authorize_short_horizon_principal_unlocked(principal)
+            await self._db.execute("BEGIN IMMEDIATE")
+            committed = False
+            try:
+                async with self._db.execute(
+                    "SELECT COUNT(*) FROM short_horizon_chunks "
+                    "WHERE principal_id=? AND expires_at<?",
+                    (principal.actor_id, effective_now),
+                ) as cursor:
+                    count_row = await cursor.fetchone()
+                assert count_row is not None
+                count = int(count_row[0])
+                await self._db.execute(
+                    "DELETE FROM short_horizon_chunks WHERE principal_id=? AND expires_at<?",
+                    (principal.actor_id, effective_now),
+                )
+                await self._append_short_horizon_audit_unlocked(
+                    principal_id=principal.actor_id,
+                    event_kind="cleanup",
+                    eligible_count=count,
+                    details={"removed_chunk_count": count},
+                    created_at=effective_now,
+                )
+                self._fault("short_horizon.cleanup.before_commit")
+                await self._db.execute("COMMIT")
+                committed = True
+                self._short_horizon_cache = None
+                return count
             finally:
                 if not committed:
                     with suppress(Exception):
@@ -1199,9 +2056,7 @@ class SQLiteHumanMemoryBackend:
                     current_hazard = None if row[8] is None else str(row[8])
                     await self._verify_procedure_evidence_unlocked(intent)
                     if intent.observed_at > consumed_at:
-                        raise MemoryValidationError(
-                            "procedure_observation_occurred_at_future"
-                        )
+                        raise MemoryValidationError("procedure_observation_occurred_at_future")
                     bound_fingerprint = current_fingerprint
                     bound_hazard = current_hazard
                     reason_code = "procedure_observation_recorded"
@@ -1209,9 +2064,7 @@ class SQLiteHumanMemoryBackend:
                         bound_fingerprint = intent.applicability.fingerprint
                         bound_hazard = intent.hazard.value
                         reason_code = "procedure_applicability_bound"
-                    fingerprint_matches = (
-                        bound_fingerprint == intent.applicability.fingerprint
-                    )
+                    fingerprint_matches = bound_fingerprint == intent.applicability.fingerprint
                     hazard_matches = bound_hazard == intent.hazard.value
                     window_start = max(0.0, consumed_at - 90.0 * 24.0 * 60.0 * 60.0)
                     async with self._db.execute(
@@ -1234,8 +2087,7 @@ class SQLiteHumanMemoryBackend:
                     failure_count = int(count_row[1] or 0)
                     success_count = int(count_row[0]) - failure_count
                     counts_in_window = (
-                        intent.observed_at >= window_start
-                        and intent.observed_at <= consumed_at
+                        intent.observed_at >= window_start and intent.observed_at <= consumed_at
                     )
                     next_state = current_state
                     if not fingerprint_matches or not hazard_matches:
@@ -1255,8 +2107,7 @@ class SQLiteHumanMemoryBackend:
                                 success_count += 1
                             if (
                                 intent.attributable
-                                and
-                                intent.risk_level is ProcedureRiskLevel.LOW
+                                and intent.risk_level is ProcedureRiskLevel.LOW
                                 and intent.hazard is ProcedureHazard.NONE
                             ):
                                 threshold_state = (
@@ -1287,10 +2138,11 @@ class SQLiteHumanMemoryBackend:
                         raise MemoryValidationError(
                             "procedure_observation_expected_transition_differs"
                         )
-                    consumption_id, consumption_hash = (
-                        await self._insert_procedure_consumption_unlocked(
-                            principal.actor_id, reference, authority, consumed_at
-                        )
+                    (
+                        consumption_id,
+                        consumption_hash,
+                    ) = await self._insert_procedure_consumption_unlocked(
+                        principal.actor_id, reference, authority, consumed_at
                     )
                     self._fault("procedure.after_consumption")
                     observation_json = intent.to_json()
@@ -1333,9 +2185,7 @@ class SQLiteHumanMemoryBackend:
                         committed_revision=committed_revision,
                         lifecycle_state=next_state.value,
                         operation_id=intent.operation_id,
-                        plan_id=_stable_id(
-                            "procedure-observation-plan", authority.authority_id
-                        ),
+                        plan_id=_stable_id("procedure-observation-plan", authority.authority_id),
                         plan_hash=intent.intent_hash,
                         created_at=consumed_at,
                     )
@@ -1435,9 +2285,7 @@ class SQLiteHumanMemoryBackend:
                     self._fault("procedure.after_decision")
                     before_commit = _timestamp(self._now())
                     if before_commit >= authority.expires_at:
-                        raise MemoryValidationError(
-                            "procedure_observation_authority_expired"
-                        )
+                        raise MemoryValidationError("procedure_observation_authority_expired")
                     self._fault("procedure.before_commit")
                     await self._db.execute("COMMIT")
                     committed = True
@@ -1450,9 +2298,7 @@ class SQLiteHumanMemoryBackend:
                     raise
         except (MemoryErrorBase, sqlite3.IntegrityError) as exc:
             reason = (
-                str(exc)
-                if isinstance(exc, MemoryErrorBase)
-                else "procedure_observation_replayed"
+                str(exc) if isinstance(exc, MemoryErrorBase) else "procedure_observation_replayed"
             )
             await self._append_lifecycle_rejection_audit(
                 table="procedure_observation_rejections",
@@ -1605,23 +2451,13 @@ class SQLiteHumanMemoryBackend:
                     is_ack = intent.signal_kind in ack_kinds
                     if is_ack:
                         if target_state is not intent.transition_from:
-                            raise MemoryValidationError(
-                                "prospective_signal_lifecycle_differs"
-                            )
+                            raise MemoryValidationError("prospective_signal_lifecycle_differs")
                         await self._verify_prospective_outbox_unlocked(intent)
-                        if (
-                            intent.signal_kind
-                            is ProspectiveSignalKind.REGISTRATION_INVALIDATED
-                        ):
-                            await self._verify_live_prospective_registration_unlocked(
-                                intent
-                            )
-                    stale = (
-                        not is_ack
-                        and (
-                            current_revision != intent.target_revision
-                            or target_state is not intent.transition_from
-                        )
+                        if intent.signal_kind is ProspectiveSignalKind.REGISTRATION_INVALIDATED:
+                            await self._verify_live_prospective_registration_unlocked(intent)
+                    stale = not is_ack and (
+                        current_revision != intent.target_revision
+                        or target_state is not intent.transition_from
                     )
                     occurrence_duplicate = False
                     if not is_ack:
@@ -1632,10 +2468,11 @@ class SQLiteHumanMemoryBackend:
                             occurrence_duplicate = await cursor.fetchone() is not None
                         if not stale and not occurrence_duplicate:
                             await self._verify_live_prospective_registration_unlocked(intent)
-                    consumption_id, consumption_hash = (
-                        await self._insert_prospective_consumption_unlocked(
-                            principal.actor_id, reference, authority, consumed_at
-                        )
+                    (
+                        consumption_id,
+                        consumption_hash,
+                    ) = await self._insert_prospective_consumption_unlocked(
+                        principal.actor_id, reference, authority, consumed_at
                     )
                     self._fault("prospective.after_consumption")
                     base_revision = intent.target_revision
@@ -1680,9 +2517,7 @@ class SQLiteHumanMemoryBackend:
                             committed_revision=committed_revision,
                             lifecycle_state=next_state.value,
                             operation_id=intent.operation_id,
-                            plan_id=_stable_id(
-                                "prospective-signal-plan", authority.authority_id
-                            ),
+                            plan_id=_stable_id("prospective-signal-plan", authority.authority_id),
                             plan_hash=intent.intent_hash,
                             created_at=consumed_at,
                         )
@@ -1734,9 +2569,7 @@ class SQLiteHumanMemoryBackend:
                         )
                         self._fault("prospective.after_revision")
                     self._fault("prospective.after_event")
-                    decision_id = _stable_id(
-                        "prospective-signal-decision", authority.authority_id
-                    )
+                    decision_id = _stable_id("prospective-signal-decision", authority.authority_id)
                     decision_json: dict[str, JsonValue] = {
                         "schema_version": 1,
                         "decision_id": decision_id,
@@ -1811,11 +2644,7 @@ class SQLiteHumanMemoryBackend:
                             await self._db.execute("ROLLBACK")
                     raise
         except (MemoryErrorBase, sqlite3.IntegrityError) as exc:
-            reason = (
-                str(exc)
-                if isinstance(exc, MemoryErrorBase)
-                else "prospective_signal_replayed"
-            )
+            reason = str(exc) if isinstance(exc, MemoryErrorBase) else "prospective_signal_replayed"
             await self._append_lifecycle_rejection_audit(
                 table="prospective_signal_rejections",
                 domain="prospective-signal",
@@ -2032,9 +2861,7 @@ class SQLiteHumanMemoryBackend:
                     ]
                 ] = []
                 action_authority_failure: MemoryValidationError | None = None
-                for canonical_index, compiled_operation in enumerate(
-                    compiled.operations, start=1
-                ):
+                for canonical_index, compiled_operation in enumerate(compiled.operations, start=1):
                     operation = compiled_operation.operation
                     if operation.kind not in protected_kinds:
                         continue
@@ -2087,19 +2914,14 @@ class SQLiteHumanMemoryBackend:
                         break
                     if (
                         type(verified_action) is not MemoryActionAuthority
-                        or verified_action.schema_version
-                        != MEMORY_ACTION_AUTHORITY_SCHEMA_VERSION
+                        or verified_action.schema_version != MEMORY_ACTION_AUTHORITY_SCHEMA_VERSION
                     ):
                         action_authority_failure = MemoryValidationError(
                             "action_authority_rejected"
                         )
                         break
                     consumed_at = _timestamp(self._now())
-                    if not (
-                        verified_action.issued_at
-                        <= consumed_at
-                        < verified_action.expires_at
-                    ):
+                    if not (verified_action.issued_at <= consumed_at < verified_action.expires_at):
                         action_authority_failure = MemoryValidationError(
                             "action_authority_rejected"
                         )
@@ -2120,9 +2942,7 @@ class SQLiteHumanMemoryBackend:
                         action_result = _mutation_apply_result(
                             plan,
                             outcome=MemoryMutationApplyOutcome.REJECTED,
-                            reason_code=(
-                                MemoryMutationApplyReasonCode.ACTION_AUTHORITY_REJECTED
-                            ),
+                            reason_code=(MemoryMutationApplyReasonCode.ACTION_AUTHORITY_REJECTED),
                             decided_at=_timestamp(self._now()),
                         )
                     else:
@@ -2130,9 +2950,7 @@ class SQLiteHumanMemoryBackend:
                         action_result = _mutation_apply_result(
                             plan,
                             outcome=MemoryMutationApplyOutcome.NEEDS_USER_CONFIRMATION,
-                            reason_code=(
-                                MemoryMutationApplyReasonCode.ACTION_AUTHORITY_REQUIRED
-                            ),
+                            reason_code=(MemoryMutationApplyReasonCode.ACTION_AUTHORITY_REQUIRED),
                             decided_at=_timestamp(self._now()),
                             confirmation_operation_ids=tuple(missing_action_authorities),
                         )
@@ -2152,9 +2970,13 @@ class SQLiteHumanMemoryBackend:
                     return cast(MemoryMutationApplyResult, action_result)
 
                 action_consumptions: dict[str, tuple[str, str]] = {}
-                for canonical_index, operation, reference, authority, consumed_at in (
-                    verified_action_authorities
-                ):
+                for (
+                    canonical_index,
+                    operation,
+                    reference,
+                    authority,
+                    consumed_at,
+                ) in verified_action_authorities:
                     intent = plan.action_intent(operation.operation_id)
                     consumption_id = _stable_id(
                         "memory-action-authority-consumption",
@@ -2292,13 +3114,10 @@ class SQLiteHumanMemoryBackend:
                             raise MemoryValidationError("mutation_target_not_found")
                         target_type = LongTermMemoryType(str(target_row[0]))
                         target_revision = int(target_row[1])
-                        if (
-                            str(target_row[10]) != str(target_row[12])
-                            or str(target_row[11]) != str(target_row[13])
+                        if str(target_row[10]) != str(target_row[12]) or str(target_row[11]) != str(
+                            target_row[13]
                         ):
-                            raise MemoryCorruptionError(
-                                "cognitive head and revision scope differ"
-                            )
+                            raise MemoryCorruptionError("cognitive head and revision scope differ")
                         if expected_revision is not None and target_revision != expected_revision:
                             raise MemoryWriterConflict("cognitive_target_revision_stale")
                         lifecycle_type = type(operation.lifecycle_state)
@@ -2320,9 +3139,7 @@ class SQLiteHumanMemoryBackend:
                         target_content_json = str(target_row[5])
                         if operation.kind is MemoryMutationKind.CONTEST:
                             if not isinstance(operation.target, ExistingMemoryTarget):
-                                raise MemoryValidationError(
-                                    "mutation_contest_exact_slot_required"
-                                )
+                                raise MemoryValidationError("mutation_contest_exact_slot_required")
                             proposed_content_json = (
                                 None
                                 if operation.payload is None
@@ -2336,9 +3153,7 @@ class SQLiteHumanMemoryBackend:
                                 or operation.valid_time_interval.valid_from != target_row[8]
                                 or operation.valid_time_interval.valid_until != target_row[9]
                             ):
-                                raise MemoryValidationError(
-                                    "mutation_contest_exact_slot_required"
-                                )
+                                raise MemoryValidationError("mutation_contest_exact_slot_required")
                         memory_id = target_memory_id
                         revision = target_revision + 1
 
@@ -2480,7 +3295,8 @@ class SQLiteHumanMemoryBackend:
                             memory_id,
                             revision,
                             operation.payload,
-                            new_procedure_epoch=operation.kind in {
+                            new_procedure_epoch=operation.kind
+                            in {
                                 MemoryMutationKind.CREATE,
                                 MemoryMutationKind.REVISE,
                             },
@@ -2787,12 +3603,12 @@ class SQLiteHumanMemoryBackend:
                 action_authority_refs: list[JsonValue] = [
                     {
                         "operation_id": item.operation_id,
-                        "action_authority_consumption_id": action_consumptions[
-                            item.operation_id
-                        ][0],
-                        "action_authority_consumption_hash": action_consumptions[
-                            item.operation_id
-                        ][1],
+                        "action_authority_consumption_id": action_consumptions[item.operation_id][
+                            0
+                        ],
+                        "action_authority_consumption_hash": action_consumptions[item.operation_id][
+                            1
+                        ],
                     }
                     for item in (compiled_item.operation for compiled_item in compiled.operations)
                     if item.operation_id in action_consumptions
@@ -2802,17 +3618,13 @@ class SQLiteHumanMemoryBackend:
                     action_authority_refs_json.encode("utf-8")
                 ).hexdigest()
                 transaction_started_hash = hashlib.sha256(
-                    canonical_json(
-                        {"transaction_started_at": transaction_at}
-                    ).encode("utf-8")
+                    canonical_json({"transaction_started_at": transaction_at}).encode("utf-8")
                 ).hexdigest()
                 mutation_authority_hash = hashlib.sha256(
                     canonical_json(
                         {
                             "action_authorities_hash": action_authorities_hash,
-                            "classification_decisions_hash": (
-                                classification_decisions_hash
-                            ),
+                            "classification_decisions_hash": (classification_decisions_hash),
                             "transaction_started_hash": transaction_started_hash,
                         }
                     ).encode("utf-8")
@@ -2983,29 +3795,23 @@ class SQLiteHumanMemoryBackend:
                         with suppress(Exception):
                             await self._db.execute("ROLLBACK")
                     noncommitted_result: MemoryMutationApplyResult | None = None
-                    if (
-                        type(exc) is MemoryValidationError
-                        and str(exc)
-                        in {"action_authority_rejected", "action_authority_replayed"}
-                    ):
+                    if type(exc) is MemoryValidationError and str(exc) in {
+                        "action_authority_rejected",
+                        "action_authority_replayed",
+                    }:
                         noncommitted_result = _mutation_apply_result(
                             plan,
                             outcome=MemoryMutationApplyOutcome.REJECTED,
-                            reason_code=(
-                                MemoryMutationApplyReasonCode.ACTION_AUTHORITY_REJECTED
-                            ),
+                            reason_code=(MemoryMutationApplyReasonCode.ACTION_AUTHORITY_REJECTED),
                             decided_at=_timestamp(self._now()),
                         )
-                    elif (
-                        type(exc) is MemoryValidationError
-                        and str(exc).startswith("mutation_contest_")
+                    elif type(exc) is MemoryValidationError and str(exc).startswith(
+                        "mutation_contest_"
                     ):
                         noncommitted_result = _mutation_apply_result(
                             plan,
                             outcome=MemoryMutationApplyOutcome.REJECTED,
-                            reason_code=(
-                                MemoryMutationApplyReasonCode.VALIDATION_REJECTED
-                            ),
+                            reason_code=(MemoryMutationApplyReasonCode.VALIDATION_REJECTED),
                             decided_at=_timestamp(self._now()),
                         )
                     try:
@@ -3189,9 +3995,7 @@ class SQLiteHumanMemoryBackend:
         if transaction_started_at > receipt.committed_at:
             raise MemoryCorruptionError("mutation transaction timestamp differs")
         transaction_started_hash = hashlib.sha256(
-            canonical_json(
-                {"transaction_started_at": transaction_started_at}
-            ).encode("utf-8")
+            canonical_json({"transaction_started_at": transaction_started_at}).encode("utf-8")
         ).hexdigest()
         mutation_authority_hash = hashlib.sha256(
             canonical_json(
@@ -3203,8 +4007,7 @@ class SQLiteHumanMemoryBackend:
             ).encode("utf-8")
         ).hexdigest()
         expected_authority_ref = (
-            f"sqlite-human-memory:{self._receipt.receipt_id}:"
-            f"mutation:{mutation_authority_hash}"
+            f"sqlite-human-memory:{self._receipt.receipt_id}:mutation:{mutation_authority_hash}"
         )
         if authority_ref != receipt.authority_ref or authority_ref != expected_authority_ref:
             raise MemoryCorruptionError("receipt authority classification binding differs")
@@ -3234,9 +4037,7 @@ class SQLiteHumanMemoryBackend:
         ):
             raise MemoryCorruptionError("action authority refs cardinality differs")
         action_consumptions: dict[str, tuple[str, str]] = {}
-        for operation, action_value in zip(
-            protected_operations, action_refs, strict=True
-        ):
+        for operation, action_value in zip(protected_operations, action_refs, strict=True):
             if not isinstance(action_value, dict) or set(action_value) != {
                 "operation_id",
                 "action_authority_consumption_id",
@@ -3984,12 +4785,8 @@ class SQLiteHumanMemoryBackend:
                 "action_authority_replayed": "mutation_action_authority_replayed",
                 "mutation_contest_exact_slot_required": "mutation_contest_rejected",
                 "mutation_contest_exact_target_required": "mutation_contest_rejected",
-                "mutation_contest_lifecycle_must_be_unchanged": (
-                    "mutation_contest_rejected"
-                ),
-                "mutation_contest_requires_contested_state": (
-                    "mutation_contest_rejected"
-                ),
+                "mutation_contest_lifecycle_must_be_unchanged": ("mutation_contest_rejected"),
+                "mutation_contest_requires_contested_state": ("mutation_contest_rejected"),
             }.get(str(exc), "mutation_epistemic_or_validation_rejected")
         else:
             if isinstance(exc, MemoryErrorBase):
@@ -4399,8 +5196,7 @@ class SQLiteHumanMemoryBackend:
 
         async def append(kind: str, target_revision: int) -> None:
             async with db.execute(
-                "SELECT trigger_json FROM prospective_records "
-                "WHERE memory_id=? AND revision=?",
+                "SELECT trigger_json FROM prospective_records WHERE memory_id=? AND revision=?",
                 (memory_id, target_revision),
             ) as cursor:
                 row = await cursor.fetchone()
@@ -4506,9 +5302,7 @@ class SQLiteHumanMemoryBackend:
                 raise ValueError("stored result is not an object")
             result = ProcedureObservationApplyResult.from_json(raw)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            raise MemoryCorruptionError(
-                "stored procedure observation result is invalid"
-            ) from exc
+            raise MemoryCorruptionError("stored procedure observation result is invalid") from exc
         if canonical_json(result.to_json()) != str(row[0]) or result.result_hash != str(row[1]):
             raise MemoryCorruptionError("stored procedure observation result differs")
         return result
@@ -4569,9 +5363,7 @@ class SQLiteHumanMemoryBackend:
             subject=str(getattr(intent, "subject")), span=span
         )
         exact_origin = tuple(
-            origin
-            for origin in origins
-            if origin[0] == getattr(intent, "task_scope_id")
+            origin for origin in origins if origin[0] == getattr(intent, "task_scope_id")
         )
         if not exact_origin:
             raise MemoryValidationError("procedure_observation_task_scope_evidence_missing")
@@ -4600,7 +5392,8 @@ class SQLiteHumanMemoryBackend:
         except (TypeError, ValueError, json.JSONDecodeError) as exc:
             raise MemoryCorruptionError("conversation tool causal link is invalid") from exc
         if not isinstance(link, dict) or (
-            link.get("terminal_receipt_id"), link.get("terminal_receipt_hash")
+            link.get("terminal_receipt_id"),
+            link.get("terminal_receipt_hash"),
         ) != (terminal_id, terminal_hash):
             raise MemoryValidationError("procedure_observation_terminal_receipt_differs")
 
@@ -4622,9 +5415,7 @@ class SQLiteHumanMemoryBackend:
             "authority_hash": getattr(authority, "authority_hash"),
             "consumed_at": consumed_at,
         }
-        consumption_hash = hashlib.sha256(
-            canonical_json(consumption).encode("utf-8")
-        ).hexdigest()
+        consumption_hash = hashlib.sha256(canonical_json(consumption).encode("utf-8")).hexdigest()
         await self._db.execute(
             "INSERT INTO procedure_observation_authority_consumptions(consumption_id,"
             "principal_id,authority_id,authority_hash,issuer_ref,nonce,replay_identity,"
@@ -4837,18 +5628,18 @@ class SQLiteHumanMemoryBackend:
             or canonical_json(payload) != str(row[1])
             or hashlib.sha256(str(row[1]).encode("utf-8")).hexdigest() != str(row[2])
             or (
-            payload.get("command"),
-            payload.get("memory_id"),
-            payload.get("prospective_revision"),
-            payload.get("registration_revision"),
-            payload.get("trigger_hash"),
+                payload.get("command"),
+                payload.get("memory_id"),
+                payload.get("prospective_revision"),
+                payload.get("registration_revision"),
+                payload.get("trigger_hash"),
             )
             != (
-            command,
-            getattr(intent, "target_memory_id"),
-            getattr(intent, "target_revision"),
-            getattr(intent, "registration_revision"),
-            getattr(intent, "trigger_hash"),
+                command,
+                getattr(intent, "target_memory_id"),
+                getattr(intent, "target_revision"),
+                getattr(intent, "registration_revision"),
+                getattr(intent, "trigger_hash"),
             )
         ):
             raise MemoryValidationError("prospective_signal_outbox_binding_differs")
@@ -4867,8 +5658,10 @@ class SQLiteHumanMemoryBackend:
             ),
         ) as cursor:
             rows = list(await cursor.fetchall())
-        if not rows or str(rows[0][0]) != "accepted" or str(rows[0][1]) != getattr(
-            intent, "trigger_hash"
+        if (
+            not rows
+            or str(rows[0][0]) != "accepted"
+            or str(rows[0][1]) != getattr(intent, "trigger_hash")
         ):
             raise MemoryValidationError("prospective_scheduler_registration_not_live")
         if any(str(row[0]) == "invalidated" for row in rows):
@@ -4892,9 +5685,7 @@ class SQLiteHumanMemoryBackend:
             "authority_hash": getattr(authority, "authority_hash"),
             "consumed_at": consumed_at,
         }
-        consumption_hash = hashlib.sha256(
-            canonical_json(consumption).encode("utf-8")
-        ).hexdigest()
+        consumption_hash = hashlib.sha256(canonical_json(consumption).encode("utf-8")).hexdigest()
         await self._db.execute(
             "INSERT INTO prospective_signal_authority_consumptions(consumption_id,"
             "principal_id,authority_id,authority_hash,issuer_ref,nonce,replay_identity,"
@@ -4936,8 +5727,7 @@ class SQLiteHumanMemoryBackend:
         assert self._db is not None
         state = (
             "accepted"
-            if getattr(intent, "signal_kind")
-            is ProspectiveSignalKind.REGISTRATION_ACCEPTED
+            if getattr(intent, "signal_kind") is ProspectiveSignalKind.REGISTRATION_ACCEPTED
             else "invalidated"
         )
         event_id = _stable_id("prospective-registration-event", consumption_id)
@@ -8143,6 +8933,185 @@ class SQLiteHumanMemoryBackend:
                     await self._db.execute("ROLLBACK")
             raise
 
+    @staticmethod
+    def _short_horizon_manifest_hash(rows: tuple[aiosqlite.Row, ...]) -> str:
+        return hashlib.sha256(
+            canonical_json(
+                [
+                    {"chunk_id": str(row["chunk_id"]), "content_hash": str(row["content_hash"])}
+                    for row in rows
+                ]
+            ).encode()
+        ).hexdigest()
+
+    async def _current_short_horizon_manifest_hash_unlocked(self) -> str:
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT chunk_id,content_hash FROM short_horizon_chunks ORDER BY chunk_id"
+        ) as cursor:
+            return self._short_horizon_manifest_hash(tuple(await cursor.fetchall()))
+
+    async def _active_short_horizon_generation_unlocked(self) -> str | None:
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT generation_id FROM short_horizon_generations WHERE state='active'"
+        ) as cursor:
+            row = await cursor.fetchone()
+        return None if row is None else str(row[0])
+
+    async def _load_short_horizon_cache_unlocked(self) -> None:
+        from simple_harness_memory.core.short_horizon import _ExactVectorGenerationCache
+        from simple_harness_memory.embedders.base import decode_vector
+
+        if self._db is None:
+            self._short_horizon_cache = None
+            return
+        async with self._db.execute(
+            "SELECT g.generation_id,g.lineage_id,g.content_hash,l.dimension "
+            "FROM short_horizon_generations g JOIN embedding_lineages l "
+            "ON l.lineage_id=g.lineage_id WHERE g.state='active'"
+        ) as cursor:
+            generation = await cursor.fetchone()
+        if generation is None:
+            self._short_horizon_cache = None
+            return
+        current_manifest = await self._current_short_horizon_manifest_hash_unlocked()
+        if str(generation["content_hash"]) != current_manifest:
+            self._short_horizon_cache = None
+            return
+        async with self._db.execute(
+            "SELECT c.chunk_id,v.embedding,v.dimension FROM short_horizon_chunks c "
+            "LEFT JOIN short_horizon_vectors v ON v.chunk_id=c.chunk_id "
+            "AND v.generation_id=? ORDER BY c.chunk_id",
+            (generation["generation_id"],),
+        ) as cursor:
+            rows = tuple(await cursor.fetchall())
+        if not rows or any(row["embedding"] is None for row in rows):
+            raise MemoryCorruptionError("active short horizon generation is incomplete")
+        dimension = int(generation["dimension"])
+        if any(int(row["dimension"]) != dimension for row in rows):
+            raise MemoryCorruptionError("active short horizon vector dimension differs")
+        try:
+            vectors = [decode_vector(bytes(row["embedding"])) for row in rows]
+            self._short_horizon_cache = _ExactVectorGenerationCache(
+                generation_id=str(generation["generation_id"]),
+                lineage_id=str(generation["lineage_id"]),
+                memory_refs=[str(row["chunk_id"]) for row in rows],
+                vectors=vectors,
+            )
+        except (TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise MemoryCorruptionError("active short horizon vectors are invalid") from exc
+
+    async def _ensure_system_principal_unlocked(self, created_at: float) -> None:
+        assert self._db is not None
+        await self._db.execute(
+            "INSERT INTO principals(principal_id,deployment_id,household_id,actor_id,created_at) "
+            "VALUES('system','system','system','system',?) ON CONFLICT(principal_id) DO NOTHING",
+            (created_at,),
+        )
+
+    async def _authorize_short_horizon_principal_unlocked(self, principal: MemoryPrincipal) -> None:
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT 1 FROM principals WHERE principal_id=? AND deployment_id=? "
+            "AND household_id=? AND actor_id=?",
+            (
+                principal.actor_id,
+                principal.deployment_id,
+                principal.household_id,
+                principal.actor_id,
+            ),
+        ) as cursor:
+            if await cursor.fetchone() is None:
+                raise MemoryOwnershipConflict("short_horizon_principal_rejected")
+
+    async def _append_short_horizon_audit_transaction(self, **kwargs: object) -> str:
+        assert self._db is not None
+        await self._db.execute("BEGIN IMMEDIATE")
+        committed = False
+        try:
+            audit_id = await self._append_short_horizon_audit_unlocked(**kwargs)
+            await self._db.execute("COMMIT")
+            committed = True
+            return audit_id
+        finally:
+            if not committed:
+                with suppress(Exception):
+                    await self._db.execute("ROLLBACK")
+
+    async def _append_short_horizon_audit_unlocked(
+        self,
+        *,
+        principal_id: object,
+        event_kind: object,
+        disclosure_context_hash: object = None,
+        query_hash: object = None,
+        generation_id: object = None,
+        generation_state: object = None,
+        eligible_count: object = 0,
+        fts_count: object = 0,
+        entity_time_count: object = 0,
+        vector_count: object = 0,
+        degradation_code: object = None,
+        details: object = None,
+        created_at: object,
+    ) -> str:
+        assert self._db is not None
+        principal_value = str(principal_id)
+        created = _timestamp(created_at)
+        if principal_value == "system":
+            await self._ensure_system_principal_unlocked(created)
+        if details is None:
+            detail_value: dict[str, JsonValue] = {}
+        elif isinstance(details, dict):
+            detail_value = cast(dict[str, JsonValue], details)
+        else:
+            raise TypeError("short horizon audit details must be a dictionary")
+        audit_id = f"short-audit:{uuid4().hex}"
+        payload: dict[str, JsonValue] = {
+            "schema_version": 1,
+            "audit_id": audit_id,
+            "principal_id": principal_value,
+            "event_kind": str(event_kind),
+            "disclosure_context_hash": cast(str | None, disclosure_context_hash),
+            "query_hash": cast(str | None, query_hash),
+            "generation_id": cast(str | None, generation_id),
+            "generation_state": cast(str | None, generation_state),
+            "eligible_count": int(cast(int, eligible_count)),
+            "fts_count": int(cast(int, fts_count)),
+            "entity_time_count": int(cast(int, entity_time_count)),
+            "vector_count": int(cast(int, vector_count)),
+            "degradation_code": cast(str | None, degradation_code),
+            "details": detail_value,
+            "created_at": created,
+        }
+        audit_json = canonical_json(payload)
+        audit_hash = hashlib.sha256(audit_json.encode()).hexdigest()
+        await self._db.execute(
+            "INSERT INTO short_horizon_audit(audit_id,principal_id,event_kind,"
+            "disclosure_context_hash,query_hash,generation_id,generation_state,eligible_count,"
+            "fts_count,entity_time_count,vector_count,degradation_code,audit_json,audit_hash,"
+            "created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                audit_id,
+                principal_value,
+                event_kind,
+                disclosure_context_hash,
+                query_hash,
+                generation_id,
+                generation_state,
+                eligible_count,
+                fts_count,
+                entity_time_count,
+                vector_count,
+                degradation_code,
+                audit_json,
+                audit_hash,
+                created,
+            ),
+        )
+        return audit_id
+
     async def _validate_integrity(self) -> None:
         assert self._db is not None
         async with self._db.execute("PRAGMA integrity_check") as cursor:
@@ -8162,7 +9131,263 @@ class SQLiteHumanMemoryBackend:
         ) as cursor:
             if await cursor.fetchone() is not None:
                 raise MemoryCorruptionError("cognitive memory scope integrity check failed")
+        await self._validate_short_horizon_integrity_unlocked()
         await self._validate_lifecycle_integrity_unlocked()
+
+    async def _validate_short_horizon_integrity_unlocked(self) -> None:
+        from simple_harness.runtime import (
+            EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION,
+            ConversationEvidenceMetadata,
+            ConversationEvidenceMetadataReceipt,
+            EvidenceActorRole,
+            EvidenceItemAuthority,
+            EvidenceProvenance,
+            EvidenceSourceKind,
+            InformationAttribute,
+            PrivacyClass,
+        )
+
+        from simple_harness_memory.core.short_horizon import SHORT_HORIZON_RETENTION_SECONDS
+
+        assert self._db is not None
+
+        def canonical_object(value: object, name: str) -> dict[str, object]:
+            try:
+                parsed = json.loads(str(value))
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise MemoryCorruptionError(f"{name} JSON is invalid") from exc
+            if not isinstance(parsed, dict) or canonical_json(cast(Any, parsed)) != str(value):
+                raise MemoryCorruptionError(f"{name} JSON is not canonical")
+            return cast(dict[str, object], parsed)
+
+        def canonical_array(value: object, name: str) -> list[object]:
+            try:
+                parsed = json.loads(str(value))
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise MemoryCorruptionError(f"{name} JSON is invalid") from exc
+            if not isinstance(parsed, list) or canonical_json(cast(Any, parsed)) != str(value):
+                raise MemoryCorruptionError(f"{name} JSON is not canonical")
+            return cast(list[object], parsed)
+
+        async with self._db.execute(
+            "SELECT * FROM conversation_evidence_registrations ORDER BY registration_id"
+        ) as cursor:
+            registrations = tuple(await cursor.fetchall())
+        for row in registrations:
+            metadata_json = canonical_object(row["metadata_json"], "conversation metadata")
+            receipt_json = canonical_object(
+                row["metadata_receipt_json"], "conversation metadata receipt"
+            )
+            registration_json = canonical_object(
+                row["registration_json"], "conversation registration"
+            )
+            try:
+                metadata = ConversationEvidenceMetadata.from_json(metadata_json)
+                metadata_receipt = ConversationEvidenceMetadataReceipt.from_json(receipt_json)
+            except (TypeError, ValueError) as exc:
+                raise MemoryCorruptionError(
+                    "conversation registration authority is invalid"
+                ) from exc
+            if (
+                metadata.metadata_hash != str(row["metadata_hash"])
+                or metadata_receipt.receipt_hash != str(row["metadata_receipt_hash"])
+                or metadata_receipt.metadata_hash != metadata.metadata_hash
+                or int(row["conversation_schema_version"]) != 3
+            ):
+                raise MemoryCorruptionError("conversation registration metadata differs")
+            expected_summary = {
+                "schema_version": 3,
+                "registration_id": str(row["registration_id"]),
+                "evidence_id": str(row["evidence_id"]),
+                "envelope_hash": str(row["envelope_hash"]),
+                "admission_receipt_id": str(row["admission_receipt_id"]),
+                "admission_receipt_hash": str(row["admission_receipt_hash"]),
+                "metadata": metadata.to_json(),
+                "metadata_receipt": metadata_receipt.to_json(),
+                "recall_item_authority": None,
+            }
+            authority_json_value = row["evidence_item_authority_json"]
+            if authority_json_value is not None:
+                authority_json = canonical_object(
+                    authority_json_value, "conversation item authority"
+                )
+                try:
+                    authority = EvidenceItemAuthority(
+                        schema_version=EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION,
+                        authority_id=cast(str, authority_json["authority_id"]),
+                        evidence_id=cast(str, authority_json["evidence_id"]),
+                        envelope_hash=cast(str, authority_json["envelope_hash"]),
+                        sanitized_hash=cast(str, authority_json["sanitized_hash"]),
+                        source_hash=cast(str, authority_json["source_hash"]),
+                        source_kind=EvidenceSourceKind(cast(str, authority_json["source_kind"])),
+                        item_ordinal=cast(int, authority_json["item_ordinal"]),
+                        item_id=cast(str, authority_json["item_id"]),
+                        item_json_pointer=cast(str, authority_json["item_json_pointer"]),
+                        normalization_version=cast(str, authority_json["normalization_version"]),
+                        actor_role=EvidenceActorRole(cast(str, authority_json["actor_role"])),
+                        provenance=EvidenceProvenance(cast(str, authority_json["provenance"])),
+                        required_privacy_class=PrivacyClass(
+                            cast(str, authority_json["required_privacy_class"])
+                        ),
+                        required_information_attributes=tuple(
+                            InformationAttribute(cast(str, item))
+                            for item in cast(
+                                list[object],
+                                authority_json["required_information_attributes"],
+                            )
+                        ),
+                        classification_authority_ref=cast(
+                            str, authority_json["classification_authority_ref"]
+                        ),
+                        issuer_ref=cast(str, authority_json["issuer_ref"]),
+                    )
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise MemoryCorruptionError("conversation item authority is invalid") from exc
+                if (
+                    authority.authority_hash != str(row["evidence_item_authority_hash"])
+                    or authority.authority_id != str(row["evidence_item_authority_id"])
+                    or metadata.public_text_json_pointer != row["public_text_json_pointer"]
+                    or metadata.public_text_hash != row["public_text_hash"]
+                    or metadata.evidence_item_authority_hash != authority.authority_hash
+                    or metadata.effective_privacy_class.value != str(row["effective_privacy_class"])
+                    or [item.value for item in metadata.information_attributes or ()]
+                    != canonical_array(row["information_attributes_json"], "information attributes")
+                    or metadata.classification_authority_ref != row["classification_authority_ref"]
+                    or hashlib.sha256(str(row["public_text"]).encode()).hexdigest()
+                    != metadata.public_text_hash
+                ):
+                    raise MemoryCorruptionError("conversation recall authority differs")
+                expected_summary["recall_item_authority"] = authority.to_json()
+            elif any(
+                row[name] is not None
+                for name in (
+                    "public_text_json_pointer",
+                    "public_text",
+                    "public_text_hash",
+                    "effective_privacy_class",
+                    "classification_authority_ref",
+                )
+            ):
+                raise MemoryCorruptionError("conversation recall fields are partial")
+            expected_registration_hash = hashlib.sha256(
+                canonical_json(
+                    {
+                        "domain": "simple-harness/conversation-evidence-registration/v3",
+                        "payload": cast(Any, expected_summary),
+                    }
+                ).encode()
+            ).hexdigest()
+            if registration_json != expected_summary or expected_registration_hash != str(
+                row["registration_hash"]
+            ):
+                raise MemoryCorruptionError("conversation registration root differs")
+
+        async with self._db.execute(
+            "SELECT * FROM short_horizon_chunks ORDER BY chunk_id"
+        ) as cursor:
+            chunks = tuple(await cursor.fetchall())
+        privacy_rank = {"public": 0, "personal": 1, "sensitive": 2, "restricted": 3}
+        for chunk in chunks:
+            async with self._db.execute(
+                "SELECT r.* FROM short_horizon_chunk_evidence e "
+                "JOIN conversation_evidence_registrations r "
+                "ON r.registration_id=e.registration_id WHERE e.chunk_id=? "
+                "ORDER BY e.item_ordinal",
+                (chunk["chunk_id"],),
+            ) as cursor:
+                items = tuple(await cursor.fetchall())
+            if not items:
+                raise MemoryCorruptionError("short horizon chunk has no evidence")
+            content = "\n".join(f"{row['role']}: {row['public_text']}" for row in items)
+            content_hash = hashlib.sha256(content.encode()).hexdigest()
+            privacy = max(
+                (str(row["effective_privacy_class"]) for row in items),
+                key=privacy_rank.__getitem__,
+            )
+            attributes = sorted(
+                {
+                    str(value)
+                    for row in items
+                    for value in canonical_array(
+                        row["information_attributes_json"], "registration attributes"
+                    )
+                }
+            )
+            classification_refs = sorted(
+                {str(row["classification_authority_ref"]) for row in items}
+            )
+            occurred_at = max(float(row["occurred_at"]) for row in items)
+            payload = {
+                "subject": str(chunk["subject"]),
+                "primary_conversation_id": str(chunk["primary_conversation_id"]),
+                "causal_group_id": str(chunk["causal_group_id"]),
+                "registration_hashes": [str(row["registration_hash"]) for row in items],
+                "content_hash": content_hash,
+                "effective_privacy_class": privacy,
+                "information_attributes": attributes,
+                "classification_authority_refs": classification_refs,
+            }
+            expected_chunk_id = (
+                "short:" + hashlib.sha256(canonical_json(cast(Any, payload)).encode()).hexdigest()
+            )
+            if (
+                str(chunk["chunk_id"]) != expected_chunk_id
+                or str(chunk["public_text"]) != content
+                or str(chunk["content_hash"]) != content_hash
+                or str(chunk["effective_privacy_class"]) != privacy
+                or canonical_array(chunk["information_attributes_json"], "chunk attributes")
+                != attributes
+                or canonical_array(
+                    chunk["classification_authority_refs_json"],
+                    "chunk classification refs",
+                )
+                != classification_refs
+                or float(chunk["occurred_at"]) != occurred_at
+                or float(chunk["expires_at"]) != occurred_at + SHORT_HORIZON_RETENTION_SECONDS
+            ):
+                raise MemoryCorruptionError("short horizon chunk projection differs")
+
+        async with self._db.execute(
+            "SELECT * FROM short_horizon_audit ORDER BY audit_id"
+        ) as cursor:
+            audits = tuple(await cursor.fetchall())
+        for row in audits:
+            audit = canonical_object(row["audit_json"], "short horizon audit")
+            details = audit.get("details")
+            if (
+                hashlib.sha256(str(row["audit_json"]).encode()).hexdigest()
+                != str(row["audit_hash"])
+                or audit.get("audit_id") != row["audit_id"]
+                or audit.get("principal_id") != row["principal_id"]
+                or audit.get("event_kind") != row["event_kind"]
+                or audit.get("eligible_count") != row["eligible_count"]
+                or audit.get("fts_count") != row["fts_count"]
+                or audit.get("entity_time_count") != row["entity_time_count"]
+                or audit.get("vector_count") != row["vector_count"]
+                or audit.get("disclosure_context_hash")
+                != row["disclosure_context_hash"]
+                or audit.get("query_hash") != row["query_hash"]
+                or audit.get("generation_id") != row["generation_id"]
+                or audit.get("generation_state") != row["generation_state"]
+                or audit.get("degradation_code") != row["degradation_code"]
+                or audit.get("created_at") != row["created_at"]
+                or not isinstance(details, dict)
+            ):
+                raise MemoryCorruptionError("short horizon audit differs")
+            if row["event_kind"] == "recall" and (
+                not isinstance(details.get("eligible"), list)
+                or len(details["eligible"]) != int(row["eligible_count"])
+                or not isinstance(details.get("fts_lane"), list)
+                or len(details["fts_lane"]) != int(row["fts_count"])
+                or not isinstance(details.get("entity_time_lane"), list)
+                or len(details["entity_time_lane"])
+                != int(row["entity_time_count"])
+                or not isinstance(details.get("vector_lane"), list)
+                or len(details["vector_lane"]) != int(row["vector_count"])
+                or not isinstance(details.get("selected"), list)
+            ):
+                raise MemoryCorruptionError("short horizon recall audit differs")
+        await self._load_short_horizon_cache_unlocked()
 
     @staticmethod
     def _canonical_audit_object(value: object, name: str) -> dict[str, JsonValue]:
@@ -8203,8 +9428,7 @@ class SQLiteHumanMemoryBackend:
         if (
             head_identity[:5] != revision_identity
             or head_identity[0] != intent.subject
-            or head_identity[3:5]
-            != (intent.scope.kind.value, intent.scope.owner_id)
+            or head_identity[3:5] != (intent.scope.kind.value, intent.scope.owner_id)
             or head_identity[5] != memory_type
             or str(target[12]) != intent.transition_from.value
             or int(target[6]) < committed_revision
@@ -8240,10 +9464,7 @@ class SQLiteHumanMemoryBackend:
     ) -> None:
         """Recompute both Host-authority audit chains on every open and close."""
 
-        if (
-            procedure_replay_identity is not None
-            and prospective_replay_identity is not None
-        ):
+        if procedure_replay_identity is not None and prospective_replay_identity is not None:
             raise MemoryCorruptionError("lifecycle replay validator is ambiguous")
 
         from simple_harness.runtime import (
@@ -8276,12 +9497,9 @@ class SQLiteHumanMemoryBackend:
         if prospective_replay_identity is not None:
             procedure_epochs: dict[tuple[str, int], str] = {}
         else:
-            async with self._db.execute(
-                procedure_epoch_query, procedure_epoch_params
-            ) as cursor:
+            async with self._db.execute(procedure_epoch_query, procedure_epoch_params) as cursor:
                 procedure_epochs = {
-                    (str(row[0]), int(row[1])): str(row[2])
-                    for row in await cursor.fetchall()
+                    (str(row[0]), int(row[1])): str(row[2]) for row in await cursor.fetchall()
                 }
 
         procedure_consumptions: list[sqlite3.Row]
@@ -8408,11 +9626,11 @@ class SQLiteHumanMemoryBackend:
             observation_json = self._canonical_audit_object(
                 observation["observation_json"], "procedure observation"
             )
-            if observation_json != intent.to_json() or str(
-                observation["observation_hash"]
-            ) != hashlib.sha256(
-                canonical_json(observation_json).encode("utf-8")
-            ).hexdigest():
+            if (
+                observation_json != intent.to_json()
+                or str(observation["observation_hash"])
+                != hashlib.sha256(canonical_json(observation_json).encode("utf-8")).hexdigest()
+            ):
                 raise MemoryCorruptionError("procedure observation hash differs")
             observation_columns = (
                 str(observation["observation_id"]),
@@ -8470,9 +9688,7 @@ class SQLiteHumanMemoryBackend:
                 bound_fingerprint = intent.applicability.fingerprint
                 bound_hazard = intent.hazard.value
                 expected_reason = "procedure_applicability_bound"
-            fingerprint_matches = (
-                bound_fingerprint == intent.applicability.fingerprint
-            )
+            fingerprint_matches = bound_fingerprint == intent.applicability.fingerprint
             hazard_matches = bound_hazard == intent.hazard.value
             window_start = max(0.0, consumed_at - 90.0 * 24.0 * 60.0 * 60.0)
             async with self._db.execute(
@@ -8554,11 +9770,11 @@ class SQLiteHumanMemoryBackend:
                 "independent_successes": int(decision["independent_successes"]),
                 "reason_code": str(decision["reason_code"]),
             }
-            if decision_json != expected_decision or str(
-                decision["decision_hash"]
-            ) != hashlib.sha256(
-                canonical_json(expected_decision).encode("utf-8")
-            ).hexdigest():
+            if (
+                decision_json != expected_decision
+                or str(decision["decision_hash"])
+                != hashlib.sha256(canonical_json(expected_decision).encode("utf-8")).hexdigest()
+            ):
                 raise MemoryCorruptionError("procedure decision hash differs")
             if (
                 str(decision["memory_id"]) != intent.target_memory_id
@@ -8594,9 +9810,7 @@ class SQLiteHumanMemoryBackend:
             if committed_record is None or (
                 str(committed_record[0]) != qualification_epoch
                 or str(committed_record[1]) != bound_fingerprint
-                or (
-                    None if committed_record[2] is None else str(committed_record[2])
-                )
+                or (None if committed_record[2] is None else str(committed_record[2]))
                 != bound_hazard
                 or int(committed_record[3]) != expected_successes
                 or int(committed_record[4]) != expected_failures
@@ -8615,19 +9829,15 @@ class SQLiteHumanMemoryBackend:
                 or result.result_hash != str(result_row["result_hash"])
                 or result.result_id != str(result_row["result_id"])
                 or result.result_id
-                != _stable_id(
-                    "procedure-observation-result", cast(Any, authority).authority_id
-                )
-                or str(result_row["replay_identity"])
-                != cast(Any, authority).replay_identity
+                != _stable_id("procedure-observation-result", cast(Any, authority).authority_id)
+                or str(result_row["replay_identity"]) != cast(Any, authority).replay_identity
                 or result.observation_id != intent.observation_id
                 or result.decision_id != str(decision["decision_id"])
                 or result.memory_id != str(decision["memory_id"])
                 or result.base_revision != int(decision["base_revision"])
                 or result.committed_revision != int(decision["committed_revision"])
                 or result.lifecycle_state.value != str(decision["transition_to"])
-                or result.independent_successes
-                != int(decision["independent_successes"])
+                or result.independent_successes != int(decision["independent_successes"])
                 or result.reason_code != str(decision["reason_code"])
                 or result.decided_at != float(result_row["decided_at"])
                 or result.decided_at != float(decision["decided_at"])
@@ -8657,9 +9867,7 @@ class SQLiteHumanMemoryBackend:
         if replay_identity is not None:
             consumption_query += " WHERE replay_identity=?"
             consumption_params = (replay_identity,)
-        async with self._db.execute(
-            consumption_query, consumption_params
-        ) as cursor:
+        async with self._db.execute(consumption_query, consumption_params) as cursor:
             consumptions = list(await cursor.fetchall())
         ids: set[str] = set()
         authorities: dict[str, tuple[object, str]] = {}
@@ -8778,43 +9986,36 @@ class SQLiteHumanMemoryBackend:
                 "outcome": str(decision["outcome"]),
                 "reason_code": str(decision["reason_code"]),
             }
-            if decision_json != expected_decision or str(
-                decision["decision_hash"]
-            ) != hashlib.sha256(
-                canonical_json(expected_decision).encode("utf-8")
-            ).hexdigest():
+            if (
+                decision_json != expected_decision
+                or str(decision["decision_hash"])
+                != hashlib.sha256(canonical_json(expected_decision).encode("utf-8")).hexdigest()
+            ):
                 raise MemoryCorruptionError("prospective decision hash differs")
             decision_outcome = str(decision["outcome"])
             if (
                 str(decision["decision_id"])
-                != _stable_id(
-                    "prospective-signal-decision", cast(Any, authority).authority_id
-                )
+                != _stable_id("prospective-signal-decision", cast(Any, authority).authority_id)
                 or str(decision["memory_id"]) != intent.target_memory_id
                 or int(decision["base_revision"]) != intent.target_revision
                 or str(decision["transition_from"]) != intent.transition_from.value
                 or (
                     decision_outcome == "applied"
                     and (
-                        int(decision["committed_revision"])
-                        != intent.target_revision + 1
-                        or str(decision["transition_to"])
-                        != intent.transition_to.value
+                        int(decision["committed_revision"]) != intent.target_revision + 1
+                        or str(decision["transition_to"]) != intent.transition_to.value
                     )
                 )
                 or (
                     decision_outcome == "acknowledged"
                     and (
-                        int(decision["committed_revision"])
-                        != intent.target_revision
-                        or str(decision["transition_to"])
-                        != intent.transition_to.value
+                        int(decision["committed_revision"]) != intent.target_revision
+                        or str(decision["transition_to"]) != intent.transition_to.value
                     )
                 )
                 or (
                     decision_outcome == "ignored"
-                    and int(decision["committed_revision"])
-                    != intent.target_revision
+                    and int(decision["committed_revision"]) != intent.target_revision
                 )
             ):
                 raise MemoryCorruptionError("prospective decision authority binding differs")
@@ -8839,11 +10040,8 @@ class SQLiteHumanMemoryBackend:
                 or result.result_hash != str(result_row["result_hash"])
                 or result.result_id != str(result_row["result_id"])
                 or result.result_id
-                != _stable_id(
-                    "prospective-signal-result", cast(Any, authority).authority_id
-                )
-                or str(result_row["replay_identity"])
-                != cast(Any, authority).replay_identity
+                != _stable_id("prospective-signal-result", cast(Any, authority).authority_id)
+                or str(result_row["replay_identity"]) != cast(Any, authority).replay_identity
                 or result.signal_id != intent.signal_id
                 or result.decision_id != str(decision["decision_id"])
                 or result.memory_id != str(decision["memory_id"])
@@ -8869,9 +10067,10 @@ class SQLiteHumanMemoryBackend:
                 event_json = self._canonical_audit_object(
                     registration["event_json"], "prospective registration event"
                 )
-                if str(registration["event_hash"]) != hashlib.sha256(
-                    canonical_json(event_json).encode("utf-8")
-                ).hexdigest():
+                if (
+                    str(registration["event_hash"])
+                    != hashlib.sha256(canonical_json(event_json).encode("utf-8")).hexdigest()
+                ):
                     raise MemoryCorruptionError("prospective registration hash differs")
                 registration_event_columns = (
                     event_json.get("registration_event_id"),
@@ -8916,11 +10115,9 @@ class SQLiteHumanMemoryBackend:
                     or stored_registration_columns != expected_registration_columns
                     or str(registration["consumption_id"]) != consumption_id
                     or str(registration["principal_id"]) != intent.subject
-                    or float(registration["occurred_at"])
-                    != float(decision["decided_at"])
+                    or float(registration["occurred_at"]) != float(decision["decided_at"])
                     or decision_outcome != "acknowledged"
-                    or str(decision["reason_code"])
-                    != "prospective_registration_acknowledged"
+                    or str(decision["reason_code"]) != "prospective_registration_acknowledged"
                 ):
                     raise MemoryCorruptionError("prospective registration columns differ")
                 async with self._db.execute(
@@ -8930,9 +10127,7 @@ class SQLiteHumanMemoryBackend:
                 ) as cursor:
                     outbox = await cursor.fetchone()
                 command = (
-                    "registration"
-                    if expected_registration_state == "accepted"
-                    else "invalidation"
+                    "registration" if expected_registration_state == "accepted" else "invalidation"
                 )
                 expected_outbox_payload: dict[str, JsonValue] = {
                     "schema_version": 1,
@@ -8945,13 +10140,11 @@ class SQLiteHumanMemoryBackend:
                 }
                 if outbox is None or (
                     str(outbox[0]) != intent.subject
-                    or str(outbox[1])
-                    != f"memory.prospective.{command}.requested"
+                    or str(outbox[1]) != f"memory.prospective.{command}.requested"
                     or str(outbox[2]) != intent.outbox_id
                     or str(outbox[3]) != canonical_json(expected_outbox_payload)
                     or str(outbox[4]) != intent.outbox_payload_hash
-                    or str(outbox[4])
-                    != hashlib.sha256(str(outbox[3]).encode("utf-8")).hexdigest()
+                    or str(outbox[4]) != hashlib.sha256(str(outbox[3]).encode("utf-8")).hexdigest()
                 ):
                     raise MemoryCorruptionError("prospective registration outbox differs")
                 if expected_registration_state == "invalidated":
@@ -8974,11 +10167,7 @@ class SQLiteHumanMemoryBackend:
                             "prospective invalidation registration is not live"
                         )
             elif str(decision["reason_code"]) == "prospective_occurrence_already_applied":
-                if (
-                    decision_outcome != "ignored"
-                    or registration is not None
-                    or trigger is not None
-                ):
+                if decision_outcome != "ignored" or registration is not None or trigger is not None:
                     raise MemoryCorruptionError("prospective duplicate cardinality differs")
             else:
                 if registration is not None or trigger is None:
@@ -8986,9 +10175,10 @@ class SQLiteHumanMemoryBackend:
                 event_json = self._canonical_audit_object(
                     trigger["event_json"], "prospective trigger event"
                 )
-                if str(trigger["event_hash"]) != hashlib.sha256(
-                    canonical_json(event_json).encode("utf-8")
-                ).hexdigest():
+                if (
+                    str(trigger["event_hash"])
+                    != hashlib.sha256(canonical_json(event_json).encode("utf-8")).hexdigest()
+                ):
                     raise MemoryCorruptionError("prospective trigger hash differs")
                 trigger_event_columns = (
                     event_json.get("event_id"),
@@ -9032,34 +10222,27 @@ class SQLiteHumanMemoryBackend:
                     or str(trigger["consumption_id"]) != consumption_id
                     or str(trigger["principal_id"]) != intent.subject
                     or str(trigger["reason_code"]) != str(decision["reason_code"])
-                    or (
-                        str(trigger["outcome"]) == "ignored"
-                        and decision_outcome != "ignored"
-                    )
+                    or (str(trigger["outcome"]) == "ignored" and decision_outcome != "ignored")
                     or (
                         str(trigger["outcome"]) in {"matched", "expired"}
                         and decision_outcome != "applied"
                     )
                     or (
                         str(trigger["outcome"]) == "ignored"
-                        and str(trigger["reason_code"])
-                        != "prospective_signal_stale"
+                        and str(trigger["reason_code"]) != "prospective_signal_stale"
                     )
                     or (
                         str(trigger["outcome"]) == "matched"
                         and (
-                            intent.signal_kind.value
-                            not in {"time_due", "event_occurred"}
-                            or str(trigger["reason_code"])
-                            != "prospective_trigger_matched"
+                            intent.signal_kind.value not in {"time_due", "event_occurred"}
+                            or str(trigger["reason_code"]) != "prospective_trigger_matched"
                         )
                     )
                     or (
                         str(trigger["outcome"]) == "expired"
                         and (
                             intent.signal_kind.value != "expired"
-                            or str(trigger["reason_code"])
-                            != "prospective_expired"
+                            or str(trigger["reason_code"]) != "prospective_expired"
                         )
                     )
                 ):
@@ -9067,17 +10250,15 @@ class SQLiteHumanMemoryBackend:
 
         if replay_identity is None:
             async with self._db.execute(
-                "SELECT payload,payload_hash FROM outbox "
-                "WHERE topic LIKE 'memory.prospective.%'"
+                "SELECT payload,payload_hash FROM outbox WHERE topic LIKE 'memory.prospective.%'"
             ) as cursor:
                 outbox_rows = list(await cursor.fetchall())
             for row in outbox_rows:
-                payload = self._canonical_audit_object(
-                    row["payload"], "prospective outbox"
-                )
-                if str(row["payload_hash"]) != hashlib.sha256(
-                    canonical_json(payload).encode("utf-8")
-                ).hexdigest():
+                payload = self._canonical_audit_object(row["payload"], "prospective outbox")
+                if (
+                    str(row["payload_hash"])
+                    != hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+                ):
                     raise MemoryCorruptionError("prospective outbox hash differs")
 
     async def _read_audit_cursor_hmac_key(self) -> bytes:

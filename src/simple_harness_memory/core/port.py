@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Protocol
 
 from simple_harness.runtime import (
+    DisclosureContext,
     MemoryMutationApplyResult,
     MemoryMutationPlan,
     ProcedureObservationAuthorityRef,
@@ -24,6 +25,11 @@ from simple_harness_memory.core.models import (
     Hit,
     MemoryApplyResult,
     Message,
+)
+from simple_harness_memory.core.short_horizon import (
+    ShortHorizonGenerationBuildResult,
+    ShortHorizonProjectionBuildResult,
+    ShortHorizonRecallResult,
 )
 from simple_harness_memory.core.twin import DigitalTwin
 
@@ -288,3 +294,26 @@ class CognitiveMemoryBackend(Protocol):
         scope: MemoryScope,
         reference: ProspectiveSignalAuthorityRef,
     ) -> ProspectiveSignalApplyResult: ...
+
+    async def rebuild_short_horizon_projection(
+        self, *, principal: MemoryPrincipal, now: float | None = None
+    ) -> ShortHorizonProjectionBuildResult: ...
+
+    async def rebuild_short_horizon_generation(
+        self, *, now: float | None = None
+    ) -> ShortHorizonGenerationBuildResult: ...
+
+    async def recall_short_horizon(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        query: str,
+        disclosure_context: DisclosureContext,
+        limit: int = 10,
+        deadline_ms: int = 2_000,
+        now: float | None = None,
+    ) -> ShortHorizonRecallResult: ...
+
+    async def cleanup_short_horizon(
+        self, *, principal: MemoryPrincipal, now: float | None = None
+    ) -> int: ...

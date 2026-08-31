@@ -46,6 +46,11 @@
     "ProcedureObservationApplyResult",
     "ProspectiveSignalApplyResult",
     "ScopeKind",
+    "ShortHorizonDegradationCode",
+    "ShortHorizonGenerationBuildResult",
+    "ShortHorizonProjectionBuildResult",
+    "ShortHorizonRecallHit",
+    "ShortHorizonRecallResult",
     "WorldModelPort"
   ],
   "migrations": [
