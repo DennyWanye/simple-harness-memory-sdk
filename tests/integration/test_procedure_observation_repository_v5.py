@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from simple_harness.contracts import canonical_json
 from simple_harness.runtime import (
     AdmittedEvidenceAuthority,
     ConflictStatus,
@@ -41,9 +43,17 @@ from simple_harness.runtime import (
     issue_procedure_observation_authority,
 )
 
-from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
-from simple_harness_memory.core.errors import MemoryValidationError
-from simple_harness_memory.core.identity import MemoryScope
+from simple_harness_memory.backends.sqlite_v5 import (
+    PROCEDURE_OBSERVATION_FAULT_POINTS,
+    SQLiteHumanMemoryBackend,
+)
+from simple_harness_memory.core.errors import (
+    MemoryCorruptionError,
+    MemoryOwnershipConflict,
+    MemoryValidationError,
+    MemoryWriterConflict,
+)
+from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
 from tests.integration.test_cognitive_mutation_repository_v5 import (
     _admitted,
     _Authority,
@@ -392,7 +402,44 @@ async def test_procedure_qualification_epoch_counts_independent_recent_successes
     ) as cursor:
         epoch_row = await cursor.fetchone()
     assert epoch_row is not None and tuple(epoch_row) == (1, "none")
+    with pytest.raises(MemoryOwnershipConflict, match="replay_binding_differs"):
+        await backend.record_procedure_observation(
+            principal=_principal("actor-2"),
+            scope=MemoryScope.personal("actor-2"),
+            reference=first,
+        )
+    with pytest.raises(MemoryOwnershipConflict, match="replay_binding_differs"):
+        await backend.record_procedure_observation(
+            principal=MemoryPrincipal(
+                "deployment-2", "household-2", "actor-1", "session-2"
+            ),
+            scope=MemoryScope.personal("actor-1"),
+            reference=first,
+        )
+    with pytest.raises(MemoryOwnershipConflict, match="replay_binding_differs"):
+        await backend.record_procedure_observation(
+            principal=_principal(),
+            scope=MemoryScope.family("household-1"),
+            reference=first,
+        )
+    resolutions = authority.procedure_resolutions
+    path = backend._db_path
     await backend.close()
+    reopened = SQLiteHumanMemoryBackend(
+        path,
+        now=lambda: clock[0],
+        evidence_authority=authority,
+        conversation_evidence_authority=authority,
+        procedure_observation_authority=authority,
+        memory_action_authority=authority,
+        classification_policy=_classification_policy(),
+    )
+    await reopened.initialize()
+    assert await reopened.record_procedure_observation(
+        principal=_principal(), scope=MemoryScope.personal("actor-1"), reference=first
+    ) == result
+    assert authority.procedure_resolutions == resolutions
+    await reopened.close()
 
 
 @pytest.mark.asyncio
@@ -515,3 +562,191 @@ async def test_procedure_window_non_attributable_future_and_new_epoch(
     )
     assert fresh_result.independent_successes == 1
     await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_procedure_first_bind_is_cas_serialized_and_scope_tamper_fails_close(
+    tmp_path: Path,
+) -> None:
+    clock = [20.0]
+    backend, authority, evidence, memory_id, _revision = await _setup(
+        tmp_path / "procedure-concurrent.db", clock
+    )
+    first = _grant(
+        authority,
+        evidence,
+        memory_id=memory_id,
+        revision=1,
+        index=1,
+        transition_from=ProcedureLifecycleState.DRAFT,
+        transition_to=ProcedureLifecycleState.DRAFT,
+    )
+    second = _grant(
+        authority,
+        evidence,
+        memory_id=memory_id,
+        revision=1,
+        index=3,
+        transition_from=ProcedureLifecycleState.DRAFT,
+        transition_to=ProcedureLifecycleState.DRAFT,
+    )
+
+    async def apply(reference: ProcedureObservationAuthorityRef):
+        return await backend.record_procedure_observation(
+            principal=_principal(),
+            scope=MemoryScope.personal("actor-1"),
+            reference=reference,
+        )
+
+    results = await asyncio.gather(apply(first), apply(second), return_exceptions=True)
+    assert sum(not isinstance(item, BaseException) for item in results) == 1
+    assert sum(isinstance(item, MemoryWriterConflict) for item in results) == 1
+    await backend.connection.execute(
+        "UPDATE cognitive_memory_heads SET scope_kind='family',scope_owner='household-1'"
+    )
+    with pytest.raises(MemoryCorruptionError, match="scope integrity"):
+        await backend.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault_point", PROCEDURE_OBSERVATION_FAULT_POINTS)
+async def test_procedure_faults_are_atomic_or_durably_replayable(
+    tmp_path: Path, fault_point: str
+) -> None:
+    clock = [20.0]
+    backend, authority, evidence, memory_id, _revision = await _setup(
+        tmp_path / f"procedure-fault-{fault_point}.db", clock, count=1
+    )
+    reference = _grant(
+        authority,
+        evidence,
+        memory_id=memory_id,
+        revision=1,
+        index=1,
+        transition_from=ProcedureLifecycleState.DRAFT,
+        transition_to=ProcedureLifecycleState.DRAFT,
+    )
+
+    def inject(actual: str) -> None:
+        if actual == fault_point:
+            raise RuntimeError(fault_point)
+
+    backend._fault_injector = inject
+    with pytest.raises(RuntimeError, match=fault_point):
+        await backend.record_procedure_observation(
+            principal=_principal(),
+            scope=MemoryScope.personal("actor-1"),
+            reference=reference,
+        )
+    backend._fault_injector = None
+    async with backend.connection.execute(
+        "SELECT current_revision FROM cognitive_memory_heads"
+    ) as cursor:
+        head = await cursor.fetchone()
+    assert head is not None
+    if fault_point == "procedure.after_commit":
+        assert int(head[0]) == 2
+        replay = await backend.record_procedure_observation(
+            principal=_principal(),
+            scope=MemoryScope.personal("actor-1"),
+            reference=reference,
+        )
+        assert replay.committed_revision == 2
+    else:
+        assert int(head[0]) == 1
+        async with backend.connection.execute(
+            "SELECT COUNT(*) FROM procedure_observation_authority_consumptions"
+        ) as cursor:
+            count = await cursor.fetchone()
+        assert count is not None and int(count[0]) == 0
+    await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_procedure_audit_chain_tamper_fails_close_and_reopen(tmp_path: Path) -> None:
+    clock = [20.0]
+    path = tmp_path / "procedure-audit-tamper.db"
+    backend, authority, evidence, memory_id, _revision = await _setup(path, clock, count=1)
+    reference = _grant(
+        authority,
+        evidence,
+        memory_id=memory_id,
+        revision=1,
+        index=1,
+        transition_from=ProcedureLifecycleState.DRAFT,
+        transition_to=ProcedureLifecycleState.DRAFT,
+    )
+    await backend.record_procedure_observation(
+        principal=_principal(), scope=MemoryScope.personal("actor-1"), reference=reference
+    )
+    async with backend.connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type='trigger' "
+        "AND name='procedure_observation_results_immutable_update'"
+    ) as cursor:
+        trigger = await cursor.fetchone()
+    assert trigger is not None
+    await backend.connection.execute(
+        "DROP TRIGGER procedure_observation_results_immutable_update"
+    )
+    await backend.connection.execute(
+        "UPDATE procedure_observation_results SET result_hash=?", ("0" * 64,)
+    )
+    with pytest.raises(MemoryCorruptionError, match="procedure result chain"):
+        await backend.close()
+    reopened = SQLiteHumanMemoryBackend(
+        path,
+        now=lambda: clock[0],
+        evidence_authority=authority,
+        conversation_evidence_authority=authority,
+        procedure_observation_authority=authority,
+        classification_policy=_classification_policy(),
+    )
+    with pytest.raises(MemoryCorruptionError, match="procedure result chain"):
+        await reopened.initialize()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tamper", ("rewrite", "delete"))
+async def test_procedure_replay_rejects_result_chain_tamper(
+    tmp_path: Path, tamper: str
+) -> None:
+    clock = [20.0]
+    backend, authority, evidence, memory_id, _revision = await _setup(
+        tmp_path / "procedure-replay-rehash.db", clock, count=1
+    )
+    reference = _grant(
+        authority,
+        evidence,
+        memory_id=memory_id,
+        revision=1,
+        index=1,
+        transition_from=ProcedureLifecycleState.DRAFT,
+        transition_to=ProcedureLifecycleState.DRAFT,
+    )
+    result = await backend.record_procedure_observation(
+        principal=_principal(), scope=MemoryScope.personal("actor-1"), reference=reference
+    )
+    if tamper == "rewrite":
+        forged = replace(result, reason_code="forged_but_rehashed")
+        await backend.connection.execute(
+            "DROP TRIGGER procedure_observation_results_immutable_update"
+        )
+        await backend.connection.execute(
+            "UPDATE procedure_observation_results SET result_json=?,result_hash=?",
+            (canonical_json(forged.to_json()), forged.result_hash),
+        )
+        expected = "procedure result chain"
+    else:
+        await backend.connection.execute(
+            "DROP TRIGGER procedure_observation_results_immutable_delete"
+        )
+        await backend.connection.execute("DELETE FROM procedure_observation_results")
+        expected = "procedure audit chain cardinality"
+    with pytest.raises(MemoryCorruptionError, match=expected):
+        await backend.record_procedure_observation(
+            principal=_principal(),
+            scope=MemoryScope.personal("actor-1"),
+            reference=reference,
+        )
+    with pytest.raises(MemoryCorruptionError, match=expected):
+        await backend.close()

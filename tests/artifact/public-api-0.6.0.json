@@ -31,6 +31,7 @@
     "ExportPage",
     "Fact",
     "Hit",
+    "LifecycleApplyOutcome",
     "MemoryApplyResult",
     "MemoryBackend",
     "MemoryIdempotencyConflict",
@@ -42,6 +43,8 @@
     "MemoryValidationError",
     "Message",
     "PrivacyReceipt",
+    "ProcedureObservationApplyResult",
+    "ProspectiveSignalApplyResult",
     "ScopeKind",
     "WorldModelPort"
   ],

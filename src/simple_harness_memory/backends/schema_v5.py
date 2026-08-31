@@ -474,6 +474,8 @@ CREATE TABLE cognitive_apply_heads (
 CREATE TABLE cognitive_memory_heads (
     memory_id TEXT PRIMARY KEY,
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    deployment_id TEXT NOT NULL,
+    household_id TEXT NOT NULL,
     scope_kind TEXT NOT NULL CHECK (scope_kind IN ('personal', 'family')),
     scope_owner TEXT NOT NULL,
     memory_type TEXT NOT NULL CHECK (
@@ -489,6 +491,8 @@ CREATE INDEX cognitive_memory_head_lookup
 CREATE TABLE cognitive_memory_revisions (
     memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    deployment_id TEXT NOT NULL,
+    household_id TEXT NOT NULL,
     scope_kind TEXT NOT NULL CHECK (scope_kind IN ('personal', 'family')),
     scope_owner TEXT NOT NULL,
     revision INTEGER NOT NULL CHECK (revision >= 1),
@@ -1126,7 +1130,7 @@ CREATE TABLE prospective_signal_decisions (
     committed_revision INTEGER NOT NULL CHECK (committed_revision >= base_revision),
     transition_from TEXT NOT NULL,
     transition_to TEXT NOT NULL,
-    outcome TEXT NOT NULL CHECK (outcome IN ('applied', 'ignored')),
+    outcome TEXT NOT NULL CHECK (outcome IN ('applied', 'acknowledged', 'ignored')),
     reason_code TEXT NOT NULL,
     decision_json BLOB NOT NULL,
     decision_hash TEXT NOT NULL UNIQUE,

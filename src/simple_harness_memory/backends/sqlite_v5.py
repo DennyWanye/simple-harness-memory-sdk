@@ -67,6 +67,7 @@ if TYPE_CHECKING:
         ProcedureObservationAuthorityPort,
         ProcedureObservationAuthorityRef,
         ProspectiveSignalAuthorityPort,
+        ProspectiveSignalAuthorityRef,
         SanitizedEvidenceEnvelope,
         SanitizedEvidenceReceipt,
     )
@@ -97,6 +98,7 @@ if TYPE_CHECKING:
     )
     from simple_harness_memory.core.lifecycle_results import (
         ProcedureObservationApplyResult,
+        ProspectiveSignalApplyResult,
     )
     from simple_harness_memory.core.mutations import InformationClassificationPolicy
     from simple_harness_memory.core.suppression import (
@@ -1077,17 +1079,34 @@ class SQLiteHumanMemoryBackend:
             verify_procedure_observation_authority,
         )
 
+        from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
         from simple_harness_memory.core.lifecycle_results import (
             UNBOUND_PROCEDURE_APPLICABILITY,
             ProcedureObservationApplyResult,
         )
 
+        if type(principal) is not MemoryPrincipal:
+            raise TypeError("principal must use MemoryPrincipal")
+        if type(scope) is not MemoryScope:
+            raise TypeError("scope must use MemoryScope")
         if type(reference) is not ProcedureObservationAuthorityRef:
             raise TypeError("reference must use ProcedureObservationAuthorityRef")
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v5 backend is not initialized")
         scope.authorize(principal)
-        replay = await self._read_procedure_result_unlocked(reference.replay_identity)
+        try:
+            replay = await self._read_procedure_result_unlocked(
+                principal=principal, scope=scope, reference=reference
+            )
+        except MemoryErrorBase as exc:
+            await self._append_lifecycle_rejection_audit(
+                table="procedure_observation_rejections",
+                domain="procedure-observation",
+                principal_id=principal.actor_id,
+                authority_ref_hash=reference.ref_hash,
+                reason_code=str(exc),
+            )
+            raise
         if replay is not None:
             return replay
         if self._procedure_observation_authority is None:
@@ -1132,7 +1151,7 @@ class SQLiteHumanMemoryBackend:
                 try:
                     self._fault("procedure.after_begin")
                     replay = await self._read_procedure_result_unlocked(
-                        authority.replay_identity
+                        principal=principal, scope=scope, reference=reference
                     )
                     if replay is not None:
                         await self._db.execute("COMMIT")
@@ -1148,8 +1167,14 @@ class SQLiteHumanMemoryBackend:
                         "FROM cognitive_memory_heads h JOIN cognitive_memory_revisions r "
                         "ON r.memory_id=h.memory_id AND r.revision=h.current_revision "
                         "JOIN procedure_records p ON p.memory_id=r.memory_id "
-                        "AND p.revision=r.revision WHERE h.principal_id=? AND h.memory_id=?",
-                        (principal.actor_id, intent.target_memory_id),
+                        "AND p.revision=r.revision WHERE h.principal_id=? "
+                        "AND h.deployment_id=? AND h.household_id=? AND h.memory_id=?",
+                        (
+                            principal.actor_id,
+                            principal.deployment_id,
+                            principal.household_id,
+                            intent.target_memory_id,
+                        ),
                     ) as cursor:
                         row = await cursor.fetchone()
                     if row is None:
@@ -1328,6 +1353,7 @@ class SQLiteHumanMemoryBackend:
                     update = await self._db.execute(
                         "UPDATE cognitive_memory_heads SET current_revision=?,updated_at=? "
                         "WHERE principal_id=? AND scope_kind=? AND scope_owner=? "
+                        "AND deployment_id=? AND household_id=? "
                         "AND memory_id=? AND current_revision=?",
                         (
                             committed_revision,
@@ -1335,6 +1361,8 @@ class SQLiteHumanMemoryBackend:
                             principal.actor_id,
                             scope.kind.value,
                             scope.owner_id,
+                            principal.deployment_id,
+                            principal.household_id,
                             intent.target_memory_id,
                             base_revision,
                         ),
@@ -1429,6 +1457,368 @@ class SQLiteHumanMemoryBackend:
             await self._append_lifecycle_rejection_audit(
                 table="procedure_observation_rejections",
                 domain="procedure-observation",
+                principal_id=principal.actor_id,
+                authority_ref_hash=reference.ref_hash,
+                reason_code=reason,
+            )
+            if isinstance(exc, MemoryErrorBase):
+                raise
+            raise MemoryValidationError(reason) from exc
+
+    async def apply_prospective_signal(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        scope: MemoryScope,
+        reference: ProspectiveSignalAuthorityRef,
+    ) -> ProspectiveSignalApplyResult:
+        """Consume one Host scheduler/runtime signal without owning clock or action execution."""
+
+        from simple_harness.runtime import (
+            ProspectiveLifecycleState,
+            ProspectiveSignalAuthorityRef,
+            ProspectiveSignalKind,
+            verify_prospective_signal_authority,
+        )
+
+        from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
+        from simple_harness_memory.core.lifecycle_results import (
+            LifecycleApplyOutcome,
+            ProspectiveSignalApplyResult,
+        )
+
+        if type(principal) is not MemoryPrincipal:
+            raise TypeError("principal must use MemoryPrincipal")
+        if type(scope) is not MemoryScope:
+            raise TypeError("scope must use MemoryScope")
+        if type(reference) is not ProspectiveSignalAuthorityRef:
+            raise TypeError("reference must use ProspectiveSignalAuthorityRef")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v5 backend is not initialized")
+        scope.authorize(principal)
+        try:
+            replay = await self._read_prospective_result_unlocked(
+                principal=principal, scope=scope, reference=reference
+            )
+        except MemoryErrorBase as exc:
+            await self._append_lifecycle_rejection_audit(
+                table="prospective_signal_rejections",
+                domain="prospective-signal",
+                principal_id=principal.actor_id,
+                authority_ref_hash=reference.ref_hash,
+                reason_code=str(exc),
+            )
+            raise
+        if replay is not None:
+            return replay
+        if self._prospective_signal_authority is None:
+            await self._append_lifecycle_rejection_audit(
+                table="prospective_signal_rejections",
+                domain="prospective-signal",
+                principal_id=principal.actor_id,
+                authority_ref_hash=reference.ref_hash,
+                reason_code="prospective_signal_authority_required",
+            )
+            raise MemoryValidationError("prospective_signal_authority_required")
+        try:
+            resolved_at = _timestamp(self._now())
+            authority = await verify_prospective_signal_authority(
+                reference,
+                self._prospective_signal_authority,
+                current_time=resolved_at,
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            await self._append_lifecycle_rejection_audit(
+                table="prospective_signal_rejections",
+                domain="prospective-signal",
+                principal_id=principal.actor_id,
+                authority_ref_hash=reference.ref_hash,
+                reason_code="prospective_signal_authority_rejected",
+            )
+            raise MemoryValidationError("prospective_signal_authority_rejected") from exc
+        intent = authority.intent
+        try:
+            if intent.subject != principal.actor_id:
+                raise MemoryOwnershipConflict("prospective_signal_subject_differs")
+            if (intent.scope.kind.value, intent.scope.owner_id) != (
+                scope.kind.value,
+                scope.owner_id,
+            ):
+                raise MemoryOwnershipConflict("prospective_signal_scope_differs")
+            async with self._write_lock:
+                self._fault("prospective.before_begin")
+                await self._db.execute("BEGIN IMMEDIATE")
+                committed = False
+                try:
+                    self._fault("prospective.after_begin")
+                    replay = await self._read_prospective_result_unlocked(
+                        principal=principal, scope=scope, reference=reference
+                    )
+                    if replay is not None:
+                        await self._db.execute("COMMIT")
+                        committed = True
+                        return replay
+                    consumed_at = _timestamp(self._now())
+                    if consumed_at < authority.issued_at or consumed_at >= authority.expires_at:
+                        raise MemoryValidationError("prospective_signal_authority_expired")
+                    if intent.observed_at > consumed_at:
+                        raise MemoryValidationError("prospective_signal_observed_at_future")
+                    async with self._db.execute(
+                        "SELECT h.memory_type,h.current_revision,h.scope_kind,h.scope_owner,"
+                        "r.lifecycle_state,p.trigger_json FROM cognitive_memory_heads h "
+                        "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
+                        "AND r.revision=? JOIN prospective_records p ON p.memory_id=r.memory_id "
+                        "AND p.revision=r.revision WHERE h.principal_id=? "
+                        "AND h.deployment_id=? AND h.household_id=? AND h.memory_id=?",
+                        (
+                            intent.target_revision,
+                            principal.actor_id,
+                            principal.deployment_id,
+                            principal.household_id,
+                            intent.target_memory_id,
+                        ),
+                    ) as cursor:
+                        row = await cursor.fetchone()
+                    if row is None:
+                        raise MemoryValidationError("prospective_signal_target_not_found")
+                    if str(row[0]) != "prospective":
+                        raise MemoryValidationError("prospective_signal_target_type_differs")
+                    if (str(row[2]), str(row[3])) != (
+                        scope.kind.value,
+                        scope.owner_id,
+                    ):
+                        raise MemoryOwnershipConflict("prospective_signal_scope_differs")
+                    stored_trigger, stored_trigger_hash = self._decode_prospective_trigger(
+                        str(row[5])
+                    )
+                    if (
+                        stored_trigger_hash != intent.trigger_hash
+                        or cast(Any, stored_trigger).to_json() != intent.trigger.to_json()
+                    ):
+                        raise MemoryValidationError("prospective_signal_trigger_differs")
+                    current_revision = int(row[1])
+                    target_state = ProspectiveLifecycleState(str(row[4]))
+                    ack_kinds = {
+                        ProspectiveSignalKind.REGISTRATION_ACCEPTED,
+                        ProspectiveSignalKind.REGISTRATION_INVALIDATED,
+                    }
+                    is_ack = intent.signal_kind in ack_kinds
+                    if is_ack:
+                        if target_state is not intent.transition_from:
+                            raise MemoryValidationError(
+                                "prospective_signal_lifecycle_differs"
+                            )
+                        await self._verify_prospective_outbox_unlocked(intent)
+                        if (
+                            intent.signal_kind
+                            is ProspectiveSignalKind.REGISTRATION_INVALIDATED
+                        ):
+                            await self._verify_live_prospective_registration_unlocked(
+                                intent
+                            )
+                    stale = (
+                        not is_ack
+                        and (
+                            current_revision != intent.target_revision
+                            or target_state is not intent.transition_from
+                        )
+                    )
+                    occurrence_duplicate = False
+                    if not is_ack:
+                        async with self._db.execute(
+                            "SELECT 1 FROM prospective_trigger_events WHERE occurrence_key=?",
+                            (intent.occurrence_key,),
+                        ) as cursor:
+                            occurrence_duplicate = await cursor.fetchone() is not None
+                        if not stale and not occurrence_duplicate:
+                            await self._verify_live_prospective_registration_unlocked(intent)
+                    consumption_id, consumption_hash = (
+                        await self._insert_prospective_consumption_unlocked(
+                            principal.actor_id, reference, authority, consumed_at
+                        )
+                    )
+                    self._fault("prospective.after_consumption")
+                    base_revision = intent.target_revision
+                    committed_revision = base_revision
+                    next_state = target_state
+                    outcome = LifecycleApplyOutcome.ACKNOWLEDGED
+                    reason_code = "prospective_registration_acknowledged"
+                    if is_ack:
+                        await self._insert_prospective_registration_event_unlocked(
+                            consumption_id=consumption_id,
+                            principal_id=principal.actor_id,
+                            intent=intent,
+                            occurred_at=consumed_at,
+                        )
+                    elif stale or occurrence_duplicate:
+                        outcome = LifecycleApplyOutcome.IGNORED
+                        reason_code = (
+                            "prospective_occurrence_already_applied"
+                            if occurrence_duplicate
+                            else "prospective_signal_stale"
+                        )
+                        if not occurrence_duplicate:
+                            await self._insert_prospective_trigger_event_unlocked(
+                                consumption_id=consumption_id,
+                                principal_id=principal.actor_id,
+                                intent=intent,
+                                outcome="ignored",
+                                reason_code=reason_code,
+                            )
+                    else:
+                        outcome = LifecycleApplyOutcome.APPLIED
+                        next_state = intent.transition_to
+                        reason_code = (
+                            "prospective_expired"
+                            if intent.signal_kind is ProspectiveSignalKind.EXPIRED
+                            else "prospective_trigger_matched"
+                        )
+                        committed_revision = base_revision + 1
+                        await self._copy_cognitive_revision_unlocked(
+                            memory_id=intent.target_memory_id,
+                            base_revision=base_revision,
+                            committed_revision=committed_revision,
+                            lifecycle_state=next_state.value,
+                            operation_id=intent.operation_id,
+                            plan_id=_stable_id(
+                                "prospective-signal-plan", authority.authority_id
+                            ),
+                            plan_hash=intent.intent_hash,
+                            created_at=consumed_at,
+                        )
+                        await self._copy_cognitive_payload_unlocked(
+                            "prospective",
+                            intent.target_memory_id,
+                            base_revision,
+                            intent.target_memory_id,
+                            committed_revision,
+                        )
+                        await self._append_prospective_mutation_outbox_unlocked(
+                            principal_id=principal.actor_id,
+                            memory_id=intent.target_memory_id,
+                            revision=committed_revision,
+                            lifecycle_state=next_state.value,
+                            previous_revision=base_revision,
+                            previous_lifecycle_state=target_state.value,
+                            created_at=consumed_at,
+                        )
+                        update = await self._db.execute(
+                            "UPDATE cognitive_memory_heads SET current_revision=?,updated_at=? "
+                            "WHERE principal_id=? AND scope_kind=? AND scope_owner=? "
+                            "AND deployment_id=? AND household_id=? "
+                            "AND memory_id=? AND current_revision=?",
+                            (
+                                committed_revision,
+                                consumed_at,
+                                principal.actor_id,
+                                scope.kind.value,
+                                scope.owner_id,
+                                principal.deployment_id,
+                                principal.household_id,
+                                intent.target_memory_id,
+                                base_revision,
+                            ),
+                        )
+                        if update.rowcount != 1:
+                            raise MemoryWriterConflict("prospective_signal_cas_failed")
+                        await self._insert_prospective_trigger_event_unlocked(
+                            consumption_id=consumption_id,
+                            principal_id=principal.actor_id,
+                            intent=intent,
+                            outcome=(
+                                "expired"
+                                if intent.signal_kind is ProspectiveSignalKind.EXPIRED
+                                else "matched"
+                            ),
+                            reason_code=reason_code,
+                        )
+                        self._fault("prospective.after_revision")
+                    self._fault("prospective.after_event")
+                    decision_id = _stable_id(
+                        "prospective-signal-decision", authority.authority_id
+                    )
+                    decision_json: dict[str, JsonValue] = {
+                        "schema_version": 1,
+                        "decision_id": decision_id,
+                        "consumption_id": consumption_id,
+                        "consumption_hash": consumption_hash,
+                        "memory_id": intent.target_memory_id,
+                        "base_revision": base_revision,
+                        "committed_revision": committed_revision,
+                        "transition_from": target_state.value,
+                        "transition_to": next_state.value,
+                        "outcome": outcome.value,
+                        "reason_code": reason_code,
+                    }
+                    decision_hash = hashlib.sha256(
+                        canonical_json(decision_json).encode("utf-8")
+                    ).hexdigest()
+                    await self._db.execute(
+                        "INSERT INTO prospective_signal_decisions(decision_id,consumption_id,"
+                        "memory_id,base_revision,committed_revision,transition_from,transition_to,"
+                        "outcome,reason_code,decision_json,decision_hash,decided_at) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (
+                            decision_id,
+                            consumption_id,
+                            intent.target_memory_id,
+                            base_revision,
+                            committed_revision,
+                            target_state.value,
+                            next_state.value,
+                            outcome.value,
+                            reason_code,
+                            canonical_json(decision_json),
+                            decision_hash,
+                            consumed_at,
+                        ),
+                    )
+                    result = ProspectiveSignalApplyResult(
+                        _stable_id("prospective-signal-result", authority.authority_id),
+                        intent.signal_id,
+                        decision_id,
+                        intent.target_memory_id,
+                        base_revision,
+                        committed_revision,
+                        next_state,
+                        outcome,
+                        reason_code,
+                        consumed_at,
+                    )
+                    await self._db.execute(
+                        "INSERT INTO prospective_signal_results(result_id,consumption_id,"
+                        "replay_identity,result_json,result_hash,decided_at) VALUES(?,?,?,?,?,?)",
+                        (
+                            result.result_id,
+                            consumption_id,
+                            authority.replay_identity,
+                            canonical_json(result.to_json()),
+                            result.result_hash,
+                            result.decided_at,
+                        ),
+                    )
+                    self._fault("prospective.after_decision")
+                    if _timestamp(self._now()) >= authority.expires_at:
+                        raise MemoryValidationError("prospective_signal_authority_expired")
+                    self._fault("prospective.before_commit")
+                    await self._db.execute("COMMIT")
+                    committed = True
+                    self._fault("prospective.after_commit")
+                    return result
+                except BaseException:
+                    if not committed:
+                        with suppress(Exception):
+                            await self._db.execute("ROLLBACK")
+                    raise
+        except (MemoryErrorBase, sqlite3.IntegrityError) as exc:
+            reason = (
+                str(exc)
+                if isinstance(exc, MemoryErrorBase)
+                else "prospective_signal_replayed"
+            )
+            await self._append_lifecycle_rejection_audit(
+                table="prospective_signal_rejections",
+                domain="prospective-signal",
                 principal_id=principal.actor_id,
                 authority_ref_hash=reference.ref_hash,
                 reason_code=reason,
@@ -1561,7 +1951,11 @@ class SQLiteHumanMemoryBackend:
                 transaction_at = _timestamp(self._now())
                 await self._db.execute(
                     "INSERT INTO principals(principal_id,deployment_id,household_id,actor_id,"
-                    "created_at) VALUES(?,?,?,?,?) ON CONFLICT(principal_id) DO NOTHING",
+                    "created_at) VALUES(?,?,?,?,?) ON CONFLICT(principal_id) DO UPDATE SET "
+                    "deployment_id=excluded.deployment_id,household_id=excluded.household_id,"
+                    "actor_id=excluded.actor_id WHERE principals.deployment_id="
+                    "principals.principal_id AND principals.household_id=principals.principal_id "
+                    "AND principals.actor_id=principals.principal_id",
                     (
                         plan.subject,
                         principal.deployment_id,
@@ -1570,6 +1964,18 @@ class SQLiteHumanMemoryBackend:
                         transaction_at,
                     ),
                 )
+                async with self._db.execute(
+                    "SELECT deployment_id,household_id,actor_id FROM principals "
+                    "WHERE principal_id=?",
+                    (plan.subject,),
+                ) as cursor:
+                    principal_row = await cursor.fetchone()
+                if principal_row is None or tuple(str(item) for item in principal_row) != (
+                    principal.deployment_id,
+                    principal.household_id,
+                    principal.actor_id,
+                ):
+                    raise MemoryOwnershipConflict("cognitive principal binding differs")
                 await self._verify_plan_evidence_refs_unlocked(plan)
                 async with self._db.execute(
                     "SELECT revision FROM cognitive_apply_heads WHERE principal_id=?",
@@ -1636,10 +2042,13 @@ class SQLiteHumanMemoryBackend:
                         raise MemoryValidationError("memory_action_exact_target_required")
                     async with self._db.execute(
                         "SELECT current_revision FROM cognitive_memory_heads "
-                        "WHERE principal_id=? AND scope_kind=? AND scope_owner=? "
+                        "WHERE principal_id=? AND deployment_id=? AND household_id=? "
+                        "AND scope_kind=? AND scope_owner=? "
                         "AND memory_id=?",
                         (
                             plan.subject,
+                            principal.deployment_id,
+                            principal.household_id,
                             scope.kind.value,
                             scope.owner_id,
                             operation.target.memory_id,
@@ -1866,10 +2275,13 @@ class SQLiteHumanMemoryBackend:
                             "r.scope_kind,r.scope_owner FROM cognitive_memory_heads h "
                             "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
                             "AND r.revision=h.current_revision "
-                            "WHERE h.principal_id=? AND h.scope_kind=? AND h.scope_owner=? "
+                            "WHERE h.principal_id=? AND h.deployment_id=? "
+                            "AND h.household_id=? AND h.scope_kind=? AND h.scope_owner=? "
                             "AND h.memory_id=?",
                             (
                                 plan.subject,
+                                principal.deployment_id,
+                                principal.household_id,
                                 scope.kind.value,
                                 scope.owner_id,
                                 target_memory_id,
@@ -1994,11 +2406,13 @@ class SQLiteHumanMemoryBackend:
                     if operation.kind is MemoryMutationKind.CREATE:
                         await self._db.execute(
                             "INSERT INTO cognitive_memory_heads(memory_id,principal_id,"
-                            "scope_kind,scope_owner,memory_type,current_revision,created_at,"
-                            "updated_at) VALUES(?,?,?,?,?,?,?,?)",
+                            "deployment_id,household_id,scope_kind,scope_owner,memory_type,"
+                            "current_revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
                             (
                                 memory_id,
                                 plan.subject,
+                                principal.deployment_id,
+                                principal.household_id,
                                 scope.kind.value,
                                 scope.owner_id,
                                 operation.memory_type.value,
@@ -2017,16 +2431,20 @@ class SQLiteHumanMemoryBackend:
                     content_hash = hashlib.sha256(content_json.encode("utf-8")).hexdigest()
                     await self._db.execute(
                         "INSERT INTO cognitive_memory_revisions(memory_id,principal_id,revision,"
-                        "scope_kind,scope_owner,plan_id,plan_hash,operation_id,task_scope_id,"
+                        "deployment_id,household_id,scope_kind,scope_owner,plan_id,plan_hash,"
+                        "operation_id,task_scope_id,"
                         "lifecycle_state,"
                         "epistemic_status,conflict_status,"
                         "verification_state,effective_privacy_class,"
                         "information_attributes_json,content_json,content_hash,valid_from,"
-                        "valid_to,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "valid_to,created_at) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             memory_id,
                             plan.subject,
                             revision,
+                            principal.deployment_id,
+                            principal.household_id,
                             scope.kind.value,
                             scope.owner_id,
                             plan.plan_id,
@@ -2294,6 +2712,7 @@ class SQLiteHumanMemoryBackend:
                         update = await self._db.execute(
                             "UPDATE cognitive_memory_heads SET current_revision=?,updated_at=? "
                             "WHERE principal_id=? AND scope_kind=? AND scope_owner=? "
+                            "AND deployment_id=? AND household_id=? "
                             "AND memory_id=? AND current_revision=?",
                             (
                                 revision,
@@ -2301,6 +2720,8 @@ class SQLiteHumanMemoryBackend:
                                 plan.subject,
                                 scope.kind.value,
                                 scope.owner_id,
+                                principal.deployment_id,
+                                principal.household_id,
                                 memory_id,
                                 target_revision,
                             ),
@@ -4043,7 +4464,11 @@ class SQLiteHumanMemoryBackend:
             await append("registration", revision)
 
     async def _read_procedure_result_unlocked(
-        self, replay_identity: str
+        self,
+        *,
+        principal: MemoryPrincipal,
+        scope: MemoryScope,
+        reference: ProcedureObservationAuthorityRef,
     ) -> ProcedureObservationApplyResult | None:
         from simple_harness_memory.core.lifecycle_results import (
             ProcedureObservationApplyResult,
@@ -4051,13 +4476,30 @@ class SQLiteHumanMemoryBackend:
 
         assert self._db is not None
         async with self._db.execute(
-            "SELECT result_json,result_hash FROM procedure_observation_results "
-            "WHERE replay_identity=?",
-            (replay_identity,),
+            "SELECT x.result_json,x.result_hash,c.principal_id,c.authority_ref_json,"
+            "c.authority_ref_hash,h.scope_kind,h.scope_owner,h.deployment_id,"
+            "h.household_id,h.principal_id "
+            "FROM procedure_observation_authority_consumptions c "
+            "LEFT JOIN procedure_observation_results x "
+            "ON c.consumption_id=x.consumption_id JOIN cognitive_memory_heads h "
+            "ON h.memory_id=c.target_memory_id WHERE c.replay_identity=?",
+            (reference.replay_identity,),
         ) as cursor:
             row = await cursor.fetchone()
         if row is None:
             return None
+        if (
+            str(row[2]) != principal.actor_id
+            or str(row[3]) != canonical_json(reference.to_json())
+            or str(row[4]) != reference.ref_hash
+            or (str(row[5]), str(row[6])) != (scope.kind.value, scope.owner_id)
+            or (str(row[7]), str(row[8]), str(row[9]))
+            != (principal.deployment_id, principal.household_id, principal.actor_id)
+        ):
+            raise MemoryOwnershipConflict("procedure_observation_replay_binding_differs")
+        await self._validate_lifecycle_integrity_unlocked(
+            procedure_replay_identity=reference.replay_identity
+        )
         try:
             raw = json.loads(str(row[0]))
             if not isinstance(raw, dict):
@@ -4225,12 +4667,13 @@ class SQLiteHumanMemoryBackend:
     ) -> None:
         assert self._db is not None
         await self._db.execute(
-            "INSERT INTO cognitive_memory_revisions(memory_id,principal_id,scope_kind,"
-            "scope_owner,revision,plan_id,plan_hash,operation_id,task_scope_id,"
+            "INSERT INTO cognitive_memory_revisions(memory_id,principal_id,deployment_id,"
+            "household_id,scope_kind,scope_owner,revision,plan_id,plan_hash,operation_id,task_scope_id,"
             "lifecycle_state,epistemic_status,conflict_status,verification_state,"
             "effective_privacy_class,information_attributes_json,content_json,content_hash,"
-            "valid_from,valid_to,created_at) SELECT memory_id,principal_id,scope_kind,"
-            "scope_owner,?, ?, ?, ?,task_scope_id,?,epistemic_status,conflict_status,"
+            "valid_from,valid_to,created_at) SELECT memory_id,principal_id,deployment_id,"
+            "household_id,scope_kind,scope_owner,?, ?, ?, ?,task_scope_id,?,"
+            "epistemic_status,conflict_status,"
             "verification_state,effective_privacy_class,information_attributes_json,"
             "content_json,content_hash,valid_from,valid_to,? FROM cognitive_memory_revisions "
             "WHERE memory_id=? AND revision=?",
@@ -4292,6 +4735,294 @@ class SQLiteHumanMemoryBackend:
                 failure_count,
                 memory_id,
                 base_revision,
+            ),
+        )
+
+    async def _read_prospective_result_unlocked(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        scope: MemoryScope,
+        reference: ProspectiveSignalAuthorityRef,
+    ) -> ProspectiveSignalApplyResult | None:
+        from simple_harness_memory.core.lifecycle_results import ProspectiveSignalApplyResult
+
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT x.result_json,x.result_hash,c.principal_id,c.authority_ref_json,"
+            "c.authority_ref_hash,h.scope_kind,h.scope_owner,h.deployment_id,"
+            "h.household_id,h.principal_id "
+            "FROM prospective_signal_authority_consumptions c "
+            "LEFT JOIN prospective_signal_results x "
+            "ON c.consumption_id=x.consumption_id JOIN cognitive_memory_heads h "
+            "ON h.memory_id=c.target_memory_id WHERE c.replay_identity=?",
+            (reference.replay_identity,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        if (
+            str(row[2]) != principal.actor_id
+            or str(row[3]) != canonical_json(reference.to_json())
+            or str(row[4]) != reference.ref_hash
+            or (str(row[5]), str(row[6])) != (scope.kind.value, scope.owner_id)
+            or (str(row[7]), str(row[8]), str(row[9]))
+            != (principal.deployment_id, principal.household_id, principal.actor_id)
+        ):
+            raise MemoryOwnershipConflict("prospective_signal_replay_binding_differs")
+        await self._validate_lifecycle_integrity_unlocked(
+            prospective_replay_identity=reference.replay_identity
+        )
+        try:
+            raw = json.loads(str(row[0]))
+            if not isinstance(raw, dict):
+                raise ValueError("stored result is not an object")
+            result = ProspectiveSignalApplyResult.from_json(raw)
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise MemoryCorruptionError("stored prospective signal result is invalid") from exc
+        if canonical_json(result.to_json()) != str(row[0]) or result.result_hash != str(row[1]):
+            raise MemoryCorruptionError("stored prospective signal result differs")
+        return result
+
+    @staticmethod
+    def _decode_prospective_trigger(value: str) -> tuple[object, str]:
+        from simple_harness.runtime import (
+            ProspectiveEventTrigger,
+            ProspectiveTimeTrigger,
+            prospective_trigger_hash,
+        )
+
+        try:
+            raw = json.loads(value)
+            if not isinstance(raw, dict):
+                raise ValueError("trigger is not an object")
+            trigger = (
+                ProspectiveTimeTrigger.from_json(raw)
+                if raw.get("trigger_kind") == "time"
+                else ProspectiveEventTrigger.from_json(raw)
+            )
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise MemoryCorruptionError("prospective trigger is invalid") from exc
+        return trigger, prospective_trigger_hash(trigger)
+
+    async def _verify_prospective_outbox_unlocked(self, intent: object) -> None:
+        from simple_harness.runtime import ProspectiveSignalKind
+
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT topic,payload,payload_hash,principal_id FROM outbox WHERE outbox_id=?",
+            (getattr(intent, "outbox_id"),),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            raise MemoryValidationError("prospective_signal_outbox_not_found")
+        kind = getattr(intent, "signal_kind")
+        command = (
+            "registration"
+            if kind is ProspectiveSignalKind.REGISTRATION_ACCEPTED
+            else "invalidation"
+        )
+        if (
+            str(row[0]) != f"memory.prospective.{command}.requested"
+            or str(row[2]) != getattr(intent, "outbox_payload_hash")
+            or str(row[3]) != getattr(intent, "subject")
+        ):
+            raise MemoryValidationError("prospective_signal_outbox_binding_differs")
+        try:
+            payload = json.loads(str(row[1]))
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise MemoryCorruptionError("prospective scheduler outbox is invalid") from exc
+        if (
+            not isinstance(payload, dict)
+            or canonical_json(payload) != str(row[1])
+            or hashlib.sha256(str(row[1]).encode("utf-8")).hexdigest() != str(row[2])
+            or (
+            payload.get("command"),
+            payload.get("memory_id"),
+            payload.get("prospective_revision"),
+            payload.get("registration_revision"),
+            payload.get("trigger_hash"),
+            )
+            != (
+            command,
+            getattr(intent, "target_memory_id"),
+            getattr(intent, "target_revision"),
+            getattr(intent, "registration_revision"),
+            getattr(intent, "trigger_hash"),
+            )
+        ):
+            raise MemoryValidationError("prospective_signal_outbox_binding_differs")
+
+    async def _verify_live_prospective_registration_unlocked(self, intent: object) -> None:
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT state,trigger_hash FROM prospective_scheduler_registrations "
+            "WHERE memory_id=? AND prospective_revision=? AND registration_revision=? "
+            "AND scheduler_registration_ref=? ORDER BY occurred_at DESC",
+            (
+                getattr(intent, "target_memory_id"),
+                getattr(intent, "target_revision"),
+                getattr(intent, "registration_revision"),
+                getattr(intent, "scheduler_registration_ref"),
+            ),
+        ) as cursor:
+            rows = list(await cursor.fetchall())
+        if not rows or str(rows[0][0]) != "accepted" or str(rows[0][1]) != getattr(
+            intent, "trigger_hash"
+        ):
+            raise MemoryValidationError("prospective_scheduler_registration_not_live")
+        if any(str(row[0]) == "invalidated" for row in rows):
+            raise MemoryValidationError("prospective_scheduler_registration_not_live")
+
+    async def _insert_prospective_consumption_unlocked(
+        self, principal_id: str, reference: object, authority: object, consumed_at: float
+    ) -> tuple[str, str]:
+        assert self._db is not None
+        intent = getattr(authority, "intent")
+        consumption_id = _stable_id(
+            "prospective-signal-consumption", getattr(authority, "authority_id")
+        )
+        consumption: dict[str, JsonValue] = {
+            "schema_version": 1,
+            "consumption_id": consumption_id,
+            "principal_id": principal_id,
+            "authority_ref": getattr(reference, "to_json")(),
+            "authority_ref_hash": getattr(reference, "ref_hash"),
+            "authority": getattr(authority, "to_json")(),
+            "authority_hash": getattr(authority, "authority_hash"),
+            "consumed_at": consumed_at,
+        }
+        consumption_hash = hashlib.sha256(
+            canonical_json(consumption).encode("utf-8")
+        ).hexdigest()
+        await self._db.execute(
+            "INSERT INTO prospective_signal_authority_consumptions(consumption_id,"
+            "principal_id,authority_id,authority_hash,issuer_ref,nonce,replay_identity,"
+            "authority_ref_json,authority_ref_hash,authority_json,intent_hash,"
+            "target_memory_id,target_revision,issued_at,expires_at,consumed_at,"
+            "consumption_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                consumption_id,
+                principal_id,
+                getattr(authority, "authority_id"),
+                getattr(authority, "authority_hash"),
+                getattr(authority, "issuer_ref"),
+                getattr(authority, "nonce"),
+                getattr(authority, "replay_identity"),
+                canonical_json(getattr(reference, "to_json")()),
+                getattr(reference, "ref_hash"),
+                canonical_json(getattr(authority, "to_json")()),
+                getattr(intent, "intent_hash"),
+                getattr(intent, "target_memory_id"),
+                getattr(intent, "target_revision"),
+                getattr(authority, "issued_at"),
+                getattr(authority, "expires_at"),
+                consumed_at,
+                consumption_hash,
+            ),
+        )
+        return consumption_id, consumption_hash
+
+    async def _insert_prospective_registration_event_unlocked(
+        self,
+        *,
+        consumption_id: str,
+        principal_id: str,
+        intent: object,
+        occurred_at: float,
+    ) -> None:
+        from simple_harness.runtime import ProspectiveSignalKind
+
+        assert self._db is not None
+        state = (
+            "accepted"
+            if getattr(intent, "signal_kind")
+            is ProspectiveSignalKind.REGISTRATION_ACCEPTED
+            else "invalidated"
+        )
+        event_id = _stable_id("prospective-registration-event", consumption_id)
+        event: dict[str, JsonValue] = {
+            "schema_version": 1,
+            "registration_event_id": event_id,
+            "memory_id": getattr(intent, "target_memory_id"),
+            "prospective_revision": getattr(intent, "target_revision"),
+            "scheduler_registration_ref": getattr(intent, "scheduler_registration_ref"),
+            "registration_revision": getattr(intent, "registration_revision"),
+            "state": state,
+            "trigger_hash": getattr(intent, "trigger_hash"),
+            "outbox_id": getattr(intent, "outbox_id"),
+            "outbox_payload_hash": getattr(intent, "outbox_payload_hash"),
+        }
+        event_json = canonical_json(event)
+        await self._db.execute(
+            "INSERT INTO prospective_scheduler_registrations(registration_event_id,"
+            "consumption_id,principal_id,memory_id,prospective_revision,"
+            "scheduler_registration_ref,registration_revision,state,trigger_hash,outbox_id,"
+            "outbox_payload_hash,event_json,event_hash,occurred_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                event_id,
+                consumption_id,
+                principal_id,
+                getattr(intent, "target_memory_id"),
+                getattr(intent, "target_revision"),
+                getattr(intent, "scheduler_registration_ref"),
+                getattr(intent, "registration_revision"),
+                state,
+                getattr(intent, "trigger_hash"),
+                getattr(intent, "outbox_id"),
+                getattr(intent, "outbox_payload_hash"),
+                event_json,
+                hashlib.sha256(event_json.encode("utf-8")).hexdigest(),
+                occurred_at,
+            ),
+        )
+
+    async def _insert_prospective_trigger_event_unlocked(
+        self,
+        *,
+        consumption_id: str,
+        principal_id: str,
+        intent: object,
+        outcome: str,
+        reason_code: str,
+    ) -> None:
+        assert self._db is not None
+        event_id = _stable_id("prospective-trigger-event", consumption_id)
+        event: dict[str, JsonValue] = {
+            "schema_version": 1,
+            "event_id": event_id,
+            "memory_id": getattr(intent, "target_memory_id"),
+            "prospective_revision": getattr(intent, "target_revision"),
+            "trigger_hash": getattr(intent, "trigger_hash"),
+            "event_ref": getattr(intent, "signal_receipt_id"),
+            "occurrence_key": getattr(intent, "occurrence_key"),
+            "signal_kind": getattr(intent, "signal_kind").value,
+            "outcome": outcome,
+            "reason_code": reason_code,
+            "occurred_at": getattr(intent, "observed_at"),
+        }
+        event_json = canonical_json(event)
+        await self._db.execute(
+            "INSERT INTO prospective_trigger_events(event_id,consumption_id,principal_id,"
+            "memory_id,prospective_revision,trigger_fingerprint,event_ref,occurrence_key,"
+            "signal_kind,outcome,reason_code,occurred_at,event_json,event_hash) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                event_id,
+                consumption_id,
+                principal_id,
+                getattr(intent, "target_memory_id"),
+                getattr(intent, "target_revision"),
+                getattr(intent, "trigger_hash"),
+                getattr(intent, "signal_receipt_id"),
+                getattr(intent, "occurrence_key"),
+                getattr(intent, "signal_kind").value,
+                outcome,
+                reason_code,
+                getattr(intent, "observed_at"),
+                event_json,
+                hashlib.sha256(event_json.encode("utf-8")).hexdigest(),
             ),
         )
 
@@ -7424,11 +8155,930 @@ class SQLiteHumanMemoryBackend:
         async with self._db.execute(
             "SELECT 1 FROM cognitive_memory_heads h "
             "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
-            "WHERE h.principal_id<>r.principal_id OR h.scope_kind<>r.scope_kind "
+            "WHERE h.principal_id<>r.principal_id "
+            "OR h.deployment_id<>r.deployment_id OR h.household_id<>r.household_id "
+            "OR h.scope_kind<>r.scope_kind "
             "OR h.scope_owner<>r.scope_owner LIMIT 1"
         ) as cursor:
             if await cursor.fetchone() is not None:
                 raise MemoryCorruptionError("cognitive memory scope integrity check failed")
+        await self._validate_lifecycle_integrity_unlocked()
+
+    @staticmethod
+    def _canonical_audit_object(value: object, name: str) -> dict[str, JsonValue]:
+        try:
+            parsed = json.loads(str(value))
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise MemoryCorruptionError(f"{name} JSON is invalid") from exc
+        if not isinstance(parsed, dict) or canonical_json(parsed) != str(value):
+            raise MemoryCorruptionError(f"{name} JSON is not canonical")
+        return cast(dict[str, JsonValue], parsed)
+
+    async def _validate_cognitive_lifecycle_target_unlocked(
+        self,
+        *,
+        intent: Any,
+        committed_revision: int,
+        transition_to: str,
+        memory_type: str,
+        authority_id: str,
+        plan_domain: str,
+    ) -> None:
+        """Bind one Host lifecycle intent to immutable cognitive state."""
+
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT h.principal_id,h.deployment_id,h.household_id,h.scope_kind,"
+            "h.scope_owner,h.memory_type,h.current_revision,r.principal_id,"
+            "r.deployment_id,r.household_id,r.scope_kind,r.scope_owner,r.lifecycle_state "
+            "FROM cognitive_memory_heads h JOIN cognitive_memory_revisions r "
+            "ON r.memory_id=h.memory_id AND r.revision=? WHERE h.memory_id=?",
+            (intent.target_revision, intent.target_memory_id),
+        ) as cursor:
+            target = await cursor.fetchone()
+        if target is None:
+            raise MemoryCorruptionError("lifecycle cognitive target is missing")
+        head_identity = tuple(str(target[index]) for index in range(6))
+        revision_identity = tuple(str(target[index]) for index in range(7, 12))
+        if (
+            head_identity[:5] != revision_identity
+            or head_identity[0] != intent.subject
+            or head_identity[3:5]
+            != (intent.scope.kind.value, intent.scope.owner_id)
+            or head_identity[5] != memory_type
+            or str(target[12]) != intent.transition_from.value
+            or int(target[6]) < committed_revision
+        ):
+            raise MemoryCorruptionError("lifecycle cognitive target differs")
+        if committed_revision == intent.target_revision:
+            if transition_to != str(target[12]):
+                raise MemoryCorruptionError("lifecycle cognitive state differs")
+            return
+        if committed_revision != intent.target_revision + 1:
+            raise MemoryCorruptionError("lifecycle committed revision differs")
+        async with self._db.execute(
+            "SELECT principal_id,deployment_id,household_id,scope_kind,scope_owner,"
+            "lifecycle_state,plan_id,plan_hash,operation_id FROM cognitive_memory_revisions "
+            "WHERE memory_id=? AND revision=?",
+            (intent.target_memory_id, committed_revision),
+        ) as cursor:
+            committed = await cursor.fetchone()
+        if committed is None or (
+            tuple(str(committed[index]) for index in range(5)) != head_identity[:5]
+            or str(committed[5]) != transition_to
+            or str(committed[6]) != _stable_id(plan_domain, authority_id)
+            or str(committed[7]) != intent.intent_hash
+            or str(committed[8]) != intent.operation_id
+        ):
+            raise MemoryCorruptionError("lifecycle committed cognitive revision differs")
+
+    async def _validate_lifecycle_integrity_unlocked(
+        self,
+        *,
+        procedure_replay_identity: str | None = None,
+        prospective_replay_identity: str | None = None,
+    ) -> None:
+        """Recompute both Host-authority audit chains on every open and close."""
+
+        if (
+            procedure_replay_identity is not None
+            and prospective_replay_identity is not None
+        ):
+            raise MemoryCorruptionError("lifecycle replay validator is ambiguous")
+
+        from simple_harness.runtime import (
+            ProcedureObservationAuthority,
+            ProcedureObservationAuthorityRef,
+            ProspectiveSignalAuthority,
+            ProspectiveSignalAuthorityRef,
+        )
+
+        from simple_harness_memory.core.lifecycle_results import (
+            UNBOUND_PROCEDURE_APPLICABILITY,
+            ProcedureObservationApplyResult,
+            ProspectiveSignalApplyResult,
+        )
+
+        assert self._db is not None
+        procedure_epoch_query = (
+            "SELECT memory_id,revision,qualification_epoch FROM procedure_records"
+        )
+        procedure_epoch_params: tuple[object, ...] = ()
+        if procedure_replay_identity is not None:
+            procedure_epoch_query = (
+                "SELECT p.memory_id,p.revision,p.qualification_epoch "
+                "FROM procedure_records p JOIN "
+                "procedure_observation_authority_consumptions c "
+                "ON c.target_memory_id=p.memory_id AND c.target_revision=p.revision "
+                "WHERE c.replay_identity=?"
+            )
+            procedure_epoch_params = (procedure_replay_identity,)
+        if prospective_replay_identity is not None:
+            procedure_epochs: dict[tuple[str, int], str] = {}
+        else:
+            async with self._db.execute(
+                procedure_epoch_query, procedure_epoch_params
+            ) as cursor:
+                procedure_epochs = {
+                    (str(row[0]), int(row[1])): str(row[2])
+                    for row in await cursor.fetchall()
+                }
+
+        procedure_consumptions: list[sqlite3.Row]
+        if prospective_replay_identity is not None:
+            procedure_consumptions = []
+        else:
+            procedure_query = "SELECT * FROM procedure_observation_authority_consumptions"
+            procedure_params: tuple[object, ...] = ()
+            if procedure_replay_identity is not None:
+                procedure_query += " WHERE replay_identity=?"
+                procedure_params = (procedure_replay_identity,)
+            async with self._db.execute(procedure_query, procedure_params) as cursor:
+                procedure_consumptions = list(await cursor.fetchall())
+        procedure_ids: set[str] = set()
+        procedure_authorities: dict[str, tuple[object, str, float]] = {}
+        for row in procedure_consumptions:
+            consumption_id = str(row["consumption_id"])
+            if consumption_id in procedure_ids:
+                raise MemoryCorruptionError("procedure consumption cardinality differs")
+            procedure_ids.add(consumption_id)
+            ref_json = self._canonical_audit_object(
+                row["authority_ref_json"], "procedure authority ref"
+            )
+            authority_json = self._canonical_audit_object(
+                row["authority_json"], "procedure authority"
+            )
+            try:
+                reference = ProcedureObservationAuthorityRef.from_json(ref_json)
+                authority = ProcedureObservationAuthority.from_json(authority_json)
+            except (KeyError, TypeError, ValueError) as exc:
+                raise MemoryCorruptionError("procedure authority chain is invalid") from exc
+            if ProcedureObservationAuthorityRef.from_authority(authority) != reference:
+                raise MemoryCorruptionError("procedure authority ref differs")
+            intent = authority.intent
+            expected_columns = (
+                str(row["principal_id"]),
+                str(row["authority_id"]),
+                str(row["authority_hash"]),
+                str(row["issuer_ref"]),
+                str(row["nonce"]),
+                str(row["replay_identity"]),
+                str(row["authority_ref_hash"]),
+                str(row["intent_hash"]),
+                str(row["target_memory_id"]),
+                int(row["target_revision"]),
+                float(row["issued_at"]),
+                float(row["expires_at"]),
+            )
+            actual_columns = (
+                intent.subject,
+                authority.authority_id,
+                authority.authority_hash,
+                authority.issuer_ref,
+                authority.nonce,
+                authority.replay_identity,
+                reference.ref_hash,
+                intent.intent_hash,
+                intent.target_memory_id,
+                intent.target_revision,
+                authority.issued_at,
+                authority.expires_at,
+            )
+            if expected_columns != actual_columns:
+                raise MemoryCorruptionError("procedure consumption columns differ")
+            consumed_at = float(row["consumed_at"])
+            if not authority.issued_at <= consumed_at < authority.expires_at:
+                raise MemoryCorruptionError("procedure consumption time differs")
+            consumption: dict[str, JsonValue] = {
+                "schema_version": 1,
+                "consumption_id": consumption_id,
+                "principal_id": intent.subject,
+                "authority_ref": reference.to_json(),
+                "authority_ref_hash": reference.ref_hash,
+                "authority": authority.to_json(),
+                "authority_hash": authority.authority_hash,
+                "consumed_at": consumed_at,
+            }
+            consumption_hash = hashlib.sha256(
+                canonical_json(consumption).encode("utf-8")
+            ).hexdigest()
+            if str(row["consumption_hash"]) != consumption_hash:
+                raise MemoryCorruptionError("procedure consumption hash differs")
+            procedure_authorities[consumption_id] = (
+                authority,
+                consumption_hash,
+                consumed_at,
+            )
+
+        procedure_chain_where = (
+            "" if procedure_replay_identity is None else " WHERE consumption_id=?"
+        )
+        procedure_chain_params: tuple[object, ...] = (
+            () if procedure_replay_identity is None else tuple(procedure_ids)
+        )
+        async with self._db.execute(
+            "SELECT * FROM procedure_observations" + procedure_chain_where,
+            procedure_chain_params,
+        ) as cursor:
+            observations = list(await cursor.fetchall())
+        observation_by_consumption = {str(row["consumption_id"]): row for row in observations}
+        async with self._db.execute(
+            "SELECT * FROM procedure_observation_decisions" + procedure_chain_where,
+            procedure_chain_params,
+        ) as cursor:
+            decisions = list(await cursor.fetchall())
+        decision_by_consumption = {str(row["consumption_id"]): row for row in decisions}
+        async with self._db.execute(
+            "SELECT * FROM procedure_observation_results" + procedure_chain_where,
+            procedure_chain_params,
+        ) as cursor:
+            results = list(await cursor.fetchall())
+        result_by_consumption = {str(row["consumption_id"]): row for row in results}
+        if not (
+            set(observation_by_consumption)
+            == set(decision_by_consumption)
+            == set(result_by_consumption)
+            == procedure_ids
+        ):
+            raise MemoryCorruptionError("procedure audit chain cardinality differs")
+        for consumption_id in procedure_ids:
+            authority, consumption_hash, consumed_at = procedure_authorities[consumption_id]
+            intent = cast(Any, authority).intent
+            observation = observation_by_consumption[consumption_id]
+            observation_json = self._canonical_audit_object(
+                observation["observation_json"], "procedure observation"
+            )
+            if observation_json != intent.to_json() or str(
+                observation["observation_hash"]
+            ) != hashlib.sha256(
+                canonical_json(observation_json).encode("utf-8")
+            ).hexdigest():
+                raise MemoryCorruptionError("procedure observation hash differs")
+            observation_columns = (
+                str(observation["observation_id"]),
+                str(observation["principal_id"]),
+                str(observation["memory_id"]),
+                int(observation["procedure_revision"]),
+                str(observation["qualification_epoch"]),
+                str(observation["task_scope_id"]),
+                None
+                if observation["terminal_receipt_id"] is None
+                else str(observation["terminal_receipt_id"]),
+                None
+                if observation["terminal_receipt_hash"] is None
+                else str(observation["terminal_receipt_hash"]),
+                str(observation["applicability_fingerprint"]),
+                None if observation["outcome"] is None else str(observation["outcome"]),
+                bool(observation["attributable"]),
+                float(observation["occurred_at"]),
+                str(observation["evidence_id"]),
+                str(observation["evidence_span_hash"]),
+            )
+            expected_observation = (
+                intent.observation_id,
+                intent.subject,
+                intent.target_memory_id,
+                intent.target_revision,
+                procedure_epochs.get((intent.target_memory_id, intent.target_revision)),
+                intent.task_scope_id,
+                intent.terminal_receipt_id,
+                intent.terminal_receipt_hash,
+                intent.applicability.fingerprint,
+                None if intent.outcome is None else intent.outcome.value,
+                intent.attributable,
+                intent.observed_at,
+                intent.evidence_span.evidence_id,
+                intent.evidence_span.span_hash,
+            )
+            if observation_columns != expected_observation:
+                raise MemoryCorruptionError("procedure observation columns differ")
+            if intent.observed_at > consumed_at:
+                raise MemoryCorruptionError("procedure observation time differs")
+            async with self._db.execute(
+                "SELECT risk_level,qualification_epoch,applicability_fingerprint,"
+                "bound_hazard FROM procedure_records WHERE memory_id=? AND revision=?",
+                (intent.target_memory_id, intent.target_revision),
+            ) as cursor:
+                base_record = await cursor.fetchone()
+            if base_record is None or str(base_record[0]) != intent.risk_level.value:
+                raise MemoryCorruptionError("procedure authority payload differs")
+            qualification_epoch = str(base_record[1])
+            bound_fingerprint = str(base_record[2])
+            bound_hazard = None if base_record[3] is None else str(base_record[3])
+            expected_reason = "procedure_observation_recorded"
+            if bound_fingerprint == UNBOUND_PROCEDURE_APPLICABILITY:
+                bound_fingerprint = intent.applicability.fingerprint
+                bound_hazard = intent.hazard.value
+                expected_reason = "procedure_applicability_bound"
+            fingerprint_matches = (
+                bound_fingerprint == intent.applicability.fingerprint
+            )
+            hazard_matches = bound_hazard == intent.hazard.value
+            window_start = max(0.0, consumed_at - 90.0 * 24.0 * 60.0 * 60.0)
+            async with self._db.execute(
+                "SELECT COUNT(*),SUM(CASE WHEN outcome='failure' THEN 1 ELSE 0 END) "
+                "FROM procedure_observations WHERE memory_id=? "
+                "AND qualification_epoch=? AND applicability_fingerprint=? "
+                "AND procedure_revision<=? AND occurred_at>=? AND occurred_at<=? AND ("
+                "(outcome='success' AND attributable=1) OR outcome='failure')",
+                (
+                    intent.target_memory_id,
+                    qualification_epoch,
+                    bound_fingerprint,
+                    intent.target_revision,
+                    window_start,
+                    consumed_at,
+                ),
+            ) as cursor:
+                count_row = await cursor.fetchone()
+            if count_row is None:
+                raise MemoryCorruptionError("procedure evidence count is missing")
+            expected_failures = int(count_row[1] or 0)
+            expected_successes = int(count_row[0]) - expected_failures
+            expected_transition = intent.transition_from.value
+            if not fingerprint_matches or not hazard_matches:
+                expected_transition = "inapplicable"
+                expected_reason = "procedure_applicability_or_hazard_drift"
+            elif intent.kind.value == "terminal_outcome":
+                if intent.outcome is not None and intent.outcome.value == "failure":
+                    if intent.attributable:
+                        expected_transition = "revised"
+                        expected_reason = "procedure_attributable_failure"
+                    else:
+                        expected_reason = "procedure_non_attributable_failure"
+                elif intent.outcome is not None and intent.outcome.value == "success":
+                    if (
+                        intent.attributable
+                        and intent.risk_level.value == "low"
+                        and intent.hazard.value == "none"
+                    ):
+                        threshold = (
+                            "draft"
+                            if expected_successes < 2
+                            else "eligible_for_activation"
+                            if expected_successes < 3
+                            else "active"
+                        )
+                        ranks = {
+                            "draft": 0,
+                            "eligible_for_activation": 1,
+                            "active": 2,
+                            "reinforced": 3,
+                        }
+                        if (
+                            intent.transition_from.value in ranks
+                            and ranks[threshold] > ranks[intent.transition_from.value]
+                        ):
+                            expected_transition = threshold
+                        expected_reason = "procedure_low_risk_success"
+                    else:
+                        expected_reason = (
+                            "procedure_non_attributable_success"
+                            if not intent.attributable
+                            else "procedure_unsafe_auto_activation_blocked"
+                        )
+            decision = decision_by_consumption[consumption_id]
+            decision_json = self._canonical_audit_object(
+                decision["decision_json"], "procedure decision"
+            )
+            expected_decision: dict[str, JsonValue] = {
+                "schema_version": 1,
+                "decision_id": str(decision["decision_id"]),
+                "consumption_id": consumption_id,
+                "consumption_hash": consumption_hash,
+                "memory_id": str(decision["memory_id"]),
+                "base_revision": int(decision["base_revision"]),
+                "committed_revision": int(decision["committed_revision"]),
+                "transition_from": str(decision["transition_from"]),
+                "transition_to": str(decision["transition_to"]),
+                "independent_successes": int(decision["independent_successes"]),
+                "reason_code": str(decision["reason_code"]),
+            }
+            if decision_json != expected_decision or str(
+                decision["decision_hash"]
+            ) != hashlib.sha256(
+                canonical_json(expected_decision).encode("utf-8")
+            ).hexdigest():
+                raise MemoryCorruptionError("procedure decision hash differs")
+            if (
+                str(decision["memory_id"]) != intent.target_memory_id
+                or int(decision["base_revision"]) != intent.target_revision
+                or int(decision["committed_revision"]) != intent.target_revision + 1
+                or str(decision["transition_from"]) != intent.transition_from.value
+                or str(decision["transition_to"]) != intent.transition_to.value
+                or str(decision["transition_to"]) != expected_transition
+                or int(decision["independent_successes"]) != expected_successes
+                or str(decision["reason_code"]) != expected_reason
+                or str(decision["decision_id"])
+                != _stable_id(
+                    "procedure-observation-decision",
+                    cast(Any, authority).authority_id,
+                )
+            ):
+                raise MemoryCorruptionError("procedure decision authority binding differs")
+            await self._validate_cognitive_lifecycle_target_unlocked(
+                intent=intent,
+                committed_revision=int(decision["committed_revision"]),
+                transition_to=str(decision["transition_to"]),
+                memory_type="procedure",
+                authority_id=cast(Any, authority).authority_id,
+                plan_domain="procedure-observation-plan",
+            )
+            async with self._db.execute(
+                "SELECT qualification_epoch,applicability_fingerprint,bound_hazard,"
+                "success_evidence_count,failure_evidence_count FROM procedure_records "
+                "WHERE memory_id=? AND revision=?",
+                (intent.target_memory_id, int(decision["committed_revision"])),
+            ) as cursor:
+                committed_record = await cursor.fetchone()
+            if committed_record is None or (
+                str(committed_record[0]) != qualification_epoch
+                or str(committed_record[1]) != bound_fingerprint
+                or (
+                    None if committed_record[2] is None else str(committed_record[2])
+                )
+                != bound_hazard
+                or int(committed_record[3]) != expected_successes
+                or int(committed_record[4]) != expected_failures
+            ):
+                raise MemoryCorruptionError("procedure committed payload differs")
+            result_row = result_by_consumption[consumption_id]
+            result_json = self._canonical_audit_object(
+                result_row["result_json"], "procedure result"
+            )
+            try:
+                result = ProcedureObservationApplyResult.from_json(result_json)
+            except (KeyError, TypeError, ValueError) as exc:
+                raise MemoryCorruptionError("procedure result is invalid") from exc
+            if (
+                canonical_json(result.to_json()) != str(result_row["result_json"])
+                or result.result_hash != str(result_row["result_hash"])
+                or result.result_id != str(result_row["result_id"])
+                or result.result_id
+                != _stable_id(
+                    "procedure-observation-result", cast(Any, authority).authority_id
+                )
+                or str(result_row["replay_identity"])
+                != cast(Any, authority).replay_identity
+                or result.observation_id != intent.observation_id
+                or result.decision_id != str(decision["decision_id"])
+                or result.memory_id != str(decision["memory_id"])
+                or result.base_revision != int(decision["base_revision"])
+                or result.committed_revision != int(decision["committed_revision"])
+                or result.lifecycle_state.value != str(decision["transition_to"])
+                or result.independent_successes
+                != int(decision["independent_successes"])
+                or result.reason_code != str(decision["reason_code"])
+                or result.decided_at != float(result_row["decided_at"])
+                or result.decided_at != float(decision["decided_at"])
+            ):
+                raise MemoryCorruptionError("procedure result chain differs")
+
+        if procedure_replay_identity is not None:
+            return
+        await self._validate_prospective_integrity_unlocked(
+            ProspectiveSignalAuthority,
+            ProspectiveSignalAuthorityRef,
+            ProspectiveSignalApplyResult,
+            replay_identity=prospective_replay_identity,
+        )
+
+    async def _validate_prospective_integrity_unlocked(
+        self,
+        authority_type: Any,
+        reference_type: Any,
+        result_type: Any,
+        *,
+        replay_identity: str | None = None,
+    ) -> None:
+        assert self._db is not None
+        consumption_query = "SELECT * FROM prospective_signal_authority_consumptions"
+        consumption_params: tuple[object, ...] = ()
+        if replay_identity is not None:
+            consumption_query += " WHERE replay_identity=?"
+            consumption_params = (replay_identity,)
+        async with self._db.execute(
+            consumption_query, consumption_params
+        ) as cursor:
+            consumptions = list(await cursor.fetchall())
+        ids: set[str] = set()
+        authorities: dict[str, tuple[object, str]] = {}
+        for row in consumptions:
+            consumption_id = str(row["consumption_id"])
+            ids.add(consumption_id)
+            ref_json = self._canonical_audit_object(
+                row["authority_ref_json"], "prospective authority ref"
+            )
+            authority_json = self._canonical_audit_object(
+                row["authority_json"], "prospective authority"
+            )
+            try:
+                reference = reference_type.from_json(ref_json)
+                authority = authority_type.from_json(authority_json)
+            except (KeyError, TypeError, ValueError) as exc:
+                raise MemoryCorruptionError("prospective authority chain is invalid") from exc
+            if reference_type.from_authority(authority) != reference:
+                raise MemoryCorruptionError("prospective authority ref differs")
+            intent = authority.intent
+            columns = (
+                str(row["principal_id"]),
+                str(row["authority_id"]),
+                str(row["authority_hash"]),
+                str(row["issuer_ref"]),
+                str(row["nonce"]),
+                str(row["replay_identity"]),
+                str(row["authority_ref_hash"]),
+                str(row["intent_hash"]),
+                str(row["target_memory_id"]),
+                int(row["target_revision"]),
+                float(row["issued_at"]),
+                float(row["expires_at"]),
+            )
+            expected = (
+                intent.subject,
+                authority.authority_id,
+                authority.authority_hash,
+                authority.issuer_ref,
+                authority.nonce,
+                authority.replay_identity,
+                reference.ref_hash,
+                intent.intent_hash,
+                intent.target_memory_id,
+                intent.target_revision,
+                authority.issued_at,
+                authority.expires_at,
+            )
+            if columns != expected:
+                raise MemoryCorruptionError("prospective consumption columns differ")
+            consumed_at = float(row["consumed_at"])
+            if not authority.issued_at <= consumed_at < authority.expires_at:
+                raise MemoryCorruptionError("prospective consumption time differs")
+            consumption: dict[str, JsonValue] = {
+                "schema_version": 1,
+                "consumption_id": consumption_id,
+                "principal_id": intent.subject,
+                "authority_ref": reference.to_json(),
+                "authority_ref_hash": reference.ref_hash,
+                "authority": authority.to_json(),
+                "authority_hash": authority.authority_hash,
+                "consumed_at": consumed_at,
+            }
+            consumption_hash = hashlib.sha256(
+                canonical_json(consumption).encode("utf-8")
+            ).hexdigest()
+            if str(row["consumption_hash"]) != consumption_hash:
+                raise MemoryCorruptionError("prospective consumption hash differs")
+            authorities[consumption_id] = (authority, consumption_hash)
+
+        chain_where = "" if replay_identity is None else " WHERE consumption_id=?"
+        chain_params: tuple[object, ...] = () if replay_identity is None else tuple(ids)
+        async with self._db.execute(
+            "SELECT * FROM prospective_signal_decisions" + chain_where,
+            chain_params,
+        ) as cursor:
+            decision_rows = list(await cursor.fetchall())
+        decisions = {str(row["consumption_id"]): row for row in decision_rows}
+        async with self._db.execute(
+            "SELECT * FROM prospective_signal_results" + chain_where,
+            chain_params,
+        ) as cursor:
+            result_rows = list(await cursor.fetchall())
+        results = {str(row["consumption_id"]): row for row in result_rows}
+        if set(decisions) != ids or set(results) != ids:
+            raise MemoryCorruptionError("prospective audit chain cardinality differs")
+        async with self._db.execute(
+            "SELECT * FROM prospective_scheduler_registrations" + chain_where,
+            chain_params,
+        ) as cursor:
+            registration_rows = list(await cursor.fetchall())
+        registrations = {str(row["consumption_id"]): row for row in registration_rows}
+        async with self._db.execute(
+            "SELECT * FROM prospective_trigger_events" + chain_where,
+            chain_params,
+        ) as cursor:
+            trigger_rows = list(await cursor.fetchall())
+        triggers = {str(row["consumption_id"]): row for row in trigger_rows}
+        for consumption_id in ids:
+            authority, consumption_hash = authorities[consumption_id]
+            intent = cast(Any, authority).intent
+            decision = decisions[consumption_id]
+            decision_json = self._canonical_audit_object(
+                decision["decision_json"], "prospective decision"
+            )
+            expected_decision: dict[str, JsonValue] = {
+                "schema_version": 1,
+                "decision_id": str(decision["decision_id"]),
+                "consumption_id": consumption_id,
+                "consumption_hash": consumption_hash,
+                "memory_id": str(decision["memory_id"]),
+                "base_revision": int(decision["base_revision"]),
+                "committed_revision": int(decision["committed_revision"]),
+                "transition_from": str(decision["transition_from"]),
+                "transition_to": str(decision["transition_to"]),
+                "outcome": str(decision["outcome"]),
+                "reason_code": str(decision["reason_code"]),
+            }
+            if decision_json != expected_decision or str(
+                decision["decision_hash"]
+            ) != hashlib.sha256(
+                canonical_json(expected_decision).encode("utf-8")
+            ).hexdigest():
+                raise MemoryCorruptionError("prospective decision hash differs")
+            decision_outcome = str(decision["outcome"])
+            if (
+                str(decision["decision_id"])
+                != _stable_id(
+                    "prospective-signal-decision", cast(Any, authority).authority_id
+                )
+                or str(decision["memory_id"]) != intent.target_memory_id
+                or int(decision["base_revision"]) != intent.target_revision
+                or str(decision["transition_from"]) != intent.transition_from.value
+                or (
+                    decision_outcome == "applied"
+                    and (
+                        int(decision["committed_revision"])
+                        != intent.target_revision + 1
+                        or str(decision["transition_to"])
+                        != intent.transition_to.value
+                    )
+                )
+                or (
+                    decision_outcome == "acknowledged"
+                    and (
+                        int(decision["committed_revision"])
+                        != intent.target_revision
+                        or str(decision["transition_to"])
+                        != intent.transition_to.value
+                    )
+                )
+                or (
+                    decision_outcome == "ignored"
+                    and int(decision["committed_revision"])
+                    != intent.target_revision
+                )
+            ):
+                raise MemoryCorruptionError("prospective decision authority binding differs")
+            await self._validate_cognitive_lifecycle_target_unlocked(
+                intent=intent,
+                committed_revision=int(decision["committed_revision"]),
+                transition_to=str(decision["transition_to"]),
+                memory_type="prospective",
+                authority_id=cast(Any, authority).authority_id,
+                plan_domain="prospective-signal-plan",
+            )
+            result_row = results[consumption_id]
+            result_json = self._canonical_audit_object(
+                result_row["result_json"], "prospective result"
+            )
+            try:
+                result = result_type.from_json(result_json)
+            except (KeyError, TypeError, ValueError) as exc:
+                raise MemoryCorruptionError("prospective result is invalid") from exc
+            if (
+                canonical_json(result.to_json()) != str(result_row["result_json"])
+                or result.result_hash != str(result_row["result_hash"])
+                or result.result_id != str(result_row["result_id"])
+                or result.result_id
+                != _stable_id(
+                    "prospective-signal-result", cast(Any, authority).authority_id
+                )
+                or str(result_row["replay_identity"])
+                != cast(Any, authority).replay_identity
+                or result.signal_id != intent.signal_id
+                or result.decision_id != str(decision["decision_id"])
+                or result.memory_id != str(decision["memory_id"])
+                or result.base_revision != int(decision["base_revision"])
+                or result.committed_revision != int(decision["committed_revision"])
+                or result.lifecycle_state.value != str(decision["transition_to"])
+                or result.outcome.value != decision_outcome
+                or result.reason_code != str(decision["reason_code"])
+                or result.decided_at != float(result_row["decided_at"])
+                or result.decided_at != float(decision["decided_at"])
+            ):
+                raise MemoryCorruptionError("prospective result chain differs")
+            registration = registrations.get(consumption_id)
+            trigger = triggers.get(consumption_id)
+            if str(decision["outcome"]) == "acknowledged":
+                if (
+                    intent.signal_kind.value
+                    not in {"registration_accepted", "registration_invalidated"}
+                    or registration is None
+                    or trigger is not None
+                ):
+                    raise MemoryCorruptionError("prospective registration cardinality differs")
+                event_json = self._canonical_audit_object(
+                    registration["event_json"], "prospective registration event"
+                )
+                if str(registration["event_hash"]) != hashlib.sha256(
+                    canonical_json(event_json).encode("utf-8")
+                ).hexdigest():
+                    raise MemoryCorruptionError("prospective registration hash differs")
+                registration_event_columns = (
+                    event_json.get("registration_event_id"),
+                    event_json.get("memory_id"),
+                    event_json.get("prospective_revision"),
+                    event_json.get("scheduler_registration_ref"),
+                    event_json.get("registration_revision"),
+                    event_json.get("state"),
+                    event_json.get("trigger_hash"),
+                    event_json.get("outbox_id"),
+                    event_json.get("outbox_payload_hash"),
+                )
+                stored_registration_columns = (
+                    str(registration["registration_event_id"]),
+                    str(registration["memory_id"]),
+                    int(registration["prospective_revision"]),
+                    str(registration["scheduler_registration_ref"]),
+                    int(registration["registration_revision"]),
+                    str(registration["state"]),
+                    str(registration["trigger_hash"]),
+                    str(registration["outbox_id"]),
+                    str(registration["outbox_payload_hash"]),
+                )
+                expected_registration_state = (
+                    "accepted"
+                    if intent.signal_kind.value == "registration_accepted"
+                    else "invalidated"
+                )
+                expected_registration_columns = (
+                    _stable_id("prospective-registration-event", consumption_id),
+                    intent.target_memory_id,
+                    intent.target_revision,
+                    intent.scheduler_registration_ref,
+                    intent.registration_revision,
+                    expected_registration_state,
+                    intent.trigger_hash,
+                    intent.outbox_id,
+                    intent.outbox_payload_hash,
+                )
+                if (
+                    registration_event_columns != stored_registration_columns
+                    or stored_registration_columns != expected_registration_columns
+                    or str(registration["consumption_id"]) != consumption_id
+                    or str(registration["principal_id"]) != intent.subject
+                    or float(registration["occurred_at"])
+                    != float(decision["decided_at"])
+                    or decision_outcome != "acknowledged"
+                    or str(decision["reason_code"])
+                    != "prospective_registration_acknowledged"
+                ):
+                    raise MemoryCorruptionError("prospective registration columns differ")
+                async with self._db.execute(
+                    "SELECT principal_id,topic,idempotency_key,payload,payload_hash "
+                    "FROM outbox WHERE outbox_id=?",
+                    (intent.outbox_id,),
+                ) as cursor:
+                    outbox = await cursor.fetchone()
+                command = (
+                    "registration"
+                    if expected_registration_state == "accepted"
+                    else "invalidation"
+                )
+                expected_outbox_payload: dict[str, JsonValue] = {
+                    "schema_version": 1,
+                    "command": command,
+                    "memory_id": intent.target_memory_id,
+                    "prospective_revision": intent.target_revision,
+                    "registration_revision": intent.registration_revision,
+                    "trigger": intent.trigger.to_json(),
+                    "trigger_hash": intent.trigger_hash,
+                }
+                if outbox is None or (
+                    str(outbox[0]) != intent.subject
+                    or str(outbox[1])
+                    != f"memory.prospective.{command}.requested"
+                    or str(outbox[2]) != intent.outbox_id
+                    or str(outbox[3]) != canonical_json(expected_outbox_payload)
+                    or str(outbox[4]) != intent.outbox_payload_hash
+                    or str(outbox[4])
+                    != hashlib.sha256(str(outbox[3]).encode("utf-8")).hexdigest()
+                ):
+                    raise MemoryCorruptionError("prospective registration outbox differs")
+                if expected_registration_state == "invalidated":
+                    async with self._db.execute(
+                        "SELECT 1 FROM prospective_scheduler_registrations "
+                        "WHERE memory_id=? AND prospective_revision=? "
+                        "AND registration_revision=? AND scheduler_registration_ref=? "
+                        "AND trigger_hash=? AND state='accepted'",
+                        (
+                            intent.target_memory_id,
+                            intent.target_revision,
+                            intent.registration_revision,
+                            intent.scheduler_registration_ref,
+                            intent.trigger_hash,
+                        ),
+                    ) as cursor:
+                        accepted = await cursor.fetchone()
+                    if accepted is None:
+                        raise MemoryCorruptionError(
+                            "prospective invalidation registration is not live"
+                        )
+            elif str(decision["reason_code"]) == "prospective_occurrence_already_applied":
+                if (
+                    decision_outcome != "ignored"
+                    or registration is not None
+                    or trigger is not None
+                ):
+                    raise MemoryCorruptionError("prospective duplicate cardinality differs")
+            else:
+                if registration is not None or trigger is None:
+                    raise MemoryCorruptionError("prospective trigger cardinality differs")
+                event_json = self._canonical_audit_object(
+                    trigger["event_json"], "prospective trigger event"
+                )
+                if str(trigger["event_hash"]) != hashlib.sha256(
+                    canonical_json(event_json).encode("utf-8")
+                ).hexdigest():
+                    raise MemoryCorruptionError("prospective trigger hash differs")
+                trigger_event_columns = (
+                    event_json.get("event_id"),
+                    event_json.get("memory_id"),
+                    event_json.get("prospective_revision"),
+                    event_json.get("trigger_hash"),
+                    event_json.get("event_ref"),
+                    event_json.get("occurrence_key"),
+                    event_json.get("signal_kind"),
+                    event_json.get("outcome"),
+                    event_json.get("reason_code"),
+                    event_json.get("occurred_at"),
+                )
+                stored_trigger_columns = (
+                    str(trigger["event_id"]),
+                    str(trigger["memory_id"]),
+                    int(trigger["prospective_revision"]),
+                    str(trigger["trigger_fingerprint"]),
+                    str(trigger["event_ref"]),
+                    str(trigger["occurrence_key"]),
+                    str(trigger["signal_kind"]),
+                    str(trigger["outcome"]),
+                    str(trigger["reason_code"]),
+                    float(trigger["occurred_at"]),
+                )
+                expected_trigger_columns = (
+                    _stable_id("prospective-trigger-event", consumption_id),
+                    intent.target_memory_id,
+                    intent.target_revision,
+                    intent.trigger_hash,
+                    intent.signal_receipt_id,
+                    intent.occurrence_key,
+                    intent.signal_kind.value,
+                    str(trigger["outcome"]),
+                    str(trigger["reason_code"]),
+                    intent.observed_at,
+                )
+                if (
+                    trigger_event_columns != stored_trigger_columns
+                    or stored_trigger_columns != expected_trigger_columns
+                    or str(trigger["consumption_id"]) != consumption_id
+                    or str(trigger["principal_id"]) != intent.subject
+                    or str(trigger["reason_code"]) != str(decision["reason_code"])
+                    or (
+                        str(trigger["outcome"]) == "ignored"
+                        and decision_outcome != "ignored"
+                    )
+                    or (
+                        str(trigger["outcome"]) in {"matched", "expired"}
+                        and decision_outcome != "applied"
+                    )
+                    or (
+                        str(trigger["outcome"]) == "ignored"
+                        and str(trigger["reason_code"])
+                        != "prospective_signal_stale"
+                    )
+                    or (
+                        str(trigger["outcome"]) == "matched"
+                        and (
+                            intent.signal_kind.value
+                            not in {"time_due", "event_occurred"}
+                            or str(trigger["reason_code"])
+                            != "prospective_trigger_matched"
+                        )
+                    )
+                    or (
+                        str(trigger["outcome"]) == "expired"
+                        and (
+                            intent.signal_kind.value != "expired"
+                            or str(trigger["reason_code"])
+                            != "prospective_expired"
+                        )
+                    )
+                ):
+                    raise MemoryCorruptionError("prospective trigger columns differ")
+
+        if replay_identity is None:
+            async with self._db.execute(
+                "SELECT payload,payload_hash FROM outbox "
+                "WHERE topic LIKE 'memory.prospective.%'"
+            ) as cursor:
+                outbox_rows = list(await cursor.fetchall())
+            for row in outbox_rows:
+                payload = self._canonical_audit_object(
+                    row["payload"], "prospective outbox"
+                )
+                if str(row["payload_hash"]) != hashlib.sha256(
+                    canonical_json(payload).encode("utf-8")
+                ).hexdigest():
+                    raise MemoryCorruptionError("prospective outbox hash differs")
 
     async def _read_audit_cursor_hmac_key(self) -> bytes:
         assert self._db is not None
