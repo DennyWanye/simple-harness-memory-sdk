@@ -148,6 +148,10 @@
       "description": "展示图谱的派生结论进入 Provider Context、改变召回排序、回答、工具选择或动作，或纠正/遗忘后继续显示旧值"
     },
     {
+      "id": "FAIL-RELATION-INTEGRITY",
+      "description": "语义关系提案绕过 exact endpoint、主体、evidence、classification 或 lifecycle 校验，产生孤立、跨主体、过期、敏感泄露或纠正遗忘后复活的知识边"
+    },
+    {
       "id": "FAIL-READ-VIEW-GROWTH",
       "description": "README/STATUS 无界增长，或拆分概括时丢失 canonical facts、evidence refs 与恢复索引"
     },

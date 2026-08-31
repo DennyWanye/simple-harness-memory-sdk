@@ -1,12 +1,13 @@
-<!-- last-calibrated: 46624b5c49f2c0a64a522eca64d6eb798823370e -->
+<!-- last-calibrated: 6ba269537e45d443629aee56e9cfabec9de2e833 -->
 
 # ARCHITECTURE — simple-harness-memory-sdk（v0.6.0 candidate）
 
-> 最后更新：2026-08-31
-> 当前事实：Human Memory V0/S1/S2 与 S3 Task 1/2/3/4/5/6/7 已闭合；Host/UI 接线与最终 candidate
-> packaging 尚未完成。旧 Agent Memory v1 能力仍保留，但不是新认知 mutation 的 authority。
+> 最后更新：2026-09-01
+> 当前事实：Human Memory V0/S1/S2 与 S3 Task 1/2/3/4/5/7 已闭合；S3 Task 6 因 exact-wheel
+> black-box 证明缺少一等语义关系 proposal/seed contract 而重开。Host/UI 接线与最终 candidate packaging
+> 尚未完成。旧 Agent Memory v1 能力仍保留，但不是新认知 mutation 的 authority。
 
-## Human Memory Program 当前边界（2026-08-31）
+## Human Memory Program 当前边界（2026-09-01）
 
 以下是 0.6 candidate 的已验证生产边界：
 
@@ -63,6 +64,23 @@
   correction/forget capability；confidence 是明确的确定性展示 heuristic，不反写 canonical record，也不参与 eligibility、
   recall、ranking、Context 或 action authority。关系只有在同 deployment/household/principal 的两个可见 current endpoint
   都存在时才展示。
+- 当前 `cognitive_relations` 只由 REVISE/SUPERSEDE/CONTEST/SUPPRESS mutation 自动生成 `amends`、
+  `supersedes`、`contests`、`relates_to` **mutation-evolution lineage rows**。这类行继续由新/旧 canonical
+  revision、plan 与 operation 共同拥有，不伪装成独立 Semantic relation memory。Harness schema v4 的 Semantic payload
+  没有 canonical endpoint specification，Memory package root/Manager 也没有独立语义关系 admission；因此 clean-wheel
+  consumer 无法合法创建 `supports`、`applies_to` 等知识关系。单元层直接构造 `TwinGraphRelationInput` 只证明 builder，
+  不能证明生产写入链。
+  新增的 **Semantic knowledge-relation derivative rows** 必须与上述演变行有数据库级 discriminator（显式
+  `relation_domain` + CHECK，或等价拆表），并且 knowledge kind 必须且只能 hash-bound 回指 owning Semantic relation
+  memory 的 exact `memory_id/revision`；不得用 nullable owner + 应用层惯例放行 knowledge row，也不得要求 evolution row
+  伪造 relation-memory owner。relation memory revision 复用普通记忆的 evidence、classification、epistemic、lifecycle、
+  revision/conflict/suppression 与审计状态；knowledge row 只是同一事务由确定性代码生成的派生索引，不能拥有独立状态机，
+  也不能由 LLM 或 UI 直写。普通图谱只有在 relation memory 与两个 exact endpoint 都通过 ordinary projection policy，
+  且 owning relation revision 与两个 endpoint revision 均不属于 unresolved/contested conflict 时才发 knowledge edge；
+  并只排除 knowledge relation memory 自身成为重复 node。该 non-contested gate 只作用于 knowledge row，现有
+  evolution `contests` edge 与 conflict nodes/edges 不因该过滤被删除。两类 edge 都继续要求 exact endpoint 可见。
+  该缺口已由 2026-09-01 用户批准的增量 AC 重开 Task 6；在 exact-wheel 价值 smoke 通过前，“知识图谱关系能力完成”
+  不得作为生产事实。
 - ordinary projection policy 在构图前执行 current-head、active/inferred lifecycle、half-open validity、完整 conflict group
   与 suppression gate。RESTRICTED 记录及 incident edge 完全不可见；SENSITIVE/敏感 attribute 仅显示固定 generic label，
   tooltip/edge/source refs 不携带内容或原始 evidence/span ID。suppressed、superseded、expired 或不完整 conflict group 不得

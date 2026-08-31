@@ -12,11 +12,12 @@ extractor，不导出物理会话删除 API；旧 v4 Message/Fact 类型和私�
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 包结构、分层、本地后端与召回/认知/世界对象的生产边界 |
 
-Human Memory Program 当前闭合到 S3 Task 7：长期认知与五天 Short-Horizon 统一进入 typed recall eligibility、
+Human Memory Program 当前闭合到 S3 Task 7，但 Task 6 因生产关系写入缺口重开：长期认知与五天 Short-Horizon 统一进入 typed recall eligibility、
 disclosure、lane-cap/weighted-RRF、去重和 provider-visible budget；durable request/attempt/decision/result/terminal
 ledger 支持 exact replay、reopen hash rebuild、atomic confirmation、result-bound page-in 与 final current-use fence；
 Digital Twin graph 从 canonical current cognitive records/relation rows 按普通展示 policy 即时重建，且 API/依赖
-方向禁止它进入 recall、ranking、Context 或动作 authority；resolver-backed sealed audit、MEMORY lineage trace、
+方向禁止它进入 recall、ranking、Context 或动作 authority；但现有公开协议只能产生 mutation 演化边，不能从
+exact-wheel 根 API 创建知识语义边，故 Task 6 仍未完成。resolver-backed sealed audit、MEMORY lineage trace、
 ordinary-visible metrics 与 canonical state manifest 均通过 public v6 Manager facade 提供。Host/UI 接线仍未实现。
 
-<!-- last-updated: 2026-08-31 -->
+<!-- last-updated: 2026-09-01 -->

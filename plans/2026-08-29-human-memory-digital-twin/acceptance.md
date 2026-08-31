@@ -1,19 +1,22 @@
 # 验收标准：Human Memory Digital Twin / 单一主对话与 Memory Program
 
-> 状态：APPROVED / FROZEN（2026-08-30）
+> 状态：APPROVED / FROZEN（2026-08-30）；语义关系增量 AC 已批准（2026-09-01）
 > 主计划仓库：`simple-harness-memory-sdk`
 > 实施仓库：`simple-harness-memory-sdk`、`simple-harness-sdk`、`simple_harness`
 > 流程：`plan-test` / FULL（新持久化 schema、多类状态机、LLM 驱动决策、数据完整性与公共 SDK 协议）
 > 依据：本目录已确认的认知架构、召回路由、写入演化与审计规则
 > 用户批准语句：`好的，开始吧`
 > 批准语句 SHA-256：`184653efab40f00e76394b927241ad673dfd3b4ec912fb716b90b4ded8e3dcf0`
+> 语义关系增量批准语句：`采用，记得使用更新过的plan-test skill来继续做`
+> 增量批准语句 SHA-256：`ff036f01b5dc3b6860f61cd2771846e8416480c840119d86f26202842490c416`
 
 ## 主要矛盾
 
-在一条用户可见的永久主对话中，在有限的延迟、Token 和隐私边界内，自动识别当前 TaskScope，可靠地把
-当前真正需要、仍然有效、允许使用的近期对话和长期记忆送入工作记忆，同时排除不相关、过期、冲突未决、
-证据不足或不宜出现的内容；并保证任何 LLM 判断都只能提出结构化操作，最终状态由可重放、可审计的
-确定性代码裁决。
+- **核心价值**：在一条永久主对话中，系统能把用户的事实、经历、程序、未来意图及其真实关系长期保存并在
+  当前任务确实需要时准确使用，同时由确定性代码守住证据、状态、隐私和权限边界。
+- **本次语义关系增量的最小验证动作**：仅安装 exact Harness/Memory wheels，通过 package-root 公共 API 在
+  一个原子 mutation plan 中创建偏好节点、程序节点和 `applies_to` relation memory；普通 twin graph 必须得到
+  2 个节点 + 1 条边，suppression relation 或任一端点并 close/reopen 后必须得到 0 条边，且关系记忆不重复成节点。
 
 ## 范围
 
@@ -27,7 +30,9 @@
   provisioning 和不可静默换根权限边界；
 - 工作记忆这一一等认知系统，以及 Episode、Semantic、Procedure、Prospective 四类长期记忆；
 - 编码、事件分段、巩固、冲突/更新、逻辑遗忘、跨 TaskScope 关联和认知投影；
-- 主 Agent LLM 使用的 `RecallPlan` / `MemoryMutationPlan` 公共协议与 Memory SDK 确定性裁决；
+- 主 Agent LLM 使用的 `RecallPlan` / `MemoryMutationPlan` 公共协议与 Memory SDK 确定性裁决；Semantic
+  Memory 可携带受限枚举的 canonical relation specification，把 existing 或同 plan 新建的记忆端点连接为
+  一等知识关系，而不是让 LLM 或 UI 直接写图谱边；
 - 类型化检索、Scope/状态/证据/隐私/预算资格门、数字孪生体/世界模型投影；
 - SQLite schema/migration、幂等 Worker/outbox、审计导出、质量/延迟/Token 评估工具；
 - 五天 Short-Horizon Conversation Index、最近 10 个因果 turn group 与预算化动态 Context 组装；
@@ -57,11 +62,11 @@
 | ID | 功能点 | 验收条件（可验证） | 优先级 |
 |----|--------|-------------------|--------|
 | HM-AC-1 | 单一主对话、原始证据永久保留与逻辑遗忘 | 全新数据库中，用户界面只有一个永久主对话入口，新 Turn 原子绑定稳定 `primary_conversation_id` 并提交经过凭据过滤的完整 Tool Result、LLM evidence 和 ingestion receipt；用户无需管理 Session。任意 Worker/LLM/索引失败后业务原始证据均可按 ID 复查。从第一条新原型 evidence 起，系统、retention job 和用户“删除/忘记”请求不得物理删除或覆盖原始数据；忘记写入 append-only suppression 后，相关内容立即退出普通 TaskScope search/open、六阅读视图、ResumePackage、短期/长期召回、工作记忆、动态 Context、数字孪生体和导出，派生更新失败或索引重建也不能复活。原文仅能由用户明确发起、声明目的的受控审计读取且读取本身留痕；明确撤销遗忘时通过新审计决策恢复允许的使用，不覆盖旧 lineage。 | 必须 |
-| HM-AC-2 | 五类认知系统与证据化混合提取 | SDK 明确表达 Working Memory（非长期表）、Episode、Semantic、Procedure、Prospective。用户明确记住/纠正/遗忘立即进入结构化提案与确定性裁决；普通 committed turn group 先永久保存 raw evidence，再由 durable outbox 按窗口/数量批量异步调用 LLM，退出、崩溃和重启不丢 job且不阻塞当前回答。LLM 只能输出 schema 化 `MemoryMutationPlan`，每项都包含认知类型、独立分类维度、epistemic 状态和真实 evidence refs。无长期价值的普通对话只保留原始证据；无证据、把推断冒充用户事实或非法 schema 的提案全部拒绝且不产生半状态。 | 必须 |
+| HM-AC-2 | 五类认知系统与证据化混合提取 | SDK 明确表达 Working Memory（非长期表）、Episode、Semantic、Procedure、Prospective。用户明确记住/纠正/遗忘立即进入结构化提案与确定性裁决；普通 committed turn group 先永久保存 raw evidence，再由 durable outbox 按窗口/数量批量异步调用 LLM，退出、崩溃和重启不丢 job且不阻塞当前回答。LLM 只能输出 schema 化 `MemoryMutationPlan`，每项都包含认知类型、独立分类维度、epistemic 状态和真实 evidence refs。Semantic relation 必须是带受限 relation kind、方向和 exact existing/created endpoint refs 的 Semantic Memory；它与普通记忆共享 evidence、classification、epistemic、revision/conflict/suppression 和审计状态机，LLM/UI 不得直接创建 relation row。无长期价值的普通对话只保留原始证据；无证据、把推断冒充用户事实、跨主体/过期端点或非法 schema 的提案全部拒绝且不产生半状态或孤立边。 | 必须 |
 | HM-AC-3 | 永久 TaskScope、单 Run 执行、多根绑定与语义更新 | 主模型只能判断并提出 create/continue/standalone、workspace-append 和版本化 `TaskScopeMutationPlan`；Host 是 TaskScope、canonical Archive/state、task_home 和 workspace binding set 的唯一 authority。每个用户请求在同一 ReAct Run 内通过 `context_route` control barrier 建立可信 TaskScope 状态，再进行 recall、tool effect、semantic closure 和最终回答；Agent 保持统一工具层，项目 effect 由 Host 注入 per-Effect `TaskExecutionEnvelope`，路由结果产生前不得执行。初版同一 Session 最多一个 foreground Run，多 Run/subagent 不在范围。所有模型/工具/文件/测试事实由 Host 不经 LLM 追加；目标、范围、决定、计划、阶段和恢复变化由当前主模型调用预定义 `task_scope_update` 提出，不用正则或后台总结模型。Host dirty flags/closure gate 防漏收口，校验 evidence refs、CAS revision、合法状态迁移和幂等键后才提交。没有可信 binding 不得执行项目 effect。Host 对 exact roots 校验 canonical path/filesystem identity，禁止公共父目录授权或替换已有 root。Manual 追加需用户授权；Auto 经 Host 校验后直接追加，但只限配置 workspace root 的真实后代目录，macOS/Linux 未配置时默认 `~/SimpleHarnessWorkSpace`，mode 来自可信 Run snapshot且不豁免高风险动作授权。每个 effect 记录 exact binding-set revision，缺失/identity 漂移即 fail-closed。Archive 由 raw evidence、append-only events、canonical states 和 immutable checkpoint revisions 构成，并物化可追溯的人/Agent 阅读视图。 | 必须 |
 | HM-AC-4 | 每轮判断、任务发现与类型化召回 | Harness SDK 提供版本化 TaskScope/Recall 协议；主模型每轮只能收敛为 direct standalone、memory standalone、continue active、resume existing 或 create new。普通对话和用户级认知记忆不得仅因需要保存/召回而创建 TaskScope；任何项目 effect、持续状态或恢复需求又不得落入 standalone。最近目录无 exact ID 时，主模型可调用长期 `task_scope_search`，Host 用 permission-first 的向量+FTS+project/entity/status 混合检索返回候选，再以 exact ID `task_scope_open` canonical Archive；搜索命中不得直接切 scope 或授予项目执行范围。初版同一用户的普通认知记忆跨 TaskScope/workspace 全局可成为候选，不用 Scope 作硬隔离，但每次跨任务候选、过滤和最终 Context 使用都留 log，并继续强制 recipient/purpose、敏感级别、suppression、冲突/过期状态和最小披露。五天短时域与长期认知召回由 `RecallPlan` 按类型、状态、隐私、时间和预算执行；无召回路径记录 `outcome=no_recall` 且不查询记忆。 | 必须 |
 | HM-AC-5 | Procedure 与 Prospective 一等能力 | 明确用户程序可 active，单次观察仅 draft；多个独立成功证据只允许低风险可逆程序自动激活，高风险/发布/删除/付款/权限程序必须用户确认，并持续检查工具/环境/版本适用性。Prospective 只有“明确行动+明确触发”可 pending；缺触发为 candidate，模糊愿望只进 Semantic Goal，LLM 推测不得提醒/调度/执行；SDK 可靠地产生时间/事件触发候选及状态审计，但不越权执行。 | 必须 |
-| HM-AC-6 | 动态 Context、工作记忆与展示型数字孪生体 | Host 最终 Context assembler 按分区 Token 预算组合 protected instructions/current query、最近 10 个完整因果 turn group、从 canonical TaskScope state 临时选择的当前任务信息、五天短时域结果、类型化长期记忆及当前所需 tool/skill/attachment；不建立独立 Task Capsule 存储，大型 TaskScope 内容通过受控引用 page-in。每次真实发送内容冻结为可审计 `ContextSnapshot`，超预算时按确定性优先级裁剪，不得破坏 tool-call 因果链。README/STATUS 只保留有大小上限的概括和索引，超限细节拆分且不丢 canonical facts。数字孪生体/世界模型初版只作为用户可见、可追溯、可纠正的知识图谱投影，不进入 Agent Context，也不影响召回排序、回答、工具选择或动作；状态变化、遗忘或隐私变化后普通图谱不得继续显示旧值。 | 必须 |
+| HM-AC-6 | 动态 Context、工作记忆与展示型数字孪生体 | Host 最终 Context assembler 按分区 Token 预算组合 protected instructions/current query、最近 10 个完整因果 turn group、从 canonical TaskScope state 临时选择的当前任务信息、五天短时域结果、类型化长期记忆及当前所需 tool/skill/attachment；不建立独立 Task Capsule 存储，大型 TaskScope 内容通过受控引用 page-in。每次真实发送内容冻结为可审计 `ContextSnapshot`，超预算时按确定性优先级裁剪，不得破坏 tool-call 因果链。README/STATUS 只保留有大小上限的概括和索引，超限细节拆分且不丢 canonical facts。数字孪生体/世界模型初版只作为用户可见、可追溯、可纠正的知识图谱投影：普通 active relation memory 生成连接 canonical memory nodes 的 edge，relation memory 本身不重复显示为 node；端点、关系或 evidence 被纠正、supersede、contested、expired、suppressed，或者关系 classification 不允许普通展示时，edge 必须同步退出。图谱不进入 Agent Context，也不影响召回排序、回答、工具选择或动作。 | 必须 |
 | HM-AC-7 | LLM/TaskScope 全链路审计与可优化性 | Recall need、TaskScope route/search/open/binding、提取、分类、Episode 分段、冲突/更新、Procedure、Prospective 和投影的每次 LLM 操作都保存受控 invocation evidence 与结构化 decision record，关联 conversation/turn/run/task/model/prompt/schema、输入输出 hash、延迟、Token/费用、验证结果、最终状态和稳定 reason code；不得保存 API key/token/cookie、认证材料或隐藏思维链。TaskScope 以 raw evidence、append-only event ledger、canonical state 和 immutable checkpoint revisions 为事实层，并物化 README/PLAN/STATUS/DECISIONS/RESUME/EVIDENCE 六个可追溯阅读视图。普通执行面、用户审计面和密封取证面必须分权；普通 trace/export 遵守 suppression，密封内容仅凭显式 `AuditAccessDecision` 受控读取。可按 TaskScope/turn/invocation/memory/decision 导出只读 trace，且不覆盖旧 lineage。 | 必须 |
 | HM-AC-8 | 跨仓初始化、故障与质量门 | 三仓协议版本与发布顺序明确；空数据目录首次初始化唯一主对话、schema、短时域索引和 Worker 状态必须原子、幂等，失败重试及重启不得产生第二条可写主对话或半初始化。LLM timeout/refusal/乱序/重复/非法/超长输出、embedding 降级、并发 Worker 和 outbox 重试均 fail-closed、可恢复。冻结路由集上硬触发召回率和隐私禁止项正确率均为 100%，主模型 required-memory-type recall ≥90%、no-recall 判断正确率 ≥90%、额外类型率 ≤15%；本地记忆检索 p95 ≤500ms 且 hard deadline ≤2s，最终 Context 严格服从 item/byte/token 预算。 | 必须 |
 
@@ -74,6 +79,10 @@
 - **逻辑遗忘**：append-only suppression 必须先于 TaskScope search/open、提取、巩固、索引、召回、投影和
   Context disclosure 生效；审计专用读取必须有用户显式请求、结构化权限与目的，不能被普通 Agent 路径调用。
 - **Epistemic 边界**：用户原话、工具观察、外部资料和 LLM 推断分别标记；推断不能 supersede 明确用户事实。
+- **关系完整性**：关系是 Semantic Memory 的 canonical 含义，不是 UI-only edge；source/target 必须属于同一
+  authenticated principal 并绑定 exact revision。同一 plan 新建端点使用显式依赖解析；端点不存在、过期、跨主体、
+  非法 kind、证据不支持或 classification 不足时整项拒绝，事务失败不得留下 relation memory 或孤立 edge。
+  是否允许 source=target 由受限 relation kind 的逐项约束决定，本增量不额外冻结 blanket 自环禁令。
 - **并发/幂等**：job lease、attempt、CAS、outbox 和重放键有确定语义；同一 committed turn 重放不重复建记忆。
 - **隐私**：raw evidence commit 前过滤凭据和认证材料；远程 LLM 调用前完成主体、Scope、recipient/purpose、
   active suppression 和最小披露过滤；相关不等于允许披露。
@@ -121,7 +130,7 @@
 | HM-S9 | TaskScope 创建与多根权限 | 在 managed task_home 和三个 exact roots 创建中注入中断并重试；分别在 Manual/Auto 提议第四个 root，并尝试模型自开 Auto、workspace root 本身、symlink 越界、公共父目录、静默改绑和 identity 漂移 | 重复目录、过宽授权、模式越权或静默换根 | negative-safety | 是 | 是 | Manual 等确认；Auto 仅允许配置根的真实后代并生成新 revision；其余 fail-closed | macOS/Linux 无配置时只在 `~/SimpleHarnessWorkSpace` 后代自动绑定；当前 Run 不获新权限；模型不能自开 Auto或替换 root |
 | HM-S10 | TaskScope 五路分流 | 依次输入简单改写、询问用户偏好、继续当前任务、恢复相似名称旧任务、创建多步骤文件任务，并在 active task 中插入无关闲聊 | 过度建档、漏建档、active scope 惯性或 memory/scope 混淆 | positive-value | 是 | 是 | 五种输入分别进入 exact routing outcome；歧义 resume 要求确认 | standalone 不改变 active cursor且无项目写权限；memory standalone 可召回用户记忆但不建档；项目任务一定有可信 Scope/binding |
 | HM-S11 | 单前台 Run 与消息排队 | 在一个长工具 Run 执行期间连续发送两条普通消息，再发送显式 pause/stop；同时让 extraction/index/projection Worker 工作 | 第二个 Agent Run 并发、消息丢失/乱序、控制信号被排队或后台 Worker越权 | negative-safety | 是 | 是 | 普通消息永久入账并按 FIFO 等待；同一时刻只有一个 foreground ReAct Run；pause/stop 立即控制当前 Run | 当前 Run terminal 后才依序启动下一 Run；后台 Worker 可并发但不能产生 Agent effect 或改变 TaskScope 语义；重启后队列顺序不变 |
-| HM-S12 | 展示型数字孪生图谱 | 先形成偏好、目标、关系和程序记忆，再纠正一项并逻辑遗忘一项，打开数字孪生体图谱 | 图谱旧值复活、缺少来源或反向影响 Agent | positive-value | 是 | 是 | 图谱显示可追溯节点/关系；纠正后仅显示新 active，遗忘项退出普通图谱 | 每个可见结论可定位 evidence/状态；Provider Context 与 recall decision 中不存在仅由图谱生成的数据，关闭图谱不改变回答与工具行为 |
+| HM-S12 | 展示型数字孪生图谱 | “我常用 Python 3.12；发布检查清单要按这个环境执行。”先在同一 mutation plan 建立偏好、程序和 `applies_to` 语义关系，再纠正关系、逻辑遗忘关系或端点并重开图谱 | 只能画节点、伪造/孤立关系、隐私政策禁止的边泄露、旧边复活或反向影响 Agent | positive-value | 是 | 是 | clean-wheel public API 创建两个 canonical nodes + 一条 relation memory；普通图谱显示一条可追溯 edge；纠正后只显示新 active edge，relation/端点遗忘、争议或 ordinary projection policy 判定不可展示后 edge 退出，close/reopen 不复活 | relation proposal 具有 exact endpoint/evidence/classification；图谱不显示 relation memory 重复节点；Provider Context 与 recall decision 中不存在仅由图谱生成的数据，关闭图谱不改变回答与工具行为 |
 
 以上场景同时覆盖 Memory SDK、真实主模型工具链和 Host 生产路径。标为 `manual_required=是` 的场景必须在
 当前构建中通过真实桌面 UI 输入和观察，并以本地 ignored 证据保存截图/日志；脚本测试不能替代 UI 证据。
@@ -144,11 +153,11 @@
 | obligation_id | type | ac_id | risk | min_decisive_test | required_reason |
 |---------------|------|-------|------|-------------------|-----------------|
 | HM-TO-A1 | delivery | HM-AC-1 | — | 唯一主对话写入→逻辑遗忘→普通 search/open/视图/Resume/召回/Context/投影不可见→显式审计受控可见并留痕→重建派生层仍不可见 | 直接证明单一入口、永久保留与逻辑遗忘不矛盾 |
-| HM-TO-A2 | delivery | HM-AC-2 | — | 四类提案各一条 + 无证据/推断冒充事实反例 | 证明认知类型与 epistemic 边界 |
+| HM-TO-A2 | delivery | HM-AC-2/HM-AC-6 | — | 四类提案各一条 + 无证据/推断冒充事实反例；clean-wheel public API 在同一原子 plan 正向创建两个端点及一条 `applies_to` Semantic relation，并核验 evidence/classification/epistemic/exact endpoint refs | 证明认知类型与 epistemic 边界，并给一等语义关系提供公开正向 delivery oracle |
 | HM-TO-A3 | delivery | HM-AC-3 | — | managed home + 多根创建→Manual/Auto append→单 Run route barrier/per-Effect envelope→客观 event 自动入账→主模型批量 mutation→closure 漏调用补交/no_mutation→长 Run 中普通消息 FIFO 与 stop/pause 立即控制→冷重启/换 Agent恢复；另测第二 foreground Run、错误 evidence/revision/state、模型自开 Auto、公共父目录、改绑和 identity 漂移拒绝 | 证明单 Run调度、任务语义、mode-aware 多根权限和永久恢复档案共同成立 |
 | HM-TO-A4 | delivery | HM-AC-4 | — | 五种路由终态、active task 中无关闲聊、no-recall、久远任务模糊搜索→候选→exact open、五天短时域、类型化长期 recall、硬触发漏调用 | 证明 TaskScope 建档、任务发现和三类检索不会混权威 |
 | HM-TO-A5 | delivery | HM-AC-5 | — | 程序 draft/active/高风险确认 + 前瞻 candidate/pending/triggered | 证明两类一等能力及权限边界 |
-| HM-TO-A6 | delivery | HM-AC-6 | — | 20+ turn/大型 tool result 动态组装 + README/STATUS 超限拆分 + 展示图谱更新/纠正/遗忘 + snapshot 重放；断言图谱内容不进入 Provider Context | 证明 Context 有界、文档概括可持续且展示型数字孪生体不暗中影响 Agent |
+| HM-TO-A6 | delivery | HM-AC-2/HM-AC-6 | — | 20+ turn/大型 tool result 动态组装 + README/STATUS 超限拆分；clean-wheel public API 在同一 plan 创建节点与 relation memory，验证 edge 更新/纠正/争议/ordinary projection policy 过滤/relation 或 endpoint 遗忘/close-reopen；snapshot 重放断言图谱内容不进入 Provider Context | 证明 Context 有界、文档概括可持续且展示型数字孪生体拥有真实知识关系又不暗中影响 Agent |
 | HM-TO-A7 | delivery | HM-AC-7 | — | 从 TaskScope/turn 导出 route→invocation→proposal→validation→binding/mutation→recall/projection 完整 trace；删除六阅读视图后从 canonical facts 重建并核对 hash/evidence refs | 证明完整审计不依赖 Markdown，所有 LLM/Task 操作可审查 |
 | HM-TO-A8 | delivery | HM-AC-8 | — | 三仓 consumer contract + 空目录 init/retry/restart + 两轮真实模型评估 + 本地检索基准 | 证明跨仓初始化、质量和性能阈值 |
 | HM-TO-R1 | change-risk | HM-AC-1/HM-AC-8 | FAIL-DATA-LOSS | 对 retention、逻辑遗忘、维护和测试清理路径做原始行数与内容 hash 前后断言 | 防止新实现物理删除原始 evidence |
@@ -159,6 +168,7 @@
 | HM-TO-R6 | change-risk | HM-AC-8 | FAIL-LLM-PAYLOAD | 五类 LLM 行为变异 + timeout/embedding/outbox 故障矩阵 | 结构化 LLM 载荷直接驱动状态机 |
 | HM-TO-R7 | change-risk | HM-AC-1/HM-AC-3/HM-AC-6 | FAIL-TASK-CONTAMINATION | 单流交错三任务、同名实体、跨五天边界和最近 10 轮去重矩阵 | 防止取消 Session UI 后上下文串线或重复注入 |
 | HM-TO-R8 | change-risk | HM-AC-3/HM-AC-7 | FAIL-SEMANTIC-CLOSURE | 多 tool/file/test event 批处理、模型漏调用/拒绝/timeout、CAS 冲突、重复 plan 和 projection worker 失败注入 | 防止丢失任务语义、重复状态变化或拿 Markdown 成功掩盖 canonical failure |
+| HM-TO-R9 | change-risk | HM-AC-2/HM-AC-6/HM-AC-7 | FAIL-RELATION-INTEGRITY | existing/created endpoint、跨主体/过期 revision、非法 kind 或 kind-specific endpoint 约束、证据/classification 不足、事务故障、relation/endpoint suppression、contested/superseded 和 manifest/trace 血缘矩阵 | 防止 LLM 或投影旁路制造孤立、错误、过期或泄密知识边 |
 | HM-TO-E1 | exploratory | — | 大规模长期增长 | 百万级 Episode/Claim 长时 soak 与压缩评估 | 探索未来容量风险，不阻断首个本地版本 |
 
 ## 完成的定义（DoD 摘要）
