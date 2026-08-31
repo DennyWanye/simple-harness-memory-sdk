@@ -41,6 +41,10 @@ Memory 只以 RecallDecision/ContextFragment 表达，不建长期表。数字�
 
 - 主模型 tool payload 只提出 operation；validator 验证 schema/长度、principal、EvidenceSpan offset/hash/ownership、base revision、
   epistemic 限制、suppression、状态转换和 idempotency。
+- epistemic/status/kind 均是不可信提案：只有 exact verified evidence authority 可赋予 explicit user、external verification、
+  observed behavior、correction/forget 权限；UNKNOWN/LLM inference 永远不能借自报状态进入 active/supersede/suppress。
+- effective classification 必须单调合并 Memory policy、全部 Host-signed evidence item floors、target revision 和 proposal，
+  且同事务持久化各 authority/hash 与最终 decision；任何 classification authority 缺失整批拒绝。
 - 确定性代码不宣称证明开放自然语言 entailment：普通模型规范化 claim 保持 candidate/unverified；exact explicit-user
   assertion 可带原句/来源 active；注册 typed tool observation 才可 verified；inferred 永不覆盖 explicit/observed。
 - correction/supersede 校验 target revision/relation；ambiguous target 或 contradictory evidence 转 contested 并要求确认。

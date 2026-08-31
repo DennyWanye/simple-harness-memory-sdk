@@ -137,6 +137,10 @@ candidate hash；上一 candidate hash 永久作为失效证据保留，不覆�
 - 冻结 Host-authenticated `ConversationEvidenceMetadata`：primary conversation、causal group ID/sequence/ordinal、role、
   occurred_at、TaskScope、tool causal link、entities；模型不能构造或扩大，缺失/非法 metadata 的 evidence 永久保存但不入短时域。
 - privacy class 由 Host/Memory policy 决定下限；LLM 只可提议更严格等级，不能放宽。unknown/external recipient 默认 deny。
+- Host-only `EvidenceItemAuthority` 使用独立 v3 classification authority：required privacy class、information attributes 与
+  durable classification authority ref 必须绑定 exact evidence item；模型 `EvidenceSpanRef` 不携带可信分类字段。
+  `verify_evidence_span` 返回已验证 authority，Memory 在单事务内只解析一次，并把 policy、evidence authority、target、
+  proposal 和最终 classification 的 hash/refs 全部持久化。缺分类或旧 authority 直接拒绝，不设低等级默认值。
 - 验证：中文/emoji offset、同 evidence 多 span、typed observation、payload discriminator、dependency DAG、target drift、
   context replay、budget/constraint expansion、metadata forgery、credential/CoT canary、public snapshot 与 exact wheel consumer。
 
@@ -161,3 +165,8 @@ P0/P1/P2=0；reproducible wheel `49e42eaa189d7a6e238b17d39bf4c4ebb5352e9113b67f5
 闭合提交 `884bc2694c2ae6e89ae25d69fe91e0015f878147`：clean commit 全仓 `1641 passed, 2 skipped`，
 ruff/scoped mypy/diff/clean-state PASS；独立审计先发现 deny count side-channel、outcome/reason/type 矩阵和旧 decoder
 三个 P1，整改后 closure P0/P1/P2=0。新 exact wheel 须在 S3 consumer 接线完成后统一重建，当前仍未发布。
+
+`a2-005` repository 审计回炉：SQLite atomic Mutation 首轮审计发现模型可伪报 epistemic 状态、旧 entity
+suppression 可被 revise 绕过、operation ID 作用域错误，以及 Harness authority 未携带 Host/evidence classification
+floor。其中 classification owner 缺失是协议 P0；用户已批准 `EvidenceItemAuthority v3`，分类 enum 移至中立协议模块，
+EvidenceSpanRef 保持不变，Memory 必须执行 policy ∨ evidence authority ∨ target ∨ proposal 的单调 join并保留审计输入。

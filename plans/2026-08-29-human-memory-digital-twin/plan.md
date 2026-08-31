@@ -2,7 +2,7 @@
 
 <!-- plan-status: finalized -->
 
-> 状态：APPROVED / EXECUTION IN PROGRESS — V0/S1/S2 complete；RecallDecision v3 A2 closed；S3 repository/recall integration in progress；S4 candidate pending integration
+> 状态：APPROVED / EXECUTION IN PROGRESS — V0/S1/S2 complete；RecallDecision v3 closed；EvidenceItemAuthority v3 A2 in progress；S3 repository audit blocked pending closure
 > 行为策略：`preserve-approved`  
 > 唯一真相：`acceptance.md` + `assurance-contract.json`  
 > 实施仓库：`simple-harness-sdk` → `simple-harness-memory-sdk` → `simple_harness`
