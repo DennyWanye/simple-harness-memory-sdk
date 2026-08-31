@@ -200,3 +200,7 @@ current Run/context/config facts 与 production adapters 明确装配。Phase 2 
 composition 缺少三个 mandatory authority port，定为 P0，必须在 S5 由唯一 composition owner 实装且 fail-closed。
 S3 Task 1—4 已完成、Task 5—7 正在实施；S5、S6 未开始。program 的 15 个最终场景仍保持 `NOT_RUN`，只有全部实现、
 自动化、真实模型、桌面 UI 和 machine `finalize` 完成后才能宣称 program 完成。
+
+Task 5 的 240 条 AI 候选语义语料已保存于 `quality/recall-corpus-candidate/`，固定 JSONL SHA-256 为
+`e3d39fdf68ded5c4af94b7c7ca04587b724b46643d1ea6fd2ccecb0003e039d5`。它明确不是人工标签；在用户或独立人工
+逐层 review 并冻结新 hash 前，语义质量门保持 `NOT_RUN/BLOCKED`。

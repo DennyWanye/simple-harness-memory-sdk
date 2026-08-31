@@ -1,0 +1,69 @@
+{
+  "artifact": "recall-candidates.jsonl",
+  "companion_sha256": {
+    "README.md": "67dbe31a1924ec13110805b94feddf29c5c52112c9ccac13b989cca84101bbe1",
+    "validate_corpus.py": "e6036f731220964b5677ad1c776d074318f9d3c558d2278fe9d49be863464122"
+  },
+  "count": 240,
+  "deterministic_generator": "generate_corpus.py",
+  "generator_sha256": "c5720e94331d2e2c2b0b356ca08a902336837267582d4b5c656caa966a3369cc",
+  "label_source": "AI_DRAFT_UNREVIEWED",
+  "manifest_schema_version": "human-memory-recall-corpus-manifest/v1",
+  "notes": [
+    "This is an AI-generated candidate set awaiting independent human review.",
+    "No real main-model recall evaluation was executed.",
+    "Working Memory is first-class Context rather than a durable table; the four long-term stores are Episode, Semantic, Procedure, and Prospective. TaskScope is a separate durable task archive, Short-Horizon is a disposable projection, and raw evidence is the permanent audit source."
+  ],
+  "quality_gate": "NOT_RUN/BLOCKED",
+  "sha256": "e3d39fdf68ded5c4af94b7c7ca04587b724b46643d1ea6fd2ccecb0003e039d5",
+  "stats": {
+    "by_family": {
+      "active_revision": 10,
+      "budget_minimal": 10,
+      "contested_confirmation": 10,
+      "cross_task_procedure": 10,
+      "cross_task_semantic": 10,
+      "cross_type_personalized_plan": 10,
+      "entity_affinity": 10,
+      "episode_event": 10,
+      "expired_validity": 10,
+      "hard_trigger_composite": 10,
+      "no_recall_chitchat": 10,
+      "privacy_purpose_deny": 10,
+      "privacy_recipient_deny": 10,
+      "procedure_active": 10,
+      "procedure_status_deny": 10,
+      "prospective_pending": 10,
+      "prospective_terminal": 10,
+      "raw_evidence_quote": 10,
+      "semantic_active": 10,
+      "short_horizon_recent": 10,
+      "suppression_deny": 10,
+      "task_scope_continue": 10,
+      "temporal_episode": 10,
+      "working_context_only": 10
+    },
+    "by_outcome": {
+      "NEEDS_USER_CONFIRMATION": 10,
+      "NO_RECALL": 70,
+      "RECALL": 160
+    },
+    "by_privacy_decision": {
+      "ALLOW": 200,
+      "DENY": 40
+    },
+    "by_required_type": {
+      "episode": 20,
+      "procedure": 50,
+      "prospective": 40,
+      "raw_evidence": 10,
+      "semantic": 110,
+      "short_horizon": 20,
+      "task_scope": 10
+    },
+    "hard_trigger": {
+      "false": 170,
+      "true": 70
+    }
+  }
+}

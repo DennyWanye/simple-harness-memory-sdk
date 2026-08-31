@@ -3,7 +3,7 @@
 > Release unit：S3（Memory SDK）  
 > 高风险子系统：认知状态机、检索资格/排序、派生投影（3）  
 > 覆盖：HM-AC-2/4/5/6/7/8
-> 执行状态：Task 1/2/3/4 COMPLETE（Memory Task 3 `31ffb15` + `3e45194`，Task 4 pending scoped commit；Harness exact authority `aa45a51`）；classification/action authority、Procedure/Prospective 与五天 Short-Horizon repository 已闭合；machine `a2-004` resolved；Task 5—7 继续实施
+> 执行状态：Task 1/2/3/4 COMPLETE（Memory Task 3 `31ffb15` + `3e45194`，Task 4 `a32a837`；Harness exact authority `aa45a51`）；classification/action authority、Procedure/Prospective 与五天 Short-Horizon repository 已闭合；machine `a2-004` resolved；Task 5—7 继续实施
 
 ## 交付边界
 
@@ -103,6 +103,9 @@ manifest。五天清理只删除派生 chunk/vector/FTS。Focused `10 passed`、
   synthetic backend 结果不替代 S3 真实 embedding/200-query semantic quality gate。
 - 真实质量门先生成不少于 200 条带 expected type/privacy outcome 的候选 corpus 与固定 hash；在用户或独立人工
   完成标签 review/freeze 前，状态必须保持 `NOT_RUN/BLOCKED`，不得以 AI 草案或 synthetic benchmark 宣称 PASS。
+- AI 候选集已生成 240 条，见 `quality/recall-corpus-candidate/`；JSONL SHA-256 为
+  `e3d39fdf68ded5c4af94b7c7ca04587b724b46643d1ea6fd2ccecb0003e039d5`。其
+  `label_source=AI_DRAFT_UNREVIEWED`、`quality_gate=NOT_RUN/BLOCKED`，只完成结构与分层准备，尚未构成质量证据。
 
 ### Task 5 — Typed RecallPlan 与资格门 [HM-AC-4/7/8]
 
