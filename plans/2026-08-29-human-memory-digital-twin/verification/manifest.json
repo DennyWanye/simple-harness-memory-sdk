@@ -44,9 +44,9 @@
     "input_hashes": {
       "acceptance": "ab4dbe080e27ab4a29bf4be74b539363b489f9ad165eadf748fb3b8019cbc067",
       "assurance_contract": "d828f016110bd876c364c9b17fdf2c316557988a7be6f8195d25aa0eb1b3e6a8",
-      "reuse_report": "39ff096ef9a40b286521c75b45379317d939e25898da6b27d68fde3d7d629374",
+      "reuse_report": "560326843828338783d6c152a5826516a3cf75489187e0b049606529f5049343",
       "testcase_inventory": "3edd5c1ed3546333232a28ab9eb356453b86baecbc7bf5673f02531bb3b18d9c",
-      "verification_spec": "02ab5f81efc162d4de849d2a0a3b96c3a5f5304edb6cfa452ba875ff3dcc65f8"
+      "verification_spec": "8cab9cf14f86ada475a254e7d616eda66ee2b60ffd818794dffd2caa788c45e5"
     },
     "input_paths": {
       "acceptance": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/acceptance.md",
@@ -55,7 +55,7 @@
       "testcase_inventory": "/Users/denny/projects/simple_harness-memory-plan/testcase/index.json",
       "verification_spec": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/verification/verification-spec.json"
     },
-    "seal_sha256": "5144de2f4df495749ef7cf8aa0b152e9b84a9af932fad51e3b9159e33b355d3d",
+    "seal_sha256": "995d5974d2dc6d5d055c7b81a596687bd8843272adf9b4ce18a5fc1a53734649",
     "selected_testcase_ids": [
       "TC-GS-03",
       "TC-GS-04",
@@ -359,13 +359,13 @@
       "manual_required": true,
       "min_root_runs": 2,
       "oracle_pins": {
-        "candidate_memory_source_commit": "0b6bf875cce888b16e4b96399cb6407fb06e0ae9",
-        "candidate_memory_wheel_sha256": "79b07b574275decb464ba8fcf8ff3cf6d210787682080b3577f3fe7b95e64dad",
+        "candidate_memory_source_commit": "d069e0e949edb44d85d2ebeac6e49b05f9fb51b1",
+        "candidate_memory_wheel_sha256": "6f9a8c1a52cf8512232a12a9ea7fd7d98c6c5d59e837d2c5f777010bb30fe6b2",
         "fixture_revision": 1,
-        "fixture_sha256": "3f60c0591846ca5a38470314e1b0b2aa7a652ea1debb78f8287ddafc49adb141",
+        "fixture_sha256": "57d6758f4c42dd18bcf1bd843cd000de31cafda7a04ec820236505db5843a758",
         "quality_gate": "NOT_RUN/BLOCKED",
         "runner_sha256": "d290b529dba99799c9f5d59b9ae5f101ac33054398cf40f4bb097d9dcc7b3c62",
-        "testcase_sha256": "e3a5c76d0b5b03000e4271dce888487055b28a6b5c9b0eea065b6ada923532ae"
+        "testcase_sha256": "e99fa71ff8a08efb87db03f86d2a08e6ecfd63a2234412c23c87fe021ea68c06"
       },
       "required": true,
       "scenario_id": "HM-S7",
@@ -925,15 +925,15 @@
     },
     "candidate_memory": {
       "distribution": "simple-harness-memory-sdk",
-      "source_commit": "0b6bf875cce888b16e4b96399cb6407fb06e0ae9",
+      "source_commit": "d069e0e949edb44d85d2ebeac6e49b05f9fb51b1",
       "version": "0.6.0",
-      "wheel_sha256": "79b07b574275decb464ba8fcf8ff3cf6d210787682080b3577f3fe7b95e64dad"
+      "wheel_sha256": "6f9a8c1a52cf8512232a12a9ea7fd7d98c6c5d59e837d2c5f777010bb30fe6b2"
     },
     "fixture_revision": 1,
-    "fixture_sha256": "3f60c0591846ca5a38470314e1b0b2aa7a652ea1debb78f8287ddafc49adb141",
+    "fixture_sha256": "57d6758f4c42dd18bcf1bd843cd000de31cafda7a04ec820236505db5843a758",
     "runner_sha256": "d290b529dba99799c9f5d59b9ae5f101ac33054398cf40f4bb097d9dcc7b3c62",
     "semantic_quality_gate": "NOT_RUN/BLOCKED",
-    "testcase_sha256": "e3a5c76d0b5b03000e4271dce888487055b28a6b5c9b0eea065b6ada923532ae"
+    "testcase_sha256": "e99fa71ff8a08efb87db03f86d2a08e6ecfd63a2234412c23c87fe021ea68c06"
   },
   "source_request_text": "确认实施，记得同步一下主干分支的最新代码，如果其他sdk要修改的话",
   "structured_audit_required": true,

@@ -143,12 +143,12 @@
       "impact_paths": ["src/**", "backend/**"],
       "testcase_revisions": {"TC-HM-07": 2},
       "oracle_pins": {
-        "testcase_sha256": "e3a5c76d0b5b03000e4271dce888487055b28a6b5c9b0eea065b6ada923532ae",
+        "testcase_sha256": "e99fa71ff8a08efb87db03f86d2a08e6ecfd63a2234412c23c87fe021ea68c06",
         "fixture_revision": 1,
-        "fixture_sha256": "3f60c0591846ca5a38470314e1b0b2aa7a652ea1debb78f8287ddafc49adb141",
+        "fixture_sha256": "57d6758f4c42dd18bcf1bd843cd000de31cafda7a04ec820236505db5843a758",
         "runner_sha256": "d290b529dba99799c9f5d59b9ae5f101ac33054398cf40f4bb097d9dcc7b3c62",
-        "candidate_memory_source_commit": "0b6bf875cce888b16e4b96399cb6407fb06e0ae9",
-        "candidate_memory_wheel_sha256": "79b07b574275decb464ba8fcf8ff3cf6d210787682080b3577f3fe7b95e64dad",
+        "candidate_memory_source_commit": "d069e0e949edb44d85d2ebeac6e49b05f9fb51b1",
+        "candidate_memory_wheel_sha256": "6f9a8c1a52cf8512232a12a9ea7fd7d98c6c5d59e837d2c5f777010bb30fe6b2",
         "quality_gate": "NOT_RUN/BLOCKED"
       },
       "evidence_contract": {
@@ -514,12 +514,12 @@
       "TC-HM-X01": 4
     },
     "sealed_audit_oracle_pins": {
-      "testcase_sha256": "e3a5c76d0b5b03000e4271dce888487055b28a6b5c9b0eea065b6ada923532ae",
+      "testcase_sha256": "e99fa71ff8a08efb87db03f86d2a08e6ecfd63a2234412c23c87fe021ea68c06",
       "fixture_revision": 1,
-      "fixture_sha256": "3f60c0591846ca5a38470314e1b0b2aa7a652ea1debb78f8287ddafc49adb141",
+      "fixture_sha256": "57d6758f4c42dd18bcf1bd843cd000de31cafda7a04ec820236505db5843a758",
       "runner_sha256": "d290b529dba99799c9f5d59b9ae5f101ac33054398cf40f4bb097d9dcc7b3c62",
       "candidate_harness": {"distribution": "simple-harness-sdk", "version": "0.7.0", "source_commit": "fb491574db8bb4d19d8a7f9df0c72ae460bb08f4", "wheel_sha256": "36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f"},
-      "candidate_memory": {"distribution": "simple-harness-memory-sdk", "version": "0.6.0", "source_commit": "0b6bf875cce888b16e4b96399cb6407fb06e0ae9", "wheel_sha256": "79b07b574275decb464ba8fcf8ff3cf6d210787682080b3577f3fe7b95e64dad"},
+      "candidate_memory": {"distribution": "simple-harness-memory-sdk", "version": "0.6.0", "source_commit": "d069e0e949edb44d85d2ebeac6e49b05f9fb51b1", "wheel_sha256": "6f9a8c1a52cf8512232a12a9ea7fd7d98c6c5d59e837d2c5f777010bb30fe6b2"},
       "semantic_quality_gate": "NOT_RUN/BLOCKED"
     },
     "typed_recall_oracle_pins": {
