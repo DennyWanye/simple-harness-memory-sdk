@@ -359,7 +359,7 @@ class MemoryManager:
         )
 
     @classmethod
-    async def build_human_memory_v6(
+    async def build_human_memory_v7(
         cls,
         db_path: str | Path,
         *,
@@ -374,7 +374,7 @@ class MemoryManager:
         short_horizon_embedder: Any | None = None,
         world: WorldModelPort | None = None,
     ) -> MemoryManager:
-        """Build the fresh-only v6 backend behind the complete public facade."""
+        """Build the fresh-only schema-v7 backend behind the complete public facade."""
 
         from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
 
@@ -392,6 +392,16 @@ class MemoryManager:
         )
         await backend.initialize()
         return cls(backend, world or _NullWorldModel())
+
+    @classmethod
+    async def build_human_memory_v6(
+        cls,
+        db_path: str | Path,
+        **kwargs: Any,
+    ) -> MemoryManager:
+        """Compatibility alias for :meth:`build_human_memory_v7`."""
+
+        return await cls.build_human_memory_v7(db_path, **kwargs)
 
     @classmethod
     async def build_development(
@@ -1113,9 +1123,17 @@ class MemoryManager:
         await self.close()
 
 
+async def build_human_memory_v7(
+    db_path: str | Path, **kwargs: Any
+) -> MemoryManager:
+    """Public production-consistent constructor for the fresh schema-v7 backend."""
+
+    return await MemoryManager.build_human_memory_v7(db_path, **kwargs)
+
+
 async def build_human_memory_v6(
     db_path: str | Path, **kwargs: Any
 ) -> MemoryManager:
-    """Public production-consistent constructor for the fresh v6 backend."""
+    """Compatibility alias for :func:`build_human_memory_v7`."""
 
-    return await MemoryManager.build_human_memory_v6(db_path, **kwargs)
+    return await build_human_memory_v7(db_path, **kwargs)

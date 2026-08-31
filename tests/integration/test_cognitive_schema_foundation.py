@@ -38,6 +38,114 @@ def _unique_indexes(connection: sqlite3.Connection, table: str) -> set[tuple[str
     return result
 
 
+def _seed_relation_revisions(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        "INSERT INTO principals VALUES(?,?,?,?,?)",
+        ("principal-relation", "deployment-1", "household-1", "actor-1", 1.0),
+    )
+    for memory_id, memory_type in (
+        ("memory-source", "semantic"),
+        ("memory-target", "procedure"),
+        ("memory-relation", "semantic"),
+    ):
+        connection.execute(
+            """
+            INSERT INTO cognitive_memory_heads(
+                memory_id,principal_id,deployment_id,household_id,scope_kind,
+                scope_owner,memory_type,current_revision,created_at,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                memory_id,
+                "principal-relation",
+                "deployment-1",
+                "household-1",
+                "personal",
+                "actor-1",
+                memory_type,
+                1,
+                1.0,
+                1.0,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO cognitive_memory_revisions(
+                memory_id,principal_id,deployment_id,household_id,scope_kind,
+                scope_owner,revision,plan_id,plan_hash,operation_id,task_scope_id,
+                lifecycle_state,epistemic_status,conflict_status,verification_state,
+                effective_privacy_class,information_attributes_json,content_json,
+                content_hash,valid_from,valid_to,created_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                memory_id,
+                "principal-relation",
+                "deployment-1",
+                "household-1",
+                "personal",
+                "actor-1",
+                1,
+                f"plan-{memory_id}",
+                memory_id.ljust(64, "0")[:64],
+                f"operation-{memory_id}",
+                None,
+                "active",
+                "asserted",
+                "uncontested",
+                "verified",
+                "personal",
+                b"[]",
+                b"{}",
+                memory_id.rjust(64, "0")[-64:],
+                1.0,
+                None,
+                1.0,
+            ),
+        )
+
+
+def _insert_relation(
+    connection: sqlite3.Connection,
+    *,
+    relation_domain: str,
+    relation_kind: str,
+    relation_memory_id: str | None,
+    relation_memory_revision: int | None,
+    source_memory_id: str = "memory-source",
+    source_revision: int = 1,
+    target_memory_id: str = "memory-target",
+    target_revision: int = 1,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO cognitive_relations(
+            relation_id,principal_id,plan_id,plan_hash,relation_domain,
+            relation_memory_id,relation_memory_revision,source_memory_id,
+            source_revision,relation_kind,target_memory_id,target_revision,
+            operation_id,created_at,relation_hash
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            "relation-1",
+            "principal-relation",
+            "plan-relation",
+            "a" * 64,
+            relation_domain,
+            relation_memory_id,
+            relation_memory_revision,
+            source_memory_id,
+            source_revision,
+            relation_kind,
+            target_memory_id,
+            target_revision,
+            "operation-relation",
+            2.0,
+            "b" * 64,
+        ),
+    )
+
+
 def test_cognitive_schema_has_independent_apply_head_and_privacy_dimensions(
     connection: sqlite3.Connection,
 ) -> None:
@@ -115,9 +223,15 @@ def test_task_scope_provenance_is_bound_to_host_conversation_registration(
 def test_relation_identity_is_principal_and_plan_scoped(
     connection: sqlite3.Connection,
 ) -> None:
-    assert {"principal_id", "plan_id", "plan_hash", "operation_id"} <= _columns(
-        connection, "cognitive_relations"
-    )
+    assert {
+        "principal_id",
+        "plan_id",
+        "plan_hash",
+        "operation_id",
+        "relation_domain",
+        "relation_memory_id",
+        "relation_memory_revision",
+    } <= _columns(connection, "cognitive_relations")
     assert (
         "principal_id",
         "plan_id",
@@ -128,6 +242,123 @@ def test_relation_identity_is_principal_and_plan_scoped(
         "target_memory_id",
         "target_revision",
     ) in _unique_indexes(connection, "cognitive_relations")
+
+
+@pytest.mark.parametrize(
+    ("relation_domain", "relation_kind", "owner_id", "owner_revision"),
+    (
+        ("evolution", "supports", None, None),
+        ("evolution", "amends", None, None),
+        ("evolution", "supersedes", None, None),
+        ("evolution", "contests", None, None),
+        ("evolution", "relates_to", None, None),
+        ("knowledge", "applies_to", "memory-relation", 1),
+    ),
+)
+def test_relation_domain_accepts_legal_evolution_and_owned_knowledge_rows(
+    connection: sqlite3.Connection,
+    relation_domain: str,
+    relation_kind: str,
+    owner_id: str | None,
+    owner_revision: int | None,
+) -> None:
+    _seed_relation_revisions(connection)
+    _insert_relation(
+        connection,
+        relation_domain=relation_domain,
+        relation_kind=relation_kind,
+        relation_memory_id=owner_id,
+        relation_memory_revision=owner_revision,
+    )
+    assert connection.execute(
+        """
+        SELECT relation_domain,relation_kind,relation_memory_id,relation_memory_revision
+        FROM cognitive_relations
+        """
+    ).fetchone() == (relation_domain, relation_kind, owner_id, owner_revision)
+
+
+@pytest.mark.parametrize(
+    ("relation_domain", "relation_kind", "owner_id", "owner_revision"),
+    (
+        ("evolution", "relates_to", "memory-relation", 1),
+        ("evolution", "applies_to", None, None),
+        ("knowledge", "applies_to", None, None),
+        ("knowledge", "applies_to", "memory-relation", None),
+        ("knowledge", "relates_to", "memory-relation", 1),
+        ("unknown", "applies_to", "memory-relation", 1),
+        ("knowledge", "supports", "memory-relation", 1),
+    ),
+)
+def test_relation_domain_rejects_invalid_domain_owner_kind_combinations(
+    connection: sqlite3.Connection,
+    relation_domain: str,
+    relation_kind: str,
+    owner_id: str | None,
+    owner_revision: int | None,
+) -> None:
+    _seed_relation_revisions(connection)
+    with pytest.raises(sqlite3.IntegrityError):
+        _insert_relation(
+            connection,
+            relation_domain=relation_domain,
+            relation_kind=relation_kind,
+            relation_memory_id=owner_id,
+            relation_memory_revision=owner_revision,
+        )
+
+
+@pytest.mark.parametrize(
+    ("owner_id", "owner_revision", "source_id", "source_revision", "target_id", "target_revision"),
+    (
+        ("missing-owner", 1, "memory-source", 1, "memory-target", 1),
+        ("memory-relation", 2, "memory-source", 1, "memory-target", 1),
+        ("memory-relation", 1, "missing-source", 1, "memory-target", 1),
+        ("memory-relation", 1, "memory-source", 2, "memory-target", 1),
+        ("memory-relation", 1, "memory-source", 1, "missing-target", 1),
+        ("memory-relation", 1, "memory-source", 1, "memory-target", 2),
+    ),
+)
+def test_relation_owner_source_and_target_require_exact_cognitive_revisions(
+    connection: sqlite3.Connection,
+    owner_id: str,
+    owner_revision: int,
+    source_id: str,
+    source_revision: int,
+    target_id: str,
+    target_revision: int,
+) -> None:
+    _seed_relation_revisions(connection)
+    with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY constraint failed"):
+        _insert_relation(
+            connection,
+            relation_domain="knowledge",
+            relation_kind="applies_to",
+            relation_memory_id=owner_id,
+            relation_memory_revision=owner_revision,
+            source_memory_id=source_id,
+            source_revision=source_revision,
+            target_memory_id=target_id,
+            target_revision=target_revision,
+        )
+
+
+def test_relation_rows_remain_immutable(connection: sqlite3.Connection) -> None:
+    _seed_relation_revisions(connection)
+    _insert_relation(
+        connection,
+        relation_domain="knowledge",
+        relation_kind="applies_to",
+        relation_memory_id="memory-relation",
+        relation_memory_revision=1,
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="immutable cognitive relation"):
+        connection.execute(
+            "UPDATE cognitive_relations SET relation_kind='relates_to' "
+            "WHERE relation_id='relation-1'"
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="immutable cognitive relation"):
+        connection.execute("DELETE FROM cognitive_relations WHERE relation_id='relation-1'")
 
 
 def test_conflict_schema_persists_two_immutable_members_and_one_resolution(

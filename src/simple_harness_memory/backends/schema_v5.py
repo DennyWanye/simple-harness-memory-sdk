@@ -7,7 +7,7 @@ import json
 import sqlite3
 from dataclasses import dataclass, field
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 SCHEMA_EPOCH = "human-memory-v1"
 
 DDL = """
@@ -18,7 +18,7 @@ CREATE TABLE schema_meta (
 CREATE TABLE initialization_receipts (
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
     receipt_id TEXT NOT NULL UNIQUE,
-    schema_version INTEGER NOT NULL CHECK (schema_version = 6),
+    schema_version INTEGER NOT NULL CHECK (schema_version = 7),
     schema_epoch TEXT NOT NULL CHECK (schema_epoch = 'human-memory-v1'),
     schema_checksum TEXT NOT NULL,
     audit_cursor_authority_hash TEXT NOT NULL CHECK (length(audit_cursor_authority_hash) = 64),
@@ -742,10 +742,15 @@ CREATE TABLE cognitive_relations (
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
     plan_id TEXT NOT NULL,
     plan_hash TEXT NOT NULL,
+    relation_domain TEXT NOT NULL CHECK (relation_domain IN ('evolution', 'knowledge')),
+    relation_memory_id TEXT,
+    relation_memory_revision INTEGER,
     source_memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
     source_revision INTEGER NOT NULL,
     relation_kind TEXT NOT NULL CHECK (
-        relation_kind IN ('amends', 'supersedes', 'contests', 'supports', 'relates_to')
+        relation_kind IN (
+            'supports', 'amends', 'supersedes', 'contests', 'relates_to', 'applies_to'
+        )
     ),
     target_memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
     target_revision INTEGER NOT NULL,
@@ -759,7 +764,21 @@ CREATE TABLE cognitive_relations (
     FOREIGN KEY (source_memory_id, source_revision)
         REFERENCES cognitive_memory_revisions(memory_id, revision),
     FOREIGN KEY (target_memory_id, target_revision)
-        REFERENCES cognitive_memory_revisions(memory_id, revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision),
+    FOREIGN KEY (relation_memory_id, relation_memory_revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision),
+    CHECK (
+        (relation_domain = 'evolution'
+            AND relation_memory_id IS NULL
+            AND relation_memory_revision IS NULL
+            AND relation_kind IN ('supports', 'amends', 'supersedes', 'contests', 'relates_to'))
+        OR
+        (relation_domain = 'knowledge'
+            AND relation_memory_id IS NOT NULL
+            AND relation_memory_revision IS NOT NULL
+            AND relation_memory_revision >= 1
+            AND relation_kind = 'applies_to')
+    )
 );
 CREATE TRIGGER cognitive_relations_immutable_update
 BEFORE UPDATE ON cognitive_relations
@@ -1751,7 +1770,7 @@ def ddl_statements(script: str = DDL) -> tuple[str, ...]:
             statements.append(candidate)
             buffer.clear()
     if "".join(buffer).strip():
-        raise ValueError("schema v6 DDL is incomplete")
+        raise ValueError("schema v7 DDL is incomplete")
     return tuple(statements)
 
 

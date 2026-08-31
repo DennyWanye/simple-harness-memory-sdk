@@ -41,7 +41,7 @@ def _directory_state(path: Path) -> tuple[tuple[str, int, str], ...]:
 
 
 @pytest.mark.asyncio
-async def test_fresh_v6_schema_is_atomic_idempotent_and_reopens_same_receipt(
+async def test_fresh_v7_schema_is_atomic_idempotent_and_reopens_same_receipt(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "human-memory.db"
@@ -49,7 +49,7 @@ async def test_fresh_v6_schema_is_atomic_idempotent_and_reopens_same_receipt(
     receipts = await asyncio.gather(*(backend.initialize() for _ in range(4)))
     assert len({receipt.receipt_hash for receipt in receipts}) == 1
     receipt = receipts[0]
-    assert receipt.schema_version == SCHEMA_VERSION == 6
+    assert receipt.schema_version == SCHEMA_VERSION == 7
     assert receipt.schema_epoch == SCHEMA_EPOCH == "human-memory-v1"
     assert receipt.schema_checksum == SCHEMA_CHECKSUM
     assert receipt.created_at == 123.5
@@ -62,7 +62,7 @@ async def test_fresh_v6_schema_is_atomic_idempotent_and_reopens_same_receipt(
     async with backend.connection.execute("SELECT key,value FROM schema_meta") as cursor:
         meta = {str(row[0]): str(row[1]) for row in await cursor.fetchall()}
     assert meta == {
-        "schema_version": "6",
+        "schema_version": "7",
         "schema_epoch": SCHEMA_EPOCH,
         "schema_checksum": SCHEMA_CHECKSUM,
         "initialization_receipt_id": receipt.receipt_id,
@@ -104,7 +104,7 @@ async def test_two_initializers_share_one_committed_root_and_one_live_writer(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("fault_point", INITIALIZATION_FAULT_POINTS)
-async def test_every_v6_initialization_fault_reopens_to_one_valid_receipt(
+async def test_every_v7_initialization_fault_reopens_to_one_valid_receipt(
     tmp_path: Path,
     fault_point: str,
 ) -> None:
@@ -125,7 +125,7 @@ async def test_every_v6_initialization_fault_reopens_to_one_valid_receipt(
 
     reopened = SQLiteHumanMemoryBackend(path)
     receipt = await reopened.initialize()
-    assert receipt.schema_version == 6
+    assert receipt.schema_version == 7
     async with reopened.connection.execute(
         "SELECT COUNT(*) FROM initialization_receipts"
     ) as cursor:
@@ -182,8 +182,8 @@ async def test_legacy_and_unknown_schema_are_rejected_without_any_mutation(
 
 
 @pytest.mark.asyncio
-async def test_tampered_v6_is_rejected_read_only_before_wal_or_chmod(tmp_path: Path) -> None:
-    path = tmp_path / "tampered-v6.db"
+async def test_tampered_v7_is_rejected_read_only_before_wal_or_chmod(tmp_path: Path) -> None:
+    path = tmp_path / "tampered-v7.db"
     backend = SQLiteHumanMemoryBackend(path)
     await backend.initialize()
     await backend.close()

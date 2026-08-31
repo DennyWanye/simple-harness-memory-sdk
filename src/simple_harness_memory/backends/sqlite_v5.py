@@ -81,6 +81,7 @@ if TYPE_CHECKING:
 
     from simple_harness_memory.cognitive.twin_builder import (
         TwinGraphRecordInput,
+        TwinGraphRelationInput,
         TwinGraphView,
     )
     from simple_harness_memory.core.audit import (
@@ -201,6 +202,9 @@ COGNITIVE_MUTATION_FAULT_POINTS = (
     "mutation.before_begin",
     "mutation.after_begin",
     "mutation.after_evidence",
+    "mutation.before_relation_memory_insert",
+    "mutation.after_relation_memory_before_knowledge_row",
+    "mutation.after_knowledge_row_before_commit",
     "mutation.after_operation",
     "mutation.after_operations",
     "mutation.after_receipt",
@@ -293,8 +297,18 @@ class _DeliveryAdmissionState:
     available: bool = True
 
 
+@dataclass(frozen=True, slots=True)
+class _ResolvedRelationEndpoint:
+    memory_id: str
+    revision: int
+    memory_type: str
+    privacy_class: str
+    information_attributes: tuple[str, ...]
+    content_hash: str
+
+
 class SQLiteHumanMemoryBackend:
-    """Own the fresh v6 SQLite root and suppression-first repository APIs."""
+    """Own the fresh v7 SQLite root and suppression-first repository APIs."""
 
     def __init__(
         self,
@@ -417,7 +431,7 @@ class SQLiteHumanMemoryBackend:
     @property
     def connection(self) -> aiosqlite.Connection:
         if self._db is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         return self._db
 
     async def initialize(self) -> InitializationReceipt:
@@ -504,7 +518,7 @@ class SQLiteHumanMemoryBackend:
             supported_filter_policies=tuple(self._supported_filter_policies),
         )
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         accepted_at = _timestamp(self._now())
         principal_id = envelope.subject
         ingestion_receipt_id = _stable_id(
@@ -732,7 +746,6 @@ class SQLiteHumanMemoryBackend:
         """Return a suppression-first, display-only graph over canonical memory rows."""
 
         from simple_harness_memory.cognitive.twin_builder import (
-            TwinGraphRelationInput,
             build_twin_graph_view,
         )
         from simple_harness_memory.core.identity import MemoryPrincipal
@@ -740,7 +753,7 @@ class SQLiteHumanMemoryBackend:
         if type(principal) is not MemoryPrincipal:
             raise TypeError("principal must use MemoryPrincipal")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         generated_at = _timestamp(self._now())
         async with self._write_lock:
             await self._authorize_short_horizon_principal_unlocked(principal)
@@ -779,13 +792,13 @@ class SQLiteHumanMemoryBackend:
                 ),
             ) as cursor:
                 current_rows = tuple(await cursor.fetchall())
-            records = [
+            all_records = [
                 await self._twin_graph_record_input_unlocked(
                     row, conflict_group_id=str(row["group_id"])
                 )
                 for row in conflict_rows
             ]
-            records.extend(
+            all_records.extend(
                 [
                     await self._twin_graph_record_input_unlocked(
                         row, conflict_group_id=None
@@ -794,42 +807,166 @@ class SQLiteHumanMemoryBackend:
                     if (str(row["memory_id"]), int(row["revision"])) not in conflict_keys
                 ]
             )
+            records = [
+                record
+                for record in all_records
+                if not (
+                    record.memory_type == "semantic"
+                    and record.content.get("semantic_kind") == "relation"
+                )
+            ]
             async with self._db.execute(
-                "SELECT rel.* FROM cognitive_relations rel "
-                "JOIN cognitive_memory_heads source ON source.memory_id=rel.source_memory_id "
-                "JOIN cognitive_memory_heads target ON target.memory_id=rel.target_memory_id "
-                "WHERE rel.principal_id=? AND source.principal_id=? "
-                "AND target.principal_id=? AND source.deployment_id=? "
-                "AND target.deployment_id=? AND source.household_id=? "
-                "AND target.household_id=? ORDER BY rel.relation_id",
-                (
-                    principal.actor_id,
-                    principal.actor_id,
-                    principal.actor_id,
-                    principal.deployment_id,
-                    principal.deployment_id,
-                    principal.household_id,
-                    principal.household_id,
-                ),
+                "SELECT rel.* FROM cognitive_relations rel WHERE rel.principal_id=? "
+                "ORDER BY rel.relation_id",
+                (principal.actor_id,),
             ) as cursor:
                 relation_rows = tuple(await cursor.fetchall())
-            relations = tuple(
-                TwinGraphRelationInput(
-                    str(row["relation_id"]),
-                    str(row["relation_kind"]),
-                    str(row["source_memory_id"]),
-                    int(row["source_revision"]),
-                    str(row["target_memory_id"]),
-                    int(row["target_revision"]),
-                    str(row["relation_hash"]),
+            relation_inputs: list[TwinGraphRelationInput] = []
+            for row in relation_rows:
+                relation = await self._twin_graph_relation_input_unlocked(
+                    row,
+                    principal=principal,
+                    generated_at=generated_at,
                 )
-                for row in relation_rows
-            )
+                if relation is not None:
+                    relation_inputs.append(relation)
+            relations = tuple(relation_inputs)
         return build_twin_graph_view(
             subject=principal.actor_id,
             generated_at=generated_at,
             records=tuple(records),
             relations=relations,
+        )
+
+    async def _twin_graph_relation_input_unlocked(
+        self,
+        row: aiosqlite.Row,
+        *,
+        principal: MemoryPrincipal,
+        generated_at: float,
+    ) -> TwinGraphRelationInput | None:
+        from simple_harness.runtime import (
+            ExistingMemoryTarget,
+            SemanticRelationMemoryPayload,
+        )
+
+        from simple_harness_memory.cognitive.twin_builder import (
+            TwinGraphRelationInput,
+            twin_graph_record_is_active_visible,
+        )
+
+        assert self._db is not None
+        db = self._db
+        domain = str(row["relation_domain"])
+        owner_id = None if row["relation_memory_id"] is None else str(
+            row["relation_memory_id"]
+        )
+        owner_revision = (
+            None
+            if row["relation_memory_revision"] is None
+            else int(row["relation_memory_revision"])
+        )
+        relation_json: dict[str, JsonValue] = {
+            "relation_id": str(row["relation_id"]),
+            "principal_id": str(row["principal_id"]),
+            "plan_id": str(row["plan_id"]),
+            "plan_hash": str(row["plan_hash"]),
+            "relation_domain": domain,
+            "relation_memory_id": owner_id,
+            "relation_memory_revision": owner_revision,
+            "source_memory_id": str(row["source_memory_id"]),
+            "source_revision": int(row["source_revision"]),
+            "relation_kind": str(row["relation_kind"]),
+            "target_memory_id": str(row["target_memory_id"]),
+            "target_revision": int(row["target_revision"]),
+            "operation_id": str(row["operation_id"]),
+        }
+        relation_hash = hashlib.sha256(
+            canonical_json(relation_json).encode("utf-8")
+        ).hexdigest()
+        if relation_hash != str(row["relation_hash"]):
+            raise MemoryCorruptionError("twin graph relation hash differs")
+        if domain == "evolution":
+            if owner_id is not None or owner_revision is not None or str(
+                row["relation_kind"]
+            ) not in {"supports", "amends", "supersedes", "contests", "relates_to"}:
+                raise MemoryCorruptionError("twin graph evolution relation is invalid")
+            return TwinGraphRelationInput(
+                str(row["relation_id"]),
+                str(row["relation_kind"]),
+                str(row["source_memory_id"]),
+                int(row["source_revision"]),
+                str(row["target_memory_id"]),
+                int(row["target_revision"]),
+                relation_hash,
+            )
+        if (
+            domain != "knowledge"
+            or owner_id is None
+            or owner_revision is None
+            or str(row["relation_kind"]) != "applies_to"
+        ):
+            raise MemoryCorruptionError("twin graph knowledge relation is invalid")
+
+        async def exact_record(memory_id: str, revision: int) -> TwinGraphRecordInput:
+            async with db.execute(
+                "SELECT h.current_revision AS head_revision,h.memory_type,r.* "
+                "FROM cognitive_memory_heads h JOIN cognitive_memory_revisions r "
+                "ON r.memory_id=h.memory_id AND r.revision=? WHERE h.memory_id=? "
+                "AND h.principal_id=? AND h.deployment_id=? AND h.household_id=?",
+                (
+                    revision,
+                    memory_id,
+                    principal.actor_id,
+                    principal.deployment_id,
+                    principal.household_id,
+                ),
+            ) as cursor:
+                exact = await cursor.fetchone()
+            if exact is None:
+                raise MemoryCorruptionError("twin graph relation endpoint is missing")
+            return await self._twin_graph_record_input_unlocked(
+                exact, conflict_group_id=None
+            )
+
+        owner = await exact_record(owner_id, owner_revision)
+        source = await exact_record(
+            str(row["source_memory_id"]), int(row["source_revision"])
+        )
+        target = await exact_record(
+            str(row["target_memory_id"]), int(row["target_revision"])
+        )
+        try:
+            payload = SemanticRelationMemoryPayload.from_json(owner.content)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise MemoryCorruptionError("twin graph relation owner content is invalid") from exc
+        if (
+            owner.memory_type != "semantic"
+            or owner.memory_id in {source.memory_id, target.memory_id}
+            or source.memory_id == target.memory_id
+            or source.memory_type != "semantic"
+            or source.content.get("semantic_kind") != "claim"
+            or target.memory_type not in {"procedure", "prospective"}
+            or payload.relation_kind.value != str(row["relation_kind"])
+            or payload.source_endpoint
+            != ExistingMemoryTarget(source.memory_id, source.revision)
+            or payload.target_endpoint
+            != ExistingMemoryTarget(target.memory_id, target.revision)
+        ):
+            raise MemoryCorruptionError("twin graph relation owner differs")
+        if not all(
+            twin_graph_record_is_active_visible(record, generated_at)
+            for record in (owner, source, target)
+        ):
+            return None
+        return TwinGraphRelationInput(
+            str(row["relation_id"]),
+            str(row["relation_kind"]),
+            source.memory_id,
+            source.revision,
+            target.memory_id,
+            target.revision,
+            relation_hash,
         )
 
     async def _twin_graph_record_input_unlocked(
@@ -943,7 +1080,7 @@ class SQLiteHumanMemoryBackend:
         if not isinstance(evidence_id, str) or not evidence_id.strip() or "\x00" in evidence_id:
             raise MemoryValidationError("evidence_id_invalid")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         async with self._write_lock:
             subject = await self._read_evidence_subject(evidence_id)
             if subject is None:
@@ -966,7 +1103,7 @@ class SQLiteHumanMemoryBackend:
         if not isinstance(subject, str) or not subject.strip() or "\x00" in subject:
             raise MemoryValidationError("suppression_subject_invalid")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         async with self._write_lock:
             async with self._db.execute(
                 "SELECT evidence_id FROM evidence_envelopes WHERE subject=? ORDER BY evidence_id",
@@ -1029,7 +1166,7 @@ class SQLiteHumanMemoryBackend:
         if type(request) is not SuppressionRevokeRequest:
             raise TypeError("request must use SuppressionRevokeRequest")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         async with self._write_lock:
             if principal is not None:
                 await self._authorize_short_horizon_principal_unlocked(principal)
@@ -1091,7 +1228,7 @@ class SQLiteHumanMemoryBackend:
         if not isinstance(purpose, OrdinaryMemoryPurpose):
             raise TypeError("purpose must use OrdinaryMemoryPurpose")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         async with self._write_lock:
             return await self._resolve_suppression_unlocked(candidate, purpose)
 
@@ -1137,7 +1274,7 @@ class SQLiteHumanMemoryBackend:
         principal: MemoryPrincipal | None = None,
     ) -> SuppressionDecision:
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         async with self._write_lock:
             if principal is not None:
                 await self._authorize_short_horizon_principal_unlocked(principal)
@@ -1261,7 +1398,7 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("reference must use ConversationEvidenceRegistrationRef")
         typed_reference = cast(ConversationEvidenceRegistrationRef, reference)
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         if self._conversation_evidence_authority is None:
             raise MemoryValidationError("conversation_evidence_authority_required")
         registration = (
@@ -1452,7 +1589,7 @@ class SQLiteHumanMemoryBackend:
         if type(principal) is not MemoryPrincipal:
             raise TypeError("principal must use MemoryPrincipal")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         effective_now = _timestamp(self._now() if now is None else now)
         async with self._write_lock:
             await self._authorize_short_horizon_principal_unlocked(principal)
@@ -1751,7 +1888,7 @@ class SQLiteHumanMemoryBackend:
         from simple_harness_memory.embedders.base import EMBEDDING_FORMAT_VERSION, encode_vector
 
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         if self._short_horizon_embedder is None:
             raise MemoryValidationError("short_horizon_embedder_required")
         effective_now = _timestamp(self._now() if now is None else now)
@@ -2021,7 +2158,7 @@ class SQLiteHumanMemoryBackend:
         ):
             raise MemoryLimitError("short_horizon_deadline_invalid")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
 
         effective_now = _timestamp(self._now() if now is None else now)
         started_audit_id = f"short-audit:{uuid4().hex}"
@@ -2164,7 +2301,7 @@ class SQLiteHumanMemoryBackend:
         ):
             raise MemoryLimitError("short_horizon_deadline_invalid")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         effective_now = _timestamp(self._now() if now is None else now)
         async with self._write_lock:
             await self._authorize_short_horizon_principal_unlocked(principal)
@@ -2503,7 +2640,7 @@ class SQLiteHumanMemoryBackend:
         if type(principal) is not MemoryPrincipal:
             raise TypeError("principal must use MemoryPrincipal")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         effective_now = _timestamp(self._now() if now is None else now)
         async with self._write_lock:
             await self._authorize_short_horizon_principal_unlocked(principal)
@@ -2576,7 +2713,7 @@ class SQLiteHumanMemoryBackend:
         if type(plan) is not RecallPlan:
             raise TypeError("plan must use RecallPlan")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         started_monotonic = time.monotonic()
         deadline_monotonic = started_monotonic + plan.budget.deadline_ms / 1_000
         effective_now = _timestamp(self._now() if now is None else now)
@@ -3080,7 +3217,7 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("request must use RecallResultPageRequestV1")
         typed_request = cast(RecallResultPageRequestV1, request)
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         async with self._write_lock:
             async with self._db.execute(
                 "SELECT r.result_json,r.result_hash,r.authority_expires_at "
@@ -3190,7 +3327,7 @@ class SQLiteHumanMemoryBackend:
         if typed_request.subject != principal.actor_id:
             raise MemoryOwnershipConflict("typed_recall_context_use_subject_not_owned")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         effective_now = _timestamp(self._now() if now is None else now)
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
@@ -4296,6 +4433,18 @@ class SQLiteHumanMemoryBackend:
 
         assert self._db is not None
         memory_type = str(row["memory_type"])
+        if memory_type == "semantic":
+            from simple_harness.runtime import SemanticRelationMemoryPayload
+
+            try:
+                content = json.loads(str(row["content_json"]))
+                if not isinstance(content, dict):
+                    raise ValueError("semantic content is not an object")
+                if content.get("semantic_kind") == "relation":
+                    SemanticRelationMemoryPayload.from_json(content)
+                    return False
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise MemoryCorruptionError("semantic recall content is invalid") from exc
         if memory_type == "procedure":
             async with self._db.execute(
                 "SELECT applicability_fingerprint FROM procedure_records "
@@ -4867,7 +5016,7 @@ class SQLiteHumanMemoryBackend:
         if type(reference) is not ProcedureObservationAuthorityRef:
             raise TypeError("reference must use ProcedureObservationAuthorityRef")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         scope.authorize(principal)
         try:
             replay = await self._read_procedure_result_unlocked(
@@ -5264,7 +5413,7 @@ class SQLiteHumanMemoryBackend:
         if type(reference) is not ProspectiveSignalAuthorityRef:
             raise TypeError("reference must use ProspectiveSignalAuthorityRef")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         scope.authorize(principal)
         try:
             replay = await self._read_prospective_result_unlocked(
@@ -5612,6 +5761,8 @@ class SQLiteHumanMemoryBackend:
             MemoryMutationPlan,
             MemoryMutationPlanOutcome,
             PrivacyClass,
+            SemanticMemoryPayload,
+            SemanticRelationMemoryPayload,
             verify_evidence_span,
         )
         from simple_harness.runtime.memory_action_protocol import (
@@ -5639,7 +5790,7 @@ class SQLiteHumanMemoryBackend:
         if type(plan) is not MemoryMutationPlan:
             raise TypeError("plan must use MemoryMutationPlan")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         async with self._write_lock:
             try:
                 scope.authorize(principal)
@@ -5987,6 +6138,11 @@ class SQLiteHumanMemoryBackend:
                 classification_results: dict[str, tuple[str, str]] = {}
                 for compiled_operation in compiled.operations:
                     operation = compiled_operation.operation
+                    canonical_payload = operation.payload
+                    relation_endpoints: tuple[
+                        _ResolvedRelationEndpoint, _ResolvedRelationEndpoint
+                    ] | tuple[()] = ()
+                    is_relation_memory = False
                     target_memory_id: str | None = None
                     target_revision: int | None = None
                     target_type: LongTermMemoryType | None = None
@@ -6144,6 +6300,58 @@ class SQLiteHumanMemoryBackend:
                         memory_id = target_memory_id
                         revision = target_revision + 1
 
+                    target_semantic_kind = (
+                        self._semantic_kind_from_content_json(target_content_json)
+                        if target_type is LongTermMemoryType.SEMANTIC
+                        else None
+                    )
+                    if isinstance(operation.payload, SemanticRelationMemoryPayload):
+                        if (
+                            operation.kind is not MemoryMutationKind.CREATE
+                            and target_semantic_kind != "relation"
+                        ):
+                            raise MemoryValidationError(
+                                "relation_mutation_target_must_be_relation"
+                            )
+                        canonical_payload, relation_endpoints = (
+                            await self._resolve_semantic_relation_payload_unlocked(
+                                principal=principal,
+                                payload=operation.payload,
+                                created_by_operation=created_by_operation,
+                                operation_results=operation_results,
+                                now=transaction_at,
+                            )
+                        )
+                        is_relation_memory = True
+                    elif (
+                        isinstance(operation.payload, SemanticMemoryPayload)
+                        and target_semantic_kind == "relation"
+                    ):
+                        raise MemoryValidationError("relation_memory_kind_change_rejected")
+                    elif operation.payload is None and target_semantic_kind == "relation":
+                        if target_content_json is None:
+                            raise MemoryCorruptionError(
+                                "relation mutation target content is missing"
+                            )
+                        try:
+                            copied_relation_payload = SemanticRelationMemoryPayload.from_json(
+                                json.loads(target_content_json)
+                            )
+                        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                            raise MemoryCorruptionError(
+                                "relation mutation target content is invalid"
+                            ) from exc
+                        canonical_payload, relation_endpoints = (
+                            await self._resolve_semantic_relation_payload_unlocked(
+                                principal=principal,
+                                payload=copied_relation_payload,
+                                created_by_operation=created_by_operation,
+                                operation_results=operation_results,
+                                now=transaction_at,
+                            )
+                        )
+                        is_relation_memory = True
+
                     target_entity_ids = self._mutation_entity_ids_from_content_json(
                         target_content_json
                     )
@@ -6151,7 +6359,7 @@ class SQLiteHumanMemoryBackend:
                         dict.fromkeys(
                             (
                                 *target_entity_ids,
-                                *self._mutation_entity_ids(operation.payload),
+                                *self._mutation_entity_ids(canonical_payload),
                             )
                         )
                     )
@@ -6177,6 +6385,10 @@ class SQLiteHumanMemoryBackend:
                     )
                     if target_privacy is not None:
                         privacy_floors.append(target_privacy)
+                    privacy_floors.extend(
+                        PrivacyClass(endpoint.privacy_class)
+                        for endpoint in relation_endpoints
+                    )
                     classification = join_information_classification(
                         operation,
                         trusted_privacy_floors=tuple(privacy_floors),
@@ -6187,6 +6399,13 @@ class SQLiteHumanMemoryBackend:
                                 for authority in operation_authorities
                             ),
                             target_attributes,
+                            *(
+                                tuple(
+                                    InformationAttribute(item)
+                                    for item in endpoint.information_attributes
+                                )
+                                for endpoint in relation_endpoints
+                            ),
                         ),
                     )
                     origins_by_registration: dict[str, tuple[str, str, str]] = {}
@@ -6205,6 +6424,8 @@ class SQLiteHumanMemoryBackend:
                         next(iter(distinct_scopes)) if len(distinct_scopes) == 1 else None
                     )
 
+                    if is_relation_memory:
+                        self._fault("mutation.before_relation_memory_insert")
                     if operation.kind is MemoryMutationKind.CREATE:
                         await self._db.execute(
                             "INSERT INTO cognitive_memory_heads(memory_id,principal_id,"
@@ -6226,7 +6447,7 @@ class SQLiteHumanMemoryBackend:
                     content_json = (
                         target_content_json
                         if operation.payload is None
-                        else canonical_json(operation.payload.to_json())
+                        else canonical_json(canonical_payload.to_json())
                     )
                     if content_json is None:
                         raise MemoryCorruptionError("cognitive target content is missing")
@@ -6268,7 +6489,7 @@ class SQLiteHumanMemoryBackend:
                             transaction_at,
                         ),
                     )
-                    if operation.payload is None:
+                    if canonical_payload is None:
                         assert target_memory_id is not None and target_revision is not None
                         await self._copy_cognitive_payload_unlocked(
                             operation.memory_type.value,
@@ -6281,7 +6502,7 @@ class SQLiteHumanMemoryBackend:
                         await self._insert_cognitive_payload_unlocked(
                             memory_id,
                             revision,
-                            operation.payload,
+                            canonical_payload,
                             new_procedure_epoch=operation.kind
                             in {
                                 MemoryMutationKind.CREATE,
@@ -6333,8 +6554,12 @@ class SQLiteHumanMemoryBackend:
                                 None if target_privacy is None else target_privacy.value
                             ),
                             "information_attributes": [item.value for item in target_attributes],
-                        }
+                            }
                     )
+                    if len(relation_endpoints) not in {0, 2}:
+                        raise MemoryCorruptionError(
+                            "semantic relation endpoint resolution is incomplete"
+                        )
                     classification_json: dict[str, JsonValue] = {
                         "schema_version": 1,
                         "classification_decision_id": classification_decision_id,
@@ -6360,6 +6585,23 @@ class SQLiteHumanMemoryBackend:
                             ],
                         },
                     }
+                    if relation_endpoints:
+                        classification_json["relation_endpoints"] = [
+                            {
+                                "role": role,
+                                "memory_id": endpoint.memory_id,
+                                "revision": endpoint.revision,
+                                "memory_type": endpoint.memory_type,
+                                "privacy_class": endpoint.privacy_class,
+                                "information_attributes": list(
+                                    endpoint.information_attributes
+                                ),
+                                "content_hash": endpoint.content_hash,
+                            }
+                            for role, endpoint in zip(
+                                ("source", "target"), relation_endpoints, strict=True
+                            )
+                        ]
                     classification_decision_hash = hashlib.sha256(
                         canonical_json(classification_json).encode("utf-8")
                     ).hexdigest()
@@ -6458,6 +6700,67 @@ class SQLiteHumanMemoryBackend:
                         ),
                     )
 
+                    if isinstance(canonical_payload, SemanticRelationMemoryPayload):
+                        if len(relation_endpoints) != 2:
+                            raise MemoryCorruptionError(
+                                "semantic relation endpoints were not resolved"
+                            )
+                        source_endpoint, target_endpoint = relation_endpoints
+                        self._fault(
+                            "mutation.after_relation_memory_before_knowledge_row"
+                        )
+                        relation_id = _stable_id(
+                            "cognitive-knowledge-relation",
+                            plan.subject,
+                            plan.plan_id,
+                            operation.operation_id,
+                            memory_id,
+                            str(revision),
+                        )
+                        knowledge_relation_json: dict[str, JsonValue] = {
+                            "relation_id": relation_id,
+                            "principal_id": plan.subject,
+                            "plan_id": plan.plan_id,
+                            "plan_hash": plan.plan_hash,
+                            "relation_domain": "knowledge",
+                            "relation_memory_id": memory_id,
+                            "relation_memory_revision": revision,
+                            "source_memory_id": source_endpoint.memory_id,
+                            "source_revision": source_endpoint.revision,
+                            "relation_kind": canonical_payload.relation_kind.value,
+                            "target_memory_id": target_endpoint.memory_id,
+                            "target_revision": target_endpoint.revision,
+                            "operation_id": operation.operation_id,
+                        }
+                        relation_hash = hashlib.sha256(
+                            canonical_json(knowledge_relation_json).encode("utf-8")
+                        ).hexdigest()
+                        await self._db.execute(
+                            "INSERT INTO cognitive_relations(relation_id,principal_id,"
+                            "plan_id,plan_hash,relation_domain,relation_memory_id,"
+                            "relation_memory_revision,source_memory_id,source_revision,"
+                            "relation_kind,target_memory_id,target_revision,operation_id,"
+                            "created_at,relation_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                            (
+                                relation_id,
+                                plan.subject,
+                                plan.plan_id,
+                                plan.plan_hash,
+                                "knowledge",
+                                memory_id,
+                                revision,
+                                source_endpoint.memory_id,
+                                source_endpoint.revision,
+                                canonical_payload.relation_kind.value,
+                                target_endpoint.memory_id,
+                                target_endpoint.revision,
+                                operation.operation_id,
+                                transaction_at,
+                                relation_hash,
+                            ),
+                        )
+                        self._fault("mutation.after_knowledge_row_before_commit")
+
                     if target_memory_id is not None and target_revision is not None:
                         relation_kind = {
                             MemoryMutationKind.REVISE: "amends",
@@ -6476,11 +6779,14 @@ class SQLiteHumanMemoryBackend:
                             target_memory_id,
                             str(target_revision),
                         )
-                        relation_json: dict[str, JsonValue] = {
+                        evolution_relation_json: dict[str, JsonValue] = {
                             "relation_id": relation_id,
                             "principal_id": plan.subject,
                             "plan_id": plan.plan_id,
                             "plan_hash": plan.plan_hash,
+                            "relation_domain": "evolution",
+                            "relation_memory_id": None,
+                            "relation_memory_revision": None,
                             "relation_kind": relation_kind,
                             "source_memory_id": memory_id,
                             "source_revision": revision,
@@ -6489,19 +6795,22 @@ class SQLiteHumanMemoryBackend:
                             "operation_id": operation.operation_id,
                         }
                         relation_hash = hashlib.sha256(
-                            canonical_json(relation_json).encode("utf-8")
+                            canonical_json(evolution_relation_json).encode("utf-8")
                         ).hexdigest()
                         await self._db.execute(
                             "INSERT INTO cognitive_relations(relation_id,principal_id,"
-                            "plan_id,plan_hash,source_memory_id,source_revision,relation_kind,"
-                            "target_memory_id,target_revision,operation_id,created_at,"
-                            "relation_hash) "
-                            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                            "plan_id,plan_hash,relation_domain,relation_memory_id,"
+                            "relation_memory_revision,source_memory_id,source_revision,"
+                            "relation_kind,target_memory_id,target_revision,operation_id,"
+                            "created_at,relation_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                             (
                                 relation_id,
                                 plan.subject,
                                 plan.plan_id,
                                 plan.plan_hash,
+                                "evolution",
+                                None,
+                                None,
                                 memory_id,
                                 revision,
                                 relation_kind,
@@ -6863,7 +7172,7 @@ class SQLiteHumanMemoryBackend:
         if type(receipt_ref) is not MemoryMutationApplyReceiptRef:
             raise TypeError("receipt_ref must use MemoryMutationApplyReceiptRef")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         async with self._db.execute(
             "SELECT * FROM memory_mutation_receipts WHERE receipt_id=?",
             (receipt_ref.receipt_id,),
@@ -6990,8 +7299,10 @@ class SQLiteHumanMemoryBackend:
             EvidenceItemAuthority,
             EvidenceProvenance,
             EvidenceSourceKind,
+            ExistingMemoryTarget,
             InformationAttribute,
             PrivacyClass,
+            SemanticRelationMemoryPayload,
         )
         from simple_harness.runtime.memory_action_protocol import (
             MEMORY_ACTION_AUTHORITY_SCHEMA_VERSION,
@@ -7243,9 +7554,7 @@ class SQLiteHumanMemoryBackend:
                 raise MemoryCorruptionError("classification decision JSON is invalid") from exc
             if not isinstance(decision_json, dict):
                 raise MemoryCorruptionError("classification decision JSON is invalid")
-            if (
-                set(decision_json)
-                != {
+            expected_decision_keys = {
                     "schema_version",
                     "classification_decision_id",
                     "principal_id",
@@ -7259,7 +7568,16 @@ class SQLiteHumanMemoryBackend:
                     "target",
                     "proposal",
                     "effective",
-                }
+            }
+            relation_operation = isinstance(
+                operation.payload, SemanticRelationMemoryPayload
+            ) or (
+                operation.payload is None and "relation_endpoints" in decision_json
+            )
+            if relation_operation:
+                expected_decision_keys.add("relation_endpoints")
+            if (
+                set(decision_json) != expected_decision_keys
                 or decision_json.get("schema_version") != 1
             ):
                 raise MemoryCorruptionError("classification decision shape differs")
@@ -7278,6 +7596,7 @@ class SQLiteHumanMemoryBackend:
             effective_value = decision_json.get("effective")
             authority_values = decision_json.get("evidence_authorities")
             target_value = decision_json.get("target")
+            relation_endpoint_values = decision_json.get("relation_endpoints", [])
             if (
                 not isinstance(policy_value, dict)
                 or not isinstance(proposal_value, dict)
@@ -7613,6 +7932,124 @@ class SQLiteHumanMemoryBackend:
             else:
                 raise MemoryCorruptionError("classification target wire is invalid")
 
+            endpoint_privacies: list[PrivacyClass] = []
+            endpoint_attributes: list[tuple[InformationAttribute, ...]] = []
+            if relation_operation:
+                if not isinstance(relation_endpoint_values, list) or len(
+                    relation_endpoint_values
+                ) != 2:
+                    raise MemoryCorruptionError(
+                        "classification relation endpoints are invalid"
+                    )
+                for expected_role, endpoint_value in zip(
+                    ("source", "target"), relation_endpoint_values, strict=True
+                ):
+                    if not isinstance(endpoint_value, dict) or set(endpoint_value) != {
+                        "role",
+                        "memory_id",
+                        "revision",
+                        "memory_type",
+                        "privacy_class",
+                        "information_attributes",
+                        "content_hash",
+                    }:
+                        raise MemoryCorruptionError(
+                            "classification relation endpoint shape differs"
+                        )
+                    try:
+                        endpoint_memory_id = str(endpoint_value["memory_id"])
+                        endpoint_revision = int(endpoint_value["revision"])
+                        endpoint_memory_type = str(endpoint_value["memory_type"])
+                        endpoint_privacy = PrivacyClass(
+                            str(endpoint_value["privacy_class"])
+                        )
+                        endpoint_attribute_set = tuple(
+                            InformationAttribute(str(item))
+                            for item in endpoint_value["information_attributes"]
+                        )
+                        endpoint_content_hash = str(endpoint_value["content_hash"])
+                    except (KeyError, TypeError, ValueError) as exc:
+                        raise MemoryCorruptionError(
+                            "classification relation endpoint wire is invalid"
+                        ) from exc
+                    if endpoint_value.get("role") != expected_role:
+                        raise MemoryCorruptionError(
+                            "classification relation endpoint order differs"
+                        )
+                    async with self._db.execute(
+                        "SELECT h.principal_id,h.memory_type,r.effective_privacy_class,"
+                        "r.information_attributes_json,r.content_hash "
+                        "FROM cognitive_memory_heads h JOIN cognitive_memory_revisions r "
+                        "ON r.memory_id=h.memory_id AND r.revision=? WHERE h.memory_id=?",
+                        (endpoint_revision, endpoint_memory_id),
+                    ) as cursor:
+                        endpoint_row = await cursor.fetchone()
+                    if endpoint_row is None or tuple(str(item) for item in endpoint_row) != (
+                        plan.subject,
+                        endpoint_memory_type,
+                        endpoint_privacy.value,
+                        canonical_json(
+                            [item.value for item in endpoint_attribute_set]
+                        ),
+                        endpoint_content_hash,
+                    ):
+                        raise MemoryCorruptionError(
+                            "classification relation endpoint snapshot differs"
+                        )
+                    if (
+                        (expected_role == "source" and endpoint_memory_type != "semantic")
+                        or (
+                            expected_role == "target"
+                            and endpoint_memory_type not in {"procedure", "prospective"}
+                        )
+                    ):
+                        raise MemoryCorruptionError(
+                            "classification relation endpoint type differs"
+                        )
+                    endpoint_privacies.append(endpoint_privacy)
+                    endpoint_attributes.append(endpoint_attribute_set)
+                async with self._db.execute(
+                    "SELECT h.memory_type,r.content_json FROM cognitive_memory_heads h "
+                    "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
+                    "AND r.revision=? WHERE h.memory_id=?",
+                    (memory_revision, memory_id),
+                ) as cursor:
+                    relation_owner_row = await cursor.fetchone()
+                if relation_owner_row is None:
+                    raise MemoryCorruptionError(
+                        "classification relation owner is missing"
+                    )
+                try:
+                    relation_owner_payload = SemanticRelationMemoryPayload.from_json(
+                        json.loads(str(relation_owner_row[1]))
+                    )
+                except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                    raise MemoryCorruptionError(
+                        "classification relation owner wire is invalid"
+                    ) from exc
+                source_endpoint = relation_endpoint_values[0]
+                target_endpoint = relation_endpoint_values[1]
+                if (
+                    str(relation_owner_row[0]) != "semantic"
+                    or relation_owner_payload.source_endpoint
+                    != ExistingMemoryTarget(
+                        str(source_endpoint["memory_id"]),
+                        int(source_endpoint["revision"]),
+                    )
+                    or relation_owner_payload.target_endpoint
+                    != ExistingMemoryTarget(
+                        str(target_endpoint["memory_id"]),
+                        int(target_endpoint["revision"]),
+                    )
+                ):
+                    raise MemoryCorruptionError(
+                        "classification relation owner differs"
+                    )
+            elif relation_endpoint_values != []:
+                raise MemoryCorruptionError(
+                    "classification relation endpoints are unexpected"
+                )
+
             expected_proposal: dict[str, JsonValue] = {
                 "privacy_class": operation.proposed_privacy_class.value,
                 "information_attributes": [
@@ -7633,11 +8070,13 @@ class SQLiteHumanMemoryBackend:
                     policy.required_privacy_class,
                     *(item.required_privacy_class for item in authorities),
                     *((target_privacy,) if target_privacy is not None else ()),
+                    *endpoint_privacies,
                 ),
                 trusted_attribute_sets=(
                     policy.required_information_attributes,
                     *(item.required_information_attributes for item in authorities),
                     target_attributes,
+                    *endpoint_attributes,
                 ),
             )
             expected_effective: dict[str, JsonValue] = {
@@ -8078,6 +8517,199 @@ class SQLiteHumanMemoryBackend:
             return tuple(dict.fromkeys(participants))
         return ()
 
+    @staticmethod
+    def _semantic_kind_from_content_json(content_json: str | None) -> str | None:
+        if content_json is None:
+            return None
+        try:
+            payload = json.loads(content_json)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise MemoryCorruptionError("cognitive semantic content is invalid") from exc
+        if not isinstance(payload, dict):
+            raise MemoryCorruptionError("cognitive semantic content is invalid")
+        semantic_kind = payload.get("semantic_kind")
+        if semantic_kind not in {"claim", "relation"}:
+            raise MemoryCorruptionError("cognitive semantic kind is invalid")
+        return str(semantic_kind)
+
+    async def _resolve_semantic_relation_payload_unlocked(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        payload: object,
+        created_by_operation: Mapping[str, str],
+        operation_results: Mapping[str, tuple[str, int, int | None]],
+        now: float,
+    ) -> tuple[object, tuple[_ResolvedRelationEndpoint, _ResolvedRelationEndpoint]]:
+        from simple_harness.runtime import (
+            CreatedByOperationTarget,
+            ExistingMemoryTarget,
+            ProcedureMemoryPayload,
+            ProspectiveMemoryPayload,
+            SemanticMemoryPayload,
+            SemanticRelationMemoryPayload,
+        )
+
+        from simple_harness_memory.core.suppression import (
+            OrdinaryMemoryPurpose,
+            SuppressionCandidate,
+            SuppressionDenied,
+        )
+
+        if not isinstance(payload, SemanticRelationMemoryPayload):
+            raise MemoryValidationError("semantic_relation_payload_required")
+        assert self._db is not None
+        db = self._db
+
+        async def resolve(endpoint: object, role: str) -> _ResolvedRelationEndpoint:
+            if isinstance(endpoint, ExistingMemoryTarget):
+                memory_id = endpoint.memory_id
+                revision = endpoint.revision
+            elif isinstance(endpoint, CreatedByOperationTarget):
+                try:
+                    memory_id = created_by_operation[endpoint.operation_id]
+                    resolved_memory_id, revision, _ = operation_results[
+                        endpoint.operation_id
+                    ]
+                except KeyError as exc:
+                    raise MemoryValidationError(
+                        "relation_created_endpoint_not_materialized"
+                    ) from exc
+                if resolved_memory_id != memory_id:
+                    raise MemoryCorruptionError(
+                        "relation created endpoint resolution differs"
+                    )
+            else:  # pragma: no cover - Harness owns the exact endpoint union
+                raise MemoryValidationError("relation_endpoint_invalid")
+            async with db.execute(
+                "SELECT h.principal_id,h.deployment_id,h.household_id,h.current_revision,"
+                "h.memory_type AS memory_type,r.lifecycle_state,r.epistemic_status,"
+                "r.conflict_status,r.verification_state,r.valid_from,r.valid_to,"
+                "r.effective_privacy_class,r.information_attributes_json,r.content_json,"
+                "r.content_hash FROM cognitive_memory_heads h "
+                "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
+                "AND r.revision=? WHERE h.memory_id=?",
+                (revision, memory_id),
+            ) as cursor:
+                row = await cursor.fetchone()
+            if row is None:
+                raise MemoryValidationError("relation_endpoint_not_found")
+            if (
+                str(row["principal_id"]) != principal.actor_id
+                or str(row["deployment_id"]) != principal.deployment_id
+                or str(row["household_id"]) != principal.household_id
+            ):
+                raise MemoryOwnershipConflict("relation_endpoint_not_owned")
+            if int(row["current_revision"]) != revision:
+                raise MemoryWriterConflict("relation_endpoint_revision_stale")
+            if str(row["conflict_status"]) != "uncontested":
+                raise MemoryValidationError("relation_endpoint_conflict_ineligible")
+            if not self._cognitive_recall_state_allowed(row):
+                raise MemoryValidationError("relation_endpoint_state_ineligible")
+            if (row["valid_from"] is not None and now < float(row["valid_from"])) or (
+                row["valid_to"] is not None and now >= float(row["valid_to"])
+            ):
+                raise MemoryValidationError("relation_endpoint_time_ineligible")
+            content_json = str(row["content_json"])
+            try:
+                content = json.loads(content_json)
+                attributes = json.loads(str(row["information_attributes_json"]))
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise MemoryCorruptionError("relation endpoint content is invalid") from exc
+            if (
+                not isinstance(content, dict)
+                or canonical_json(content) != content_json
+                or hashlib.sha256(content_json.encode("utf-8")).hexdigest()
+                != str(row["content_hash"])
+                or not isinstance(attributes, list)
+                or not all(isinstance(item, str) for item in attributes)
+            ):
+                raise MemoryCorruptionError("relation endpoint content differs")
+            memory_type = str(row["memory_type"])
+            try:
+                if role == "source":
+                    if memory_type != "semantic" or content.get("semantic_kind") == "relation":
+                        raise MemoryValidationError("relation_source_must_be_semantic_claim")
+                    SemanticMemoryPayload.from_json(content)
+                    typed_table = "semantic_claims"
+                elif memory_type == "procedure":
+                    ProcedureMemoryPayload.from_json(content)
+                    typed_table = "procedure_records"
+                elif memory_type == "prospective":
+                    ProspectiveMemoryPayload.from_json(content)
+                    typed_table = "prospective_records"
+                else:
+                    raise MemoryValidationError(
+                        "relation_target_must_be_procedure_or_prospective"
+                    )
+            except MemoryErrorBase:
+                raise
+            except (KeyError, TypeError, ValueError) as exc:
+                raise MemoryCorruptionError("relation endpoint typed content differs") from exc
+            async with db.execute(
+                f"SELECT 1 FROM {typed_table} WHERE memory_id=? AND revision=?",
+                (memory_id, revision),
+            ) as cursor:
+                if await cursor.fetchone() is None:
+                    raise MemoryCorruptionError("relation endpoint typed payload is missing")
+            async with db.execute(
+                "SELECT evidence_id FROM cognitive_evidence_spans "
+                "WHERE memory_id=? AND revision=? ORDER BY ordinal",
+                (memory_id, revision),
+            ) as cursor:
+                evidence_rows = tuple(await cursor.fetchall())
+            if not evidence_rows:
+                raise MemoryCorruptionError("relation endpoint evidence is missing")
+            async with db.execute(
+                "SELECT decision_hash FROM cognitive_classification_decisions "
+                "WHERE memory_id=? AND memory_revision=?",
+                (memory_id, revision),
+            ) as cursor:
+                classification_rows = tuple(await cursor.fetchall())
+            if len(classification_rows) != 1 or not str(classification_rows[0][0]):
+                raise MemoryCorruptionError("relation endpoint classification is missing")
+            if str(row["effective_privacy_class"]) == "restricted":
+                raise MemoryValidationError("relation_endpoint_classification_not_disclosable")
+            entity_ids = self._mutation_entity_ids_from_content_json(content_json)
+            resolution = await self._resolve_suppression_unlocked(
+                SuppressionCandidate(
+                    principal.actor_id,
+                    memory_id=memory_id,
+                    entity_ids=entity_ids,
+                ),
+                OrdinaryMemoryPurpose.MUTATION,
+            )
+            if resolution.denied:
+                raise SuppressionDenied()
+            for evidence_row in evidence_rows:
+                resolution = await self._resolve_suppression_unlocked(
+                    SuppressionCandidate(
+                        principal.actor_id, evidence_id=str(evidence_row[0])
+                    ),
+                    OrdinaryMemoryPurpose.MUTATION,
+                )
+                if resolution.denied:
+                    raise SuppressionDenied()
+            return _ResolvedRelationEndpoint(
+                memory_id,
+                revision,
+                memory_type,
+                str(row["effective_privacy_class"]),
+                tuple(str(item) for item in attributes),
+                str(row["content_hash"]),
+            )
+
+        source = await resolve(payload.source_endpoint, "source")
+        target = await resolve(payload.target_endpoint, "target")
+        if source.memory_id == target.memory_id:
+            raise MemoryValidationError("relation_self_loop")
+        canonical = SemanticRelationMemoryPayload(
+            payload.relation_kind,
+            ExistingMemoryTarget(source.memory_id, source.revision),
+            ExistingMemoryTarget(target.memory_id, target.revision),
+        )
+        return canonical, (source, target)
+
     async def _insert_cognitive_payload_unlocked(
         self,
         memory_id: str,
@@ -8093,6 +8725,7 @@ class SQLiteHumanMemoryBackend:
             ProspectiveMemoryPayload,
             ProspectiveTimeTrigger,
             SemanticMemoryPayload,
+            SemanticRelationMemoryPayload,
         )
 
         assert self._db is not None
@@ -8130,6 +8763,10 @@ class SQLiteHumanMemoryBackend:
                     canonical_json(list(payload.qualifiers)),
                 ),
             )
+        elif isinstance(payload, SemanticRelationMemoryPayload):
+            # The canonical relation revision is stored in cognitive_memory_revisions;
+            # its exact, rebuildable knowledge projection is cognitive_relations.
+            return
         elif isinstance(payload, ProcedureMemoryPayload):
             from simple_harness_memory.core.lifecycle_results import (
                 UNBOUND_PROCEDURE_APPLICABILITY,
@@ -8880,6 +9517,18 @@ class SQLiteHumanMemoryBackend:
             f"SELECT ?,?,{columns} FROM {table} WHERE memory_id=? AND revision=?",
             (memory_id, revision, source_memory_id, source_revision),
         )
+        if result.rowcount != 1 and memory_type == "semantic":
+            async with self._db.execute(
+                "SELECT content_json FROM cognitive_memory_revisions "
+                "WHERE memory_id=? AND revision=?",
+                (source_memory_id, source_revision),
+            ) as cursor:
+                source = await cursor.fetchone()
+            if (
+                source is not None
+                and self._semantic_kind_from_content_json(str(source[0])) == "relation"
+            ):
+                return
         if result.rowcount != 1:
             raise MemoryCorruptionError("cognitive typed payload is missing")
 
@@ -9174,7 +9823,7 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("config must use MemoryJobWorkerConfig")
         _audit_identifier(worker_id, "worker_id")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
             self._fault("job.claim.after_begin")
@@ -9601,7 +10250,7 @@ class SQLiteHumanMemoryBackend:
         ):
             raise TypeError("claim and envelope must use analysis protocol types")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         if self._db.in_transaction:
             raise MemoryWriterConflict("analysis_authority_called_inside_transaction")
         if (
@@ -9691,7 +10340,7 @@ class SQLiteHumanMemoryBackend:
         ):
             raise TypeError("claim, envelope, and application must use analysis types")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         async with self._write_lock:
             now = _timestamp(self._now())
             if not await self._analysis_claim_is_current_unlocked(claim, now):
@@ -10993,7 +11642,7 @@ class SQLiteHumanMemoryBackend:
             reasoning_refs,
         )
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
             committed = False
@@ -11358,7 +12007,7 @@ class SQLiteHumanMemoryBackend:
         )
 
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         async with self._write_lock:
             await self._authorize_short_horizon_principal_unlocked(principal)
             async with self._db.execute(
@@ -11423,7 +12072,7 @@ class SQLiteHumanMemoryBackend:
         )
 
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         if type(requester) is not type(target_principal):
             raise TypeError("requester and target_principal must use MemoryPrincipal")
         denial: str | None = None
@@ -12144,7 +12793,7 @@ class SQLiteHumanMemoryBackend:
         if cursor is not None and type(cursor) is not AuditTraceCursor:
             raise TypeError("cursor must use AuditTraceCursor")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         mode = "sealed" if access_receipt is not None else "ordinary"
         query_hash = hashlib.sha256(
             canonical_json({"schema_version": 1, "mode": mode, "query": query.to_json()}).encode()
@@ -12663,7 +13312,7 @@ class SQLiteHumanMemoryBackend:
         from simple_harness_memory.core.suppression import SealedAuditAccessDenied
 
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         subject = getattr(decision, "subject", "invalid")
         ref_hash = hashlib.sha256(
             canonical_json(
@@ -12701,7 +13350,7 @@ class SQLiteHumanMemoryBackend:
         if type(authority_ref) is not AuditAccessAuthorityRefV1:
             raise TypeError("authority_ref must use AuditAccessAuthorityRefV1")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         denial: str | None = None
         decision: object | None = None
         if self._audit_access_authority is None:
@@ -12979,7 +13628,7 @@ class SQLiteHumanMemoryBackend:
         if not isinstance(evidence_id, str) or not evidence_id.strip() or "\x00" in evidence_id:
             raise MemoryValidationError("evidence_id_invalid")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v6 backend is not initialized")
+            raise RuntimeError("human-memory v7 backend is not initialized")
         denial: str | None = None
         record: IngestedEvidenceRecord | None = None
         async with self._write_lock:
@@ -13660,7 +14309,7 @@ class SQLiteHumanMemoryBackend:
 
         async with self._short_horizon_recall_lifecycle_lock:
             if self._short_horizon_closing or self._db is None or self._receipt is None:
-                raise RuntimeError("human-memory v6 backend is not initialized")
+                raise RuntimeError("human-memory v7 backend is not initialized")
             self._short_horizon_active_recalls += 1
             self._short_horizon_recall_idle.clear()
 
@@ -13780,10 +14429,10 @@ class SQLiteHumanMemoryBackend:
         async with self._db.execute("PRAGMA integrity_check") as cursor:
             integrity = await cursor.fetchone()
         if integrity is None or str(integrity[0]) != "ok":
-            raise MemoryCorruptionError("human-memory v6 integrity check failed")
+            raise MemoryCorruptionError("human-memory v7 integrity check failed")
         async with self._db.execute("PRAGMA foreign_key_check") as cursor:
             if await cursor.fetchone() is not None:
-                raise MemoryCorruptionError("human-memory v6 foreign key check failed")
+                raise MemoryCorruptionError("human-memory v7 foreign key check failed")
         async with self._db.execute(
             "SELECT 1 FROM cognitive_memory_heads h "
             "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
@@ -14353,6 +15002,9 @@ class SQLiteHumanMemoryBackend:
                 "principal_id": principal_id,
                 "plan_id": str(relation["plan_id"]),
                 "plan_hash": str(relation["plan_hash"]),
+                "relation_domain": "evolution",
+                "relation_memory_id": None,
+                "relation_memory_revision": None,
                 "relation_kind": "contests",
                 "source_memory_id": memory_id,
                 "source_revision": challenger_revision,

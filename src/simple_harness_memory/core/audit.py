@@ -311,7 +311,7 @@ class CanonicalStateManifestV1:
     def __post_init__(self) -> None:
         if self.schema_version != 1 or isinstance(self.schema_version, bool):
             raise MemoryValidationError("state_manifest_schema_unsupported")
-        if self.storage_schema_version != 6:
+        if self.storage_schema_version != 7:
             raise MemoryValidationError("state_manifest_storage_schema_unsupported")
         for value, name in (
             (self.schema_checksum, "state_manifest_schema_checksum"),

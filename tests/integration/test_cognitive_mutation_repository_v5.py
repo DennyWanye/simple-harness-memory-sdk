@@ -63,6 +63,8 @@ from simple_harness.runtime import (
     SanitizedEvidenceReceipt,
     SemanticLifecycleState,
     SemanticMemoryPayload,
+    SemanticRelationKind,
+    SemanticRelationMemoryPayload,
     TypedObservationAuthorityReceipt,
     ValidTimeInterval,
     VerificationState,
@@ -2667,7 +2669,17 @@ async def test_forward_dependency_materializes_in_topological_order(tmp_path: Pa
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "fault_point",
-    tuple(point for point in COGNITIVE_MUTATION_FAULT_POINTS if point != "mutation.after_commit"),
+    tuple(
+        point
+        for point in COGNITIVE_MUTATION_FAULT_POINTS
+        if point
+        not in {
+            "mutation.before_relation_memory_insert",
+            "mutation.after_relation_memory_before_knowledge_row",
+            "mutation.after_knowledge_row_before_commit",
+            "mutation.after_commit",
+        }
+    ),
 )
 async def test_every_precommit_fault_rolls_back_all_cognitive_rows(
     tmp_path: Path, fault_point: str
@@ -2807,3 +2819,325 @@ async def test_forged_authority_and_mutation_suppression_fail_before_state(
     ) as cursor:
         assert str((await cursor.fetchone())[0]) == "mutation_suppression_rejected"  # type: ignore[index]
     await backend.close()
+
+
+def _applies_to_plan(
+    envelope: SanitizedEvidenceEnvelope,
+    span: EvidenceSpanRef,
+    *,
+    plan_id: str = "relation-plan",
+    idempotency_key: str = "relation-key",
+) -> MemoryMutationPlan:
+    source = _operation(span, operation_id="create-source")
+    target = replace(
+        _operation(span, operation_id="create-target"),
+        memory_type=LongTermMemoryType.PROCEDURE,
+        payload=ProcedureMemoryPayload(
+            "concise response procedure",
+            ("answering user:self",),
+            ("lead with the answer", "omit unnecessary detail"),
+            ProcedureRiskLevel.LOW,
+        ),
+        lifecycle_state=ProcedureLifecycleState.ACTIVE,
+    )
+    relation = replace(
+        _operation(
+            span,
+            operation_id="create-relation",
+            depends_on=(source.operation_id, target.operation_id),
+        ),
+        payload=SemanticRelationMemoryPayload(
+            SemanticRelationKind.APPLIES_TO,
+            CreatedByOperationTarget(source.operation_id),
+            CreatedByOperationTarget(target.operation_id),
+        ),
+    )
+    return _plan(
+        envelope,
+        source,
+        target,
+        relation,
+        plan_id=plan_id,
+        idempotency_key=idempotency_key,
+    )
+
+
+async def _memory_ids_by_operation(
+    backend: SQLiteHumanMemoryBackend,
+) -> dict[str, tuple[str, int]]:
+    async with backend.connection.execute(
+        "SELECT operation_id,memory_id,revision FROM cognitive_memory_revisions "
+        "ORDER BY operation_id"
+    ) as cursor:
+        rows = tuple(await cursor.fetchall())
+    return {
+        str(row[0]): (str(row[1]), int(row[2]))
+        for row in rows
+    }
+
+
+@pytest.mark.asyncio
+async def test_applies_to_materializes_exact_owned_edge_and_survives_reopen(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "applies-to.db"
+    backend, envelope, _receipt, span, _authority = await _prepared(path)
+    plan = _applies_to_plan(envelope, span)
+    await backend.apply_memory_mutation_plan(
+        principal=_principal(), scope=MemoryScope.personal("actor-1"), plan=plan
+    )
+    ids = await _memory_ids_by_operation(backend)
+    source_id, source_revision = ids["create-source"]
+    target_id, target_revision = ids["create-target"]
+    relation_id, relation_revision = ids["create-relation"]
+
+    async with backend.connection.execute(
+        "SELECT relation_domain,relation_memory_id,relation_memory_revision,"
+        "source_memory_id,source_revision,relation_kind,target_memory_id,target_revision "
+        "FROM cognitive_relations"
+    ) as cursor:
+        relation_row = await cursor.fetchone()
+    assert relation_row is not None
+    assert tuple(relation_row) == (
+        "knowledge",
+        relation_id,
+        relation_revision,
+        source_id,
+        source_revision,
+        "applies_to",
+        target_id,
+        target_revision,
+    )
+    async with backend.connection.execute(
+        "SELECT content_json FROM cognitive_memory_revisions "
+        "WHERE memory_id=? AND revision=?",
+        (relation_id, relation_revision),
+    ) as cursor:
+        owner_content = json.loads(str((await cursor.fetchone())[0]))  # type: ignore[index]
+    assert SemanticRelationMemoryPayload.from_json(owner_content) == (
+        SemanticRelationMemoryPayload(
+            SemanticRelationKind.APPLIES_TO,
+            ExistingMemoryTarget(source_id, source_revision),
+            ExistingMemoryTarget(target_id, target_revision),
+        )
+    )
+
+    graph = await backend.get_twin_graph_view(principal=_principal())
+    assert {node.memory_id for node in graph.nodes} == {source_id, target_id}
+    assert relation_id not in {node.memory_id for node in graph.nodes}
+    assert len(graph.edges) == 1
+    assert graph.edges[0].relation_kind == "applies_to"
+    assert graph.edges[0].source_node_id == f"{source_id}@{source_revision}"
+    assert graph.edges[0].target_node_id == f"{target_id}@{target_revision}"
+    await backend.close()
+
+    reopened = SQLiteHumanMemoryBackend(path)
+    await reopened.initialize()
+    reopened_graph = await reopened.get_twin_graph_view(principal=_principal())
+    assert reopened_graph.nodes == graph.nodes
+    assert reopened_graph.edges == graph.edges
+    await reopened.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("suppressed_operation", ("create-relation", "create-source"))
+async def test_applies_to_exits_graph_when_owner_or_endpoint_is_suppressed(
+    tmp_path: Path, suppressed_operation: str
+) -> None:
+    path = tmp_path / f"applies-to-suppress-{suppressed_operation}.db"
+    backend, envelope, _receipt, span, _authority = await _prepared(path)
+    await backend.apply_memory_mutation_plan(
+        principal=_principal(),
+        scope=MemoryScope.personal("actor-1"),
+        plan=_applies_to_plan(envelope, span),
+    )
+    ids = await _memory_ids_by_operation(backend)
+    memory_id, _revision = ids[suppressed_operation]
+    await backend.suppress(
+        SuppressionRequest(
+            f"suppress-{suppressed_operation}",
+            "actor-1",
+            SuppressionScopeKind.MEMORY,
+            memory_id,
+            "user_forget",
+            20.0,
+            OrdinaryMemoryPurpose.PROJECTION,
+        )
+    )
+    assert (await backend.get_twin_graph_view(principal=_principal())).edges == ()
+    await backend.close()
+
+    reopened = SQLiteHumanMemoryBackend(path)
+    await reopened.initialize()
+    assert (await reopened.get_twin_graph_view(principal=_principal())).edges == ()
+    await reopened.close()
+
+
+@pytest.mark.asyncio
+async def test_relation_revise_and_payload_copy_suppress_keep_owned_rows_and_gate_edge(
+    tmp_path: Path,
+) -> None:
+    backend, envelope, _receipt, span, authority = await _prepared(
+        tmp_path / "relation-revisions.db"
+    )
+    await backend.apply_memory_mutation_plan(
+        principal=_principal(),
+        scope=MemoryScope.personal("actor-1"),
+        plan=_applies_to_plan(envelope, span),
+    )
+    ids = await _memory_ids_by_operation(backend)
+    source_id, source_revision = ids["create-source"]
+    target_id, target_revision = ids["create-target"]
+    relation_id, _ = ids["create-relation"]
+    relation_payload = SemanticRelationMemoryPayload(
+        SemanticRelationKind.APPLIES_TO,
+        ExistingMemoryTarget(source_id, source_revision),
+        ExistingMemoryTarget(target_id, target_revision),
+    )
+    revise = replace(
+        _operation(
+            span,
+            operation_id="revise-relation",
+            kind=MemoryMutationKind.REVISE,
+            target=ExistingMemoryTarget(relation_id, 1),
+        ),
+        payload=relation_payload,
+    )
+    revise_plan = _with_action_authorities(
+        _plan(
+            envelope,
+            revise,
+            base_revision=2,
+            plan_id="revise-relation-plan",
+            idempotency_key="revise-relation-key",
+        ),
+        authority,
+        nonce_prefix="revise-relation",
+    )
+    await backend.apply_memory_mutation_plan(
+        principal=_principal(),
+        scope=MemoryScope.personal("actor-1"),
+        plan=revise_plan,
+    )
+    assert len((await backend.get_twin_graph_view(principal=_principal())).edges) == 1
+
+    correction_span = replace(
+        span, support_kind=EvidenceSupportKind.EXPLICIT_USER_CORRECTION
+    )
+    suppress_operation = replace(
+        _operation(
+            correction_span,
+            operation_id="suppress-relation",
+            kind=MemoryMutationKind.SUPPRESS,
+            target=ExistingMemoryTarget(relation_id, 2),
+        ),
+        payload=None,
+        lifecycle_state=SemanticLifecycleState.FORGOTTEN,
+        reason_code="explicit_user_forget",
+    )
+    suppress_plan = _with_action_authorities(
+        _plan(
+            envelope,
+            suppress_operation,
+            base_revision=3,
+            plan_id="suppress-relation-plan",
+            idempotency_key="suppress-relation-key",
+        ),
+        authority,
+        nonce_prefix="suppress-relation",
+    )
+    await backend.apply_memory_mutation_plan(
+        principal=_principal(),
+        scope=MemoryScope.personal("actor-1"),
+        plan=suppress_plan,
+    )
+    async with backend.connection.execute(
+        "SELECT relation_memory_revision FROM cognitive_relations "
+        "WHERE relation_domain='knowledge' ORDER BY relation_memory_revision"
+    ) as cursor:
+        assert [int(row[0]) for row in await cursor.fetchall()] == [1, 2, 3]
+    assert (await backend.get_twin_graph_view(principal=_principal())).edges == ()
+    await backend.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fault_point",
+    (
+        "mutation.before_relation_memory_insert",
+        "mutation.after_relation_memory_before_knowledge_row",
+        "mutation.after_knowledge_row_before_commit",
+    ),
+)
+async def test_applies_to_precommit_faults_leave_no_canonical_or_knowledge_half_state(
+    tmp_path: Path, fault_point: str
+) -> None:
+    def fault(point: str) -> None:
+        if point == fault_point:
+            raise RuntimeError(point)
+
+    path = tmp_path / f"relation-fault-{fault_point.rsplit('.', 1)[-1]}.db"
+    backend, envelope, _receipt, span, _authority = await _prepared(path, fault=fault)
+    with pytest.raises(RuntimeError, match=fault_point):
+        await backend.apply_memory_mutation_plan(
+            principal=_principal(),
+            scope=MemoryScope.personal("actor-1"),
+            plan=_applies_to_plan(envelope, span),
+        )
+    assert all(value == 0 for value in (await _cognitive_counts(backend)).values())
+    async with backend.connection.execute(
+        "SELECT COUNT(*) FROM evidence_envelopes"
+    ) as cursor:
+        assert int((await cursor.fetchone())[0]) == 1  # type: ignore[index]
+    await backend.close()
+
+    reopened = SQLiteHumanMemoryBackend(path)
+    await reopened.initialize()
+    assert all(value == 0 for value in (await _cognitive_counts(reopened)).values())
+    async with reopened.connection.execute(
+        "SELECT COUNT(*) FROM evidence_envelopes"
+    ) as cursor:
+        assert int((await cursor.fetchone())[0]) == 1  # type: ignore[index]
+    await reopened.close()
+
+
+@pytest.mark.asyncio
+async def test_applies_to_after_commit_lost_ack_replays_without_duplicate_edge(
+    tmp_path: Path,
+) -> None:
+    raised = False
+
+    def fault(point: str) -> None:
+        nonlocal raised
+        if point == "mutation.after_commit" and not raised:
+            raised = True
+            raise RuntimeError(point)
+
+    path = tmp_path / "relation-lost-ack.db"
+    backend, envelope, _receipt, span, authority = await _prepared(path, fault=fault)
+    plan = _applies_to_plan(envelope, span)
+    with pytest.raises(RuntimeError, match="mutation.after_commit"):
+        await backend.apply_memory_mutation_plan(
+            principal=_principal(), scope=MemoryScope.personal("actor-1"), plan=plan
+        )
+    await backend.close()
+
+    reopened = SQLiteHumanMemoryBackend(
+        path,
+        evidence_authority=authority,
+        classification_policy=_classification_policy(),
+    )
+    await reopened.initialize()
+    replay = await reopened.apply_memory_mutation_plan(
+        principal=_principal(), scope=MemoryScope.personal("actor-1"), plan=plan
+    )
+    _committed_receipt_ref(replay)
+    async with reopened.connection.execute(
+        "SELECT COUNT(*) FROM cognitive_memory_heads"
+    ) as cursor:
+        assert int((await cursor.fetchone())[0]) == 3  # type: ignore[index]
+    async with reopened.connection.execute(
+        "SELECT COUNT(*) FROM cognitive_relations WHERE relation_domain='knowledge'"
+    ) as cursor:
+        assert int((await cursor.fetchone())[0]) == 1  # type: ignore[index]
+    await reopened.close()

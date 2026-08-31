@@ -14,7 +14,11 @@ from simple_harness_memory.core.audit import (
     CanonicalStateManifestV1,
     CanonicalStateTableRootV1,
 )
-from simple_harness_memory.core.manager import MemoryManager, build_human_memory_v6
+from simple_harness_memory.core.manager import (
+    MemoryManager,
+    build_human_memory_v6,
+    build_human_memory_v7,
+)
 from simple_harness_memory.core.models import (
     BoundedRecallResult,
     Fact,
@@ -40,6 +44,7 @@ from simple_harness_memory.core.twin import DigitalTwin
 
 __all__ = [
     "MemoryManager",
+    "build_human_memory_v7",
     "build_human_memory_v6",
     "AuditAccessAuthorityPort",
     "AuditAccessAuthorityRefV1",

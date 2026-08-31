@@ -27,7 +27,7 @@ _ACTIVE_LIFECYCLES: dict[str, frozenset[str]] = {
 _INFERRED_LIFECYCLES = frozenset({"candidate", "draft"})
 _MEMORY_TYPES = frozenset(_ACTIVE_LIFECYCLES)
 _RELATION_KINDS = frozenset(
-    {"amends", "supersedes", "contests", "supports", "relates_to"}
+    {"amends", "supersedes", "contests", "supports", "relates_to", "applies_to"}
 )
 _CONFIDENCE_BASE = {
     "explicit_user": 0.95,
@@ -477,6 +477,20 @@ def _record_visible(record: TwinGraphRecordInput, generated_at: float) -> bool:
     )
     active = record.lifecycle_state in _ACTIVE_LIFECYCLES.get(record.memory_type, ())
     return active or inferred
+
+
+def twin_graph_record_is_active_visible(
+    record: TwinGraphRecordInput, generated_at: float
+) -> bool:
+    """Return the stricter ordinary eligibility required by knowledge edges."""
+
+    return (
+        _record_visible(record, generated_at)
+        and record.revision == record.head_revision
+        and record.lifecycle_state in _ACTIVE_LIFECYCLES.get(record.memory_type, ())
+        and record.conflict_status != "contested"
+        and record.conflict_group_id is None
+    )
 
 
 def _node_status(record: TwinGraphRecordInput) -> str:
