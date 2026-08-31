@@ -254,20 +254,29 @@
       "min_root_runs": 1,
       "impact_paths": [
         "src/simple_harness_memory/**",
-        "/Users/denny/projects/simple-harness-sdk-memory-program/simple_harness_sdk/**"
+        "/Users/denny/projects/simple-harness-sdk-memory-program/simple_harness_sdk/**",
+        "/Users/denny/projects/simple_harness/backend/deskpet/sdk_adapters/context_authority.py",
+        "/Users/denny/projects/simple_harness/backend/deskpet/memory/recall_adapter.py",
+        "/Users/denny/projects/simple_harness/backend/main.py"
       ],
-      "testcase_revisions": {"TC-HM-13": 2},
+      "testcase_revisions": {"TC-HM-13": 3},
       "oracle_pins": {
-        "testcase_sha256": "e4813680d61c76187f0397140bc85a940580a17c4b2dc558f79cb58318b59f82",
-        "fixture_revision": 2,
-        "fixture_sha256": "71d87d7c9c67faf45b8e1f16bbf9a3b0d61596b40a186d0dd27f304241b6bddd",
-        "fault_fixture_sha256": "6882fe06cb561cb8cd1fbe1f0ad8fff1589218ffa295c3d4d12cc36283e1446c",
-        "runner_sha256": "eda919b10601d651aa4720fcec5b29bccdd4aa9b559d222081277dd021bb8815"
+        "testcase_sha256": "061bbb1f7c1e495d44fa202ffb8abdcde3fc91a04d2a2a1082a097b007c7d41b",
+        "fixture_revision": 3,
+        "fixture_sha256": "92202927c9817c8a1fc2eed2f26751ac8971b52452144bebc5e8c545e9a79e10",
+        "fault_fixture_sha256": "c67881ae20a3f6b442f1ac46db9e6e9a472edc3ec09079e8a42ef219e9b6bc6b",
+        "runner_sha256": "85cd4d61005d818fa6dca6bdea451606b2e8841af6a671dc269dc2ee6e724a1f",
+        "candidate_harness_source_commit": "fb491574db8bb4d19d8a7f9df0c72ae460bb08f4",
+        "candidate_harness_wheel_sha256": "36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f",
+        "candidate_harness_distribution_version": "simple-harness-sdk==0.7.0",
+        "candidate_memory_source_commit": "9c79fa7ed96214aac7de93a11970e02891afedae",
+        "candidate_memory_wheel_sha256": "cd324e68aa851e0cb7940b44bfe0bbf1b3a5cbb33a6803e035ab503e1760de1c",
+        "candidate_memory_distribution_version": "simple-harness-memory-sdk==0.6.0"
       },
       "evidence_contract": {
         "producer_types": ["gate-exec", "runtime-probe"],
-        "required_artifact_kinds": ["business-result", "execution-log"],
-        "required_identity": ["root_run_id"],
+        "required_artifact_kinds": ["business-result", "execution-log", "evidence-index"],
+        "required_identity": ["root_run_id", "candidate_harness_wheel_sha256", "candidate_memory_wheel_sha256", "candidate_harness_source_commit", "candidate_memory_source_commit"],
         "required_timestamps": true,
         "required_business_facts": [
           "business_terminal",
@@ -276,6 +285,15 @@
           "fixture_revision",
           "fixture_sha256",
           "runner_sha256",
+          "candidate_harness_source_commit",
+          "candidate_harness_wheel_sha256",
+          "candidate_memory_source_commit",
+          "candidate_memory_wheel_sha256",
+          "installed_distribution_versions_and_module_origins",
+          "fresh_artifact_run_directory",
+          "exact_401_cell_set_verified",
+          "artifact_and_evidence_index_sha256_recomputed",
+          "artifact_and_index_freshness_verified",
           "strict_v3_rejected",
           "source_binding_cells_indexed",
           "conflict_create_reject_resolve_cells_indexed",
@@ -300,20 +318,29 @@
       "lanes": ["temporal-fault"],
       "impact_paths": [
         "src/simple_harness_memory/**",
-        "/Users/denny/projects/simple-harness-sdk-memory-program/simple_harness_sdk/**"
+        "/Users/denny/projects/simple-harness-sdk-memory-program/simple_harness_sdk/**",
+        "/Users/denny/projects/simple_harness/backend/deskpet/sdk_adapters/context_authority.py",
+        "/Users/denny/projects/simple_harness/backend/deskpet/memory/recall_adapter.py",
+        "/Users/denny/projects/simple_harness/backend/main.py"
       ],
-      "testcase_revisions": {"TC-HM-13": 2},
+      "testcase_revisions": {"TC-HM-13": 3},
       "oracle_pins": {
-        "testcase_sha256": "e4813680d61c76187f0397140bc85a940580a17c4b2dc558f79cb58318b59f82",
-        "fixture_revision": 2,
-        "fixture_sha256": "71d87d7c9c67faf45b8e1f16bbf9a3b0d61596b40a186d0dd27f304241b6bddd",
-        "fault_fixture_sha256": "6882fe06cb561cb8cd1fbe1f0ad8fff1589218ffa295c3d4d12cc36283e1446c",
-        "runner_sha256": "eda919b10601d651aa4720fcec5b29bccdd4aa9b559d222081277dd021bb8815"
+        "testcase_sha256": "061bbb1f7c1e495d44fa202ffb8abdcde3fc91a04d2a2a1082a097b007c7d41b",
+        "fixture_revision": 3,
+        "fixture_sha256": "92202927c9817c8a1fc2eed2f26751ac8971b52452144bebc5e8c545e9a79e10",
+        "fault_fixture_sha256": "c67881ae20a3f6b442f1ac46db9e6e9a472edc3ec09079e8a42ef219e9b6bc6b",
+        "runner_sha256": "85cd4d61005d818fa6dca6bdea451606b2e8841af6a671dc269dc2ee6e724a1f",
+        "candidate_harness_source_commit": "fb491574db8bb4d19d8a7f9df0c72ae460bb08f4",
+        "candidate_harness_wheel_sha256": "36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f",
+        "candidate_harness_distribution_version": "simple-harness-sdk==0.7.0",
+        "candidate_memory_source_commit": "9c79fa7ed96214aac7de93a11970e02891afedae",
+        "candidate_memory_wheel_sha256": "cd324e68aa851e0cb7940b44bfe0bbf1b3a5cbb33a6803e035ab503e1760de1c",
+        "candidate_memory_distribution_version": "simple-harness-memory-sdk==0.6.0"
       },
       "evidence_contract": {
         "producer_types": ["gate-exec", "runtime-probe"],
-        "required_artifact_kinds": ["execution-log", "fault-recovery-log"],
-        "required_identity": ["root_run_id"],
+        "required_artifact_kinds": ["execution-log", "fault-recovery-log", "evidence-index"],
+        "required_identity": ["root_run_id", "candidate_harness_wheel_sha256", "candidate_memory_wheel_sha256", "candidate_harness_source_commit", "candidate_memory_source_commit"],
         "required_timestamps": true,
         "required_business_facts": [
           "recovered_state",
@@ -322,6 +349,19 @@
           "fault_fixture_sha256",
           "fault_seam_count",
           "fault_evidence_index_sha256",
+          "candidate_harness_source_commit",
+          "candidate_harness_wheel_sha256",
+          "candidate_memory_source_commit",
+          "candidate_memory_wheel_sha256",
+          "installed_distribution_versions_and_module_origins",
+          "candidate_executed_nonzero_is_fail",
+          "evidence_index_exact_cells_hashes_and_freshness_verified",
+          "authority_receipt_policy_and_time_fields_hash_bound",
+          "context_use_receipt_known_answers_verified",
+          "conflict_cross_memory_cardinality_tamper_reopen_verified",
+          "valid_until_null_and_household_attribute_floors_verified",
+          "all_selection_tie_breaks_and_vector_degrade_verified",
+          "rich_source_minimal_projection_stripping_verified",
           "conflict_atomicity_and_non_revival_proved",
           "incomplete_conflict_zero_disclosure",
           "authority_event_cell_count",
@@ -422,23 +462,28 @@
       "concurrent_layer_kinds": 3
     },
     "testcase_revision_pins": {
-      "TC-HM-03": 2,
-      "TC-HM-04": 2,
-      "TC-HM-08": 2,
-      "TC-HM-09": 2,
-      "TC-HM-11": 2,
-      "TC-HM-13": 2,
-      "TC-HM-X01": 3
+      "TC-HM-03": 3,
+      "TC-HM-04": 3,
+      "TC-HM-08": 3,
+      "TC-HM-09": 3,
+      "TC-HM-11": 3,
+      "TC-HM-13": 3,
+      "TC-HM-X01": 4
     },
     "typed_recall_oracle_pins": {
-      "testcase_sha256": "e4813680d61c76187f0397140bc85a940580a17c4b2dc558f79cb58318b59f82",
-      "fixture_sha256": "71d87d7c9c67faf45b8e1f16bbf9a3b0d61596b40a186d0dd27f304241b6bddd",
-      "fault_fixture_sha256": "6882fe06cb561cb8cd1fbe1f0ad8fff1589218ffa295c3d4d12cc36283e1446c",
-      "runner_sha256": "eda919b10601d651aa4720fcec5b29bccdd4aa9b559d222081277dd021bb8815"
+      "testcase_sha256": "061bbb1f7c1e495d44fa202ffb8abdcde3fc91a04d2a2a1082a097b007c7d41b",
+      "fixture_sha256": "92202927c9817c8a1fc2eed2f26751ac8971b52452144bebc5e8c545e9a79e10",
+      "fault_fixture_sha256": "c67881ae20a3f6b442f1ac46db9e6e9a472edc3ec09079e8a42ef219e9b6bc6b",
+      "runner_sha256": "85cd4d61005d818fa6dca6bdea451606b2e8841af6a671dc269dc2ee6e724a1f",
+      "candidate_harness": {"distribution": "simple-harness-sdk", "version": "0.7.0", "source_commit": "fb491574db8bb4d19d8a7f9df0c72ae460bb08f4", "wheel_sha256": "36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f"},
+      "candidate_memory": {"status": "PINNED", "distribution": "simple-harness-memory-sdk", "version": "0.6.0", "source_commit": "9c79fa7ed96214aac7de93a11970e02891afedae", "wheel_sha256": "cd324e68aa851e0cb7940b44bfe0bbf1b3a5cbb33a6803e035ab503e1760de1c"}
     },
     "cross_repo_impact_map": {
       "memory_sdk": "src/simple_harness_memory/**",
-      "harness_sdk": "/Users/denny/projects/simple-harness-sdk-memory-program/simple_harness_sdk/**"
+      "harness_sdk": "/Users/denny/projects/simple-harness-sdk-memory-program/simple_harness_sdk/**",
+      "host_context_authority": "/Users/denny/projects/simple_harness/backend/deskpet/sdk_adapters/context_authority.py",
+      "host_memory_recall_adapter": "/Users/denny/projects/simple_harness/backend/deskpet/memory/recall_adapter.py",
+      "host_provider_runtime_composition": "/Users/denny/projects/simple_harness/backend/main.py"
     },
     "executor_engine": "codex",
     "auditor_engine": "independent-codex-agent"
