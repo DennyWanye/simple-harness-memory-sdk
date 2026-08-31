@@ -2940,6 +2940,65 @@ async def test_applies_to_materializes_exact_owned_edge_and_survives_reopen(
 
 
 @pytest.mark.asyncio
+async def test_committed_relation_receipt_view_is_exact_owned_and_bounded(
+    tmp_path: Path,
+) -> None:
+    backend, envelope, _receipt, span, _authority = await _prepared(
+        tmp_path / "relation-receipt-view.db"
+    )
+    plan = _applies_to_plan(envelope, span)
+    result = await backend.apply_memory_mutation_plan(
+        principal=_principal(), scope=MemoryScope.personal("actor-1"), plan=plan
+    )
+    receipt_ref = _committed_receipt_ref(result)
+
+    view = await backend.get_memory_mutation_receipt_view(
+        principal=_principal(), receipt_ref=receipt_ref
+    )
+    assert view.receipt_id == receipt_ref.receipt_id
+    assert view.receipt_hash == receipt_ref.receipt_hash
+    assert view.plan_id == plan.plan_id
+    assert view.plan_hash == plan.plan_hash
+    assert view.apply_mode == "strict_atomic"
+    assert tuple(operation.operation_id for operation in view.operations) == (
+        "create-source",
+        "create-target",
+        "create-relation",
+    )
+    source, target, relation = view.operations
+    assert source.memory_type == "semantic"
+    assert source.semantic_kind == "claim"
+    assert target.memory_type == "procedure"
+    assert target.semantic_kind is None
+    assert relation.memory_type == "semantic"
+    assert relation.semantic_kind == "relation"
+    assert {source.memory_id, target.memory_id, relation.memory_id} == {
+        operation[0] for operation in (await _memory_ids_by_operation(backend)).values()
+    }
+    assert relation.memory_id not in {source.memory_id, target.memory_id}
+    assert all(operation.revision == 1 for operation in view.operations)
+    assert all(operation.effective_privacy_class == "personal" for operation in view.operations)
+    assert all(operation.epistemic_status == "explicit_user" for operation in view.operations)
+    assert all(operation.evidence_ids == (envelope.evidence_id,) for operation in view.operations)
+    assert all(len(operation.content_hash) == 64 for operation in view.operations)
+    assert all(len(operation.decision_hash) == 64 for operation in view.operations)
+    assert view.to_json()["operations"] == [
+        operation.to_json() for operation in view.operations
+    ]
+
+    with pytest.raises(MemoryValidationError, match="mutation_receipt_not_found"):
+        await backend.get_memory_mutation_receipt_view(
+            principal=_principal("actor-2"), receipt_ref=receipt_ref
+        )
+    with pytest.raises(MemoryValidationError, match="mutation_receipt_ref_hash_mismatch"):
+        await backend.get_memory_mutation_receipt_view(
+            principal=_principal(),
+            receipt_ref=replace(receipt_ref, receipt_hash="f" * 64),
+        )
+    await backend.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("suppressed_operation", ("create-relation", "create-source"))
 async def test_applies_to_exits_graph_when_owner_or_endpoint_is_suppressed(
     tmp_path: Path, suppressed_operation: str

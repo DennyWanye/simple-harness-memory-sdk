@@ -59,6 +59,10 @@ from simple_harness_memory.core.models import (
     MemoryApplyResult,
     Message,
 )
+from simple_harness_memory.core.mutation_receipts import (
+    MemoryMutationCommittedOperationView,
+    MemoryMutationReceiptView,
+)
 from simple_harness_memory.core.mutations import (
     EffectiveInformationClassification,
     InformationClassificationPolicy,
@@ -150,6 +154,8 @@ __all__ = [
     "Hit",
     "DigitalTwin",
     "MemoryApplyResult",
+    "MemoryMutationCommittedOperationView",
+    "MemoryMutationReceiptView",
     "BoundedRecallResult",
     "MemoryResourceBounds",
     "MemoryPrincipal",

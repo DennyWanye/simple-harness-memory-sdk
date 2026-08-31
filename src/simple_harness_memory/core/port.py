@@ -17,6 +17,7 @@ from simple_harness.runtime import (
 
 if TYPE_CHECKING:
     from simple_harness.runtime import (
+        MemoryMutationApplyReceiptRef,
         RecallContextUseAuthorizationRequestV1,
         RecallContextUseReceiptV1,
         RecallResultPageRequestV1,
@@ -46,6 +47,7 @@ from simple_harness_memory.core.models import (
     MemoryApplyResult,
     Message,
 )
+from simple_harness_memory.core.mutation_receipts import MemoryMutationReceiptView
 from simple_harness_memory.core.recall import TypedRecallExecution
 from simple_harness_memory.core.short_horizon import (
     ShortHorizonGenerationBuildResult,
@@ -305,6 +307,13 @@ class CognitiveMemoryBackend(Protocol):
         scope: MemoryScope,
         plan: MemoryMutationPlan,
     ) -> MemoryMutationApplyResult: ...
+
+    async def get_memory_mutation_receipt_view(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        receipt_ref: MemoryMutationApplyReceiptRef,
+    ) -> MemoryMutationReceiptView: ...
 
     async def ingest_committed_evidence(
         self, envelope: object, receipt: object

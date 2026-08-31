@@ -34,6 +34,8 @@ def test_root_exports_construct_public_facade_contracts() -> None:
         EvidenceIngestionReceipt,
         InformationClassificationPolicy,
         IngestedEvidenceRecord,
+        MemoryMutationCommittedOperationView,
+        MemoryMutationReceiptView,
         SealedAuditPurpose,
         SuppressionDecision,
         SuppressionRequest,
@@ -76,6 +78,27 @@ def test_root_exports_construct_public_facade_contracts() -> None:
     assert policy.required_privacy_class is PrivacyClass.PERSONAL
     assert policy.required_information_attributes == (InformationAttribute.PREFERENCE,)
     assert effective.privacy_class is PrivacyClass.SENSITIVE
+    operation = MemoryMutationCommittedOperationView(
+        operation_id="create-1",
+        memory_id="memory-1",
+        revision=1,
+        memory_type="semantic",
+        semantic_kind="claim",
+        content_hash="a" * 64,
+        effective_privacy_class="personal",
+        epistemic_status="explicit_user",
+        evidence_ids=("evidence-1",),
+        decision_hash="b" * 64,
+    )
+    receipt = MemoryMutationReceiptView(
+        receipt_id="receipt-1",
+        receipt_hash="c" * 64,
+        plan_id="plan-1",
+        plan_hash="d" * 64,
+        apply_mode="strict_atomic",
+        operations=(operation,),
+    )
+    assert receipt.to_json()["operations"] == [operation.to_json()]
 
 
 def test_0_6_0_candidate_sources_and_docs_are_consistent() -> None:

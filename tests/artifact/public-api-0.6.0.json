@@ -53,6 +53,8 @@
     "MemoryBackend",
     "MemoryIdempotencyConflict",
     "MemoryManager",
+    "MemoryMutationCommittedOperationView",
+    "MemoryMutationReceiptView",
     "MemoryOwnershipConflict",
     "MemoryPrincipal",
     "MemoryResourceBounds",

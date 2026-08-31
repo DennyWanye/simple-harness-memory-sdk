@@ -35,6 +35,7 @@ from simple_harness_memory.core.identity import (
     ScopeKind,
 )
 from simple_harness_memory.core.models import Fact
+from simple_harness_memory.core.mutation_receipts import MemoryMutationReceiptView
 from simple_harness_memory.core.mutations import InformationClassificationPolicy
 from simple_harness_memory.core.observability import CorrelationInput, MemoryObservability
 from simple_harness_memory.core.port import CognitiveMemoryBackend, MemoryBackend
@@ -51,6 +52,7 @@ if TYPE_CHECKING:
         CommittedTurn,
         CommittedTurnReceipt,
         DisclosureContext,
+        MemoryMutationApplyReceiptRef,
         MemoryMutationApplyResult,
         MemoryMutationPlan,
         MemoryRecallRequest,
@@ -142,6 +144,19 @@ class MemoryManager:
     ) -> MemoryMutationApplyResult:
         return await self._backend.apply_memory_mutation_plan(
             principal=principal, scope=scope, plan=plan
+        )
+
+    async def get_memory_mutation_receipt_view(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        receipt_ref: MemoryMutationApplyReceiptRef,
+    ) -> MemoryMutationReceiptView:
+        """Return exact committed operation bindings for one owned receipt."""
+
+        return await self._backend.get_memory_mutation_receipt_view(
+            principal=principal,
+            receipt_ref=receipt_ref,
         )
 
     async def suppress(

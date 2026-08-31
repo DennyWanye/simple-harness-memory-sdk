@@ -118,6 +118,7 @@ if TYPE_CHECKING:
         ProcedureObservationApplyResult,
         ProspectiveSignalApplyResult,
     )
+    from simple_harness_memory.core.mutation_receipts import MemoryMutationReceiptView
     from simple_harness_memory.core.mutations import InformationClassificationPolicy
     from simple_harness_memory.core.recall import (
         RecallCandidate,
@@ -7191,6 +7192,161 @@ class SQLiteHumanMemoryBackend:
         except (AttributeError, KeyError, TypeError, ValueError, sqlite3.Error) as exc:
             raise MemoryCorruptionError("stored mutation receipt verification failed") from exc
         return receipt
+
+    async def get_memory_mutation_receipt_view(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        receipt_ref: MemoryMutationApplyReceiptRef,
+    ) -> MemoryMutationReceiptView:
+        """Return a bounded, principal-scoped view of one committed receipt."""
+
+        from simple_harness.runtime import (
+            MemoryMutationApplyReceipt,
+            MemoryMutationApplyReceiptRef,
+        )
+
+        from simple_harness_memory.core.identity import MemoryPrincipal
+        from simple_harness_memory.core.mutation_receipts import (
+            MemoryMutationCommittedOperationView,
+            MemoryMutationReceiptView,
+        )
+
+        if type(principal) is not MemoryPrincipal:
+            raise TypeError("principal must use MemoryPrincipal")
+        if type(receipt_ref) is not MemoryMutationApplyReceiptRef:
+            raise TypeError("receipt_ref must use MemoryMutationApplyReceiptRef")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v7 backend is not initialized")
+        assert isinstance(principal, MemoryPrincipal)
+        assert isinstance(receipt_ref, MemoryMutationApplyReceiptRef)
+        async with self._write_lock:
+            async with self._db.execute(
+                "SELECT r.*,p.deployment_id,p.household_id,p.actor_id "
+                "FROM memory_mutation_receipts r JOIN principals p "
+                "ON p.principal_id=r.principal_id WHERE r.receipt_id=? "
+                "AND r.principal_id=?",
+                (receipt_ref.receipt_id, principal.actor_id),
+            ) as cursor:
+                receipt_row = await cursor.fetchone()
+            if receipt_row is None:
+                raise MemoryValidationError("mutation_receipt_not_found")
+            if str(receipt_row["receipt_hash"]) != receipt_ref.receipt_hash:
+                raise MemoryValidationError("mutation_receipt_ref_hash_mismatch")
+            if (
+                str(receipt_row["deployment_id"]) != principal.deployment_id
+                or str(receipt_row["household_id"]) != principal.household_id
+                or str(receipt_row["actor_id"]) != principal.actor_id
+            ):
+                raise MemoryOwnershipConflict("mutation_receipt_not_owned")
+            try:
+                receipt_payload = json.loads(str(receipt_row["receipt_json"]))
+                receipt = MemoryMutationApplyReceipt.from_json(receipt_payload)
+                operation_ids = json.loads(
+                    str(receipt_row["canonical_operation_ids_json"])
+                )
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise MemoryCorruptionError("mutation receipt view is invalid") from exc
+            if (
+                canonical_json(receipt_payload) != str(receipt_row["receipt_json"])
+                or receipt.receipt_id != receipt_ref.receipt_id
+                or receipt.receipt_hash != receipt_ref.receipt_hash
+                or receipt.receipt_hash != str(receipt_row["receipt_hash"])
+                or receipt.plan_id != str(receipt_row["plan_id"])
+                or receipt.plan_hash != str(receipt_row["plan_hash"])
+                or operation_ids != list(receipt.canonical_operation_ids)
+            ):
+                raise MemoryCorruptionError("mutation receipt view differs")
+            operations: list[MemoryMutationCommittedOperationView] = []
+            for operation_id in receipt.canonical_operation_ids:
+                async with self._db.execute(
+                    "SELECT * FROM memory_mutation_decisions WHERE receipt_id=? "
+                    "AND operation_id=?",
+                    (receipt.receipt_id, operation_id),
+                ) as cursor:
+                    decision = await cursor.fetchone()
+                if decision is None or decision["after_ref"] is None:
+                    raise MemoryCorruptionError("mutation receipt decision is missing")
+                after_ref = str(decision["after_ref"])
+                try:
+                    memory_id, raw_revision = after_ref.rsplit("@", 1)
+                    revision = int(raw_revision)
+                    decision_payload = json.loads(str(decision["decision_json"]))
+                except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                    raise MemoryCorruptionError("mutation receipt decision is invalid") from exc
+                if not isinstance(decision_payload, dict):
+                    raise MemoryCorruptionError("mutation receipt decision differs")
+                decision_hash = hashlib.sha256(
+                    canonical_json(decision_payload).encode("utf-8")
+                ).hexdigest()
+                if (
+                    canonical_json(decision_payload) != str(decision["decision_json"])
+                    or decision_hash != str(decision["decision_hash"])
+                    or decision_payload.get("operation_id") != operation_id
+                    or decision_payload.get("after_ref") != after_ref
+                ):
+                    raise MemoryCorruptionError("mutation receipt decision differs")
+                async with self._db.execute(
+                    "SELECT h.principal_id,h.deployment_id,h.household_id,h.memory_type,"
+                    "r.content_json,r.content_hash,r.effective_privacy_class,"
+                    "r.epistemic_status FROM cognitive_memory_heads h "
+                    "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
+                    "AND r.revision=? WHERE h.memory_id=?",
+                    (revision, memory_id),
+                ) as cursor:
+                    revision_row = await cursor.fetchone()
+                if revision_row is None or (
+                    str(revision_row["principal_id"]) != principal.actor_id
+                    or str(revision_row["deployment_id"]) != principal.deployment_id
+                    or str(revision_row["household_id"]) != principal.household_id
+                ):
+                    raise MemoryCorruptionError("mutation receipt operation differs")
+                try:
+                    content = json.loads(str(revision_row["content_json"]))
+                except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                    raise MemoryCorruptionError("mutation receipt content is invalid") from exc
+                content_json = canonical_json(content)
+                if (
+                    not isinstance(content, dict)
+                    or content_json != str(revision_row["content_json"])
+                    or hashlib.sha256(content_json.encode("utf-8")).hexdigest()
+                    != str(revision_row["content_hash"])
+                ):
+                    raise MemoryCorruptionError("mutation receipt content differs")
+                async with self._db.execute(
+                    "SELECT DISTINCT evidence_id FROM cognitive_evidence_spans "
+                    "WHERE memory_id=? AND revision=? ORDER BY evidence_id",
+                    (memory_id, revision),
+                ) as cursor:
+                    evidence_rows = tuple(await cursor.fetchall())
+                operations.append(
+                    MemoryMutationCommittedOperationView(
+                        operation_id=operation_id,
+                        memory_id=memory_id,
+                        revision=revision,
+                        memory_type=str(revision_row["memory_type"]),
+                        semantic_kind=(
+                            str(content["semantic_kind"])
+                            if isinstance(content.get("semantic_kind"), str)
+                            else None
+                        ),
+                        content_hash=str(revision_row["content_hash"]),
+                        effective_privacy_class=str(
+                            revision_row["effective_privacy_class"]
+                        ),
+                        epistemic_status=str(revision_row["epistemic_status"]),
+                        evidence_ids=tuple(str(item[0]) for item in evidence_rows),
+                        decision_hash=decision_hash,
+                    )
+                )
+            return MemoryMutationReceiptView(
+                receipt_id=receipt.receipt_id,
+                receipt_hash=receipt.receipt_hash,
+                plan_id=receipt.plan_id,
+                plan_hash=receipt.plan_hash,
+                apply_mode=receipt.apply_mode.value,
+                operations=tuple(operations),
+            )
 
     async def _read_mutation_receipt_by_idempotency_unlocked(
         self, principal_id: str, idempotency_key: str
