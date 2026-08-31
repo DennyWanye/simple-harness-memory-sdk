@@ -11,12 +11,22 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from simple_harness_memory.config import MemoryResourceBounds
+from simple_harness_memory.core.audit import (
+    AuditAccessAuthorityPort,
+    AuditAccessAuthorityRefV1,
+    AuditAggregateMetricsV1,
+    AuditTraceCursor,
+    AuditTracePage,
+    AuditTraceQuery,
+    CanonicalStateManifestAccessV1,
+)
 from simple_harness_memory.core.errors import (
     HarnessIntegrationExtraRequired,
     MemoryIdempotencyConflict,
     MemoryOwnershipConflict,
     MemoryProductionConfigurationError,
 )
+from simple_harness_memory.core.evidence import EvidenceIngestionReceipt
 from simple_harness_memory.core.identity import (
     ExportPage,
     MemoryPrincipal,
@@ -25,8 +35,15 @@ from simple_harness_memory.core.identity import (
     ScopeKind,
 )
 from simple_harness_memory.core.models import Fact
+from simple_harness_memory.core.mutations import InformationClassificationPolicy
 from simple_harness_memory.core.observability import CorrelationInput, MemoryObservability
-from simple_harness_memory.core.port import MemoryBackend
+from simple_harness_memory.core.port import CognitiveMemoryBackend, MemoryBackend
+from simple_harness_memory.core.suppression import (
+    SealedAuditAccessReceipt,
+    SuppressionDecision,
+    SuppressionRequest,
+    SuppressionRevokeRequest,
+)
 from simple_harness_memory.world.port import WorldModelPort
 
 if TYPE_CHECKING:
@@ -34,6 +51,8 @@ if TYPE_CHECKING:
         CommittedTurn,
         CommittedTurnReceipt,
         DisclosureContext,
+        MemoryMutationApplyResult,
+        MemoryMutationPlan,
         MemoryRecallRequest,
         MemoryRecallResult,
         MemoryReleaseRequest,
@@ -43,6 +62,8 @@ if TYPE_CHECKING:
         RecallPlan,
         RecallResultPageRequestV1,
         RecallResultPageV1,
+        SanitizedEvidenceEnvelope,
+        SanitizedEvidenceReceipt,
     )
 
     from simple_harness_memory.cognitive.twin_builder import TwinGraphView
@@ -78,14 +99,14 @@ class _NullWorldModel(WorldModelPort):
 class MemoryManager:
     def __init__(
         self,
-        backend: MemoryBackend,
+        backend: MemoryBackend | CognitiveMemoryBackend,
         world: WorldModelPort,
         *,
         observability_sink=None,
         correlation: CorrelationInput = None,
         observability: MemoryObservability | None = None,
     ) -> None:
-        self._backend = backend
+        self._backend: Any = backend
         self.world = world
         self._closed = False
         inherited = getattr(backend, "observability", None)
@@ -99,8 +120,96 @@ class MemoryManager:
             setter(self._observability)
 
     @property
-    def backend(self) -> MemoryBackend:
+    def backend(self) -> MemoryBackend | CognitiveMemoryBackend:
         return self._backend
+
+    async def ingest_committed_evidence(
+        self,
+        envelope: SanitizedEvidenceEnvelope,
+        receipt: SanitizedEvidenceReceipt,
+    ) -> EvidenceIngestionReceipt:
+        return await self._backend.ingest_committed_evidence(envelope, receipt)
+
+    async def register_conversation_evidence(self, reference: object) -> object:
+        return await self._backend.register_conversation_evidence(reference)
+
+    async def apply_memory_mutation_plan(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        scope: MemoryScope,
+        plan: MemoryMutationPlan,
+    ) -> MemoryMutationApplyResult:
+        return await self._backend.apply_memory_mutation_plan(
+            principal=principal, scope=scope, plan=plan
+        )
+
+    async def suppress(
+        self, *, principal: MemoryPrincipal, request: SuppressionRequest
+    ) -> SuppressionDecision:
+        return await self._backend.suppress(request, principal=principal)
+
+    async def revoke_suppression(
+        self, *, principal: MemoryPrincipal, request: SuppressionRevokeRequest
+    ) -> SuppressionDecision:
+        return await self._backend.revoke_suppression(request, principal=principal)
+
+    async def authorize_audit_access(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        authority_ref: AuditAccessAuthorityRefV1,
+    ) -> SealedAuditAccessReceipt:
+        return await self._backend.authorize_audit_access(
+            principal=principal, authority_ref=authority_ref
+        )
+
+    async def export_audit_trace(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        query: AuditTraceQuery,
+        limit: int = 20,
+        cursor: AuditTraceCursor | None = None,
+    ) -> AuditTracePage:
+        return await self._backend.export_audit_trace(
+            query, principal=principal, limit=limit, cursor=cursor
+        )
+
+    async def export_sealed_audit_trace(
+        self,
+        *,
+        requester: MemoryPrincipal,
+        query: AuditTraceQuery,
+        access_receipt: SealedAuditAccessReceipt,
+        limit: int = 20,
+        cursor: AuditTraceCursor | None = None,
+    ) -> AuditTracePage:
+        return await self._backend.export_sealed_audit_trace(
+            query,
+            access_receipt,
+            principal=requester,
+            limit=limit,
+            cursor=cursor,
+        )
+
+    async def get_audit_aggregate_metrics(
+        self, *, principal: MemoryPrincipal
+    ) -> AuditAggregateMetricsV1:
+        return await self._backend.get_audit_aggregate_metrics(principal=principal)
+
+    async def export_canonical_state_manifest(
+        self,
+        *,
+        requester: MemoryPrincipal,
+        target_principal: MemoryPrincipal,
+        access_receipt: SealedAuditAccessReceipt,
+    ) -> CanonicalStateManifestAccessV1:
+        return await self._backend.export_canonical_state_manifest(
+            requester=requester,
+            target_principal=target_principal,
+            access_receipt=access_receipt,
+        )
 
     async def recall_short_horizon(
         self,
@@ -235,6 +344,41 @@ class MemoryManager:
             world=world_model,
             observability=observer,
         )
+
+    @classmethod
+    async def build_human_memory_v6(
+        cls,
+        db_path: str | Path,
+        *,
+        analysis_delivery_authority: object | None = None,
+        evidence_authority: object | None = None,
+        conversation_evidence_authority: object | None = None,
+        classification_policy: InformationClassificationPolicy | None = None,
+        memory_action_authority: object | None = None,
+        procedure_observation_authority: object | None = None,
+        prospective_signal_authority: object | None = None,
+        audit_access_authority: AuditAccessAuthorityPort | None = None,
+        short_horizon_embedder: Any | None = None,
+        world: WorldModelPort | None = None,
+    ) -> MemoryManager:
+        """Build the fresh-only v6 backend behind the complete public facade."""
+
+        from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
+
+        backend = SQLiteHumanMemoryBackend(
+            db_path,
+            analysis_delivery_authority=analysis_delivery_authority,
+            evidence_authority=evidence_authority,
+            conversation_evidence_authority=conversation_evidence_authority,
+            classification_policy=classification_policy,
+            memory_action_authority=memory_action_authority,
+            procedure_observation_authority=procedure_observation_authority,
+            prospective_signal_authority=prospective_signal_authority,
+            audit_access_authority=audit_access_authority,
+            short_horizon_embedder=short_horizon_embedder,
+        )
+        await backend.initialize()
+        return cls(backend, world or _NullWorldModel())
 
     @classmethod
     async def build_development(
@@ -954,3 +1098,11 @@ class MemoryManager:
 
     async def __aexit__(self, *exc):
         await self.close()
+
+
+async def build_human_memory_v6(
+    db_path: str | Path, **kwargs: Any
+) -> MemoryManager:
+    """Public production-consistent constructor for the fresh v6 backend."""
+
+    return await MemoryManager.build_human_memory_v6(db_path, **kwargs)

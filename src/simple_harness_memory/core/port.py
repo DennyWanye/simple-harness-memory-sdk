@@ -24,6 +24,15 @@ if TYPE_CHECKING:
     )
 
 from simple_harness_memory.cognitive.twin_builder import TwinGraphView
+from simple_harness_memory.core.audit import (
+    AuditAccessAuthorityRefV1,
+    AuditAggregateMetricsV1,
+    AuditTraceCursor,
+    AuditTracePage,
+    AuditTraceQuery,
+    CanonicalStateManifestAccessV1,
+)
+from simple_harness_memory.core.evidence import EvidenceIngestionReceipt
 from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
 from simple_harness_memory.core.lifecycle_results import (
     ProcedureObservationApplyResult,
@@ -42,6 +51,12 @@ from simple_harness_memory.core.short_horizon import (
     ShortHorizonGenerationBuildResult,
     ShortHorizonProjectionBuildResult,
     ShortHorizonRecallResult,
+)
+from simple_harness_memory.core.suppression import (
+    SealedAuditAccessReceipt,
+    SuppressionDecision,
+    SuppressionRequest,
+    SuppressionRevokeRequest,
 )
 from simple_harness_memory.core.twin import DigitalTwin
 
@@ -291,6 +306,26 @@ class CognitiveMemoryBackend(Protocol):
         plan: MemoryMutationPlan,
     ) -> MemoryMutationApplyResult: ...
 
+    async def ingest_committed_evidence(
+        self, envelope: object, receipt: object
+    ) -> EvidenceIngestionReceipt: ...
+
+    async def register_conversation_evidence(self, reference: object) -> object: ...
+
+    async def suppress(
+        self,
+        request: SuppressionRequest,
+        *,
+        principal: MemoryPrincipal | None = None,
+    ) -> SuppressionDecision: ...
+
+    async def revoke_suppression(
+        self,
+        request: SuppressionRevokeRequest,
+        *,
+        principal: MemoryPrincipal | None = None,
+    ) -> SuppressionDecision: ...
+
     async def record_procedure_observation(
         self,
         *,
@@ -357,3 +392,41 @@ class CognitiveMemoryBackend(Protocol):
     async def get_twin_graph_view(
         self, *, principal: MemoryPrincipal
     ) -> TwinGraphView: ...
+
+    async def authorize_audit_access(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        authority_ref: AuditAccessAuthorityRefV1,
+    ) -> SealedAuditAccessReceipt: ...
+
+    async def export_audit_trace(
+        self,
+        query: AuditTraceQuery,
+        *,
+        principal: MemoryPrincipal | None = None,
+        limit: int = 20,
+        cursor: AuditTraceCursor | None = None,
+    ) -> AuditTracePage: ...
+
+    async def export_sealed_audit_trace(
+        self,
+        query: AuditTraceQuery,
+        access_receipt: SealedAuditAccessReceipt,
+        *,
+        principal: MemoryPrincipal | None = None,
+        limit: int = 20,
+        cursor: AuditTraceCursor | None = None,
+    ) -> AuditTracePage: ...
+
+    async def get_audit_aggregate_metrics(
+        self, *, principal: MemoryPrincipal
+    ) -> AuditAggregateMetricsV1: ...
+
+    async def export_canonical_state_manifest(
+        self,
+        *,
+        requester: MemoryPrincipal,
+        target_principal: MemoryPrincipal,
+        access_receipt: SealedAuditAccessReceipt,
+    ) -> CanonicalStateManifestAccessV1: ...

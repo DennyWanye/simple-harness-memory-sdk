@@ -12,6 +12,20 @@
 from typing import TYPE_CHECKING
 
 from simple_harness_memory.config import MemoryResourceBounds
+from simple_harness_memory.core.audit import (
+    AuditAccessAuthorityPort,
+    AuditAccessAuthorityRefV1,
+    AuditAggregateMetricsV1,
+    AuditTraceCursor,
+    AuditTraceItem,
+    AuditTraceLineageRef,
+    AuditTracePage,
+    AuditTraceQuery,
+    AuditTraceSelector,
+    CanonicalStateManifestAccessV1,
+    CanonicalStateManifestV1,
+    CanonicalStateTableRootV1,
+)
 from simple_harness_memory.core.errors import (
     MemoryIdempotencyConflict,
     MemoryOwnershipConflict,
@@ -29,7 +43,7 @@ from simple_harness_memory.core.lifecycle_results import (
     ProcedureObservationApplyResult,
     ProspectiveSignalApplyResult,
 )
-from simple_harness_memory.core.manager import MemoryManager
+from simple_harness_memory.core.manager import MemoryManager, build_human_memory_v6
 from simple_harness_memory.core.models import (
     BoundedRecallResult,
     Fact,
@@ -45,6 +59,11 @@ from simple_harness_memory.core.short_horizon import (
     ShortHorizonProjectionBuildResult,
     ShortHorizonRecallHit,
     ShortHorizonRecallResult,
+)
+from simple_harness_memory.core.suppression import (
+    SealedAuditAccessDecision,
+    SealedAuditAccessDenied,
+    SealedAuditAccessReceipt,
 )
 from simple_harness_memory.core.twin import DigitalTwin
 from simple_harness_memory.world.port import WorldModelPort
@@ -71,6 +90,22 @@ def __getattr__(name: str) -> object:
 
 __all__ = [
     "MemoryManager",
+    "build_human_memory_v6",
+    "AuditAccessAuthorityPort",
+    "AuditAccessAuthorityRefV1",
+    "AuditAggregateMetricsV1",
+    "AuditTraceCursor",
+    "AuditTraceItem",
+    "AuditTraceLineageRef",
+    "AuditTracePage",
+    "AuditTraceQuery",
+    "AuditTraceSelector",
+    "CanonicalStateManifestAccessV1",
+    "CanonicalStateManifestV1",
+    "CanonicalStateTableRootV1",
+    "SealedAuditAccessDecision",
+    "SealedAuditAccessDenied",
+    "SealedAuditAccessReceipt",
     "MemoryBackend",
     "CognitiveMemoryBackend",
     "TypedRecallExecution",

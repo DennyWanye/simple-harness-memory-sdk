@@ -8,7 +8,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import cast
+from typing import Protocol, cast
 
 from simple_harness.contracts import (
     FrozenJsonValue,
@@ -97,6 +97,258 @@ class AuditTraceSelector(StrEnum):
     INVOCATION = "invocation"
     DECISION = "decision"
     EVIDENCE = "evidence"
+    MEMORY = "memory"
+
+
+@dataclass(frozen=True, slots=True)
+class AuditAccessAuthorityRefV1:
+    """Opaque, replay-bound reference minted by an external audit authority."""
+
+    authority_id: str
+    issuer_ref: str
+    nonce: str
+    replay_identity: str
+    requester_deployment_id: str
+    requester_household_id: str
+    requester_actor_id: str
+    requester_session_id: str
+    target_deployment_id: str
+    target_household_id: str
+    target_actor_id: str
+    target_subject: str
+    decision_id: str
+    decision_hash: str
+    scope_kind: SuppressionScopeKind
+    scope_ref: str
+    issued_at: float
+    expires_at: float
+    schema_version: int = 1
+    ref_hash: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if self.schema_version != 1 or isinstance(self.schema_version, bool):
+            raise MemoryValidationError("audit_authority_ref_schema_unsupported")
+        for value, name in (
+            (self.authority_id, "audit_authority_id"),
+            (self.issuer_ref, "audit_authority_issuer_ref"),
+            (self.nonce, "audit_authority_nonce"),
+            (self.replay_identity, "audit_authority_replay_identity"),
+            (self.requester_deployment_id, "audit_authority_requester_deployment_id"),
+            (self.requester_household_id, "audit_authority_requester_household_id"),
+            (self.requester_actor_id, "audit_authority_requester_actor_id"),
+            (self.requester_session_id, "audit_authority_requester_session_id"),
+            (self.target_deployment_id, "audit_authority_target_deployment_id"),
+            (self.target_household_id, "audit_authority_target_household_id"),
+            (self.target_actor_id, "audit_authority_target_actor_id"),
+            (self.target_subject, "audit_authority_target_subject"),
+            (self.decision_id, "audit_authority_decision_id"),
+            (self.scope_ref, "audit_authority_scope_ref"),
+        ):
+            _identifier(value, name)
+        if self.target_actor_id != self.target_subject:
+            raise MemoryValidationError("audit_authority_target_subject_differs")
+        _digest(self.decision_hash, "audit_authority_decision_hash")
+        object.__setattr__(self, "scope_kind", SuppressionScopeKind(self.scope_kind))
+        issued_at = _timestamp(self.issued_at, "audit_authority_issued_at")
+        expires_at = _timestamp(self.expires_at, "audit_authority_expires_at")
+        if expires_at <= issued_at:
+            raise MemoryValidationError("audit_authority_expiry_invalid")
+        object.__setattr__(self, "issued_at", issued_at)
+        object.__setattr__(self, "expires_at", expires_at)
+        object.__setattr__(self, "ref_hash", _hash(self.to_json()))
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "schema_version": self.schema_version,
+            "authority_id": self.authority_id,
+            "issuer_ref": self.issuer_ref,
+            "nonce": self.nonce,
+            "replay_identity": self.replay_identity,
+            "requester_deployment_id": self.requester_deployment_id,
+            "requester_household_id": self.requester_household_id,
+            "requester_actor_id": self.requester_actor_id,
+            "requester_session_id": self.requester_session_id,
+            "target_deployment_id": self.target_deployment_id,
+            "target_household_id": self.target_household_id,
+            "target_actor_id": self.target_actor_id,
+            "target_subject": self.target_subject,
+            "decision_id": self.decision_id,
+            "decision_hash": self.decision_hash,
+            "scope_kind": self.scope_kind.value,
+            "scope_ref": self.scope_ref,
+            "issued_at": self.issued_at,
+            "expires_at": self.expires_at,
+        }
+
+    @classmethod
+    def from_json(cls, value: Mapping[str, JsonValue]) -> AuditAccessAuthorityRefV1:
+        try:
+            return cls(
+                authority_id=cast(str, value["authority_id"]),
+                issuer_ref=cast(str, value["issuer_ref"]),
+                nonce=cast(str, value["nonce"]),
+                replay_identity=cast(str, value["replay_identity"]),
+                requester_deployment_id=cast(str, value["requester_deployment_id"]),
+                requester_household_id=cast(str, value["requester_household_id"]),
+                requester_actor_id=cast(str, value["requester_actor_id"]),
+                requester_session_id=cast(str, value["requester_session_id"]),
+                target_deployment_id=cast(str, value["target_deployment_id"]),
+                target_household_id=cast(str, value["target_household_id"]),
+                target_actor_id=cast(str, value["target_actor_id"]),
+                target_subject=cast(str, value["target_subject"]),
+                decision_id=cast(str, value["decision_id"]),
+                decision_hash=cast(str, value["decision_hash"]),
+                scope_kind=SuppressionScopeKind(cast(str, value["scope_kind"])),
+                scope_ref=cast(str, value["scope_ref"]),
+                issued_at=cast(float, value["issued_at"]),
+                expires_at=cast(float, value["expires_at"]),
+                schema_version=cast(int, value.get("schema_version", 0)),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise MemoryValidationError("audit_authority_ref_invalid") from exc
+
+
+class AuditAccessAuthorityPort(Protocol):
+    async def resolve_audit_access(
+        self, reference: AuditAccessAuthorityRefV1
+    ) -> object: ...
+
+
+@dataclass(frozen=True, slots=True)
+class AuditAggregateMetricsV1:
+    """Fixed-schema aggregate over ordinary-visible trace rows only."""
+
+    principal_ref_hash: str
+    visible_invocations: int
+    accepted_decisions: int
+    rejected_decisions: int
+    rejected_unsafe_outputs: int
+    input_tokens: int
+    output_tokens: int
+    cost_microunits: int
+    latency_ms: int
+    schema_version: int = 1
+    payload_hash: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if self.schema_version != 1 or isinstance(self.schema_version, bool):
+            raise MemoryValidationError("audit_metrics_schema_unsupported")
+        _digest(self.principal_ref_hash, "audit_metrics_principal_ref_hash")
+        for name in (
+            "visible_invocations",
+            "accepted_decisions",
+            "rejected_decisions",
+            "rejected_unsafe_outputs",
+            "input_tokens",
+            "output_tokens",
+            "cost_microunits",
+            "latency_ms",
+        ):
+            _non_negative_int(getattr(self, name), name)
+        object.__setattr__(self, "payload_hash", _hash(self.to_json()))
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "schema_version": self.schema_version,
+            "principal_ref_hash": self.principal_ref_hash,
+            "visible_invocations": self.visible_invocations,
+            "accepted_decisions": self.accepted_decisions,
+            "rejected_decisions": self.rejected_decisions,
+            "rejected_unsafe_outputs": self.rejected_unsafe_outputs,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cost_microunits": self.cost_microunits,
+            "latency_ms": self.latency_ms,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class CanonicalStateTableRootV1:
+    category: str
+    table_name: str
+    row_count: int
+    root_hash: str
+    first_leaf_hash: str | None
+    last_leaf_hash: str | None
+
+    def __post_init__(self) -> None:
+        _reason(self.category, "manifest_category")
+        _reason(self.table_name, "manifest_table_name")
+        _non_negative_int(self.row_count, "manifest_row_count")
+        _digest(self.root_hash, "manifest_root_hash")
+        if self.row_count == 0:
+            if self.first_leaf_hash is not None or self.last_leaf_hash is not None:
+                raise MemoryValidationError("manifest_empty_canary_invalid")
+        else:
+            _digest(self.first_leaf_hash, "manifest_first_leaf_hash")
+            _digest(self.last_leaf_hash, "manifest_last_leaf_hash")
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "category": self.category,
+            "table_name": self.table_name,
+            "row_count": self.row_count,
+            "root_hash": self.root_hash,
+            "first_leaf_hash": self.first_leaf_hash,
+            "last_leaf_hash": self.last_leaf_hash,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class CanonicalStateManifestV1:
+    storage_schema_version: int
+    schema_checksum: str
+    initialization_receipt_hash: str
+    principal_ref_hash: str
+    table_roots: tuple[CanonicalStateTableRootV1, ...]
+    total_row_count: int
+    schema_version: int = 1
+    payload_hash: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if self.schema_version != 1 or isinstance(self.schema_version, bool):
+            raise MemoryValidationError("state_manifest_schema_unsupported")
+        if self.storage_schema_version != 6:
+            raise MemoryValidationError("state_manifest_storage_schema_unsupported")
+        for value, name in (
+            (self.schema_checksum, "state_manifest_schema_checksum"),
+            (self.initialization_receipt_hash, "state_manifest_initialization_receipt_hash"),
+            (self.principal_ref_hash, "state_manifest_principal_ref_hash"),
+        ):
+            _digest(value, name)
+        roots = tuple(self.table_roots)
+        if not roots or not all(isinstance(item, CanonicalStateTableRootV1) for item in roots):
+            raise MemoryValidationError("state_manifest_roots_invalid")
+        if tuple((item.category, item.table_name) for item in roots) != tuple(
+            sorted((item.category, item.table_name) for item in roots)
+        ):
+            raise MemoryValidationError("state_manifest_roots_not_canonical")
+        if sum(item.row_count for item in roots) != self.total_row_count:
+            raise MemoryValidationError("state_manifest_count_differs")
+        object.__setattr__(self, "table_roots", roots)
+        object.__setattr__(self, "payload_hash", _hash(self.to_json()))
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "schema_version": self.schema_version,
+            "storage_schema_version": self.storage_schema_version,
+            "schema_checksum": self.schema_checksum,
+            "initialization_receipt_hash": self.initialization_receipt_hash,
+            "principal_ref_hash": self.principal_ref_hash,
+            "table_roots": [item.to_json() for item in self.table_roots],
+            "total_row_count": self.total_row_count,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class CanonicalStateManifestAccessV1:
+    manifest: CanonicalStateManifestV1
+    access_event_hash: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.manifest, CanonicalStateManifestV1):
+            raise TypeError("manifest must use CanonicalStateManifestV1")
+        _digest(self.access_event_hash, "manifest_access_event_hash")
 
 
 def _hash(value: JsonValue) -> str:
@@ -528,9 +780,23 @@ class AuditTraceCursor:
 
 
 @dataclass(frozen=True, slots=True)
+class AuditTraceLineageRef:
+    kind: str
+    ref_hash: str
+
+    def __post_init__(self) -> None:
+        _reason(self.kind, "audit_lineage_kind")
+        _digest(self.ref_hash, "audit_lineage_ref_hash")
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {"kind": self.kind, "ref_hash": self.ref_hash}
+
+
+@dataclass(frozen=True, slots=True)
 class AuditTraceItem:
     invocation: LLMInvocationAuditRecord
     decisions: tuple[DecisionLedgerEntry, ...]
+    lineage_refs: tuple[AuditTraceLineageRef, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.invocation, LLMInvocationAuditRecord):
@@ -538,12 +804,19 @@ class AuditTraceItem:
         decisions = tuple(self.decisions)
         if not all(isinstance(item, DecisionLedgerEntry) for item in decisions):
             raise TypeError("decisions must use DecisionLedgerEntry")
+        lineage = tuple(self.lineage_refs)
+        if not all(isinstance(item, AuditTraceLineageRef) for item in lineage):
+            raise TypeError("lineage_refs must use AuditTraceLineageRef")
+        if lineage != tuple(sorted(lineage, key=lambda item: (item.kind, item.ref_hash))):
+            raise MemoryValidationError("audit_lineage_not_canonical")
         object.__setattr__(self, "decisions", decisions)
+        object.__setattr__(self, "lineage_refs", lineage)
 
     def to_json(self) -> dict[str, JsonValue]:
         return {
             "invocation": self.invocation.to_json(),
             "decisions": [item.to_json() for item in self.decisions],
+            "lineage_refs": [item.to_json() for item in self.lineage_refs],
         }
 
 
@@ -570,11 +843,18 @@ class AuditTracePage:
 
 
 __all__ = (
+    "AuditAccessAuthorityPort",
+    "AuditAccessAuthorityRefV1",
+    "AuditAggregateMetricsV1",
     "AuditTraceCursor",
     "AuditTraceItem",
+    "AuditTraceLineageRef",
     "AuditTracePage",
     "AuditTraceQuery",
     "AuditTraceSelector",
+    "CanonicalStateManifestV1",
+    "CanonicalStateManifestAccessV1",
+    "CanonicalStateTableRootV1",
     "DecisionLedgerEntry",
     "DecisionOutcome",
     "LLMInvocationAuditRecord",

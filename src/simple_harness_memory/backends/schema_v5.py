@@ -148,10 +148,18 @@ CREATE TABLE sealed_audit_access_receipts (
     reason_code TEXT NOT NULL,
     disclosure_context_json BLOB NOT NULL,
     decision_hash TEXT NOT NULL UNIQUE,
+    authority_ref_json BLOB NOT NULL,
+    authority_ref_hash TEXT NOT NULL UNIQUE,
+    authority_id TEXT NOT NULL,
+    issuer_ref TEXT NOT NULL,
+    nonce TEXT NOT NULL,
+    replay_identity TEXT NOT NULL UNIQUE,
+    consumption_hash TEXT NOT NULL UNIQUE,
     max_reads INTEGER NOT NULL CHECK (max_reads >= 1 AND max_reads <= 32),
     issued_at REAL NOT NULL CHECK (issued_at >= 0),
     expires_at REAL NOT NULL CHECK (expires_at > issued_at),
-    receipt_hash TEXT NOT NULL UNIQUE
+    receipt_hash TEXT NOT NULL UNIQUE,
+    UNIQUE (issuer_ref, nonce)
 );
 CREATE TRIGGER sealed_audit_access_receipts_immutable_update
 BEFORE UPDATE ON sealed_audit_access_receipts
@@ -159,6 +167,38 @@ BEGIN SELECT RAISE(ABORT, 'immutable audit access'); END;
 CREATE TRIGGER sealed_audit_access_receipts_immutable_delete
 BEFORE DELETE ON sealed_audit_access_receipts
 BEGIN SELECT RAISE(ABORT, 'immutable audit access'); END;
+CREATE TABLE audit_access_authority_events (
+    event_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL,
+    authority_ref_hash TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('granted', 'denied')),
+    reason_code TEXT NOT NULL,
+    occurred_at REAL NOT NULL CHECK (occurred_at >= 0),
+    event_hash TEXT NOT NULL UNIQUE
+);
+CREATE INDEX audit_access_authority_event_lookup
+    ON audit_access_authority_events(principal_id, occurred_at, event_id);
+CREATE TRIGGER audit_access_authority_events_immutable_update
+BEFORE UPDATE ON audit_access_authority_events
+BEGIN SELECT RAISE(ABORT, 'immutable audit authority event'); END;
+CREATE TRIGGER audit_access_authority_events_immutable_delete
+BEFORE DELETE ON audit_access_authority_events
+BEGIN SELECT RAISE(ABORT, 'immutable audit authority event'); END;
+CREATE TABLE canonical_manifest_access_events (
+    event_id TEXT PRIMARY KEY,
+    access_receipt_id TEXT NOT NULL REFERENCES sealed_audit_access_receipts(access_receipt_id),
+    manifest_payload_hash TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('granted', 'denied')),
+    reason_code TEXT NOT NULL,
+    occurred_at REAL NOT NULL CHECK (occurred_at >= 0),
+    event_hash TEXT NOT NULL UNIQUE
+);
+CREATE TRIGGER canonical_manifest_access_events_immutable_update
+BEFORE UPDATE ON canonical_manifest_access_events
+BEGIN SELECT RAISE(ABORT, 'immutable canonical manifest access'); END;
+CREATE TRIGGER canonical_manifest_access_events_immutable_delete
+BEFORE DELETE ON canonical_manifest_access_events
+BEGIN SELECT RAISE(ABORT, 'immutable canonical manifest access'); END;
 CREATE TABLE sealed_audit_access_events (
     event_id TEXT PRIMARY KEY,
     access_receipt_id TEXT NOT NULL,
@@ -271,6 +311,8 @@ CREATE TABLE decision_records (
     UNIQUE (invocation_id, operation_id)
 );
 CREATE INDEX decision_trace_lookup ON decision_records(invocation_id, decision_id);
+CREATE INDEX decision_memory_trace_lookup
+    ON decision_records(principal_id, target_kind, target_ref, invocation_id);
 CREATE TRIGGER decision_records_immutable_update
 BEFORE UPDATE ON decision_records BEGIN SELECT RAISE(ABORT, 'immutable audit'); END;
 CREATE TRIGGER decision_records_immutable_delete
@@ -519,6 +561,8 @@ CREATE TABLE cognitive_memory_revisions (
 );
 CREATE INDEX cognitive_memory_revision_lookup
     ON cognitive_memory_revisions(memory_id, revision, lifecycle_state);
+CREATE INDEX cognitive_memory_plan_trace_lookup
+    ON cognitive_memory_revisions(principal_id, plan_hash, memory_id);
 CREATE TRIGGER cognitive_memory_revisions_immutable_update
 BEFORE UPDATE ON cognitive_memory_revisions
 BEGIN SELECT RAISE(ABORT, 'immutable cognitive revision'); END;
@@ -1724,6 +1768,8 @@ REQUIRED_TABLES = frozenset(
         "suppression_directives",
         "suppression_targets",
         "sealed_audit_access_receipts",
+        "audit_access_authority_events",
+        "canonical_manifest_access_events",
         "sealed_audit_access_events",
         "llm_invocations",
         "llm_invocation_evidence_refs",

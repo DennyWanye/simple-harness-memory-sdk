@@ -42,7 +42,9 @@ from simple_harness_memory.core.suppression import (
 from tests.integration.test_suppression_v5 import (
     _audit_disclosure,
     _authority,
+    _authorize_audit,
     _disclosure,
+    _SealedAccessAuthority,
 )
 
 
@@ -626,7 +628,12 @@ async def test_suppression_blocks_ordinary_trace_but_sealed_receipt_is_limited_a
     tmp_path: Path,
 ) -> None:
     clock = [120.0]
-    backend = _audit_backend(tmp_path / "sealed-trace.db", now=lambda: clock[0])
+    access_authority = _SealedAccessAuthority()
+    backend = _audit_backend(
+        tmp_path / "sealed-trace.db",
+        now=lambda: clock[0],
+        audit_access_authority=access_authority,
+    )
     await backend.initialize()
     evidence_ref = await _ingest(backend, "evidence-1")
     request, result, delivery, validation_receipt = _analysis_authority(evidence_ref, 1)
@@ -659,7 +666,9 @@ async def test_suppression_blocks_ordinary_trace_but_sealed_receipt_is_limited_a
         )
     ).items == ()
 
-    access = await backend.issue_sealed_audit_access(
+    access = await _authorize_audit(
+        backend,
+        access_authority,
         SealedAuditAccessDecision(
             "trace-access-1",
             "actor-1",
@@ -689,7 +698,12 @@ async def test_suppression_blocks_ordinary_trace_but_sealed_receipt_is_limited_a
 @pytest.mark.asyncio
 async def test_sealed_audit_time_bounds_fail_closed_at_issue_and_use(tmp_path: Path) -> None:
     clock = [120.0]
-    backend = _audit_backend(tmp_path / "sealed-time.db", now=lambda: clock[0])
+    access_authority = _SealedAccessAuthority()
+    backend = _audit_backend(
+        tmp_path / "sealed-time.db",
+        now=lambda: clock[0],
+        audit_access_authority=access_authority,
+    )
     await backend.initialize()
     await _ingest(backend, "evidence-1")
     for decision_id, issued_at, expires_at, reason in (
@@ -697,7 +711,9 @@ async def test_sealed_audit_time_bounds_fail_closed_at_issue_and_use(tmp_path: P
         ("expired-access", 100.0, 120.0, "decision_expired"),
     ):
         with pytest.raises(SealedAuditAccessDenied, match=reason):
-            await backend.issue_sealed_audit_access(
+            await _authorize_audit(
+                backend,
+                access_authority,
                 SealedAuditAccessDecision(
                     decision_id,
                     "actor-1",
@@ -716,7 +732,9 @@ async def test_sealed_audit_time_bounds_fail_closed_at_issue_and_use(tmp_path: P
         row = await cursor.fetchone()
     assert row is not None and int(row[0]) == 0
 
-    receipt = await backend.issue_sealed_audit_access(
+    receipt = await _authorize_audit(
+        backend,
+        access_authority,
         SealedAuditAccessDecision(
             "valid-access",
             "actor-1",

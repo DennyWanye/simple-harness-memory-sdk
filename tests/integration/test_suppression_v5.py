@@ -27,7 +27,9 @@ from simple_harness_memory.backends.sqlite_v5 import (
     SUPPRESSION_FAULT_POINTS,
     SQLiteHumanMemoryBackend,
 )
+from simple_harness_memory.core.audit import AuditAccessAuthorityRefV1
 from simple_harness_memory.core.errors import MemoryIdempotencyConflict, MemoryValidationError
+from simple_harness_memory.core.identity import MemoryPrincipal
 from simple_harness_memory.core.suppression import (
     OrdinaryMemoryPurpose,
     SealedAuditAccessDecision,
@@ -74,6 +76,55 @@ def _audit_disclosure(subject: str = "actor-1") -> DisclosureContext:
         DisclosureGeneration.CURRENT,
         "audit-authority-1",
         (DisclosureReasonCode.MINIMUM_NECESSARY,),
+    )
+
+
+class _SealedAccessAuthority:
+    def __init__(self) -> None:
+        self.decisions: dict[str, SealedAuditAccessDecision] = {}
+        self.ordinal = 0
+
+    async def resolve_audit_access(
+        self, reference: AuditAccessAuthorityRefV1
+    ) -> SealedAuditAccessDecision:
+        return self.decisions[reference.ref_hash]
+
+    def add(self, decision: SealedAuditAccessDecision) -> AuditAccessAuthorityRefV1:
+        self.ordinal += 1
+        reference = AuditAccessAuthorityRefV1(
+            authority_id="host-audit-authority",
+            issuer_ref="host-audit-issuer",
+            nonce=f"nonce-{self.ordinal}",
+            replay_identity=f"replay-{self.ordinal}",
+            requester_deployment_id=decision.subject,
+            requester_household_id=decision.subject,
+            requester_actor_id=decision.subject,
+            requester_session_id="session-1",
+            target_deployment_id=decision.subject,
+            target_household_id=decision.subject,
+            target_actor_id=decision.subject,
+            target_subject=decision.subject,
+            decision_id=decision.decision_id,
+            decision_hash=decision.decision_hash,
+            scope_kind=decision.scope_kind,
+            scope_ref=decision.scope_ref,
+            issued_at=decision.issued_at,
+            expires_at=decision.expires_at,
+        )
+        self.decisions[reference.ref_hash] = decision
+        return reference
+
+
+async def _authorize_audit(
+    backend: SQLiteHumanMemoryBackend,
+    authority: _SealedAccessAuthority,
+    decision: SealedAuditAccessDecision,
+) -> SealedAuditAccessReceipt:
+    return await backend.authorize_audit_access(
+        principal=MemoryPrincipal(
+            decision.subject, decision.subject, decision.subject, "session-1"
+        ),
+        authority_ref=authority.add(decision),
     )
 
 
@@ -371,7 +422,10 @@ async def test_sealed_audit_access_is_exact_limited_logged_and_not_an_ordinary_b
 ) -> None:
     clock = [40.0]
     path = tmp_path / "audit.db"
-    backend = SQLiteHumanMemoryBackend(path, now=lambda: clock[0])
+    access_authority = _SealedAccessAuthority()
+    backend = SQLiteHumanMemoryBackend(
+        path, now=lambda: clock[0], audit_access_authority=access_authority
+    )
     await backend.initialize()
     await backend.ingest_committed_evidence(*_authority("evidence-1"))
     await backend.ingest_committed_evidence(*_authority("evidence-2"))
@@ -401,11 +455,22 @@ async def test_sealed_audit_access_is_exact_limited_logged_and_not_an_ordinary_b
         35.0,
         45.0,
     )
-    receipt = await backend.issue_sealed_audit_access(decision)
-    assert await backend.issue_sealed_audit_access(decision) == receipt
+    reference = access_authority.add(decision)
+    principal = MemoryPrincipal("actor-1", "actor-1", "actor-1", "session-1")
+    receipt = await backend.authorize_audit_access(
+        principal=principal, authority_ref=reference
+    )
+    assert (
+        await backend.authorize_audit_access(
+            principal=principal, authority_ref=reference
+        )
+        == receipt
+    )
     await backend.close()
 
-    backend = SQLiteHumanMemoryBackend(path, now=lambda: clock[0])
+    backend = SQLiteHumanMemoryBackend(
+        path, now=lambda: clock[0], audit_access_authority=access_authority
+    )
     await backend.initialize()
     assert (await backend.export_sealed_evidence("evidence-1", receipt)).envelope.evidence_id == (
         "evidence-1"
@@ -426,7 +491,7 @@ async def test_sealed_audit_access_is_exact_limited_logged_and_not_an_ordinary_b
         35.0,
         45.0,
     )
-    wrong_receipt = await backend.issue_sealed_audit_access(wrong_scope)
+    wrong_receipt = await _authorize_audit(backend, access_authority, wrong_scope)
     with pytest.raises(SealedAuditAccessDenied, match="scope_differs"):
         await backend.export_sealed_evidence("evidence-1", wrong_receipt)
     async with backend.connection.execute(
@@ -448,7 +513,12 @@ async def test_sealed_audit_access_is_exact_limited_logged_and_not_an_ordinary_b
 @pytest.mark.asyncio
 async def test_expired_or_tampered_sealed_receipt_is_denied_and_logged(tmp_path: Path) -> None:
     clock = [40.0]
-    backend = SQLiteHumanMemoryBackend(tmp_path / "expired.db", now=lambda: clock[0])
+    access_authority = _SealedAccessAuthority()
+    backend = SQLiteHumanMemoryBackend(
+        tmp_path / "expired.db",
+        now=lambda: clock[0],
+        audit_access_authority=access_authority,
+    )
     await backend.initialize()
     await backend.ingest_committed_evidence(*_authority("evidence-1"))
     decision = SealedAuditAccessDecision(
@@ -462,7 +532,7 @@ async def test_expired_or_tampered_sealed_receipt_is_denied_and_logged(tmp_path:
         35.0,
         45.0,
     )
-    receipt = await backend.issue_sealed_audit_access(decision)
+    receipt = await _authorize_audit(backend, access_authority, decision)
     clock[0] = 50.0
     with pytest.raises(SealedAuditAccessDenied, match="expired"):
         await backend.export_sealed_evidence("evidence-1", receipt)

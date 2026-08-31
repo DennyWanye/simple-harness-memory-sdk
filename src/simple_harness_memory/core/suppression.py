@@ -311,6 +311,7 @@ class SealedAuditAccessDecision:
         object.__setattr__(self, "purpose", SealedAuditPurpose(self.purpose))
         if self.scope_kind not in {
             SuppressionScopeKind.EVIDENCE,
+            SuppressionScopeKind.MEMORY,
             SuppressionScopeKind.SUBJECT,
         }:
             raise MemoryValidationError("sealed_audit_scope_unsupported")
@@ -392,6 +393,7 @@ class SealedAuditAccessReceipt:
         object.__setattr__(self, "purpose", SealedAuditPurpose(self.purpose))
         if self.scope_kind not in {
             SuppressionScopeKind.EVIDENCE,
+            SuppressionScopeKind.MEMORY,
             SuppressionScopeKind.SUBJECT,
         }:
             raise MemoryValidationError("sealed_audit_scope_unsupported")
