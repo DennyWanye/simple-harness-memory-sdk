@@ -643,6 +643,24 @@ BEGIN SELECT RAISE(ABORT, 'immutable cognitive evidence'); END;
 CREATE TRIGGER cognitive_evidence_spans_immutable_delete
 BEFORE DELETE ON cognitive_evidence_spans
 BEGIN SELECT RAISE(ABORT, 'immutable cognitive evidence'); END;
+CREATE TABLE cognitive_revision_task_scope_origins (
+    memory_id TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    task_scope_id TEXT NOT NULL,
+    evidence_id TEXT NOT NULL REFERENCES evidence_envelopes(evidence_id),
+    registration_id TEXT NOT NULL REFERENCES conversation_evidence_registrations(registration_id),
+    PRIMARY KEY (memory_id, revision, registration_id),
+    FOREIGN KEY (memory_id, revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision)
+);
+CREATE INDEX cognitive_task_scope_origin_lookup
+    ON cognitive_revision_task_scope_origins(task_scope_id, memory_id, revision);
+CREATE TRIGGER cognitive_revision_task_scope_origins_immutable_update
+BEFORE UPDATE ON cognitive_revision_task_scope_origins
+BEGIN SELECT RAISE(ABORT, 'immutable cognitive task scope origin'); END;
+CREATE TRIGGER cognitive_revision_task_scope_origins_immutable_delete
+BEFORE DELETE ON cognitive_revision_task_scope_origins
+BEGIN SELECT RAISE(ABORT, 'immutable cognitive task scope origin'); END;
 CREATE TABLE cognitive_relations (
     relation_id TEXT PRIMARY KEY,
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
@@ -982,6 +1000,7 @@ REQUIRED_TABLES = frozenset(
         "procedure_records",
         "prospective_records",
         "cognitive_evidence_spans",
+        "cognitive_revision_task_scope_origins",
         "cognitive_relations",
         "memory_mutation_receipts",
         "memory_mutation_decisions",

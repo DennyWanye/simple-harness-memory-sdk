@@ -84,6 +84,18 @@ def test_evidence_span_schema_binds_every_host_authority_anchor(
     } <= _columns(connection, "cognitive_evidence_spans")
 
 
+def test_task_scope_provenance_is_bound_to_host_conversation_registration(
+    connection: sqlite3.Connection,
+) -> None:
+    assert _columns(connection, "cognitive_revision_task_scope_origins") == {
+        "memory_id",
+        "revision",
+        "task_scope_id",
+        "evidence_id",
+        "registration_id",
+    }
+
+
 def test_mutation_receipt_is_strict_atomic_not_partial(
     connection: sqlite3.Connection,
 ) -> None:
