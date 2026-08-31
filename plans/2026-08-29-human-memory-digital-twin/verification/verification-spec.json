@@ -237,11 +237,15 @@
       "impact_paths": ["src/simple_harness_memory/**", "/Users/denny/projects/simple_harness/backend/**"],
       "testcase_revisions": {"TC-HM-12": 2},
       "oracle_pins": {
-        "testcase_sha256": "cef6d9e4d28fe347e77eeb0d3c55b45117dc6f775d32446ae1fd4ea1377a8e1b",
+        "testcase_sha256": "9b8c56abf7f6df7cbb15b09a0a33ee21f7c40e78609c8be64614cc7d7c89cc9c",
         "fixture_revision": 1,
-        "fixture_sha256": "b79932d076e38dee4f97bca782444751a2c5c8f714771e1d47c99aae3c810f4b",
-        "runner_sha256": "c370d6731e9be5254591fdfba163c14a9452a63d0c44468a3ec7555c08850ed2",
-        "candidate_memory_identity_status": "PENDING_TASK6_FINAL_PIN",
+        "fixture_sha256": "02c7e7e306cdccf1cb7e7a6d792b0e7e39a9bf4161db4eeaade7a4f70deaed61",
+        "runner_sha256": "4971db29d56797b797ab2d30c9351c2ba781c5498bfb0297c0e2033aa397a1a3",
+        "candidate_memory_identity_status": "PINNED",
+        "candidate_memory_distribution": "simple-harness-memory-sdk",
+        "candidate_memory_version": "0.6.0",
+        "candidate_memory_source_commit": "8cdc103c01335849462779f1cf95e86fccb445f7",
+        "candidate_memory_wheel_sha256": "723bcbc36847f058f3f50c634f008ba12c399a3547b7bb3c2ba7eecf4d8bd182",
         "public_manager_seed_contract_status": "PENDING_TASK6_PUBLIC_SEED_API_PIN",
         "public_graph_method": "get_twin_graph_view"
       },
@@ -507,11 +511,11 @@
       "candidate_memory": {"status": "PINNED", "distribution": "simple-harness-memory-sdk", "version": "0.6.0", "source_commit": "9c79fa7ed96214aac7de93a11970e02891afedae", "wheel_sha256": "cd324e68aa851e0cb7940b44bfe0bbf1b3a5cbb33a6803e035ab503e1760de1c"}
     },
     "twin_graph_oracle_pins": {
-      "testcase_sha256": "cef6d9e4d28fe347e77eeb0d3c55b45117dc6f775d32446ae1fd4ea1377a8e1b",
+      "testcase_sha256": "9b8c56abf7f6df7cbb15b09a0a33ee21f7c40e78609c8be64614cc7d7c89cc9c",
       "fixture_revision": 1,
-      "fixture_sha256": "b79932d076e38dee4f97bca782444751a2c5c8f714771e1d47c99aae3c810f4b",
-      "runner_sha256": "c370d6731e9be5254591fdfba163c14a9452a63d0c44468a3ec7555c08850ed2",
-      "candidate_memory": {"status": "PENDING_TASK6_FINAL_PIN", "distribution": "simple-harness-memory-sdk", "version": null, "source_commit": null, "wheel_sha256": null},
+      "fixture_sha256": "02c7e7e306cdccf1cb7e7a6d792b0e7e39a9bf4161db4eeaade7a4f70deaed61",
+      "runner_sha256": "4971db29d56797b797ab2d30c9351c2ba781c5498bfb0297c0e2033aa397a1a3",
+      "candidate_memory": {"status": "PINNED", "distribution": "simple-harness-memory-sdk", "version": "0.6.0", "source_commit": "8cdc103c01335849462779f1cf95e86fccb445f7", "wheel_sha256": "723bcbc36847f058f3f50c634f008ba12c399a3547b7bb3c2ba7eecf4d8bd182"},
       "public_manager_seed_contract": {"status": "PENDING_TASK6_PUBLIC_SEED_API_PIN", "graph_method": "get_twin_graph_view"}
     },
     "cross_repo_impact_map": {
