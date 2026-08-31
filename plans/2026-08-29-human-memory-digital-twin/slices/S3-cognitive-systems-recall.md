@@ -112,14 +112,136 @@ gate 仍归 S3 最终验收，未在本 Task 宣称 PASS。
 
 ### Task 5 — Typed RecallPlan 与资格门 [HM-AC-4/7/8]
 
-- RecallPlan 指定 memory types、task/time/entity/event constraints、item/byte/token budget；Host 注入并覆盖完整
-  `DisclosureContext`/identity，模型字段只能进一步收窄。
-- pipeline：validate→permission/status/suppression/expiry filter→per-type candidates→typed rank→dedupe/conflict/minimal
-  selection→durable RecallDecision。普通 memory 跨 TaskScope 全局可候选但记录 cross-scope provenance。
-- task depends on contested fact 时，repository 验证 durable conflict group、current revision 与双方 eligibility 后，
-  通过 Harness v3 typed `RecallConfirmationItem` 返回双方+确认需要；这些 refs 不得进入普通 selected facts。
-  任一侧被 suppression/privacy/status/time gate 拒绝时不得泄露单侧或隐藏侧存在。不依赖时不投影；no_recall 不进入本 API。
-- 验证：冻结 route set；hard-trigger/隐私禁止 100%，required type≥90%，no extra type≤15%，预算/deadline。
+`a2-006` corrected architecture 已获用户批准（消息 SHA-256：
+`36f33adaf0942634a8ece1eec4a6f30d44dec73e1ef8704b29d983a57f2e09ae`）。本 Task 不兼容旧 wire/DB；
+原型从 fresh data 初始化，Harness Recall 协议一次性切到 strict v4，Memory schema 切到 fresh v6。
+
+#### 5.1 公开 authority 链与内容载体
+
+- Harness 用 discriminated `RecallSelectedItemV4` 替代 `selected_memory_types + selected_memory_refs`：公共字段固定
+  `item_id/ordinal/item_kind/source_kind/source_ref/source_content_hash/public_payload_hash/item_hash`；认知记忆必须带
+  `memory_type + exact revision`，Short-Horizon 必须带 `chunk_ref` 且禁止伪造 revision。这样 long-term-only、
+  short-horizon-only 与 mixed result 均可表达。
+- `RecallConfirmationGroupV4` 是一个原子 carrier，绑定 `conflict_group_id/hash` 与完整、有序、至少两项的 exact
+  member bindings；member 不能同时进入普通 selected，也不能单独 page-in。`RecallDecisionV4` 严格拒绝 v3 wire。
+- `TypedRecallResultV1` 绑定 `decision_id/hash、result_id/hash、authority_epoch、policy_hash、evaluated_at、
+  authority_expires_at`，每项同时保存 canonical source hash 与最小公开投影 payload/hash、effective classification、
+  score、evidence manifest hash 和 cross-TaskScope provenance。source hash 与公开 payload hash 不得混为一个值。
+- 所有公开 page-in/重建只接受 `result_id + result_hash + item/page coordinates + bounds`，不得接受裸
+  `memory_id/revision/chunk_ref`。Memory 重新校验 durable result 后返回 hash-identical page/receipt；ref-only 入口不存在。
+- recalled `ContextFragmentV2`（含 `RECALLED_MEMORY`、`SHORT_HORIZON`、新增 `RECALL_CONFIRMATION`）必须携带公开 payload
+  以及 decision/result/item/page-or-use-receipt 的完整 binding；非 recall fragment 禁止这些字段。官方 Context assembler
+  只接受已验证 binding，并在 assembly decision 中绑定 fragment `(id, hash)`，不能只绑 ID。公开 dataclass 只是序列化值，
+  不是读取 capability。
+
+#### 5.2 两侧冲突的写入与解决
+
+- Task 2 的旧“CONTEST 必须复制相同 payload”规则在本 Task 被明确替换。`CONTEST` 必须瞄准 exact current head `rN`，
+  challenger payload 的 canonical content hash 必须与 incumbent 不同；challenger 必须有非空可信 evidence，且至少一条
+  evidence span 未绑定 incumbent。缺证据、同内容、stale target、已存在 active group 或 nested contest 全部拒绝。
+- 同一 strict transaction 在原 logical `memory_id` 创建 challenger head `rN+1`（保留该类型的合法 lifecycle，
+  `conflict_status=contested`），并写 immutable `cognitive_conflict_groups`、恰好两个有序
+  `cognitive_conflict_members`（incumbent=`rN`、challenger=`rN+1`）、成员 content/evidence-set hash、relation、decision、
+  receipt 后 CAS head。两项是不同 revision 与不同 content hash；跨 principal/memory 的 member FK/unique 约束禁止。
+- group 仅在 current head 仍为 `rN+1`、head contested、恰好两项 hash 完整且没有 resolution fact 时 active。
+  authorized `REVISE` resolution 必须创建 `rN+2` 且 `conflict_status=resolved`；选择旧一侧时复制其 payload 并绑定新的
+  resolution evidence，出现第三种 evidence-backed 内容时记 replacement。`SUPERSEDE/SUPPRESS` 可形成 terminal resolution。
+  append-only `cognitive_conflict_resolutions` 记录选择/替换/终止；永不把 head 回滚到旧 revision，旧 group 永不复活。
+- receipt/open/replay/recall 必须重算 group/member/evidence/resolution/relation hashes 和 cardinality。group/member/resolution
+  插入点及 head CAS 前的 fault 全部回滚；commit 后 replay 不重复。任何一侧不可见、hash 漂移、被 suppression、过期、
+  principal 不符或 group 不 active 时，整组、双方、candidate count 与“存在冲突”均不泄露。
+
+#### 5.3 完整资格与 disclosure matrix
+
+- 所有长期普通候选先要求 exact principal、exact current head、half-open 有效期 `valid_from <= now < valid_until`
+  （无上界允许）、未 suppression，再按类型冻结 lifecycle：Episode=`active|amended`；Semantic=`active`；Procedure=
+  `active|reinforced`；Prospective=`pending|triggered|in_progress|rescheduled`。普通选择仅允许 `uncontested|resolved`；
+  contested 只能走完整 group confirmation。Short-Horizon 使用 `occurred_at <= now < expires_at`、签名 registration/
+  classification chain 与全部 source evidence suppression gate。
+- 普通 Episode/Semantic 的 epistemic×verification 白名单：`explicit_user` 仅 `source_bound|user_confirmed`；
+  `verified_external` 仅 `source_verified`；`observed_behavior` 仅 `source_verified|repeated_observation`。
+  `llm_inference|unknown` 与任何 `unverified` 一律禁止。Procedure：explicit-user active/reinforced 使用
+  `source_bound|user_confirmed`；observation-qualified 只允许 `repeated_observation`，并要求 Host 当前 applicability
+  fingerprint 与 revision 绑定值完全一致。Prospective 只允许 `explicit_user + source_bound|user_confirmed`，且 typed
+  trigger 与当前 signal state 完整。任何未列组合 fail-closed。
+- 普通 recall 只接受 trusted/current DisclosureContext。`USER_SELF` 对 `task_execution/personalization/task_resume/user_review`
+  可收 PUBLIC/PERSONAL/SENSITIVE，RESTRICTED 永远不进入模型 Context；HOUSEHOLD/TASK_COLLABORATOR 仅在
+  `task_execution|task_resume` 收 PUBLIC；EXTERNAL_PARTY/PUBLIC/UNKNOWN 全拒。非 self 即使 privacy 被错误标 public，
+  只要 attributes 含 identity/relationship/family/health/location/financial 仍拒。AUDIT/EXPORT 不走 ordinary recall，
+  使用独立 sealed audit/export authority。attribute 只能从严，不能放宽 privacy。
+- TaskScope 不是普通认知隔离：未指定 scope 时同 principal 全局候选；指定时只收窄。每个 candidate/filter/selected item
+  均记录 source TaskScope set、active TaskScope 与 `cross_scope`。entity/task/time selector 使用类型化字段；Episode 用
+  occurred interval overlap，Semantic 用 valid interval/revision time，Procedure 用 latest qualifying evidence time，
+  Prospective 用 next trigger/last transition，Short-Horizon 用 occurred_at。
+
+#### 5.4 即时 suppression 与最终 Context 使用
+
+- 新增 append-only `recall_authority_events` + CAS `recall_authority_heads(principal, epoch, policy_hash)`。任何可能改变资格的
+  suppression/revoke、认知 head/conflict/classification 变化、Short-Horizon source 失效和 policy version 变化，均在同一事务
+  追加 event 并增加 epoch；revoke 也增加，旧 result 不会自动复活。结果 expiry 不晚于 RecallContext expiry 与所选 source
+  最早 expiry。
+- 历史 result 可审计/重建但不自动授权 Context。Host 完成候选 ContextSnapshot manifest 后调用 Memory-owned
+  `authorize_recall_context_use`，只传 decision/result/item hashes、snapshot manifest/hash、run/turn/provider-attempt 与 now；
+  不传裸 source ref。Memory 在 suppression 所用同一锁/事务边界重新验证 epoch/policy/time、current head 或 active group、
+  source/content/classification、recipient/purpose/privacy/attributes 与 suppression，随后写 immutable、exact-replayable、
+  单 provider-attempt 的 `RecallContextUseReceipt`。Harness provider reservation 必须绑定该 receipt；新的 continuation/attempt
+  必须重新授权。
+- 并发线性化固定：suppression 先 commit，则授权返回 `RECALL_AUTHORITY_STALE` 且零 payload；Context-use receipt 先 commit，
+  则仅该 exact immutable snapshot/attempt 可完成一次，随后 suppression 使所有新 attempt 失效。此边界同时覆盖 suppress、
+  revoke、supersede、contest、classification/policy change、Short-Horizon expiry/cleanup，不承诺撤回已经发给 provider 的字节。
+
+#### 5.5 replay、失败恢复与 unsupported 能力
+
+- 新增 immutable request-attempt-terminal ledger，唯一键 `(principal_id, idempotency_key)`；domain-separated `request_hash`
+  绑定 Harness/Memory protocol version、principal/run、context hash/revision、plan id/hash、disclosure hash 与完整 budget。
+  same key+same hash：terminal 后直接返回 exact stored decision/result bytes/hash，candidate query=0；same key+different hash：
+  稳定 `IDEMPOTENCY_CONFLICT`，candidate query=0。unexpired dangling attempt 从零 durable candidate state 重跑；expired dangling
+  attempt 终结为 `DEADLINE_EXCEEDED`。没有持久化半 candidates。
+- 一个 final transaction 原子写 decision header、有序 selected/confirmation items、result header/items 与 terminal fence。
+  header 后、items 间、result 前后、commit 前 fault 均只保留 start attempt，不留下任何 terminal 半状态；commit 后 ACK 丢失
+  必须 exact replay。deadline 从 public API entry 开始覆盖验证、排队、lane、final commit 与 return；超时取消 candidate work、
+  返回零 content，并按 Task 4 的 durable terminal/close-drain 纪律完成 timeout terminal。启动恢复过期未终结 attempt。
+- V1 支持 selector=`MEMORY_TYPE|TASK_SCOPE|ENTITY|TIME|SHORT_HORIZON`；`EVENT|ENVIRONMENT|TASK_PHASE`
+  在 resolver 未实现前整 plan `REJECTED/INVALID_PLAN`。候选 retrieval mode 只支持 `FULL_TEXT|VECTOR`；RecallPlan 的
+  `EXACT|TEMPORAL` 拒绝，`GRAPH` 永久禁止（数字孪生图不参与 recall）。EXACT 仅为 result-bound 内部 page-in 语义。
+- 固定优先级：Harness 严格 wire/version parser（失败只写 Host invocation audit，不调用 Memory）→ authenticated
+  identity 与 Context/Plan/disclosure binding → idempotency replay/conflict → capability matrix → candidate access。
+  任一 unsupported member 不得被静默丢弃；按 EVENT/ENVIRONMENT/TASK_PHASE 与 EXACT/TEMPORAL/GRAPH 排序记录。
+  candidate-access trap + SQL trace 必须证明首次拒绝、exact rejected replay、conflicting replay 和组合拒绝均为
+  `candidate_query_started=false/count=0`，允许的仅是 idempotency/audit 读写。
+
+#### 5.6 确定性候选、排序、去重与预算
+
+- Harness `RecallBudgetV1` 范围：`max_items=1..32`、`max_bytes=1..65536`、`max_tokens=1..8192`、
+  `deadline_ms=1..2000`。每个 `(source,type,lane)` cap `C=min(128,max(32,8*max_items))`；Episode/Semantic/
+  Procedure/Prospective/Short-Horizon 各自融合后最多 128，mixed union 去重前最多 640。资格 gate 在 lane/cap 之前；
+  未通过 gate 的数量/refs 不进入任何公开或普通 audit 字段。
+- 共用 weighted RRF (`k=60`)：vector=.40、FTS=.30、entity=.15、TaskScope affinity=.10、temporal=.05；backend raw
+  score 仅决定本 lane 名次。缺失/未请求 lane 贡献 0，不用未请求 lane fallback。全局稳定序：`-rrf_score`（序列化 12 位）、
+  `-matched_lane_count`、`-typed_source_time`、`source_kind`、`memory_type-or-empty`、`source_ref`、
+  `source_revision-or-zero`。vector 不可用时只降级该 lane并审计；不得把未授权 source 放入 fallback。
+- exact dedupe：认知记忆=`(memory_id,revision)`；Short-Horizon=`(chunk_ref,content_hash)`。跨 source 仅在
+  public-projection hash 与 sorted exact evidence-id manifest 同时相同才合并；语义相似绝不去重。
+- Provider-visible 最小 payload 冻结：Episode=title/participants/goals/actions/results/impacts/occurred interval；
+  Semantic=subject_entity/predicate/object_value/qualifiers；Procedure=name/applicability/steps/effective risk；
+  Prospective=action/trigger；Short-Horizon=content/occurred_at。source/evidence/classification/conflict/cross-scope 作为强制
+  control/audit metadata，不混入 Provider payload；所有估算由 SDK 派生，调用方不能自报。
+- 预算单位是全局排序后的 `{source_kind,memory_type,payload}` 数组之 canonical JSON（sorted keys、compact、
+  ensure_ascii=false）UTF-8。`bytes=len(encoded)`；保守 `tokens=max(1, Unicode codepoint count, ceil(bytes/3))`。
+  按稳定序 greedy，单项字段/文本永不截断；放不下则跳过并继续尝试更小项。任何跳过都 durable 记
+  `truncated=true/BUDGET_EXHAUSTED`；非空仍为 RECALL，零项为 Memory 执行后的 NO_RECALL/BUDGET_EXHAUSTED。
+  主模型在调用前判断“不需要记忆”的 NO_RECALL 仍完全在 Host，不调用本 API。
+
+#### 5.7 决定性验证出口
+
+- 新增 `TC-HM-13` 与 `typed-recall-v1` fixture：mixed/short-only source bindings、裸 ref=零读取、完整/不完整冲突组、
+  eligibility/disclosure 全矩阵、current-use 两种并发顺序、unsupported zero-query、exact/conflicting replay、重启恢复、
+  decision/items/result/receipt fault seams、durable hash rebuild、candidate cap、稳定排序与 item/byte/token/deadline 边界。
+- exact-limit/limit+1 覆盖 ASCII/CJK/emoji/escaping、oversize-first+smaller-fit；clean installed Harness wheel 覆盖 exports、
+  strict v3 rejection、canonical round-trip、mixed sources、atomic confirmation 与 Context assembly authority。
+- 质量 corpus 版本显式升级：原 `contested` 类改名 `contested-not-required`，原 20 条 no-recall gold 不变；新增
+  `contested-dependent-complete/partial` 只进入 typed-recall fixture。人工 review/freeze 未完成前整体真实质量仍
+  `NOT_RUN/BLOCKED`，不得因本 Task 单元/集成全绿宣称 required type≥90% 或 overall quality PASS。
 
 ### Task 6 — Display-only digital twin graph [HM-AC-6/7]
 
