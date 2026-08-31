@@ -40,14 +40,16 @@
       "evidence_contract": {
         "producer_types": ["gate-exec", "runtime-probe"],
         "required_artifact_kinds": ["business-result", "execution-log"],
-        "required_identity": ["root_run_id", "candidate_harness_wheel_sha256", "candidate_memory_wheel_sha256"],
+        "required_identity": ["root_run_id"],
         "required_timestamps": true,
         "required_business_facts": [
           "business_terminal",
           "two_nodes_one_edge",
           "relation_node_zero",
           "suppression_reopen_zero_edge",
-          "package_root_public_only"
+          "package_root_public_only",
+          "candidate_harness_wheel_sha256",
+          "candidate_memory_wheel_sha256"
         ]
       }
     },
@@ -81,7 +83,7 @@
       "evidence_contract": {
         "producer_types": ["gate-exec", "runtime-probe"],
         "required_artifact_kinds": ["execution-log", "fault-recovery-log"],
-        "required_identity": ["root_run_id", "candidate_harness_wheel_sha256", "candidate_memory_wheel_sha256"],
+        "required_identity": ["root_run_id"],
         "required_timestamps": true,
         "required_business_facts": [
           "business_terminal",
@@ -89,7 +91,9 @@
           "verified_case_count_40",
           "half_state_zero",
           "raw_evidence_unchanged",
-          "corruption_fail_closed"
+          "corruption_fail_closed",
+          "candidate_harness_wheel_sha256",
+          "candidate_memory_wheel_sha256"
         ]
       }
     },

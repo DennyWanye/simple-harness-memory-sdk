@@ -30,9 +30,9 @@
     "input_hashes": {
       "acceptance": "e2b22671613821174960aa7d5d6eaff5053b3dcccec80dd59355ba9f45fe1df3",
       "assurance_contract": "7e47e55b3b2dfd9a397f3d2e9b9703af2e7c892a169f13fd24e4470e9e9ea9ad",
-      "reuse_report": "49a49fbc5aac839d519219dd7cf9257dfe197e4ae9bb1ee562143ca9f9246943",
+      "reuse_report": "a692600b9dccba9d9ea9d50a4197e5bc7df53ffffea4867859dae56de272bbdc",
       "testcase_inventory": "4b8c63f15b2e246d86374c86783254ae948ace30eb4857a02d191b6c38ef713c",
-      "verification_spec": "5ac402f651d36bb40e42474bef87b47c8b0f7b3b1495544d5d917592c0b600cb"
+      "verification_spec": "49f59068817fb152607a7b9326ed075386eee7af1a43690bbabbd14f2fa5b264"
     },
     "input_paths": {
       "acceptance": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/acceptance.md",
@@ -41,7 +41,7 @@
       "testcase_inventory": "/Users/denny/projects/simple_harness-memory-plan/testcase/index.json",
       "verification_spec": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification-spec.json"
     },
-    "seal_sha256": "e155664f5eba56ec46a03022d51ed79b969328cd45317eb6b233ed176eb64fd6",
+    "seal_sha256": "30d66a63f5d1a2afcc860381be1b00c459925c39df2fbc574605399fe0aea0e7",
     "selected_testcase_ids": [
       "TC-HM-08",
       "TC-HM-12"
@@ -87,12 +87,12 @@
           "two_nodes_one_edge",
           "relation_node_zero",
           "suppression_reopen_zero_edge",
-          "package_root_public_only"
-        ],
-        "required_identity": [
-          "root_run_id",
+          "package_root_public_only",
           "candidate_harness_wheel_sha256",
           "candidate_memory_wheel_sha256"
+        ],
+        "required_identity": [
+          "root_run_id"
         ],
         "required_timestamps": true
       },
@@ -142,12 +142,12 @@
           "verified_case_count_40",
           "half_state_zero",
           "raw_evidence_unchanged",
-          "corruption_fail_closed"
-        ],
-        "required_identity": [
-          "root_run_id",
+          "corruption_fail_closed",
           "candidate_harness_wheel_sha256",
           "candidate_memory_wheel_sha256"
+        ],
+        "required_identity": [
+          "root_run_id"
         ],
         "required_timestamps": true
       },
