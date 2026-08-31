@@ -18,16 +18,21 @@
     {
       "testcase_id": "TC-HM-13",
       "decision": "reuse-with-extension",
-      "from_revision": 2,
-      "to_revision": 3,
-      "content_sha256": "00c333f8f76e5bacf27f4e6f5323bf40fd72c30f5fe2c1592b8c588d90906a4f",
+      "from_revision": 3,
+      "to_revision": 4,
+      "content_sha256": "9619e45d1a02b527f2bc53bb66f76a439c13da4df357cd320bec8f2258ac83b8",
       "fixture": "typed-recall-v3.json@rev3",
       "fixture_sha256": "373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12",
+      "execution_layers_fixture": "typed-recall-execution-layers-v1.json@rev1",
+      "execution_layers_fixture_sha256": "2f18d942be3ddd4d4c95c4eadd888b15f49c783a27bd0f0c086462ce32b4d1ca",
+      "clean_wheel_public_manager_cells": 391,
+      "source_exact_commit_integration_cells": 10,
+      "combined_exact_union_cells": 401,
       "fault_fixture_sha256": "b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da",
-      "runner_sha256": "61cd4dd7c3e5fa9c5ac6fa0765a8051c2cdf90a50461af71b26e3d14c153afcb",
+      "runner_sha256": "cb537559eaea35eba33a57e69d95ec0b6c85cc86e131e6f468df166afe498e93",
       "harness_candidate": {"distribution": "simple-harness-sdk", "version": "0.7.0", "source_commit": "fb491574db8bb4d19d8a7f9df0c72ae460bb08f4", "wheel_sha256": "36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f"},
-      "memory_candidate": {"status": "PINNED", "distribution": "simple-harness-memory-sdk", "version": "0.6.0", "source_commit": "9c79fa7ed96214aac7de93a11970e02891afedae", "wheel_sha256": "cd324e68aa851e0cb7940b44bfe0bbf1b3a5cbb33a6803e035ab503e1760de1c"},
-      "reason": "iteration-002 保持一个最小 testcase 文档，新增逐 cell/hash/freshness public runner、完整 authority receipt hash、conflict/eligibility 负边界、全 tie-break/vector degrade/rich projection 和 exact candidate identity pin。历史 PASS 不继承。"
+      "memory_candidate": {"status": "PINNED", "distribution": "simple-harness-memory-sdk", "version": "0.6.0", "source_commit": "d069e0e949edb44d85d2ebeac6e49b05f9fb51b1", "wheel_sha256": "6f9a8c1a52cf8512232a12a9ea7fd7d98c6c5d59e837d2c5f777010bb30fe6b2"},
+      "reason": "rev4 不改变 401-cell frozen oracle；只把可由 clean-wheel package-root Manager 驱动的 391 cells 与必须依赖 exact-source corruption/fault seam 的 10 cells 作 exact partition。两层 fresh evidence 都是 required，产品测试 helper、静态 digest、邻近单测和历史 PASS 均不可替代。"
     },
     {
       "testcase_id": "TC-HM-03",
@@ -127,7 +132,7 @@
       "obligation_id": "HM-TO-A4",
       "decision": "create-new",
       "candidates": ["TC-PS-03", "TC-PS-05"],
-      "selected_testcases": ["TC-HM-01@rev1", "TC-HM-02@rev1", "TC-HM-03@rev3", "TC-HM-06@rev1", "TC-HM-08@rev3", "TC-HM-10@rev1", "TC-HM-13@rev3"],
+      "selected_testcases": ["TC-HM-01@rev1", "TC-HM-02@rev1", "TC-HM-03@rev3", "TC-HM-06@rev1", "TC-HM-08@rev3", "TC-HM-10@rev1", "TC-HM-13@rev4"],
       "reason": "必须证明五路 route、no-recall、候选 search 后 exact open，以及 long/short/mixed 类型化 decision-result、原子冲突确认和 result-bound page-in；旧 Session 导航不能复用。"
     },
     {
@@ -148,14 +153,14 @@
       "obligation_id": "HM-TO-A7",
       "decision": "create-new",
       "candidates": [],
-      "selected_testcases": ["TC-HM-02@rev1", "TC-HM-07@rev2", "TC-HM-12@rev2", "TC-HM-13@rev3"],
+      "selected_testcases": ["TC-HM-02@rev1", "TC-HM-07@rev2", "TC-HM-12@rev2", "TC-HM-13@rev4"],
       "reason": "旧日志用例未覆盖全部 LLM decision、受控审计读取、typed decision/result/page/use binding 和 canonical facts 到六视图的 lineage。"
     },
     {
       "obligation_id": "HM-TO-A8",
       "decision": "create-new",
       "candidates": ["TC-GS-08"],
-      "selected_testcases": ["TC-HM-08@rev3", "TC-HM-09@rev3", "TC-HM-11@rev3", "TC-HM-13@rev3", "TC-HM-X01@rev4"],
+      "selected_testcases": ["TC-HM-08@rev3", "TC-HM-09@rev3", "TC-HM-11@rev3", "TC-HM-13@rev4", "TC-HM-X01@rev4"],
       "reason": "旧并发用例创建多个 Session，与唯一主对话冲突；新集合覆盖三仓契约、typed recall 原子终态/恢复、初始化、质量和性能。"
     },
     {
@@ -168,29 +173,29 @@
     {
       "obligation_id": "HM-TO-R2",
       "decision": "reuse-with-extension",
-      "candidates": ["TC-HM-03@rev3", "TC-HM-04@rev3", "TC-HM-08@rev3", "TC-HM-09@rev3", "TC-HM-11@rev3", "TC-HM-13@rev3", "TC-GS-06@rev2", "TC-GS-08@rev2", "TC-GS-10@rev3"],
-      "selected_testcases": ["TC-HM-03@rev3", "TC-HM-04@rev3", "TC-HM-08@rev3", "TC-HM-09@rev3", "TC-HM-11@rev3", "TC-HM-13@rev3", "TC-GS-06@rev2", "TC-GS-08@rev2", "TC-GS-10@rev3"],
+      "candidates": ["TC-HM-03@rev3", "TC-HM-04@rev3", "TC-HM-08@rev3", "TC-HM-09@rev3", "TC-HM-11@rev3", "TC-HM-13@rev4", "TC-GS-06@rev2", "TC-GS-08@rev2", "TC-GS-10@rev3"],
+      "selected_testcases": ["TC-HM-03@rev3", "TC-HM-04@rev3", "TC-HM-08@rev3", "TC-HM-09@rev3", "TC-HM-11@rev3", "TC-HM-13@rev4", "TC-GS-06@rev2", "TC-GS-08@rev2", "TC-GS-10@rev3"],
       "reason": "在 HM 状态机 fault lanes 外，新增 typed decision/result final transaction、restart/replay 原子性，并复用全局 Skill publish、lost-ACK 和 Run/UI 收敛回归。"
     },
     {
       "obligation_id": "HM-TO-R3",
       "decision": "create-new",
       "candidates": [],
-      "selected_testcases": ["TC-HM-03@rev3", "TC-HM-06@rev1", "TC-HM-07@rev2", "TC-HM-10@rev1", "TC-HM-12@rev2", "TC-HM-13@rev3"],
+      "selected_testcases": ["TC-HM-03@rev3", "TC-HM-06@rev1", "TC-HM-07@rev2", "TC-HM-10@rev1", "TC-HM-12@rev2", "TC-HM-13@rev4"],
       "reason": "跨 recipient、contested/superseded/suppressed、旧 checkpoint、Context、page-in 和图谱的 stale privacy 风险没有旧统一 oracle；TC-HM-13 冻结完整/残缺冲突组零泄露和使用时再授权。"
     },
     {
       "obligation_id": "HM-TO-R4",
       "decision": "reuse-with-extension",
-      "candidates": ["TC-HM-01@rev1", "TC-HM-08@rev3", "TC-HM-09@rev3", "TC-HM-13@rev3", "TC-HM-X01@rev4", "TC-GS-03@rev1", "TC-GS-04@rev2", "TC-GS-05@rev2", "TC-GS-07@rev2", "TC-GS-08@rev2", "TC-GS-09@rev3", "TC-GS-10@rev3"],
-      "selected_testcases": ["TC-HM-01@rev1", "TC-HM-08@rev3", "TC-HM-09@rev3", "TC-HM-13@rev3", "TC-HM-X01@rev4", "TC-GS-03@rev1", "TC-GS-04@rev2", "TC-GS-05@rev2", "TC-GS-07@rev2", "TC-GS-08@rev2", "TC-GS-09@rev3", "TC-GS-10@rev3"],
+      "candidates": ["TC-HM-01@rev1", "TC-HM-08@rev3", "TC-HM-09@rev3", "TC-HM-13@rev4", "TC-HM-X01@rev4", "TC-GS-03@rev1", "TC-GS-04@rev2", "TC-GS-05@rev2", "TC-GS-07@rev2", "TC-GS-08@rev2", "TC-GS-09@rev3", "TC-GS-10@rev3"],
+      "selected_testcases": ["TC-HM-01@rev1", "TC-HM-08@rev3", "TC-HM-09@rev3", "TC-HM-13@rev4", "TC-HM-X01@rev4", "TC-GS-03@rev1", "TC-GS-04@rev2", "TC-GS-05@rev2", "TC-GS-07@rev2", "TC-GS-08@rev2", "TC-GS-09@rev3", "TC-GS-10@rev3"],
       "reason": "新的 durable protocol hash/version、strict v3 rejection、exact/conflicting replay 之外，复用并扩展 global Skill/Tool snapshot、cold restart、authorization 与 convergence 回归。"
     },
     {
       "obligation_id": "HM-TO-R5",
       "decision": "create-new",
       "candidates": [],
-      "selected_testcases": ["TC-HM-06@rev1", "TC-HM-07@rev2", "TC-HM-12@rev2", "TC-HM-13@rev3", "TC-HM-X01@rev4"],
+      "selected_testcases": ["TC-HM-06@rev1", "TC-HM-07@rev2", "TC-HM-12@rev2", "TC-HM-13@rev4", "TC-HM-X01@rev4"],
       "reason": "受控审计、typed decision/result/page/use lineage、普通导出与 credentials/hidden reasoning 全域零命中必须合并验证。"
     },
     {
