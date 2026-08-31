@@ -77,6 +77,7 @@ from simple_harness.runtime.memory_action_protocol import (
 )
 
 from simple_harness_memory.backends.sqlite_v5 import (
+    COGNITIVE_CONFLICT_FAULT_POINTS,
     COGNITIVE_MUTATION_FAULT_POINTS,
     SQLiteHumanMemoryBackend,
 )
@@ -133,7 +134,7 @@ def _admitted(
         subject=subject,
         source_kind=source_kind,
         source_ref=(
-            "turn-1/user"
+            ("turn-1/user" if evidence_id == "evidence-1" else f"turn-{evidence_id}/user")
             if source_kind is EvidenceSourceKind.USER_MESSAGE
             else "provider-1/record-1"
         ),
@@ -238,6 +239,7 @@ class _Authority:
         typed_observation_receipt: TypedObservationAuthorityReceipt | None = None,
     ) -> None:
         self.admitted = AdmittedEvidenceAuthority(envelope, receipt, _item_authority(span))
+        self.admitted_overrides: dict[str, AdmittedEvidenceAuthority] = {}
         self.admitted_resolution_count = 0
         self.typed_observation_receipt = typed_observation_receipt
         self.action_authorities: dict[str, MemoryActionAuthority] = {}
@@ -246,7 +248,17 @@ class _Authority:
 
     async def resolve_admitted_evidence(self, span: EvidenceSpanRef) -> AdmittedEvidenceAuthority:
         self.admitted_resolution_count += 1
-        return self.admitted
+        return self.admitted_overrides.get(span.evidence_id, self.admitted)
+
+    def register_admitted(
+        self,
+        envelope: SanitizedEvidenceEnvelope,
+        receipt: SanitizedEvidenceReceipt,
+        span: EvidenceSpanRef,
+    ) -> None:
+        self.admitted_overrides[span.evidence_id] = AdmittedEvidenceAuthority(
+            envelope, receipt, _item_authority(span)
+        )
 
     async def resolve_typed_observation(
         self, reference: ProposedTypedObservationRef
@@ -1036,10 +1048,10 @@ async def test_reopen_resolver_rejects_action_authority_ledger_corruption(
 
 
 @pytest.mark.asyncio
-async def test_contest_cannot_change_the_existing_semantic_slot(
+async def test_contest_creates_distinct_immutable_conflict_members(
     tmp_path: Path,
 ) -> None:
-    backend, envelope, _receipt, span, _authority = await _prepared(
+    backend, envelope, _receipt, span, authority = await _prepared(
         tmp_path / "contest-exact-slot.db"
     )
     await backend.apply_memory_mutation_plan(
@@ -1051,9 +1063,15 @@ async def test_contest_cannot_change_the_existing_semantic_slot(
         "SELECT memory_id FROM cognitive_memory_heads"
     ) as cursor:
         memory_id = str((await cursor.fetchone())[0])  # type: ignore[index]
+    challenger_envelope, challenger_receipt = _admitted(evidence_id="evidence-2")
+    challenger_span = _span(challenger_envelope, challenger_receipt)
+    authority.register_admitted(
+        challenger_envelope, challenger_receipt, challenger_span
+    )
+    await backend.ingest_committed_evidence(challenger_envelope, challenger_receipt)
     contest = replace(
         _operation(
-            span,
+            challenger_span,
             operation_id="contest-changed-payload",
             kind=MemoryMutationKind.CONTEST,
             target=ExistingMemoryTarget(memory_id, 1),
@@ -1067,25 +1085,383 @@ async def test_contest_cannot_change_the_existing_semantic_slot(
         principal=_principal(),
         scope=MemoryScope.personal("actor-1"),
         plan=_plan(
-            envelope,
+            challenger_envelope,
             contest,
             base_revision=2,
             plan_id="contest-changed-payload-plan",
             idempotency_key="contest-changed-payload-key",
         ),
     )
-    assert result.outcome is MemoryMutationApplyOutcome.REJECTED
-    assert result.reason_code is MemoryMutationApplyReasonCode.VALIDATION_REJECTED
+    assert result.outcome is MemoryMutationApplyOutcome.COMMITTED
     async with backend.connection.execute(
         "SELECT current_revision FROM cognitive_memory_heads WHERE memory_id=?",
         (memory_id,),
     ) as cursor:
-        assert int((await cursor.fetchone())[0]) == 1  # type: ignore[index]
+        assert int((await cursor.fetchone())[0]) == 2  # type: ignore[index]
     async with backend.connection.execute(
-        "SELECT reason_code FROM memory_mutation_rejection_audits "
-        "WHERE plan_id='contest-changed-payload-plan'"
+        "SELECT g.incumbent_revision,g.challenger_revision,m.ordinal,m.role,m.revision,"
+        "m.content_hash,m.evidence_set_hash FROM cognitive_conflict_groups g "
+        "JOIN cognitive_conflict_members m ON m.group_id=g.group_id "
+        "ORDER BY m.ordinal"
     ) as cursor:
-        assert str((await cursor.fetchone())[0]) == "mutation_contest_rejected"  # type: ignore[index]
+        rows = tuple(await cursor.fetchall())
+    assert [(int(row[0]), int(row[1]), int(row[2]), str(row[3]), int(row[4])) for row in rows] == [
+        (1, 2, 1, "incumbent", 1),
+        (1, 2, 2, "challenger", 2),
+    ]
+    assert str(rows[0][5]) != str(rows[1][5])
+    assert str(rows[0][6]) != str(rows[1][6])
+    await backend.close()
+
+    _tamper_immutable_table(
+        tmp_path / "contest-exact-slot.db",
+        "cognitive_conflict_members",
+        "UPDATE cognitive_conflict_members SET content_hash='tampered' WHERE ordinal=2",
+    )
+    reopened = SQLiteHumanMemoryBackend(tmp_path / "contest-exact-slot.db")
+    with pytest.raises(MemoryCorruptionError, match="conflict member source differs"):
+        await reopened.initialize()
+
+
+@pytest.mark.asyncio
+async def test_contest_rejects_same_content_or_reused_evidence(tmp_path: Path) -> None:
+    backend, envelope, _receipt, span, _authority = await _prepared(
+        tmp_path / "contest-same.db"
+    )
+    await backend.apply_memory_mutation_plan(
+        principal=_principal(),
+        scope=MemoryScope.personal("actor-1"),
+        plan=_plan(envelope, _operation(span)),
+    )
+    async with backend.connection.execute(
+        "SELECT memory_id FROM cognitive_memory_heads"
+    ) as cursor:
+        memory_id = str((await cursor.fetchone())[0])  # type: ignore[index]
+    same = _operation(
+        span,
+        operation_id="contest-same",
+        kind=MemoryMutationKind.CONTEST,
+        target=ExistingMemoryTarget(memory_id, 1),
+        conflict_status=ConflictStatus.CONTESTED,
+    )
+    result = await backend.apply_memory_mutation_plan(
+        principal=_principal(),
+        scope=MemoryScope.personal("actor-1"),
+        plan=_plan(
+            envelope,
+            same,
+            base_revision=2,
+            plan_id="contest-same-plan",
+            idempotency_key="contest-same-key",
+        ),
+    )
+    assert result.outcome is MemoryMutationApplyOutcome.REJECTED
+    assert result.reason_code is MemoryMutationApplyReasonCode.VALIDATION_REJECTED
+    await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_conflict_resolution_appends_fact_and_never_rolls_back_head(
+    tmp_path: Path,
+) -> None:
+    backend, envelope, _receipt, span, authority = await _prepared(
+        tmp_path / "contest-resolution.db"
+    )
+    await backend.apply_memory_mutation_plan(
+        principal=_principal(),
+        scope=MemoryScope.personal("actor-1"),
+        plan=_plan(envelope, _operation(span)),
+    )
+    async with backend.connection.execute(
+        "SELECT memory_id FROM cognitive_memory_heads"
+    ) as cursor:
+        memory_id = str((await cursor.fetchone())[0])  # type: ignore[index]
+
+    challenger_envelope, challenger_receipt = _admitted(evidence_id="evidence-2")
+    challenger_span = _span(challenger_envelope, challenger_receipt)
+    authority.register_admitted(
+        challenger_envelope, challenger_receipt, challenger_span
+    )
+    await backend.ingest_committed_evidence(challenger_envelope, challenger_receipt)
+    contest = replace(
+        _operation(
+            challenger_span,
+            operation_id="contest-resolution-create",
+            kind=MemoryMutationKind.CONTEST,
+            target=ExistingMemoryTarget(memory_id, 1),
+            conflict_status=ConflictStatus.CONTESTED,
+        ),
+        payload=SemanticMemoryPayload(
+            "user:self", "response_style", "verbose", ("default",)
+        ),
+    )
+    await backend.apply_memory_mutation_plan(
+        principal=_principal(),
+        scope=MemoryScope.personal("actor-1"),
+        plan=_plan(
+            challenger_envelope,
+            contest,
+            base_revision=2,
+            plan_id="contest-resolution-plan",
+            idempotency_key="contest-resolution-key",
+        ),
+    )
+
+    resolution_envelope, resolution_receipt = _admitted(evidence_id="evidence-3")
+    resolution_span = replace(
+        _span(resolution_envelope, resolution_receipt),
+        support_kind=EvidenceSupportKind.EXPLICIT_USER_CORRECTION,
+    )
+    authority.register_admitted(
+        resolution_envelope, resolution_receipt, resolution_span
+    )
+    await backend.ingest_committed_evidence(resolution_envelope, resolution_receipt)
+    resolve = replace(
+        _operation(
+            resolution_span,
+            operation_id="resolve-to-incumbent",
+            kind=MemoryMutationKind.REVISE,
+            target=ExistingMemoryTarget(memory_id, 2),
+            conflict_status=ConflictStatus.RESOLVED,
+        ),
+        payload=SemanticMemoryPayload(
+            "user:self", "response_style", "concise", ("default",)
+        ),
+        reason_code="explicit_user_correction",
+    )
+    resolution_plan = _with_action_authorities(
+        _plan(
+            resolution_envelope,
+            resolve,
+            base_revision=3,
+            plan_id="resolve-plan",
+            idempotency_key="resolve-key",
+        ),
+        authority,
+        nonce_prefix="resolve",
+    )
+    result = await backend.apply_memory_mutation_plan(
+        principal=_principal(),
+        scope=MemoryScope.personal("actor-1"),
+        plan=resolution_plan,
+    )
+    assert result.outcome is MemoryMutationApplyOutcome.COMMITTED
+    async with backend.connection.execute(
+        "SELECT h.current_revision,r.conflict_status,r.content_hash FROM "
+        "cognitive_memory_heads h JOIN cognitive_memory_revisions r "
+        "ON r.memory_id=h.memory_id AND r.revision=h.current_revision "
+        "WHERE h.memory_id=?",
+        (memory_id,),
+    ) as cursor:
+        head = await cursor.fetchone()
+    assert head is not None
+    assert (int(head[0]), str(head[1])) == (3, "resolved")
+    async with backend.connection.execute(
+        "SELECT content_hash FROM cognitive_memory_revisions "
+        "WHERE memory_id=? AND revision=1",
+        (memory_id,),
+    ) as cursor:
+        incumbent = await cursor.fetchone()
+    assert incumbent is not None and str(head[2]) == str(incumbent[0])
+    async with backend.connection.execute(
+        "SELECT resolution_revision,resolution_kind,selected_member_ordinal "
+        "FROM cognitive_conflict_resolutions"
+    ) as cursor:
+        resolution = await cursor.fetchone()
+    assert resolution is not None
+    assert (int(resolution[0]), str(resolution[1]), int(resolution[2])) == (
+        3,
+        "selected_incumbent",
+        1,
+    )
+    await backend.close()
+
+    _tamper_immutable_table(
+        tmp_path / "contest-resolution.db",
+        "cognitive_conflict_resolutions",
+        "UPDATE cognitive_conflict_resolutions SET resolution_kind='replacement', "
+        "selected_member_ordinal=NULL",
+    )
+    reopened = SQLiteHumanMemoryBackend(tmp_path / "contest-resolution.db")
+    with pytest.raises(MemoryCorruptionError, match="conflict resolution differs"):
+        await reopened.initialize()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault_point", COGNITIVE_CONFLICT_FAULT_POINTS[:3])
+async def test_conflict_creation_faults_rollback_group_members_and_head(
+    tmp_path: Path, fault_point: str
+) -> None:
+    def fault(point: str) -> None:
+        if point == fault_point:
+            raise RuntimeError(point)
+
+    backend, envelope, _receipt, span, authority = await _prepared(
+        tmp_path / f"conflict-fault-{fault_point.rsplit('_', 1)[-1]}.db",
+        fault=fault,
+    )
+    await backend.apply_memory_mutation_plan(
+        principal=_principal(),
+        scope=MemoryScope.personal("actor-1"),
+        plan=_plan(envelope, _operation(span)),
+    )
+    async with backend.connection.execute(
+        "SELECT memory_id FROM cognitive_memory_heads"
+    ) as cursor:
+        memory_id = str((await cursor.fetchone())[0])  # type: ignore[index]
+    challenger_envelope, challenger_receipt = _admitted(evidence_id="evidence-2")
+    challenger_span = _span(challenger_envelope, challenger_receipt)
+    authority.register_admitted(
+        challenger_envelope, challenger_receipt, challenger_span
+    )
+    await backend.ingest_committed_evidence(challenger_envelope, challenger_receipt)
+    contest = replace(
+        _operation(
+            challenger_span,
+            operation_id="contest-fault",
+            kind=MemoryMutationKind.CONTEST,
+            target=ExistingMemoryTarget(memory_id, 1),
+            conflict_status=ConflictStatus.CONTESTED,
+        ),
+        payload=SemanticMemoryPayload(
+            "user:self", "response_style", "verbose", ("default",)
+        ),
+    )
+    with pytest.raises(RuntimeError, match=fault_point):
+        await backend.apply_memory_mutation_plan(
+            principal=_principal(),
+            scope=MemoryScope.personal("actor-1"),
+            plan=_plan(
+                challenger_envelope,
+                contest,
+                base_revision=2,
+                plan_id="contest-fault-plan",
+                idempotency_key="contest-fault-key",
+            ),
+        )
+    for table in (
+        "cognitive_conflict_groups",
+        "cognitive_conflict_members",
+        "cognitive_conflict_resolutions",
+        "cognitive_relations",
+    ):
+        async with backend.connection.execute(f"SELECT COUNT(*) FROM {table}") as cursor:
+            assert int((await cursor.fetchone())[0]) == 0  # type: ignore[index]
+    async with backend.connection.execute(
+        "SELECT h.current_revision,COUNT(r.revision) FROM cognitive_memory_heads h "
+        "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
+        "WHERE h.memory_id=? GROUP BY h.current_revision",
+        (memory_id,),
+    ) as cursor:
+        assert tuple(await cursor.fetchone()) == (1, 1)  # type: ignore[arg-type]
+    await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_conflict_resolution_fault_rolls_back_new_revision_and_fact(
+    tmp_path: Path,
+) -> None:
+    armed = False
+
+    def fault(point: str) -> None:
+        if armed and point == "mutation.after_conflict_resolution":
+            raise RuntimeError(point)
+
+    backend, envelope, _receipt, span, authority = await _prepared(
+        tmp_path / "conflict-resolution-fault.db", fault=fault
+    )
+    await backend.apply_memory_mutation_plan(
+        principal=_principal(),
+        scope=MemoryScope.personal("actor-1"),
+        plan=_plan(envelope, _operation(span)),
+    )
+    async with backend.connection.execute(
+        "SELECT memory_id FROM cognitive_memory_heads"
+    ) as cursor:
+        memory_id = str((await cursor.fetchone())[0])  # type: ignore[index]
+    challenger_envelope, challenger_receipt = _admitted(evidence_id="evidence-2")
+    challenger_span = _span(challenger_envelope, challenger_receipt)
+    authority.register_admitted(
+        challenger_envelope, challenger_receipt, challenger_span
+    )
+    await backend.ingest_committed_evidence(challenger_envelope, challenger_receipt)
+    contest = replace(
+        _operation(
+            challenger_span,
+            operation_id="contest-before-resolution-fault",
+            kind=MemoryMutationKind.CONTEST,
+            target=ExistingMemoryTarget(memory_id, 1),
+            conflict_status=ConflictStatus.CONTESTED,
+        ),
+        payload=SemanticMemoryPayload(
+            "user:self", "response_style", "verbose", ("default",)
+        ),
+    )
+    await backend.apply_memory_mutation_plan(
+        principal=_principal(),
+        scope=MemoryScope.personal("actor-1"),
+        plan=_plan(
+            challenger_envelope,
+            contest,
+            base_revision=2,
+            plan_id="contest-before-resolution-fault-plan",
+            idempotency_key="contest-before-resolution-fault-key",
+        ),
+    )
+    resolution_envelope, resolution_receipt = _admitted(evidence_id="evidence-3")
+    resolution_span = replace(
+        _span(resolution_envelope, resolution_receipt),
+        support_kind=EvidenceSupportKind.EXPLICIT_USER_CORRECTION,
+    )
+    authority.register_admitted(
+        resolution_envelope, resolution_receipt, resolution_span
+    )
+    await backend.ingest_committed_evidence(resolution_envelope, resolution_receipt)
+    resolve = replace(
+        _operation(
+            resolution_span,
+            operation_id="resolution-fault",
+            kind=MemoryMutationKind.REVISE,
+            target=ExistingMemoryTarget(memory_id, 2),
+            conflict_status=ConflictStatus.RESOLVED,
+        ),
+        payload=SemanticMemoryPayload(
+            "user:self", "response_style", "concise", ("default",)
+        ),
+        reason_code="explicit_user_correction",
+    )
+    plan = _with_action_authorities(
+        _plan(
+            resolution_envelope,
+            resolve,
+            base_revision=3,
+            plan_id="resolution-fault-plan",
+            idempotency_key="resolution-fault-key",
+        ),
+        authority,
+        nonce_prefix="resolution-fault",
+    )
+    armed = True
+    with pytest.raises(RuntimeError, match="mutation.after_conflict_resolution"):
+        await backend.apply_memory_mutation_plan(
+            principal=_principal(),
+            scope=MemoryScope.personal("actor-1"),
+            plan=plan,
+        )
+    async with backend.connection.execute(
+        "SELECT current_revision FROM cognitive_memory_heads WHERE memory_id=?",
+        (memory_id,),
+    ) as cursor:
+        assert int((await cursor.fetchone())[0]) == 2  # type: ignore[index]
+    async with backend.connection.execute(
+        "SELECT COUNT(*) FROM cognitive_conflict_resolutions"
+    ) as cursor:
+        assert int((await cursor.fetchone())[0]) == 0  # type: ignore[index]
+    async with backend.connection.execute(
+        "SELECT COUNT(*) FROM cognitive_memory_revisions WHERE memory_id=?",
+        (memory_id,),
+    ) as cursor:
+        assert int((await cursor.fetchone())[0]) == 2  # type: ignore[index]
     await backend.close()
 
 
@@ -2080,20 +2456,41 @@ async def test_supersede_and_contest_relations_use_plan_scoped_identity(
         "SELECT memory_id FROM cognitive_memory_heads WHERE memory_type='episode'"
     ) as cursor:
         episode_id = str((await cursor.fetchone())[0])  # type: ignore[index]
+    challenger_envelope, challenger_receipt = _admitted(evidence_id="evidence-2")
+    challenger_span = replace(
+        _span(challenger_envelope, challenger_receipt),
+        support_kind=EvidenceSupportKind.EXPLICIT_USER_CORRECTION,
+    )
+    authority.register_admitted(
+        challenger_envelope, challenger_receipt, challenger_span
+    )
+    await backend.ingest_committed_evidence(challenger_envelope, challenger_receipt)
     contest = replace(
         episode_create,
         operation_id="relation-action",
         kind=MemoryMutationKind.CONTEST,
         target=ExistingMemoryTarget(episode_id, 1),
+        payload=EpisodeMemoryPayload(
+            "different decision",
+            ("user:self",),
+            ("do not ship",),
+            (),
+            (),
+            (),
+            10.0,
+            11.0,
+            "thread-1",
+        ),
         lifecycle_state=EpisodeLifecycleState.ACTIVE,
         conflict_status=ConflictStatus.CONTESTED,
+        evidence_spans=(challenger_span,),
         reason_code="explicit_user_correction",
     )
     await backend.apply_memory_mutation_plan(
         principal=_principal(),
         scope=MemoryScope.personal("actor-1"),
         plan=_plan(
-            envelope,
+            challenger_envelope,
             contest,
             base_revision=4,
             plan_id="contest-plan",

@@ -130,6 +130,68 @@ def test_relation_identity_is_principal_and_plan_scoped(
     ) in _unique_indexes(connection, "cognitive_relations")
 
 
+def test_conflict_schema_persists_two_immutable_members_and_one_resolution(
+    connection: sqlite3.Connection,
+) -> None:
+    assert {
+        "group_id",
+        "principal_id",
+        "memory_id",
+        "incumbent_revision",
+        "challenger_revision",
+        "creation_plan_id",
+        "creation_plan_hash",
+        "operation_id",
+        "group_hash",
+    } <= _columns(connection, "cognitive_conflict_groups")
+    assert {
+        "group_id",
+        "ordinal",
+        "role",
+        "principal_id",
+        "memory_id",
+        "revision",
+        "content_hash",
+        "evidence_set_hash",
+        "member_hash",
+    } == _columns(connection, "cognitive_conflict_members")
+    assert {
+        "group_id",
+        "principal_id",
+        "memory_id",
+        "resolution_revision",
+        "resolution_kind",
+        "selected_member_ordinal",
+        "plan_id",
+        "plan_hash",
+        "operation_id",
+        "created_at",
+        "resolution_hash",
+    } == _columns(connection, "cognitive_conflict_resolutions")
+    assert ("group_id", "role") in _unique_indexes(
+        connection, "cognitive_conflict_members"
+    )
+    assert ("group_id", "memory_id", "revision") in _unique_indexes(
+        connection, "cognitive_conflict_members"
+    )
+
+    trigger_names = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='trigger' "
+            "AND name LIKE 'cognitive_conflict_%_immutable_%'"
+        )
+    }
+    assert trigger_names == {
+        "cognitive_conflict_groups_immutable_update",
+        "cognitive_conflict_groups_immutable_delete",
+        "cognitive_conflict_members_immutable_update",
+        "cognitive_conflict_members_immutable_delete",
+        "cognitive_conflict_resolutions_immutable_update",
+        "cognitive_conflict_resolutions_immutable_delete",
+    }
+
+
 def test_mutation_receipt_is_strict_atomic_not_partial(
     connection: sqlite3.Connection,
 ) -> None:

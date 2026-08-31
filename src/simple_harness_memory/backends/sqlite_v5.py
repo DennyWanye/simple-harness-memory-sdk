@@ -187,6 +187,12 @@ COGNITIVE_MUTATION_FAULT_POINTS = (
     "mutation.before_commit",
     "mutation.after_commit",
 )
+COGNITIVE_CONFLICT_FAULT_POINTS = (
+    "mutation.after_conflict_group",
+    "mutation.after_conflict_member_1",
+    "mutation.after_conflict_member_2",
+    "mutation.after_conflict_resolution",
+)
 PROCEDURE_OBSERVATION_FAULT_POINTS = (
     "procedure.before_begin",
     "procedure.after_begin",
@@ -3284,6 +3290,9 @@ class SQLiteHumanMemoryBackend:
                     target_privacy: PrivacyClass | None = None
                     target_attributes: tuple[InformationAttribute, ...] = ()
                     target_content_json: str | None = None
+                    target_content_hash: str | None = None
+                    target_conflict_status: str | None = None
+                    active_conflict_row: aiosqlite.Row | None = None
 
                     if operation.kind is MemoryMutationKind.CREATE:
                         memory_id = _stable_id(
@@ -3314,7 +3323,8 @@ class SQLiteHumanMemoryBackend:
                             "r.effective_privacy_class,r.information_attributes_json,"
                             "r.content_json,r.epistemic_status,r.verification_state,"
                             "r.valid_from,r.valid_to,h.scope_kind,h.scope_owner,"
-                            "r.scope_kind,r.scope_owner FROM cognitive_memory_heads h "
+                            "r.scope_kind,r.scope_owner,r.conflict_status,r.content_hash "
+                            "FROM cognitive_memory_heads h "
                             "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
                             "AND r.revision=h.current_revision "
                             "WHERE h.principal_id=? AND h.deployment_id=? "
@@ -3357,16 +3367,35 @@ class SQLiteHumanMemoryBackend:
                             InformationAttribute(str(item)) for item in raw_attributes
                         )
                         target_content_json = str(target_row[5])
+                        target_conflict_status = str(target_row[14])
+                        target_content_hash = str(target_row[15])
+                        async with self._db.execute(
+                            "SELECT g.* FROM cognitive_conflict_groups g "
+                            "LEFT JOIN cognitive_conflict_resolutions x ON x.group_id=g.group_id "
+                            "WHERE g.principal_id=? AND g.memory_id=? "
+                            "AND g.challenger_revision=? AND x.group_id IS NULL",
+                            (plan.subject, target_memory_id, target_revision),
+                        ) as cursor:
+                            active_conflict_row = await cursor.fetchone()
+                        if target_conflict_status == "contested" and active_conflict_row is None:
+                            raise MemoryCorruptionError(
+                                "contested head has no active conflict group"
+                            )
                         if operation.kind is MemoryMutationKind.CONTEST:
                             if not isinstance(operation.target, ExistingMemoryTarget):
                                 raise MemoryValidationError("mutation_contest_exact_slot_required")
+                            if active_conflict_row is not None:
+                                raise MemoryValidationError(
+                                    "mutation_contest_nested_group_rejected"
+                                )
                             proposed_content_json = (
                                 None
                                 if operation.payload is None
                                 else canonical_json(operation.payload.to_json())
                             )
                             if (
-                                proposed_content_json != target_content_json
+                                proposed_content_json is None
+                                or proposed_content_json == target_content_json
                                 or operation.lifecycle_state.value != str(target_row[2])
                                 or operation.epistemic_status.value != str(target_row[6])
                                 or operation.verification_state.value != str(target_row[7])
@@ -3374,6 +3403,40 @@ class SQLiteHumanMemoryBackend:
                                 or operation.valid_time_interval.valid_until != target_row[9]
                             ):
                                 raise MemoryValidationError("mutation_contest_exact_slot_required")
+                            async with self._db.execute(
+                                "SELECT span_id,evidence_id FROM cognitive_evidence_spans "
+                                "WHERE memory_id=? AND revision=? ORDER BY ordinal",
+                                (target_memory_id, target_revision),
+                            ) as cursor:
+                                incumbent_evidence = {
+                                    (str(row[0]), str(row[1]))
+                                    for row in await cursor.fetchall()
+                                }
+                            if not incumbent_evidence:
+                                raise MemoryCorruptionError(
+                                    "conflict incumbent has no evidence"
+                                )
+                            challenger_evidence = {
+                                (span.span_id, span.evidence_id)
+                                for span in operation.evidence_spans
+                            }
+                            if not challenger_evidence or challenger_evidence <= incumbent_evidence:
+                                raise MemoryValidationError(
+                                    "mutation_contest_distinct_evidence_required"
+                                )
+                        elif active_conflict_row is not None:
+                            if operation.kind is MemoryMutationKind.REVISE:
+                                if operation.conflict_status.value != "resolved":
+                                    raise MemoryValidationError(
+                                        "mutation_conflict_resolution_state_required"
+                                    )
+                            elif operation.kind not in {
+                                MemoryMutationKind.SUPERSEDE,
+                                MemoryMutationKind.SUPPRESS,
+                            }:
+                                raise MemoryValidationError(
+                                    "mutation_active_conflict_resolution_required"
+                                )
                         memory_id = target_memory_id
                         revision = target_revision + 1
 
@@ -3745,6 +3808,36 @@ class SQLiteHumanMemoryBackend:
                                 relation_hash,
                             ),
                         )
+                        if operation.kind is MemoryMutationKind.CONTEST:
+                            if target_content_hash is None:
+                                raise MemoryCorruptionError(
+                                    "conflict incumbent content hash is missing"
+                                )
+                            await self._insert_cognitive_conflict_group_unlocked(
+                                principal_id=plan.subject,
+                                memory_id=memory_id,
+                                incumbent_revision=target_revision,
+                                challenger_revision=revision,
+                                incumbent_content_hash=target_content_hash,
+                                challenger_content_hash=content_hash,
+                                plan_id=plan.plan_id,
+                                plan_hash=plan.plan_hash,
+                                operation_id=operation.operation_id,
+                                created_at=transaction_at,
+                            )
+                        elif active_conflict_row is not None:
+                            await self._insert_cognitive_conflict_resolution_unlocked(
+                                group_row=active_conflict_row,
+                                principal_id=plan.subject,
+                                memory_id=memory_id,
+                                resolution_revision=revision,
+                                resolution_content_hash=content_hash,
+                                operation_kind=operation.kind.value,
+                                plan_id=plan.plan_id,
+                                plan_hash=plan.plan_hash,
+                                operation_id=operation.operation_id,
+                                created_at=transaction_at,
+                            )
                         update = await self._db.execute(
                             "UPDATE cognitive_memory_heads SET current_revision=?,updated_at=? "
                             "WHERE principal_id=? AND scope_kind=? AND scope_owner=? "
@@ -4171,6 +4264,7 @@ class SQLiteHumanMemoryBackend:
         ) != str(row["canonical_operation_ids_json"]):
             raise MemoryCorruptionError("stored canonical operation IDs differ")
         await self._verify_classification_receipt_chain_unlocked(row, receipt, plan)
+        await self._validate_cognitive_conflict_integrity_unlocked()
         return plan.plan_hash, receipt
 
     async def _verify_classification_receipt_chain_unlocked(
@@ -6135,6 +6229,210 @@ class SQLiteHumanMemoryBackend:
                     *observation_values,
                 ),
             )
+
+    async def _cognitive_evidence_set_hash_unlocked(
+        self, memory_id: str, revision: int
+    ) -> str:
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT * FROM cognitive_evidence_spans WHERE memory_id=? AND revision=? "
+            "ORDER BY ordinal",
+            (memory_id, revision),
+        ) as cursor:
+            rows = tuple(await cursor.fetchall())
+        if not rows:
+            raise MemoryCorruptionError("cognitive conflict member has no evidence")
+        manifest = [
+            {key: row[key] for key in row.keys() if key not in {"memory_id", "revision"}}
+            for row in rows
+        ]
+        return hashlib.sha256(canonical_json(cast(Any, manifest)).encode("utf-8")).hexdigest()
+
+    async def _insert_cognitive_conflict_group_unlocked(
+        self,
+        *,
+        principal_id: str,
+        memory_id: str,
+        incumbent_revision: int,
+        challenger_revision: int,
+        incumbent_content_hash: str,
+        challenger_content_hash: str,
+        plan_id: str,
+        plan_hash: str,
+        operation_id: str,
+        created_at: float,
+    ) -> str:
+        assert self._db is not None
+        incumbent_evidence_hash = await self._cognitive_evidence_set_hash_unlocked(
+            memory_id, incumbent_revision
+        )
+        challenger_evidence_hash = await self._cognitive_evidence_set_hash_unlocked(
+            memory_id, challenger_revision
+        )
+        group_id = _stable_id(
+            "cognitive-conflict-group",
+            principal_id,
+            memory_id,
+            str(incumbent_revision),
+            str(challenger_revision),
+            plan_id,
+            operation_id,
+        )
+        members: list[dict[str, JsonValue]] = []
+        for ordinal, role, revision, content_hash, evidence_hash in (
+            (
+                1,
+                "incumbent",
+                incumbent_revision,
+                incumbent_content_hash,
+                incumbent_evidence_hash,
+            ),
+            (
+                2,
+                "challenger",
+                challenger_revision,
+                challenger_content_hash,
+                challenger_evidence_hash,
+            ),
+        ):
+            member_payload: dict[str, JsonValue] = {
+                "group_id": group_id,
+                "ordinal": ordinal,
+                "role": role,
+                "principal_id": principal_id,
+                "memory_id": memory_id,
+                "revision": revision,
+                "content_hash": content_hash,
+                "evidence_set_hash": evidence_hash,
+            }
+            member_payload["member_hash"] = hashlib.sha256(
+                canonical_json(member_payload).encode("utf-8")
+            ).hexdigest()
+            members.append(member_payload)
+        group_payload: dict[str, JsonValue] = {
+            "group_id": group_id,
+            "principal_id": principal_id,
+            "memory_id": memory_id,
+            "incumbent_revision": incumbent_revision,
+            "challenger_revision": challenger_revision,
+            "creation_plan_id": plan_id,
+            "creation_plan_hash": plan_hash,
+            "operation_id": operation_id,
+            "created_at": created_at,
+            "member_hashes": [str(member["member_hash"]) for member in members],
+        }
+        group_hash = hashlib.sha256(
+            canonical_json(group_payload).encode("utf-8")
+        ).hexdigest()
+        await self._db.execute(
+            "INSERT INTO cognitive_conflict_groups(group_id,principal_id,memory_id,"
+            "incumbent_revision,challenger_revision,creation_plan_id,creation_plan_hash,"
+            "operation_id,created_at,group_hash) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (
+                group_id,
+                principal_id,
+                memory_id,
+                incumbent_revision,
+                challenger_revision,
+                plan_id,
+                plan_hash,
+                operation_id,
+                created_at,
+                group_hash,
+            ),
+        )
+        self._fault("mutation.after_conflict_group")
+        for member in members:
+            await self._db.execute(
+                "INSERT INTO cognitive_conflict_members(group_id,ordinal,role,principal_id,"
+                "memory_id,revision,content_hash,evidence_set_hash,member_hash) "
+                "VALUES(?,?,?,?,?,?,?,?,?)",
+                (
+                    member["group_id"],
+                    member["ordinal"],
+                    member["role"],
+                    member["principal_id"],
+                    member["memory_id"],
+                    member["revision"],
+                    member["content_hash"],
+                    member["evidence_set_hash"],
+                    member["member_hash"],
+                ),
+            )
+            self._fault(f"mutation.after_conflict_member_{member['ordinal']}")
+        return group_id
+
+    async def _insert_cognitive_conflict_resolution_unlocked(
+        self,
+        *,
+        group_row: aiosqlite.Row,
+        principal_id: str,
+        memory_id: str,
+        resolution_revision: int,
+        resolution_content_hash: str,
+        operation_kind: str,
+        plan_id: str,
+        plan_hash: str,
+        operation_id: str,
+        created_at: float,
+    ) -> None:
+        assert self._db is not None
+        group_id = str(group_row["group_id"])
+        async with self._db.execute(
+            "SELECT ordinal,content_hash FROM cognitive_conflict_members "
+            "WHERE group_id=? ORDER BY ordinal",
+            (group_id,),
+        ) as cursor:
+            members = tuple(await cursor.fetchall())
+        if len(members) != 2:
+            raise MemoryCorruptionError("conflict member cardinality differs")
+        selected_ordinal: int | None = None
+        if operation_kind == "supersede":
+            resolution_kind = "superseded"
+        elif operation_kind == "suppress":
+            resolution_kind = "forgotten"
+        elif resolution_content_hash == str(members[0]["content_hash"]):
+            resolution_kind = "selected_incumbent"
+            selected_ordinal = 1
+        elif resolution_content_hash == str(members[1]["content_hash"]):
+            resolution_kind = "selected_challenger"
+            selected_ordinal = 2
+        else:
+            resolution_kind = "replacement"
+        resolution_payload: dict[str, JsonValue] = {
+            "group_id": group_id,
+            "principal_id": principal_id,
+            "memory_id": memory_id,
+            "resolution_revision": resolution_revision,
+            "resolution_kind": resolution_kind,
+            "selected_member_ordinal": selected_ordinal,
+            "plan_id": plan_id,
+            "plan_hash": plan_hash,
+            "operation_id": operation_id,
+            "created_at": created_at,
+        }
+        resolution_hash = hashlib.sha256(
+            canonical_json(resolution_payload).encode("utf-8")
+        ).hexdigest()
+        await self._db.execute(
+            "INSERT INTO cognitive_conflict_resolutions(group_id,principal_id,memory_id,"
+            "resolution_revision,resolution_kind,selected_member_ordinal,plan_id,plan_hash,"
+            "operation_id,created_at,resolution_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                group_id,
+                principal_id,
+                memory_id,
+                resolution_revision,
+                resolution_kind,
+                selected_ordinal,
+                plan_id,
+                plan_hash,
+                operation_id,
+                created_at,
+                resolution_hash,
+            ),
+        )
+        self._fault("mutation.after_conflict_resolution")
 
     async def _read_suppression_by_request(self, request_id: str) -> SuppressionDecision | None:
         assert self._db is not None
@@ -9563,8 +9861,207 @@ class SQLiteHumanMemoryBackend:
         ) as cursor:
             if await cursor.fetchone() is not None:
                 raise MemoryCorruptionError("cognitive memory scope integrity check failed")
+        await self._validate_cognitive_conflict_integrity_unlocked()
         await self._validate_short_horizon_integrity_unlocked()
         await self._validate_lifecycle_integrity_unlocked()
+
+    async def _validate_cognitive_conflict_integrity_unlocked(self) -> None:
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT * FROM cognitive_conflict_groups ORDER BY group_id"
+        ) as cursor:
+            groups = tuple(await cursor.fetchall())
+        active_group_keys: set[tuple[str, int]] = set()
+        for group in groups:
+            group_id = str(group["group_id"])
+            principal_id = str(group["principal_id"])
+            memory_id = str(group["memory_id"])
+            incumbent_revision = int(group["incumbent_revision"])
+            challenger_revision = int(group["challenger_revision"])
+            async with self._db.execute(
+                "SELECT * FROM cognitive_conflict_members WHERE group_id=? "
+                "ORDER BY ordinal",
+                (group_id,),
+            ) as cursor:
+                members = tuple(await cursor.fetchall())
+            if (
+                len(members) != 2
+                or [int(row["ordinal"]) for row in members] != [1, 2]
+                or [str(row["role"]) for row in members]
+                != ["incumbent", "challenger"]
+                or [int(row["revision"]) for row in members]
+                != [incumbent_revision, challenger_revision]
+                or any(
+                    str(row["principal_id"]) != principal_id
+                    or str(row["memory_id"]) != memory_id
+                    for row in members
+                )
+            ):
+                raise MemoryCorruptionError("conflict member cardinality differs")
+            member_hashes: list[str] = []
+            for member in members:
+                revision = int(member["revision"])
+                async with self._db.execute(
+                    "SELECT principal_id,content_hash,conflict_status FROM "
+                    "cognitive_memory_revisions WHERE memory_id=? AND revision=?",
+                    (memory_id, revision),
+                ) as cursor:
+                    revision_row = await cursor.fetchone()
+                evidence_hash = await self._cognitive_evidence_set_hash_unlocked(
+                    memory_id, revision
+                )
+                if (
+                    revision_row is None
+                    or str(revision_row["principal_id"]) != principal_id
+                    or str(revision_row["content_hash"]) != str(member["content_hash"])
+                    or evidence_hash != str(member["evidence_set_hash"])
+                ):
+                    raise MemoryCorruptionError("conflict member source differs")
+                if int(member["ordinal"]) == 2 and str(
+                    revision_row["conflict_status"]
+                ) != "contested":
+                    raise MemoryCorruptionError("conflict challenger state differs")
+                member_payload: dict[str, JsonValue] = {
+                    "group_id": group_id,
+                    "ordinal": int(member["ordinal"]),
+                    "role": str(member["role"]),
+                    "principal_id": principal_id,
+                    "memory_id": memory_id,
+                    "revision": revision,
+                    "content_hash": str(member["content_hash"]),
+                    "evidence_set_hash": evidence_hash,
+                }
+                member_hash = hashlib.sha256(
+                    canonical_json(member_payload).encode("utf-8")
+                ).hexdigest()
+                if member_hash != str(member["member_hash"]):
+                    raise MemoryCorruptionError("conflict member hash differs")
+                member_hashes.append(member_hash)
+            group_payload: dict[str, JsonValue] = {
+                "group_id": group_id,
+                "principal_id": principal_id,
+                "memory_id": memory_id,
+                "incumbent_revision": incumbent_revision,
+                "challenger_revision": challenger_revision,
+                "creation_plan_id": str(group["creation_plan_id"]),
+                "creation_plan_hash": str(group["creation_plan_hash"]),
+                "operation_id": str(group["operation_id"]),
+                "created_at": float(group["created_at"]),
+                "member_hashes": [cast(JsonValue, value) for value in member_hashes],
+            }
+            if hashlib.sha256(
+                canonical_json(group_payload).encode("utf-8")
+            ).hexdigest() != str(group["group_hash"]):
+                raise MemoryCorruptionError("conflict group hash differs")
+            async with self._db.execute(
+                "SELECT * FROM cognitive_relations WHERE principal_id=? AND plan_id=? "
+                "AND operation_id=? AND relation_kind='contests' AND source_memory_id=? "
+                "AND source_revision=? AND target_memory_id=? AND target_revision=?",
+                (
+                    principal_id,
+                    group["creation_plan_id"],
+                    group["operation_id"],
+                    memory_id,
+                    challenger_revision,
+                    memory_id,
+                    incumbent_revision,
+                ),
+            ) as cursor:
+                relations = tuple(await cursor.fetchall())
+            if len(relations) != 1:
+                raise MemoryCorruptionError("conflict relation cardinality differs")
+            relation = relations[0]
+            relation_payload: dict[str, JsonValue] = {
+                "relation_id": str(relation["relation_id"]),
+                "principal_id": principal_id,
+                "plan_id": str(relation["plan_id"]),
+                "plan_hash": str(relation["plan_hash"]),
+                "relation_kind": "contests",
+                "source_memory_id": memory_id,
+                "source_revision": challenger_revision,
+                "target_memory_id": memory_id,
+                "target_revision": incumbent_revision,
+                "operation_id": str(relation["operation_id"]),
+            }
+            if hashlib.sha256(
+                canonical_json(relation_payload).encode("utf-8")
+            ).hexdigest() != str(relation["relation_hash"]):
+                raise MemoryCorruptionError("conflict relation hash differs")
+            async with self._db.execute(
+                "SELECT * FROM cognitive_conflict_resolutions WHERE group_id=?",
+                (group_id,),
+            ) as cursor:
+                resolution = await cursor.fetchone()
+            async with self._db.execute(
+                "SELECT current_revision FROM cognitive_memory_heads "
+                "WHERE principal_id=? AND memory_id=?",
+                (principal_id, memory_id),
+            ) as cursor:
+                head = await cursor.fetchone()
+            if head is None:
+                raise MemoryCorruptionError("conflict memory head is missing")
+            if resolution is None:
+                if int(head["current_revision"]) != challenger_revision:
+                    raise MemoryCorruptionError("active conflict head differs")
+                active_group_keys.add((memory_id, challenger_revision))
+                continue
+            resolution_payload: dict[str, JsonValue] = {
+                "group_id": group_id,
+                "principal_id": principal_id,
+                "memory_id": memory_id,
+                "resolution_revision": int(resolution["resolution_revision"]),
+                "resolution_kind": str(resolution["resolution_kind"]),
+                "selected_member_ordinal": resolution["selected_member_ordinal"],
+                "plan_id": str(resolution["plan_id"]),
+                "plan_hash": str(resolution["plan_hash"]),
+                "operation_id": str(resolution["operation_id"]),
+                "created_at": float(resolution["created_at"]),
+            }
+            if (
+                hashlib.sha256(
+                    canonical_json(resolution_payload).encode("utf-8")
+                ).hexdigest()
+                != str(resolution["resolution_hash"])
+                or int(head["current_revision"])
+                < int(resolution["resolution_revision"])
+            ):
+                raise MemoryCorruptionError("conflict resolution differs")
+            async with self._db.execute(
+                "SELECT conflict_status FROM cognitive_memory_revisions "
+                "WHERE memory_id=? AND revision=?",
+                (memory_id, int(resolution["resolution_revision"])),
+            ) as cursor:
+                resolution_revision = await cursor.fetchone()
+            if (
+                resolution_revision is None
+                or str(resolution_revision["conflict_status"]) == "contested"
+            ):
+                raise MemoryCorruptionError("conflict resolution state differs")
+            selected = resolution["selected_member_ordinal"]
+            if selected is not None:
+                async with self._db.execute(
+                    "SELECT r.content_hash FROM cognitive_memory_revisions r "
+                    "WHERE r.memory_id=? AND r.revision=?",
+                    (memory_id, int(resolution["resolution_revision"])),
+                ) as cursor:
+                    resolved_revision = await cursor.fetchone()
+                if (
+                    resolved_revision is None
+                    or str(resolved_revision["content_hash"])
+                    != str(members[int(selected) - 1]["content_hash"])
+                ):
+                    raise MemoryCorruptionError("selected conflict member differs")
+        async with self._db.execute(
+            "SELECT h.memory_id,h.current_revision FROM cognitive_memory_heads h "
+            "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
+            "AND r.revision=h.current_revision WHERE r.conflict_status='contested'"
+        ) as cursor:
+            contested_heads = {
+                (str(row["memory_id"]), int(row["current_revision"]))
+                for row in await cursor.fetchall()
+            }
+        if contested_heads != active_group_keys:
+            raise MemoryCorruptionError("active conflict group set differs")
 
     async def _validate_short_horizon_integrity_unlocked(self) -> None:
         from simple_harness.runtime import (
@@ -11233,6 +11730,7 @@ def _platform_writer_lock(handle: Any, *, acquire: bool) -> None:
 
 
 __all__ = (
+    "COGNITIVE_CONFLICT_FAULT_POINTS",
     "COGNITIVE_MUTATION_FAULT_POINTS",
     "INGESTION_FAULT_POINTS",
     "INITIALIZATION_FAULT_POINTS",

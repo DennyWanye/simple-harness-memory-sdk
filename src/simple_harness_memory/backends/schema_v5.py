@@ -722,6 +722,89 @@ BEGIN SELECT RAISE(ABORT, 'immutable cognitive relation'); END;
 CREATE TRIGGER cognitive_relations_immutable_delete
 BEFORE DELETE ON cognitive_relations
 BEGIN SELECT RAISE(ABORT, 'immutable cognitive relation'); END;
+CREATE TABLE cognitive_conflict_groups (
+    group_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
+    incumbent_revision INTEGER NOT NULL CHECK (incumbent_revision >= 1),
+    challenger_revision INTEGER NOT NULL CHECK (challenger_revision >= 2),
+    creation_plan_id TEXT NOT NULL,
+    creation_plan_hash TEXT NOT NULL,
+    operation_id TEXT NOT NULL,
+    created_at REAL NOT NULL CHECK (created_at >= 0),
+    group_hash TEXT NOT NULL UNIQUE,
+    UNIQUE (principal_id, memory_id, challenger_revision),
+    UNIQUE (group_id, principal_id, memory_id),
+    FOREIGN KEY (memory_id, incumbent_revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision),
+    FOREIGN KEY (memory_id, challenger_revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision),
+    CHECK (challenger_revision > incumbent_revision)
+);
+CREATE TRIGGER cognitive_conflict_groups_immutable_update
+BEFORE UPDATE ON cognitive_conflict_groups
+BEGIN SELECT RAISE(ABORT, 'immutable cognitive conflict group'); END;
+CREATE TRIGGER cognitive_conflict_groups_immutable_delete
+BEFORE DELETE ON cognitive_conflict_groups
+BEGIN SELECT RAISE(ABORT, 'immutable cognitive conflict group'); END;
+CREATE TABLE cognitive_conflict_members (
+    group_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL CHECK (ordinal IN (1, 2)),
+    role TEXT NOT NULL CHECK (role IN ('incumbent', 'challenger')),
+    principal_id TEXT NOT NULL,
+    memory_id TEXT NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision >= 1),
+    content_hash TEXT NOT NULL,
+    evidence_set_hash TEXT NOT NULL,
+    member_hash TEXT NOT NULL UNIQUE,
+    PRIMARY KEY (group_id, ordinal),
+    UNIQUE (group_id, role),
+    UNIQUE (group_id, memory_id, revision),
+    FOREIGN KEY (group_id, principal_id, memory_id)
+        REFERENCES cognitive_conflict_groups(group_id, principal_id, memory_id),
+    FOREIGN KEY (memory_id, revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision)
+);
+CREATE TRIGGER cognitive_conflict_members_immutable_update
+BEFORE UPDATE ON cognitive_conflict_members
+BEGIN SELECT RAISE(ABORT, 'immutable cognitive conflict member'); END;
+CREATE TRIGGER cognitive_conflict_members_immutable_delete
+BEFORE DELETE ON cognitive_conflict_members
+BEGIN SELECT RAISE(ABORT, 'immutable cognitive conflict member'); END;
+CREATE TABLE cognitive_conflict_resolutions (
+    group_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL,
+    memory_id TEXT NOT NULL,
+    resolution_revision INTEGER NOT NULL CHECK (resolution_revision >= 1),
+    resolution_kind TEXT NOT NULL CHECK (
+        resolution_kind IN (
+            'selected_incumbent', 'selected_challenger', 'replacement',
+            'superseded', 'forgotten'
+        )
+    ),
+    selected_member_ordinal INTEGER CHECK (selected_member_ordinal IN (1, 2)),
+    plan_id TEXT NOT NULL,
+    plan_hash TEXT NOT NULL,
+    operation_id TEXT NOT NULL,
+    created_at REAL NOT NULL CHECK (created_at >= 0),
+    resolution_hash TEXT NOT NULL UNIQUE,
+    FOREIGN KEY (group_id, principal_id, memory_id)
+        REFERENCES cognitive_conflict_groups(group_id, principal_id, memory_id),
+    FOREIGN KEY (memory_id, resolution_revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision),
+    CHECK (
+        (resolution_kind = 'selected_incumbent' AND selected_member_ordinal = 1)
+        OR (resolution_kind = 'selected_challenger' AND selected_member_ordinal = 2)
+        OR (resolution_kind IN ('replacement', 'superseded', 'forgotten')
+            AND selected_member_ordinal IS NULL)
+    )
+);
+CREATE TRIGGER cognitive_conflict_resolutions_immutable_update
+BEFORE UPDATE ON cognitive_conflict_resolutions
+BEGIN SELECT RAISE(ABORT, 'immutable cognitive conflict resolution'); END;
+CREATE TRIGGER cognitive_conflict_resolutions_immutable_delete
+BEFORE DELETE ON cognitive_conflict_resolutions
+BEGIN SELECT RAISE(ABORT, 'immutable cognitive conflict resolution'); END;
 CREATE TABLE cognitive_classification_decisions (
     classification_decision_id TEXT PRIMARY KEY,
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
@@ -1466,6 +1549,9 @@ REQUIRED_TABLES = frozenset(
         "cognitive_evidence_spans",
         "cognitive_revision_task_scope_origins",
         "cognitive_relations",
+        "cognitive_conflict_groups",
+        "cognitive_conflict_members",
+        "cognitive_conflict_resolutions",
         "cognitive_classification_decisions",
         "cognitive_classification_evidence_authorities",
         "memory_mutation_receipts",
