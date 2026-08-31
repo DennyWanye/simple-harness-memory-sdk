@@ -848,6 +848,18 @@ class MemoryManager:
             SQLiteMemoryBackend.restore_backup_sync, backup, self._backend._db_path
         )
 
+    async def record_procedure_observation(self, *, principal, scope, reference):
+        operation = getattr(self._backend, "record_procedure_observation", None)
+        if operation is None:
+            raise RuntimeError("backend does not support Procedure observations")
+        return await operation(principal=principal, scope=scope, reference=reference)
+
+    async def apply_prospective_signal(self, *, principal, scope, reference):
+        operation = getattr(self._backend, "apply_prospective_signal", None)
+        if operation is None:
+            raise RuntimeError("backend does not support Prospective signals")
+        return await operation(principal=principal, scope=scope, reference=reference)
+
     async def close(self):
         await self._backend.close()
         self._closed = True

@@ -64,6 +64,9 @@ if TYPE_CHECKING:
         MemoryMutationApplyResult,
         MemoryMutationOperation,
         MemoryMutationPlan,
+        ProcedureObservationAuthorityPort,
+        ProcedureObservationAuthorityRef,
+        ProspectiveSignalAuthorityPort,
         SanitizedEvidenceEnvelope,
         SanitizedEvidenceReceipt,
     )
@@ -91,6 +94,9 @@ if TYPE_CHECKING:
         WorkerRunOutcome,
         _AnalysisDeliveryAdmission,
         _AnalysisDeliveryAuthorityRegistration,
+    )
+    from simple_harness_memory.core.lifecycle_results import (
+        ProcedureObservationApplyResult,
     )
     from simple_harness_memory.core.mutations import InformationClassificationPolicy
     from simple_harness_memory.core.suppression import (
@@ -172,6 +178,26 @@ COGNITIVE_MUTATION_FAULT_POINTS = (
     "mutation.before_commit",
     "mutation.after_commit",
 )
+PROCEDURE_OBSERVATION_FAULT_POINTS = (
+    "procedure.before_begin",
+    "procedure.after_begin",
+    "procedure.after_consumption",
+    "procedure.after_observation",
+    "procedure.after_revision",
+    "procedure.after_decision",
+    "procedure.before_commit",
+    "procedure.after_commit",
+)
+PROSPECTIVE_SIGNAL_FAULT_POINTS = (
+    "prospective.before_begin",
+    "prospective.after_begin",
+    "prospective.after_consumption",
+    "prospective.after_event",
+    "prospective.after_revision",
+    "prospective.after_decision",
+    "prospective.before_commit",
+    "prospective.after_commit",
+)
 logger = structlog.get_logger("simple_harness_memory.backends.sqlite_v5")
 _DEFAULT_FILTER_POLICIES = frozenset({"credential-filter/v1"})
 _AUDIT_IDENTIFIER_CREDENTIAL_PATTERNS = (
@@ -219,6 +245,8 @@ class SQLiteHumanMemoryBackend:
         conversation_evidence_authority: ConversationEvidenceAuthorityVerifierPort | None = None,
         classification_policy: InformationClassificationPolicy | None = None,
         memory_action_authority: MemoryActionAuthorityPort | None = None,
+        procedure_observation_authority: ProcedureObservationAuthorityPort | None = None,
+        prospective_signal_authority: ProspectiveSignalAuthorityPort | None = None,
     ) -> None:
         self._db_path = Path(db_path)
         self._fault_injector = fault_injector
@@ -244,6 +272,8 @@ class SQLiteHumanMemoryBackend:
         self._conversation_evidence_authority = conversation_evidence_authority
         self._classification_policy = classification_policy
         self._memory_action_authority = memory_action_authority
+        self._procedure_observation_authority = procedure_observation_authority
+        self._prospective_signal_authority = prospective_signal_authority
         self._analysis_delivery_authority_registration: object | None = None
         if analysis_delivery_authority is not None:
             verify = getattr(analysis_delivery_authority, "verify_analysis_delivery", None)
@@ -284,6 +314,23 @@ class SQLiteHumanMemoryBackend:
         ):
             raise TypeError(
                 "memory_action_authority must implement MemoryActionAuthorityPort"
+            )
+        if procedure_observation_authority is not None and not callable(
+            getattr(
+                procedure_observation_authority,
+                "resolve_procedure_observation_authority",
+                None,
+            )
+        ):
+            raise TypeError(
+                "procedure_observation_authority must implement "
+                "ProcedureObservationAuthorityPort"
+            )
+        if prospective_signal_authority is not None and not callable(
+            getattr(prospective_signal_authority, "resolve_prospective_signal_authority", None)
+        ):
+            raise TypeError(
+                "prospective_signal_authority must implement ProspectiveSignalAuthorityPort"
             )
 
     @property
@@ -336,14 +383,18 @@ class SQLiteHumanMemoryBackend:
 
     async def close(self) -> None:
         async with self._initialize_lock:
-            if self._db is not None:
-                await self._db.close()
-                self._db = None
-            self._receipt = None
-            self._audit_cursor_hmac_key = None
-            async with self._admission_lock:
-                self._delivery_admissions.clear()
-            self._release_writer_lease()
+            try:
+                if self._db is not None:
+                    await self._validate_integrity()
+            finally:
+                if self._db is not None:
+                    await self._db.close()
+                    self._db = None
+                self._receipt = None
+                self._audit_cursor_hmac_key = None
+                async with self._admission_lock:
+                    self._delivery_admissions.clear()
+                self._release_writer_lease()
 
     async def ingest_committed_evidence(
         self,
@@ -1007,6 +1058,385 @@ class SQLiteHumanMemoryBackend:
                     with suppress(Exception):
                         await self._db.execute("ROLLBACK")
 
+    async def record_procedure_observation(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        scope: MemoryScope,
+        reference: ProcedureObservationAuthorityRef,
+    ) -> ProcedureObservationApplyResult:
+        """Consume one ref-only Host observation and atomically advance Procedure state."""
+
+        from simple_harness.runtime import (
+            ProcedureHazard,
+            ProcedureLifecycleState,
+            ProcedureObservationAuthorityRef,
+            ProcedureObservationKind,
+            ProcedureObservationOutcome,
+            ProcedureRiskLevel,
+            verify_procedure_observation_authority,
+        )
+
+        from simple_harness_memory.core.lifecycle_results import (
+            UNBOUND_PROCEDURE_APPLICABILITY,
+            ProcedureObservationApplyResult,
+        )
+
+        if type(reference) is not ProcedureObservationAuthorityRef:
+            raise TypeError("reference must use ProcedureObservationAuthorityRef")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v5 backend is not initialized")
+        scope.authorize(principal)
+        replay = await self._read_procedure_result_unlocked(reference.replay_identity)
+        if replay is not None:
+            return replay
+        if self._procedure_observation_authority is None:
+            await self._append_lifecycle_rejection_audit(
+                table="procedure_observation_rejections",
+                domain="procedure-observation",
+                principal_id=principal.actor_id,
+                authority_ref_hash=reference.ref_hash,
+                reason_code="procedure_observation_authority_required",
+            )
+            raise MemoryValidationError("procedure_observation_authority_required")
+        try:
+            resolved_at = _timestamp(self._now())
+            authority = await verify_procedure_observation_authority(
+                reference,
+                self._procedure_observation_authority,
+                current_time=resolved_at,
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            await self._append_lifecycle_rejection_audit(
+                table="procedure_observation_rejections",
+                domain="procedure-observation",
+                principal_id=principal.actor_id,
+                authority_ref_hash=reference.ref_hash,
+                reason_code="procedure_observation_authority_rejected",
+            )
+            raise MemoryValidationError("procedure_observation_authority_rejected") from exc
+        intent = authority.intent
+        try:
+            if intent.subject != principal.actor_id:
+                raise MemoryOwnershipConflict("procedure_observation_subject_differs")
+            if (intent.scope.kind.value, intent.scope.owner_id) != (
+                scope.kind.value,
+                scope.owner_id,
+            ):
+                raise MemoryOwnershipConflict("procedure_observation_scope_differs")
+            async with self._write_lock:
+                self._fault("procedure.before_begin")
+                await self._db.execute("BEGIN IMMEDIATE")
+                begun = True
+                committed = False
+                try:
+                    self._fault("procedure.after_begin")
+                    replay = await self._read_procedure_result_unlocked(
+                        authority.replay_identity
+                    )
+                    if replay is not None:
+                        await self._db.execute("COMMIT")
+                        committed = True
+                        return replay
+                    consumed_at = _timestamp(self._now())
+                    if consumed_at < authority.issued_at or consumed_at >= authority.expires_at:
+                        raise MemoryValidationError("procedure_observation_authority_expired")
+                    async with self._db.execute(
+                        "SELECT h.memory_type,h.current_revision,h.scope_kind,h.scope_owner,"
+                        "r.lifecycle_state,p.risk_level,p.qualification_epoch,"
+                        "p.applicability_fingerprint,p.bound_hazard "
+                        "FROM cognitive_memory_heads h JOIN cognitive_memory_revisions r "
+                        "ON r.memory_id=h.memory_id AND r.revision=h.current_revision "
+                        "JOIN procedure_records p ON p.memory_id=r.memory_id "
+                        "AND p.revision=r.revision WHERE h.principal_id=? AND h.memory_id=?",
+                        (principal.actor_id, intent.target_memory_id),
+                    ) as cursor:
+                        row = await cursor.fetchone()
+                    if row is None:
+                        raise MemoryValidationError("procedure_observation_target_not_found")
+                    if str(row[0]) != "procedure":
+                        raise MemoryValidationError("procedure_observation_target_type_differs")
+                    if (str(row[2]), str(row[3])) != (
+                        scope.kind.value,
+                        scope.owner_id,
+                    ):
+                        raise MemoryOwnershipConflict("procedure_observation_scope_differs")
+                    base_revision = int(row[1])
+                    if base_revision != intent.target_revision:
+                        raise MemoryWriterConflict("procedure_observation_revision_stale")
+                    current_state = ProcedureLifecycleState(str(row[4]))
+                    if current_state is not intent.transition_from:
+                        raise MemoryWriterConflict("procedure_observation_lifecycle_stale")
+                    if str(row[5]) != intent.risk_level.value:
+                        raise MemoryValidationError("procedure_observation_risk_differs")
+                    qualification_epoch = str(row[6])
+                    current_fingerprint = str(row[7])
+                    current_hazard = None if row[8] is None else str(row[8])
+                    await self._verify_procedure_evidence_unlocked(intent)
+                    if intent.observed_at > consumed_at:
+                        raise MemoryValidationError(
+                            "procedure_observation_occurred_at_future"
+                        )
+                    bound_fingerprint = current_fingerprint
+                    bound_hazard = current_hazard
+                    reason_code = "procedure_observation_recorded"
+                    if current_fingerprint == UNBOUND_PROCEDURE_APPLICABILITY:
+                        bound_fingerprint = intent.applicability.fingerprint
+                        bound_hazard = intent.hazard.value
+                        reason_code = "procedure_applicability_bound"
+                    fingerprint_matches = (
+                        bound_fingerprint == intent.applicability.fingerprint
+                    )
+                    hazard_matches = bound_hazard == intent.hazard.value
+                    window_start = max(0.0, consumed_at - 90.0 * 24.0 * 60.0 * 60.0)
+                    async with self._db.execute(
+                        "SELECT COUNT(*),SUM(CASE WHEN outcome='failure' THEN 1 ELSE 0 END) "
+                        "FROM procedure_observations WHERE memory_id=? "
+                        "AND qualification_epoch=? AND applicability_fingerprint=? "
+                        "AND occurred_at>=? AND occurred_at<=? AND ("
+                        "(outcome='success' AND attributable=1) OR outcome='failure')",
+                        (
+                            intent.target_memory_id,
+                            qualification_epoch,
+                            bound_fingerprint,
+                            window_start,
+                            consumed_at,
+                        ),
+                    ) as cursor:
+                        count_row = await cursor.fetchone()
+                    if count_row is None:
+                        raise MemoryCorruptionError("procedure evidence count is missing")
+                    failure_count = int(count_row[1] or 0)
+                    success_count = int(count_row[0]) - failure_count
+                    counts_in_window = (
+                        intent.observed_at >= window_start
+                        and intent.observed_at <= consumed_at
+                    )
+                    next_state = current_state
+                    if not fingerprint_matches or not hazard_matches:
+                        next_state = ProcedureLifecycleState.INAPPLICABLE
+                        reason_code = "procedure_applicability_or_hazard_drift"
+                    elif intent.kind is ProcedureObservationKind.TERMINAL_OUTCOME:
+                        if intent.outcome is ProcedureObservationOutcome.FAILURE:
+                            if counts_in_window:
+                                failure_count += 1
+                            if intent.attributable:
+                                next_state = ProcedureLifecycleState.REVISED
+                                reason_code = "procedure_attributable_failure"
+                            else:
+                                reason_code = "procedure_non_attributable_failure"
+                        elif intent.outcome is ProcedureObservationOutcome.SUCCESS:
+                            if intent.attributable and counts_in_window:
+                                success_count += 1
+                            if (
+                                intent.attributable
+                                and
+                                intent.risk_level is ProcedureRiskLevel.LOW
+                                and intent.hazard is ProcedureHazard.NONE
+                            ):
+                                threshold_state = (
+                                    ProcedureLifecycleState.DRAFT
+                                    if success_count < 2
+                                    else ProcedureLifecycleState.ELIGIBLE_FOR_ACTIVATION
+                                    if success_count < 3
+                                    else ProcedureLifecycleState.ACTIVE
+                                )
+                                ranks = {
+                                    ProcedureLifecycleState.DRAFT: 0,
+                                    ProcedureLifecycleState.ELIGIBLE_FOR_ACTIVATION: 1,
+                                    ProcedureLifecycleState.ACTIVE: 2,
+                                    ProcedureLifecycleState.REINFORCED: 3,
+                                }
+                                if current_state in ranks and (
+                                    ranks[threshold_state] > ranks[current_state]
+                                ):
+                                    next_state = threshold_state
+                                reason_code = "procedure_low_risk_success"
+                            else:
+                                reason_code = (
+                                    "procedure_non_attributable_success"
+                                    if not intent.attributable
+                                    else "procedure_unsafe_auto_activation_blocked"
+                                )
+                    if next_state is not intent.transition_to:
+                        raise MemoryValidationError(
+                            "procedure_observation_expected_transition_differs"
+                        )
+                    consumption_id, consumption_hash = (
+                        await self._insert_procedure_consumption_unlocked(
+                            principal.actor_id, reference, authority, consumed_at
+                        )
+                    )
+                    self._fault("procedure.after_consumption")
+                    observation_json = intent.to_json()
+                    observation_hash = hashlib.sha256(
+                        canonical_json(observation_json).encode("utf-8")
+                    ).hexdigest()
+                    await self._db.execute(
+                        "INSERT INTO procedure_observations(observation_id,consumption_id,"
+                        "principal_id,memory_id,procedure_revision,task_scope_id,"
+                        "qualification_epoch,"
+                        "terminal_receipt_id,terminal_receipt_hash,applicability_fingerprint,"
+                        "outcome,attributable,occurred_at,evidence_id,evidence_span_hash,"
+                        "observation_json,observation_hash) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (
+                            intent.observation_id,
+                            consumption_id,
+                            principal.actor_id,
+                            intent.target_memory_id,
+                            base_revision,
+                            intent.task_scope_id,
+                            qualification_epoch,
+                            intent.terminal_receipt_id,
+                            intent.terminal_receipt_hash,
+                            intent.applicability.fingerprint,
+                            None if intent.outcome is None else intent.outcome.value,
+                            int(intent.attributable),
+                            intent.observed_at,
+                            intent.evidence_span.evidence_id,
+                            intent.evidence_span.span_hash,
+                            canonical_json(observation_json),
+                            observation_hash,
+                        ),
+                    )
+                    self._fault("procedure.after_observation")
+                    committed_revision = base_revision + 1
+                    await self._copy_cognitive_revision_unlocked(
+                        memory_id=intent.target_memory_id,
+                        base_revision=base_revision,
+                        committed_revision=committed_revision,
+                        lifecycle_state=next_state.value,
+                        operation_id=intent.operation_id,
+                        plan_id=_stable_id(
+                            "procedure-observation-plan", authority.authority_id
+                        ),
+                        plan_hash=intent.intent_hash,
+                        created_at=consumed_at,
+                    )
+                    await self._copy_procedure_payload_unlocked(
+                        memory_id=intent.target_memory_id,
+                        base_revision=base_revision,
+                        committed_revision=committed_revision,
+                        qualification_epoch=qualification_epoch,
+                        applicability_fingerprint=bound_fingerprint,
+                        bound_hazard=bound_hazard,
+                        success_count=success_count,
+                        failure_count=failure_count,
+                    )
+                    self._fault("procedure.after_revision")
+                    update = await self._db.execute(
+                        "UPDATE cognitive_memory_heads SET current_revision=?,updated_at=? "
+                        "WHERE principal_id=? AND scope_kind=? AND scope_owner=? "
+                        "AND memory_id=? AND current_revision=?",
+                        (
+                            committed_revision,
+                            consumed_at,
+                            principal.actor_id,
+                            scope.kind.value,
+                            scope.owner_id,
+                            intent.target_memory_id,
+                            base_revision,
+                        ),
+                    )
+                    if update.rowcount != 1:
+                        raise MemoryWriterConflict("procedure_observation_cas_failed")
+                    decision_id = _stable_id(
+                        "procedure-observation-decision", authority.authority_id
+                    )
+                    decision_json: dict[str, JsonValue] = {
+                        "schema_version": 1,
+                        "decision_id": decision_id,
+                        "consumption_id": consumption_id,
+                        "consumption_hash": consumption_hash,
+                        "memory_id": intent.target_memory_id,
+                        "base_revision": base_revision,
+                        "committed_revision": committed_revision,
+                        "transition_from": current_state.value,
+                        "transition_to": next_state.value,
+                        "independent_successes": success_count,
+                        "reason_code": reason_code,
+                    }
+                    decision_hash = hashlib.sha256(
+                        canonical_json(decision_json).encode("utf-8")
+                    ).hexdigest()
+                    await self._db.execute(
+                        "INSERT INTO procedure_observation_decisions(decision_id,"
+                        "consumption_id,memory_id,base_revision,committed_revision,"
+                        "transition_from,transition_to,independent_successes,reason_code,"
+                        "decision_json,decision_hash,decided_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (
+                            decision_id,
+                            consumption_id,
+                            intent.target_memory_id,
+                            base_revision,
+                            committed_revision,
+                            current_state.value,
+                            next_state.value,
+                            success_count,
+                            reason_code,
+                            canonical_json(decision_json),
+                            decision_hash,
+                            consumed_at,
+                        ),
+                    )
+                    result = ProcedureObservationApplyResult(
+                        _stable_id("procedure-observation-result", authority.authority_id),
+                        intent.observation_id,
+                        decision_id,
+                        intent.target_memory_id,
+                        base_revision,
+                        committed_revision,
+                        next_state,
+                        success_count,
+                        reason_code,
+                        consumed_at,
+                    )
+                    await self._db.execute(
+                        "INSERT INTO procedure_observation_results(result_id,consumption_id,"
+                        "replay_identity,result_json,result_hash,decided_at) VALUES(?,?,?,?,?,?)",
+                        (
+                            result.result_id,
+                            consumption_id,
+                            authority.replay_identity,
+                            canonical_json(result.to_json()),
+                            result.result_hash,
+                            result.decided_at,
+                        ),
+                    )
+                    self._fault("procedure.after_decision")
+                    before_commit = _timestamp(self._now())
+                    if before_commit >= authority.expires_at:
+                        raise MemoryValidationError(
+                            "procedure_observation_authority_expired"
+                        )
+                    self._fault("procedure.before_commit")
+                    await self._db.execute("COMMIT")
+                    committed = True
+                    self._fault("procedure.after_commit")
+                    return result
+                except BaseException:
+                    if begun and not committed:
+                        with suppress(Exception):
+                            await self._db.execute("ROLLBACK")
+                    raise
+        except (MemoryErrorBase, sqlite3.IntegrityError) as exc:
+            reason = (
+                str(exc)
+                if isinstance(exc, MemoryErrorBase)
+                else "procedure_observation_replayed"
+            )
+            await self._append_lifecycle_rejection_audit(
+                table="procedure_observation_rejections",
+                domain="procedure-observation",
+                principal_id=principal.actor_id,
+                authority_ref_hash=reference.ref_hash,
+                reason_code=reason,
+            )
+            if isinstance(exc, MemoryErrorBase):
+                raise
+            raise MemoryValidationError(reason) from exc
+
     async def apply_memory_mutation_plan(
         self,
         *,
@@ -1206,8 +1636,14 @@ class SQLiteHumanMemoryBackend:
                         raise MemoryValidationError("memory_action_exact_target_required")
                     async with self._db.execute(
                         "SELECT current_revision FROM cognitive_memory_heads "
-                        "WHERE principal_id=? AND memory_id=?",
-                        (plan.subject, operation.target.memory_id),
+                        "WHERE principal_id=? AND scope_kind=? AND scope_owner=? "
+                        "AND memory_id=?",
+                        (
+                            plan.subject,
+                            scope.kind.value,
+                            scope.owner_id,
+                            operation.target.memory_id,
+                        ),
                     ) as cursor:
                         action_target_row = await cursor.fetchone()
                     if action_target_row is None:
@@ -1426,17 +1862,31 @@ class SQLiteHumanMemoryBackend:
                             "SELECT h.memory_type,h.current_revision,r.lifecycle_state,"
                             "r.effective_privacy_class,r.information_attributes_json,"
                             "r.content_json,r.epistemic_status,r.verification_state,"
-                            "r.valid_from,r.valid_to FROM cognitive_memory_heads h "
+                            "r.valid_from,r.valid_to,h.scope_kind,h.scope_owner,"
+                            "r.scope_kind,r.scope_owner FROM cognitive_memory_heads h "
                             "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
                             "AND r.revision=h.current_revision "
-                            "WHERE h.principal_id=? AND h.memory_id=?",
-                            (plan.subject, target_memory_id),
+                            "WHERE h.principal_id=? AND h.scope_kind=? AND h.scope_owner=? "
+                            "AND h.memory_id=?",
+                            (
+                                plan.subject,
+                                scope.kind.value,
+                                scope.owner_id,
+                                target_memory_id,
+                            ),
                         ) as cursor:
                             target_row = await cursor.fetchone()
                         if target_row is None:
                             raise MemoryValidationError("mutation_target_not_found")
                         target_type = LongTermMemoryType(str(target_row[0]))
                         target_revision = int(target_row[1])
+                        if (
+                            str(target_row[10]) != str(target_row[12])
+                            or str(target_row[11]) != str(target_row[13])
+                        ):
+                            raise MemoryCorruptionError(
+                                "cognitive head and revision scope differ"
+                            )
                         if expected_revision is not None and target_revision != expected_revision:
                             raise MemoryWriterConflict("cognitive_target_revision_stale")
                         lifecycle_type = type(operation.lifecycle_state)
@@ -1544,11 +1994,13 @@ class SQLiteHumanMemoryBackend:
                     if operation.kind is MemoryMutationKind.CREATE:
                         await self._db.execute(
                             "INSERT INTO cognitive_memory_heads(memory_id,principal_id,"
-                            "memory_type,current_revision,created_at,updated_at) "
-                            "VALUES(?,?,?,?,?,?)",
+                            "scope_kind,scope_owner,memory_type,current_revision,created_at,"
+                            "updated_at) VALUES(?,?,?,?,?,?,?,?)",
                             (
                                 memory_id,
                                 plan.subject,
+                                scope.kind.value,
+                                scope.owner_id,
                                 operation.memory_type.value,
                                 revision,
                                 transaction_at,
@@ -1565,15 +2017,18 @@ class SQLiteHumanMemoryBackend:
                     content_hash = hashlib.sha256(content_json.encode("utf-8")).hexdigest()
                     await self._db.execute(
                         "INSERT INTO cognitive_memory_revisions(memory_id,principal_id,revision,"
-                        "plan_id,plan_hash,operation_id,task_scope_id,lifecycle_state,"
+                        "scope_kind,scope_owner,plan_id,plan_hash,operation_id,task_scope_id,"
+                        "lifecycle_state,"
                         "epistemic_status,conflict_status,"
                         "verification_state,effective_privacy_class,"
                         "information_attributes_json,content_json,content_hash,valid_from,"
-                        "valid_to,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "valid_to,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             memory_id,
                             plan.subject,
                             revision,
+                            scope.kind.value,
+                            scope.owner_id,
                             plan.plan_id,
                             plan.plan_hash,
                             operation.operation_id,
@@ -1604,7 +2059,25 @@ class SQLiteHumanMemoryBackend:
                         )
                     else:
                         await self._insert_cognitive_payload_unlocked(
-                            memory_id, revision, operation.payload
+                            memory_id,
+                            revision,
+                            operation.payload,
+                            new_procedure_epoch=operation.kind in {
+                                MemoryMutationKind.CREATE,
+                                MemoryMutationKind.REVISE,
+                            },
+                        )
+                    if operation.memory_type is LongTermMemoryType.PROSPECTIVE:
+                        await self._append_prospective_mutation_outbox_unlocked(
+                            principal_id=plan.subject,
+                            memory_id=memory_id,
+                            revision=revision,
+                            lifecycle_state=operation.lifecycle_state.value,
+                            previous_revision=target_revision,
+                            previous_lifecycle_state=(
+                                None if target_lifecycle is None else target_lifecycle.value
+                            ),
+                            created_at=transaction_at,
                         )
                     await self._insert_cognitive_evidence_unlocked(
                         memory_id, revision, operation.evidence_spans
@@ -1820,11 +2293,14 @@ class SQLiteHumanMemoryBackend:
                         )
                         update = await self._db.execute(
                             "UPDATE cognitive_memory_heads SET current_revision=?,updated_at=? "
-                            "WHERE principal_id=? AND memory_id=? AND current_revision=?",
+                            "WHERE principal_id=? AND scope_kind=? AND scope_owner=? "
+                            "AND memory_id=? AND current_revision=?",
                             (
                                 revision,
                                 transaction_at,
                                 plan.subject,
+                                scope.kind.value,
+                                scope.owner_id,
                                 memory_id,
                                 target_revision,
                             ),
@@ -3360,7 +3836,12 @@ class SQLiteHumanMemoryBackend:
         return ()
 
     async def _insert_cognitive_payload_unlocked(
-        self, memory_id: str, revision: int, payload: object
+        self,
+        memory_id: str,
+        revision: int,
+        payload: object,
+        *,
+        new_procedure_epoch: bool = False,
     ) -> None:
         from simple_harness.runtime import (
             EpisodeMemoryPayload,
@@ -3407,10 +3888,33 @@ class SQLiteHumanMemoryBackend:
                 ),
             )
         elif isinstance(payload, ProcedureMemoryPayload):
+            from simple_harness_memory.core.lifecycle_results import (
+                UNBOUND_PROCEDURE_APPLICABILITY,
+            )
+
             applicability_json = canonical_json(list(payload.applicability))
+            if new_procedure_epoch or revision == 1:
+                qualification_epoch = _stable_id(
+                    "procedure-qualification-epoch", memory_id, str(revision)
+                )
+                applicability_fingerprint = UNBOUND_PROCEDURE_APPLICABILITY
+                bound_hazard = None
+            else:
+                async with self._db.execute(
+                    "SELECT qualification_epoch,applicability_fingerprint,bound_hazard "
+                    "FROM procedure_records WHERE memory_id=? AND revision=?",
+                    (memory_id, revision - 1),
+                ) as cursor:
+                    prior = await cursor.fetchone()
+                if prior is None:
+                    raise MemoryCorruptionError("prior procedure payload is missing")
+                qualification_epoch = str(prior[0])
+                applicability_fingerprint = str(prior[1])
+                bound_hazard = None if prior[2] is None else str(prior[2])
             await self._db.execute(
                 "INSERT INTO procedure_records(memory_id,revision,name,applicability_json,"
-                "steps_json,risk_level,applicability_fingerprint) VALUES(?,?,?,?,?,?,?)",
+                "steps_json,risk_level,qualification_epoch,applicability_fingerprint,"
+                "bound_hazard) VALUES(?,?,?,?,?,?,?,?,?)",
                 (
                     memory_id,
                     revision,
@@ -3418,7 +3922,9 @@ class SQLiteHumanMemoryBackend:
                     applicability_json,
                     canonical_json(list(payload.steps)),
                     payload.proposed_risk_level.value,
-                    hashlib.sha256(applicability_json.encode("utf-8")).hexdigest(),
+                    qualification_epoch,
+                    applicability_fingerprint,
+                    bound_hazard,
                 ),
             )
         elif isinstance(payload, ProspectiveMemoryPayload):
@@ -3447,6 +3953,348 @@ class SQLiteHumanMemoryBackend:
         else:
             raise MemoryValidationError("cognitive_payload_type_invalid")
 
+    async def _append_prospective_mutation_outbox_unlocked(
+        self,
+        *,
+        principal_id: str,
+        memory_id: str,
+        revision: int,
+        lifecycle_state: str,
+        previous_revision: int | None,
+        previous_lifecycle_state: str | None,
+        created_at: float,
+    ) -> None:
+        """Emit durable scheduler commands; Memory never owns a clock or action runner."""
+
+        from simple_harness.runtime import (
+            ProspectiveEventTrigger,
+            ProspectiveLifecycleState,
+            ProspectiveTimeTrigger,
+            prospective_trigger_hash,
+        )
+
+        assert self._db is not None
+        db = self._db
+
+        async def append(kind: str, target_revision: int) -> None:
+            async with db.execute(
+                "SELECT trigger_json FROM prospective_records "
+                "WHERE memory_id=? AND revision=?",
+                (memory_id, target_revision),
+            ) as cursor:
+                row = await cursor.fetchone()
+            if row is None:
+                raise MemoryCorruptionError("prospective payload is missing")
+            raw = json.loads(str(row[0]))
+            if not isinstance(raw, dict):
+                raise MemoryCorruptionError("prospective trigger is invalid")
+            discriminator = raw.get("trigger_kind")
+            try:
+                trigger = (
+                    ProspectiveTimeTrigger.from_json(raw)
+                    if discriminator == "time"
+                    else ProspectiveEventTrigger.from_json(raw)
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise MemoryCorruptionError("prospective trigger is invalid") from exc
+            trigger_hash = prospective_trigger_hash(trigger)
+            payload: dict[str, JsonValue] = {
+                "schema_version": 1,
+                "command": kind,
+                "memory_id": memory_id,
+                "prospective_revision": target_revision,
+                "registration_revision": target_revision,
+                "trigger": trigger.to_json(),
+                "trigger_hash": trigger_hash,
+            }
+            payload_json = canonical_json(payload)
+            outbox_id = _stable_id(
+                "prospective-scheduler-outbox", memory_id, str(target_revision), kind
+            )
+            await db.execute(
+                "INSERT INTO outbox(outbox_id,principal_id,topic,idempotency_key,payload,"
+                "payload_hash,state,next_attempt_at,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,'pending',?,?,?)",
+                (
+                    outbox_id,
+                    principal_id,
+                    f"memory.prospective.{kind}.requested",
+                    outbox_id,
+                    payload_json,
+                    hashlib.sha256(payload_json.encode("utf-8")).hexdigest(),
+                    created_at,
+                    created_at,
+                    created_at,
+                ),
+            )
+
+        live_states = {
+            ProspectiveLifecycleState.PENDING.value,
+            ProspectiveLifecycleState.TRIGGERED.value,
+            ProspectiveLifecycleState.IN_PROGRESS.value,
+            ProspectiveLifecycleState.RESCHEDULED.value,
+        }
+        if previous_revision is not None and previous_lifecycle_state in live_states:
+            await append("invalidation", previous_revision)
+        if lifecycle_state in {
+            ProspectiveLifecycleState.PENDING.value,
+            ProspectiveLifecycleState.RESCHEDULED.value,
+        }:
+            await append("registration", revision)
+
+    async def _read_procedure_result_unlocked(
+        self, replay_identity: str
+    ) -> ProcedureObservationApplyResult | None:
+        from simple_harness_memory.core.lifecycle_results import (
+            ProcedureObservationApplyResult,
+        )
+
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT result_json,result_hash FROM procedure_observation_results "
+            "WHERE replay_identity=?",
+            (replay_identity,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        try:
+            raw = json.loads(str(row[0]))
+            if not isinstance(raw, dict):
+                raise ValueError("stored result is not an object")
+            result = ProcedureObservationApplyResult.from_json(raw)
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise MemoryCorruptionError(
+                "stored procedure observation result is invalid"
+            ) from exc
+        if canonical_json(result.to_json()) != str(row[0]) or result.result_hash != str(row[1]):
+            raise MemoryCorruptionError("stored procedure observation result differs")
+        return result
+
+    async def _append_lifecycle_rejection_audit(
+        self,
+        *,
+        table: str,
+        domain: str,
+        principal_id: str,
+        authority_ref_hash: str,
+        reason_code: str,
+    ) -> None:
+        if table not in {
+            "procedure_observation_rejections",
+            "prospective_signal_rejections",
+        }:
+            raise MemoryCorruptionError("lifecycle rejection table is invalid")
+        assert self._db is not None
+        rejected_at = _timestamp(self._now())
+        rejection_id = _stable_id(domain + "-rejection", principal_id, authority_ref_hash)
+        rejection: dict[str, JsonValue] = {
+            "schema_version": 1,
+            "rejection_id": rejection_id,
+            "principal_id_hash": _opaque_hash(principal_id),
+            "authority_ref_hash": authority_ref_hash,
+            "reason_code": reason_code,
+            "rejected_at": rejected_at,
+        }
+        rejection_json = canonical_json(rejection)
+        rejection_hash = hashlib.sha256(rejection_json.encode("utf-8")).hexdigest()
+        async with self._write_lock:
+            try:
+                await self._db.execute("BEGIN IMMEDIATE")
+                await self._db.execute(
+                    f"INSERT OR IGNORE INTO {table}(rejection_id,principal_id,"
+                    "authority_ref_hash,reason_code,rejection_json,rejection_hash,rejected_at) "
+                    "VALUES(?,?,?,?,?,?,?)",
+                    (
+                        rejection_id,
+                        principal_id,
+                        authority_ref_hash,
+                        reason_code,
+                        rejection_json,
+                        rejection_hash,
+                        rejected_at,
+                    ),
+                )
+                await self._db.execute("COMMIT")
+            except BaseException:
+                with suppress(Exception):
+                    await self._db.execute("ROLLBACK")
+                raise
+
+    async def _verify_procedure_evidence_unlocked(self, intent: object) -> None:
+        span = getattr(intent, "evidence_span")
+        origins = await self._verify_mutation_span_unlocked(
+            subject=str(getattr(intent, "subject")), span=span
+        )
+        exact_origin = tuple(
+            origin
+            for origin in origins
+            if origin[0] == getattr(intent, "task_scope_id")
+        )
+        if not exact_origin:
+            raise MemoryValidationError("procedure_observation_task_scope_evidence_missing")
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT run_id,tool_causal_link_json FROM conversation_evidence_registrations "
+            "WHERE principal_id=? AND evidence_id=? AND task_scope_id=?",
+            (
+                getattr(intent, "subject"),
+                span.evidence_id,
+                getattr(intent, "task_scope_id"),
+            ),
+        ) as cursor:
+            rows = list(await cursor.fetchall())
+        if len(rows) != 1 or str(rows[0][0]) != getattr(intent, "run_id"):
+            raise MemoryValidationError("procedure_observation_evidence_binding_differs")
+        terminal_id = getattr(intent, "terminal_receipt_id")
+        terminal_hash = getattr(intent, "terminal_receipt_hash")
+        if terminal_id is None:
+            return
+        raw_link = rows[0][1]
+        if raw_link is None:
+            raise MemoryValidationError("procedure_observation_terminal_receipt_missing")
+        try:
+            link = json.loads(str(raw_link))
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise MemoryCorruptionError("conversation tool causal link is invalid") from exc
+        if not isinstance(link, dict) or (
+            link.get("terminal_receipt_id"), link.get("terminal_receipt_hash")
+        ) != (terminal_id, terminal_hash):
+            raise MemoryValidationError("procedure_observation_terminal_receipt_differs")
+
+    async def _insert_procedure_consumption_unlocked(
+        self, principal_id: str, reference: object, authority: object, consumed_at: float
+    ) -> tuple[str, str]:
+        assert self._db is not None
+        intent = getattr(authority, "intent")
+        consumption_id = _stable_id(
+            "procedure-observation-consumption", getattr(authority, "authority_id")
+        )
+        consumption: dict[str, JsonValue] = {
+            "schema_version": 1,
+            "consumption_id": consumption_id,
+            "principal_id": principal_id,
+            "authority_ref": getattr(reference, "to_json")(),
+            "authority_ref_hash": getattr(reference, "ref_hash"),
+            "authority": getattr(authority, "to_json")(),
+            "authority_hash": getattr(authority, "authority_hash"),
+            "consumed_at": consumed_at,
+        }
+        consumption_hash = hashlib.sha256(
+            canonical_json(consumption).encode("utf-8")
+        ).hexdigest()
+        await self._db.execute(
+            "INSERT INTO procedure_observation_authority_consumptions(consumption_id,"
+            "principal_id,authority_id,authority_hash,issuer_ref,nonce,replay_identity,"
+            "authority_ref_json,authority_ref_hash,authority_json,intent_hash,"
+            "target_memory_id,target_revision,issued_at,expires_at,consumed_at,"
+            "consumption_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                consumption_id,
+                principal_id,
+                getattr(authority, "authority_id"),
+                getattr(authority, "authority_hash"),
+                getattr(authority, "issuer_ref"),
+                getattr(authority, "nonce"),
+                getattr(authority, "replay_identity"),
+                canonical_json(getattr(reference, "to_json")()),
+                getattr(reference, "ref_hash"),
+                canonical_json(getattr(authority, "to_json")()),
+                getattr(intent, "intent_hash"),
+                getattr(intent, "target_memory_id"),
+                getattr(intent, "target_revision"),
+                getattr(authority, "issued_at"),
+                getattr(authority, "expires_at"),
+                consumed_at,
+                consumption_hash,
+            ),
+        )
+        return consumption_id, consumption_hash
+
+    async def _copy_cognitive_revision_unlocked(
+        self,
+        *,
+        memory_id: str,
+        base_revision: int,
+        committed_revision: int,
+        lifecycle_state: str,
+        operation_id: str,
+        plan_id: str,
+        plan_hash: str,
+        created_at: float,
+    ) -> None:
+        assert self._db is not None
+        await self._db.execute(
+            "INSERT INTO cognitive_memory_revisions(memory_id,principal_id,scope_kind,"
+            "scope_owner,revision,plan_id,plan_hash,operation_id,task_scope_id,"
+            "lifecycle_state,epistemic_status,conflict_status,verification_state,"
+            "effective_privacy_class,information_attributes_json,content_json,content_hash,"
+            "valid_from,valid_to,created_at) SELECT memory_id,principal_id,scope_kind,"
+            "scope_owner,?, ?, ?, ?,task_scope_id,?,epistemic_status,conflict_status,"
+            "verification_state,effective_privacy_class,information_attributes_json,"
+            "content_json,content_hash,valid_from,valid_to,? FROM cognitive_memory_revisions "
+            "WHERE memory_id=? AND revision=?",
+            (
+                committed_revision,
+                plan_id,
+                plan_hash,
+                operation_id,
+                lifecycle_state,
+                created_at,
+                memory_id,
+                base_revision,
+            ),
+        )
+        await self._db.execute(
+            "INSERT INTO cognitive_evidence_spans SELECT ?,?,ordinal,span_id,evidence_id,"
+            "envelope_hash,sanitized_hash,admission_receipt_id,admission_receipt_hash,"
+            "evidence_item_ordinal,evidence_item_id,evidence_item_json_pointer,byte_start,"
+            "byte_end,exact_quote,quote_hash,source_hash,normalization_version,actor_role,"
+            "provenance,source_kind,support_kind,observation_schema_id,"
+            "observation_schema_version,observation_registered_schema_hash,"
+            "observation_receipt_id,observation_receipt_hash,observation_authority_issuer_id,"
+            "observation_json_pointer,observation_value_hash FROM cognitive_evidence_spans "
+            "WHERE memory_id=? AND revision=?",
+            (memory_id, committed_revision, memory_id, base_revision),
+        )
+        await self._db.execute(
+            "INSERT INTO cognitive_revision_task_scope_origins "
+            "SELECT ?,?,task_scope_id,evidence_id,registration_id "
+            "FROM cognitive_revision_task_scope_origins WHERE memory_id=? AND revision=?",
+            (memory_id, committed_revision, memory_id, base_revision),
+        )
+
+    async def _copy_procedure_payload_unlocked(
+        self,
+        *,
+        memory_id: str,
+        base_revision: int,
+        committed_revision: int,
+        applicability_fingerprint: str,
+        bound_hazard: str | None,
+        qualification_epoch: str,
+        success_count: int,
+        failure_count: int,
+    ) -> None:
+        assert self._db is not None
+        await self._db.execute(
+            "INSERT INTO procedure_records(memory_id,revision,name,applicability_json,"
+            "steps_json,risk_level,qualification_epoch,applicability_fingerprint,bound_hazard,"
+            "success_evidence_count,failure_evidence_count) SELECT memory_id,?,name,"
+            "applicability_json,steps_json,risk_level,?,?,?,?,? FROM procedure_records "
+            "WHERE memory_id=? AND revision=?",
+            (
+                committed_revision,
+                qualification_epoch,
+                applicability_fingerprint,
+                bound_hazard,
+                success_count,
+                failure_count,
+                memory_id,
+                base_revision,
+            ),
+        )
+
     async def _copy_cognitive_payload_unlocked(
         self,
         memory_type: str,
@@ -3468,8 +4316,9 @@ class SQLiteHumanMemoryBackend:
             ),
             "procedure": (
                 "procedure_records",
-                "name,applicability_json,steps_json,risk_level,applicability_fingerprint,"
-                "success_evidence_count,failure_evidence_count",
+                "name,applicability_json,steps_json,risk_level,qualification_epoch,"
+                "applicability_fingerprint,bound_hazard,success_evidence_count,"
+                "failure_evidence_count",
             ),
             "prospective": (
                 "prospective_records",
@@ -6572,6 +7421,14 @@ class SQLiteHumanMemoryBackend:
         async with self._db.execute("PRAGMA foreign_key_check") as cursor:
             if await cursor.fetchone() is not None:
                 raise MemoryCorruptionError("human-memory v5 foreign key check failed")
+        async with self._db.execute(
+            "SELECT 1 FROM cognitive_memory_heads h "
+            "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
+            "WHERE h.principal_id<>r.principal_id OR h.scope_kind<>r.scope_kind "
+            "OR h.scope_owner<>r.scope_owner LIMIT 1"
+        ) as cursor:
+            if await cursor.fetchone() is not None:
+                raise MemoryCorruptionError("cognitive memory scope integrity check failed")
 
     async def _read_audit_cursor_hmac_key(self) -> bytes:
         assert self._db is not None

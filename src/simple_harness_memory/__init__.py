@@ -22,6 +22,11 @@ from simple_harness_memory.core.identity import (
     PrivacyReceipt,
     ScopeKind,
 )
+from simple_harness_memory.core.lifecycle_results import (
+    LifecycleApplyOutcome,
+    ProcedureObservationApplyResult,
+    ProspectiveSignalApplyResult,
+)
 from simple_harness_memory.core.manager import MemoryManager
 from simple_harness_memory.core.models import (
     BoundedRecallResult,
@@ -53,6 +58,9 @@ __all__ = [
     "MemoryOwnershipConflict",
     "MemoryIdempotencyConflict",
     "MemoryValidationError",
+    "LifecycleApplyOutcome",
+    "ProcedureObservationApplyResult",
+    "ProspectiveSignalApplyResult",
 ]
 
 __version__ = "0.6.0"

@@ -5,9 +5,18 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Protocol
 
-from simple_harness.runtime import MemoryMutationApplyResult, MemoryMutationPlan
+from simple_harness.runtime import (
+    MemoryMutationApplyResult,
+    MemoryMutationPlan,
+    ProcedureObservationAuthorityRef,
+    ProspectiveSignalAuthorityRef,
+)
 
 from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
+from simple_harness_memory.core.lifecycle_results import (
+    ProcedureObservationApplyResult,
+    ProspectiveSignalApplyResult,
+)
 from simple_harness_memory.core.models import (
     BoundedRecallResult,
     Fact,
@@ -263,3 +272,19 @@ class CognitiveMemoryBackend(Protocol):
         scope: MemoryScope,
         plan: MemoryMutationPlan,
     ) -> MemoryMutationApplyResult: ...
+
+    async def record_procedure_observation(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        scope: MemoryScope,
+        reference: ProcedureObservationAuthorityRef,
+    ) -> ProcedureObservationApplyResult: ...
+
+    async def apply_prospective_signal(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        scope: MemoryScope,
+        reference: ProspectiveSignalAuthorityRef,
+    ) -> ProspectiveSignalApplyResult: ...

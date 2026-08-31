@@ -9,7 +9,6 @@ boundary.
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Final
@@ -325,14 +324,15 @@ class ApplicabilityFingerprint:
     fingerprint: str = field(init=False)
 
     def __post_init__(self) -> None:
-        values = (
+        from simple_harness.runtime import ProcedureApplicabilityContext
+
+        context = ProcedureApplicabilityContext(
             _identifier(self.tool_id, "tool_id"),
             _identifier(self.environment, "environment"),
             _identifier(self.tool_version, "tool_version"),
             _digest(self.input_schema_hash, "input_schema_hash"),
         )
-        material = "\x1f".join(values).encode("utf-8")
-        object.__setattr__(self, "fingerprint", hashlib.sha256(material).hexdigest())
+        object.__setattr__(self, "fingerprint", context.fingerprint)
 
 
 @dataclass(frozen=True, slots=True)

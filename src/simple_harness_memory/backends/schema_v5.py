@@ -474,6 +474,8 @@ CREATE TABLE cognitive_apply_heads (
 CREATE TABLE cognitive_memory_heads (
     memory_id TEXT PRIMARY KEY,
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    scope_kind TEXT NOT NULL CHECK (scope_kind IN ('personal', 'family')),
+    scope_owner TEXT NOT NULL,
     memory_type TEXT NOT NULL CHECK (
         memory_type IN ('episode', 'semantic', 'procedure', 'prospective')
     ),
@@ -487,6 +489,8 @@ CREATE INDEX cognitive_memory_head_lookup
 CREATE TABLE cognitive_memory_revisions (
     memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    scope_kind TEXT NOT NULL CHECK (scope_kind IN ('personal', 'family')),
+    scope_owner TEXT NOT NULL,
     revision INTEGER NOT NULL CHECK (revision >= 1),
     plan_id TEXT NOT NULL,
     plan_hash TEXT NOT NULL,
@@ -569,7 +573,13 @@ CREATE TABLE procedure_records (
     risk_level TEXT NOT NULL CHECK (
         risk_level IN ('low', 'medium', 'high', 'irreversible')
     ),
+    qualification_epoch TEXT NOT NULL,
     applicability_fingerprint TEXT NOT NULL,
+    bound_hazard TEXT CHECK (
+        bound_hazard IS NULL OR bound_hazard IN (
+            'none', 'publish', 'delete', 'payment', 'permission'
+        )
+    ),
     success_evidence_count INTEGER NOT NULL DEFAULT 0 CHECK (success_evidence_count >= 0),
     failure_evidence_count INTEGER NOT NULL DEFAULT 0 CHECK (failure_evidence_count >= 0),
     PRIMARY KEY (memory_id, revision),
@@ -914,40 +924,190 @@ BEGIN SELECT RAISE(ABORT, 'immutable mutation apply result'); END;
 CREATE TRIGGER memory_mutation_decisions_immutable_delete
 BEFORE DELETE ON memory_mutation_decisions
 BEGIN SELECT RAISE(ABORT, 'immutable mutation decision'); END;
+CREATE TABLE procedure_observation_authority_consumptions (
+    consumption_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    authority_id TEXT NOT NULL,
+    authority_hash TEXT NOT NULL,
+    issuer_ref TEXT NOT NULL,
+    nonce TEXT NOT NULL,
+    replay_identity TEXT NOT NULL UNIQUE,
+    authority_ref_json BLOB NOT NULL,
+    authority_ref_hash TEXT NOT NULL,
+    authority_json BLOB NOT NULL,
+    intent_hash TEXT NOT NULL,
+    target_memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
+    target_revision INTEGER NOT NULL CHECK (target_revision >= 1),
+    issued_at REAL NOT NULL CHECK (issued_at >= 0),
+    expires_at REAL NOT NULL CHECK (expires_at > issued_at),
+    consumed_at REAL NOT NULL CHECK (consumed_at >= issued_at AND consumed_at < expires_at),
+    consumption_hash TEXT NOT NULL UNIQUE,
+    UNIQUE (issuer_ref, nonce)
+);
+CREATE TRIGGER procedure_observation_authority_consumptions_immutable_update
+BEFORE UPDATE ON procedure_observation_authority_consumptions
+BEGIN SELECT RAISE(ABORT, 'immutable procedure authority consumption'); END;
+CREATE TRIGGER procedure_observation_authority_consumptions_immutable_delete
+BEFORE DELETE ON procedure_observation_authority_consumptions
+BEGIN SELECT RAISE(ABORT, 'immutable procedure authority consumption'); END;
 CREATE TABLE procedure_observations (
     observation_id TEXT PRIMARY KEY,
+    consumption_id TEXT NOT NULL UNIQUE
+        REFERENCES procedure_observation_authority_consumptions(consumption_id),
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
     memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
     procedure_revision INTEGER NOT NULL CHECK (procedure_revision >= 1),
+    qualification_epoch TEXT NOT NULL,
     task_scope_id TEXT NOT NULL,
-    terminal_receipt_ref TEXT NOT NULL,
+    terminal_receipt_id TEXT,
+    terminal_receipt_hash TEXT,
     applicability_fingerprint TEXT NOT NULL,
-    outcome TEXT NOT NULL CHECK (outcome IN ('success', 'failure')),
+    outcome TEXT CHECK (outcome IN ('success', 'failure')),
+    attributable INTEGER NOT NULL CHECK (attributable IN (0, 1)),
     occurred_at REAL NOT NULL CHECK (occurred_at >= 0),
     evidence_id TEXT NOT NULL REFERENCES evidence_envelopes(evidence_id),
+    evidence_span_hash TEXT NOT NULL,
+    observation_json BLOB NOT NULL,
     observation_hash TEXT NOT NULL UNIQUE,
-    UNIQUE (memory_id, procedure_revision, task_scope_id, terminal_receipt_ref),
+    UNIQUE (memory_id, qualification_epoch, terminal_receipt_id),
     FOREIGN KEY (memory_id, procedure_revision)
-        REFERENCES cognitive_memory_revisions(memory_id, revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision),
+    CHECK (
+        (terminal_receipt_id IS NULL AND terminal_receipt_hash IS NULL AND outcome IS NULL)
+        OR
+        (terminal_receipt_id IS NOT NULL AND terminal_receipt_hash IS NOT NULL
+            AND outcome IS NOT NULL)
+    )
 );
+CREATE UNIQUE INDEX procedure_observation_success_scope_unique
+    ON procedure_observations(memory_id, qualification_epoch, task_scope_id)
+    WHERE outcome = 'success' AND attributable = 1;
 CREATE TRIGGER procedure_observations_immutable_update
 BEFORE UPDATE ON procedure_observations
 BEGIN SELECT RAISE(ABORT, 'immutable procedure observation'); END;
 CREATE TRIGGER procedure_observations_immutable_delete
 BEFORE DELETE ON procedure_observations
 BEGIN SELECT RAISE(ABORT, 'immutable procedure observation'); END;
+CREATE TABLE procedure_observation_decisions (
+    decision_id TEXT PRIMARY KEY,
+    consumption_id TEXT NOT NULL UNIQUE
+        REFERENCES procedure_observation_authority_consumptions(consumption_id),
+    memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
+    base_revision INTEGER NOT NULL CHECK (base_revision >= 1),
+    committed_revision INTEGER NOT NULL CHECK (committed_revision >= base_revision),
+    transition_from TEXT NOT NULL,
+    transition_to TEXT NOT NULL,
+    independent_successes INTEGER NOT NULL CHECK (independent_successes >= 0),
+    reason_code TEXT NOT NULL,
+    decision_json BLOB NOT NULL,
+    decision_hash TEXT NOT NULL UNIQUE,
+    decided_at REAL NOT NULL CHECK (decided_at >= 0)
+);
+CREATE TRIGGER procedure_observation_decisions_immutable_update
+BEFORE UPDATE ON procedure_observation_decisions
+BEGIN SELECT RAISE(ABORT, 'immutable procedure observation decision'); END;
+CREATE TRIGGER procedure_observation_decisions_immutable_delete
+BEFORE DELETE ON procedure_observation_decisions
+BEGIN SELECT RAISE(ABORT, 'immutable procedure observation decision'); END;
+CREATE TABLE procedure_observation_results (
+    result_id TEXT PRIMARY KEY,
+    consumption_id TEXT NOT NULL UNIQUE
+        REFERENCES procedure_observation_authority_consumptions(consumption_id),
+    replay_identity TEXT NOT NULL UNIQUE,
+    result_json BLOB NOT NULL,
+    result_hash TEXT NOT NULL UNIQUE,
+    decided_at REAL NOT NULL CHECK (decided_at >= 0)
+);
+CREATE TRIGGER procedure_observation_results_immutable_update
+BEFORE UPDATE ON procedure_observation_results
+BEGIN SELECT RAISE(ABORT, 'immutable procedure observation result'); END;
+CREATE TRIGGER procedure_observation_results_immutable_delete
+BEFORE DELETE ON procedure_observation_results
+BEGIN SELECT RAISE(ABORT, 'immutable procedure observation result'); END;
+CREATE TABLE procedure_observation_rejections (
+    rejection_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL,
+    authority_ref_hash TEXT NOT NULL,
+    reason_code TEXT NOT NULL,
+    rejection_json BLOB NOT NULL,
+    rejection_hash TEXT NOT NULL UNIQUE,
+    rejected_at REAL NOT NULL CHECK (rejected_at >= 0),
+    UNIQUE (principal_id, authority_ref_hash)
+);
+CREATE TRIGGER procedure_observation_rejections_immutable_update
+BEFORE UPDATE ON procedure_observation_rejections
+BEGIN SELECT RAISE(ABORT, 'immutable procedure observation rejection'); END;
+CREATE TRIGGER procedure_observation_rejections_immutable_delete
+BEFORE DELETE ON procedure_observation_rejections
+BEGIN SELECT RAISE(ABORT, 'immutable procedure observation rejection'); END;
+CREATE TABLE prospective_signal_authority_consumptions (
+    consumption_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    authority_id TEXT NOT NULL,
+    authority_hash TEXT NOT NULL,
+    issuer_ref TEXT NOT NULL,
+    nonce TEXT NOT NULL,
+    replay_identity TEXT NOT NULL UNIQUE,
+    authority_ref_json BLOB NOT NULL,
+    authority_ref_hash TEXT NOT NULL,
+    authority_json BLOB NOT NULL,
+    intent_hash TEXT NOT NULL,
+    target_memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
+    target_revision INTEGER NOT NULL CHECK (target_revision >= 1),
+    issued_at REAL NOT NULL CHECK (issued_at >= 0),
+    expires_at REAL NOT NULL CHECK (expires_at > issued_at),
+    consumed_at REAL NOT NULL CHECK (consumed_at >= issued_at AND consumed_at < expires_at),
+    consumption_hash TEXT NOT NULL UNIQUE,
+    UNIQUE (issuer_ref, nonce)
+);
+CREATE TRIGGER prospective_signal_authority_consumptions_immutable_update
+BEFORE UPDATE ON prospective_signal_authority_consumptions
+BEGIN SELECT RAISE(ABORT, 'immutable prospective signal authority consumption'); END;
+CREATE TRIGGER prospective_signal_authority_consumptions_immutable_delete
+BEFORE DELETE ON prospective_signal_authority_consumptions
+BEGIN SELECT RAISE(ABORT, 'immutable prospective signal authority consumption'); END;
+CREATE TABLE prospective_scheduler_registrations (
+    registration_event_id TEXT PRIMARY KEY,
+    consumption_id TEXT NOT NULL UNIQUE
+        REFERENCES prospective_signal_authority_consumptions(consumption_id),
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
+    prospective_revision INTEGER NOT NULL CHECK (prospective_revision >= 1),
+    scheduler_registration_ref TEXT NOT NULL,
+    registration_revision INTEGER NOT NULL CHECK (registration_revision >= 1),
+    state TEXT NOT NULL CHECK (state IN ('accepted', 'invalidated')),
+    trigger_hash TEXT NOT NULL,
+    outbox_id TEXT NOT NULL REFERENCES outbox(outbox_id),
+    outbox_payload_hash TEXT NOT NULL,
+    event_json BLOB NOT NULL,
+    event_hash TEXT NOT NULL UNIQUE,
+    occurred_at REAL NOT NULL CHECK (occurred_at >= 0),
+    UNIQUE (memory_id, prospective_revision, registration_revision, state),
+    FOREIGN KEY (memory_id, prospective_revision)
+        REFERENCES cognitive_memory_revisions(memory_id, revision)
+);
+CREATE TRIGGER prospective_scheduler_registrations_immutable_update
+BEFORE UPDATE ON prospective_scheduler_registrations
+BEGIN SELECT RAISE(ABORT, 'immutable prospective scheduler registration'); END;
+CREATE TRIGGER prospective_scheduler_registrations_immutable_delete
+BEFORE DELETE ON prospective_scheduler_registrations
+BEGIN SELECT RAISE(ABORT, 'immutable prospective scheduler registration'); END;
 CREATE TABLE prospective_trigger_events (
     event_id TEXT PRIMARY KEY,
+    consumption_id TEXT NOT NULL UNIQUE
+        REFERENCES prospective_signal_authority_consumptions(consumption_id),
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
     memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
     prospective_revision INTEGER NOT NULL CHECK (prospective_revision >= 1),
     trigger_fingerprint TEXT NOT NULL,
     event_ref TEXT NOT NULL,
-    outcome TEXT NOT NULL CHECK (
-        outcome IN ('matched', 'ignored', 'invalidated', 'registered')
-    ),
+    occurrence_key TEXT NOT NULL UNIQUE,
+    signal_kind TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('matched', 'ignored', 'expired')),
     reason_code TEXT NOT NULL,
     occurred_at REAL NOT NULL CHECK (occurred_at >= 0),
+    event_json BLOB NOT NULL,
     event_hash TEXT NOT NULL UNIQUE,
-    UNIQUE (memory_id, prospective_revision, event_ref, outcome),
     FOREIGN KEY (memory_id, prospective_revision)
         REFERENCES cognitive_memory_revisions(memory_id, revision)
 );
@@ -957,6 +1117,58 @@ BEGIN SELECT RAISE(ABORT, 'immutable prospective trigger event'); END;
 CREATE TRIGGER prospective_trigger_events_immutable_delete
 BEFORE DELETE ON prospective_trigger_events
 BEGIN SELECT RAISE(ABORT, 'immutable prospective trigger event'); END;
+CREATE TABLE prospective_signal_decisions (
+    decision_id TEXT PRIMARY KEY,
+    consumption_id TEXT NOT NULL UNIQUE
+        REFERENCES prospective_signal_authority_consumptions(consumption_id),
+    memory_id TEXT NOT NULL REFERENCES cognitive_memory_heads(memory_id),
+    base_revision INTEGER NOT NULL CHECK (base_revision >= 1),
+    committed_revision INTEGER NOT NULL CHECK (committed_revision >= base_revision),
+    transition_from TEXT NOT NULL,
+    transition_to TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('applied', 'ignored')),
+    reason_code TEXT NOT NULL,
+    decision_json BLOB NOT NULL,
+    decision_hash TEXT NOT NULL UNIQUE,
+    decided_at REAL NOT NULL CHECK (decided_at >= 0)
+);
+CREATE TRIGGER prospective_signal_decisions_immutable_update
+BEFORE UPDATE ON prospective_signal_decisions
+BEGIN SELECT RAISE(ABORT, 'immutable prospective signal decision'); END;
+CREATE TRIGGER prospective_signal_decisions_immutable_delete
+BEFORE DELETE ON prospective_signal_decisions
+BEGIN SELECT RAISE(ABORT, 'immutable prospective signal decision'); END;
+CREATE TABLE prospective_signal_results (
+    result_id TEXT PRIMARY KEY,
+    consumption_id TEXT NOT NULL UNIQUE
+        REFERENCES prospective_signal_authority_consumptions(consumption_id),
+    replay_identity TEXT NOT NULL UNIQUE,
+    result_json BLOB NOT NULL,
+    result_hash TEXT NOT NULL UNIQUE,
+    decided_at REAL NOT NULL CHECK (decided_at >= 0)
+);
+CREATE TRIGGER prospective_signal_results_immutable_update
+BEFORE UPDATE ON prospective_signal_results
+BEGIN SELECT RAISE(ABORT, 'immutable prospective signal result'); END;
+CREATE TRIGGER prospective_signal_results_immutable_delete
+BEFORE DELETE ON prospective_signal_results
+BEGIN SELECT RAISE(ABORT, 'immutable prospective signal result'); END;
+CREATE TABLE prospective_signal_rejections (
+    rejection_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL,
+    authority_ref_hash TEXT NOT NULL,
+    reason_code TEXT NOT NULL,
+    rejection_json BLOB NOT NULL,
+    rejection_hash TEXT NOT NULL UNIQUE,
+    rejected_at REAL NOT NULL CHECK (rejected_at >= 0),
+    UNIQUE (principal_id, authority_ref_hash)
+);
+CREATE TRIGGER prospective_signal_rejections_immutable_update
+BEFORE UPDATE ON prospective_signal_rejections
+BEGIN SELECT RAISE(ABORT, 'immutable prospective signal rejection'); END;
+CREATE TRIGGER prospective_signal_rejections_immutable_delete
+BEFORE DELETE ON prospective_signal_rejections
+BEGIN SELECT RAISE(ABORT, 'immutable prospective signal rejection'); END;
 CREATE TABLE conversation_evidence_registrations (
     registration_id TEXT PRIMARY KEY,
     registration_hash TEXT NOT NULL UNIQUE,
@@ -1192,8 +1404,17 @@ REQUIRED_TABLES = frozenset(
         "memory_mutation_decisions",
         "memory_mutation_rejection_audits",
         "memory_mutation_apply_results",
+        "procedure_observation_authority_consumptions",
         "procedure_observations",
+        "procedure_observation_decisions",
+        "procedure_observation_results",
+        "procedure_observation_rejections",
+        "prospective_signal_authority_consumptions",
+        "prospective_scheduler_registrations",
         "prospective_trigger_events",
+        "prospective_signal_decisions",
+        "prospective_signal_results",
+        "prospective_signal_rejections",
         "conversation_evidence_registrations",
         "short_horizon_chunks",
         "short_horizon_chunk_evidence",
