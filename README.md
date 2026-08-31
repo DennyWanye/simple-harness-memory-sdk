@@ -82,7 +82,9 @@ mutation/recall, display-only twin graph, suppression and audit reads; consumers
 SQLite implementation or access its connection.
 
 ```python fragment
+from simple_harness import InformationAttribute, PrivacyClass
 from simple_harness_memory import (
+    InformationClassificationPolicy,
     MemoryPrincipal,
     SuppressionRequest,
     SuppressionRevokeRequest,
@@ -91,6 +93,13 @@ from simple_harness_memory import (
 )
 
 principal = MemoryPrincipal(deployment_id, household_id, actor_id, session_id)
+classification_policy = InformationClassificationPolicy(
+    policy_id="memory-classification-policy",
+    policy_version="1",
+    authority_ref="host-classification-authority",
+    required_privacy_class=PrivacyClass.PERSONAL,
+    required_information_attributes=(InformationAttribute.PREFERENCE,),
+)
 memory = await build_human_memory_v6(
     "human-memory-v6.db",
     evidence_authority=evidence_authority,

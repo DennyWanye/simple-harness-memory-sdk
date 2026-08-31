@@ -26,9 +26,13 @@ def test_public_api_0_6_0_snapshot_is_frozen_and_0_5_2_is_preserved() -> None:
     assert "ConversationMemoryAdapter" not in snapshot["root"]
 
 
-def test_root_exports_construct_public_suppression_requests() -> None:
+def test_root_exports_construct_public_facade_contracts() -> None:
+    from simple_harness import InformationAttribute, PrivacyClass
+
     from simple_harness_memory import (
+        EffectiveInformationClassification,
         EvidenceIngestionReceipt,
+        InformationClassificationPolicy,
         IngestedEvidenceRecord,
         SealedAuditPurpose,
         SuppressionDecision,
@@ -58,6 +62,20 @@ def test_root_exports_construct_public_suppression_requests() -> None:
     assert SuppressionDecision.__module__.endswith("core.suppression")
     assert EvidenceIngestionReceipt.__module__.endswith("core.evidence")
     assert IngestedEvidenceRecord.__module__.endswith("core.evidence")
+    policy = InformationClassificationPolicy(
+        policy_id="root-policy",
+        policy_version="1",
+        authority_ref="host-classification-authority",
+        required_privacy_class=PrivacyClass.PERSONAL,
+        required_information_attributes=(InformationAttribute.PREFERENCE,),
+    )
+    effective = EffectiveInformationClassification(
+        PrivacyClass.SENSITIVE,
+        (InformationAttribute.HEALTH,),
+    )
+    assert policy.required_privacy_class is PrivacyClass.PERSONAL
+    assert policy.required_information_attributes == (InformationAttribute.PREFERENCE,)
+    assert effective.privacy_class is PrivacyClass.SENSITIVE
 
 
 def test_0_6_0_candidate_sources_and_docs_are_consistent() -> None:

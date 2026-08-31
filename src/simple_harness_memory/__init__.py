@@ -55,6 +55,10 @@ from simple_harness_memory.core.models import (
     MemoryApplyResult,
     Message,
 )
+from simple_harness_memory.core.mutations import (
+    EffectiveInformationClassification,
+    InformationClassificationPolicy,
+)
 from simple_harness_memory.core.port import CognitiveMemoryBackend, MemoryBackend
 from simple_harness_memory.core.recall import TypedRecallExecution
 from simple_harness_memory.core.short_horizon import (
@@ -126,6 +130,8 @@ __all__ = [
     "SuppressionScopeKind",
     "EvidenceIngestionReceipt",
     "IngestedEvidenceRecord",
+    "EffectiveInformationClassification",
+    "InformationClassificationPolicy",
     "MemoryBackend",
     "CognitiveMemoryBackend",
     "TypedRecallExecution",

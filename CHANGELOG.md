@@ -43,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   derived/global exclusions.
 - Exported suppression request/decision/scope contracts and stable evidence receipt/record DTOs from
   the package root so exact-wheel consumers can use the complete Manager facade without core imports.
+- Exported `InformationClassificationPolicy` and `EffectiveInformationClassification` from the
+  package root; callers continue to source `PrivacyClass` and `InformationAttribute` from Harness.
 
 ## [0.5.1] - 2026-08-24
 

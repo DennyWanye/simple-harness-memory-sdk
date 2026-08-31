@@ -73,7 +73,8 @@
 - `build_human_memory_v6` 是 fresh v6 的公开构造入口，返回单一 `MemoryManager` facade。consumer 可经该
   facade 完成 evidence/conversation admission、mutation、suppression/revoke、typed recall、display graph、
   trace、metrics 与 manifest，不需要导入 `sqlite_v5` 或读取 backend connection。suppression request/decision/
-  scope enums 与 stable evidence receipt/record DTO 均从 package root 导出，exact-wheel consumer 不需 core import。
+  scope enums、classification policy/effective result 与 stable evidence receipt/record DTO 均从 package root
+  导出；`PrivacyClass`/`InformationAttribute` 仍以 Harness root 为唯一来源，exact-wheel consumer 不需 core import。
 - sealed audit 只接受 `AuditAccessAuthorityRefV1`。Memory 通过 injected `AuditAccessAuthorityPort` resolve 后
   exact 校验 requester deployment/household/actor/session、target identity、decision/scope/time/hash/replay；旧
   caller-minted decision issuance 永久 fail closed。每次 granted/denied 都是 hash-only immutable event，trace、
