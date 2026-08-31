@@ -44,9 +44,9 @@
     "input_hashes": {
       "acceptance": "ab4dbe080e27ab4a29bf4be74b539363b489f9ad165eadf748fb3b8019cbc067",
       "assurance_contract": "d828f016110bd876c364c9b17fdf2c316557988a7be6f8195d25aa0eb1b3e6a8",
-      "reuse_report": "28928856ba2c2d0437ac837019f5340e649634c7fbd20bf6d0dc57712be9045d",
-      "testcase_inventory": "cebc1b330520158bf99173dac5b08c21375744e486eb0626f0bf0a5334d9f6df",
-      "verification_spec": "7441e105099e317b64e3088c4aa7a3bb06e9f5ca2f2c1f4cadbb01fafa97fc6b"
+      "reuse_report": "2d241f9536fb372de295ef866e129e175b4256e80904846746237a6bcc115057",
+      "testcase_inventory": "4106b53a599bc6407445cf720d5095a1fd7e5582636069b58648de334db7288e",
+      "verification_spec": "2ed6a5d37a787b048fcf06ac0cdaef87afca32e843b475c80bbc43cee77cddba"
     },
     "input_paths": {
       "acceptance": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/acceptance.md",
@@ -55,7 +55,7 @@
       "testcase_inventory": "/Users/denny/projects/simple_harness-memory-plan/testcase/index.json",
       "verification_spec": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/verification/verification-spec.json"
     },
-    "seal_sha256": "141b2ad233212fb5f5d350b6403b18bf63f09e978b3614959e2345b1b6999f2e",
+    "seal_sha256": "27e58a37db95f852d5600201e60233963fb532f552ad10a2fc99bd98049126c8",
     "selected_testcase_ids": [
       "TC-GS-03",
       "TC-GS-04",
@@ -81,6 +81,10 @@
       "TC-HM-X01"
     ],
     "tool_version": "1.5.0"
+  },
+  "cross_repo_impact_map": {
+    "harness_sdk": "/Users/denny/projects/simple-harness-sdk-memory-program/simple_harness_sdk/**",
+    "memory_sdk": "src/simple_harness_memory/**"
   },
   "executor_engine": "codex",
   "flow_tier": {
@@ -567,11 +571,20 @@
         ],
         "required_business_facts": [
           "business_terminal",
-          "decision_result_hash_bound",
-          "mixed_short_only_roundtrip",
-          "naked_ref_read_zero",
-          "complete_confirmation_atomic",
-          "eligibility_disclosure_matrix_passed"
+          "testcase_revision",
+          "testcase_content_sha256",
+          "fixture_revision",
+          "fixture_sha256",
+          "runner_sha256",
+          "strict_v3_rejected",
+          "source_binding_cells_indexed",
+          "conflict_create_reject_resolve_cells_indexed",
+          "result_page_binding_cells_indexed",
+          "conflict_recall_cells_indexed",
+          "eligibility_cell_count",
+          "eligibility_evidence_index_sha256",
+          "fragment_assembly_authority_bound",
+          "evidence_index_sha256"
         ],
         "required_identity": [
           "root_run_id"
@@ -579,15 +592,28 @@
         "required_timestamps": true
       },
       "gate_type": "positive-value",
-      "impact_paths": [],
+      "impact_paths": [
+        "src/simple_harness_memory/**",
+        "/Users/denny/projects/simple-harness-sdk-memory-program/simple_harness_sdk/**"
+      ],
       "input_class": "typed-recall-result-bound-disclosure",
       "manual_required": false,
       "min_root_runs": 1,
+      "oracle_pins": {
+        "fault_fixture_sha256": "6882fe06cb561cb8cd1fbe1f0ad8fff1589218ffa295c3d4d12cc36283e1446c",
+        "fixture_revision": 2,
+        "fixture_sha256": "71d87d7c9c67faf45b8e1f16bbf9a3b0d61596b40a186d0dd27f304241b6bddd",
+        "runner_sha256": "eda919b10601d651aa4720fcec5b29bccdd4aa9b559d222081277dd021bb8815",
+        "testcase_sha256": "e4813680d61c76187f0397140bc85a940580a17c4b2dc558f79cb58318b59f82"
+      },
       "required": true,
       "scenario_id": "HM-S13A",
       "testcase_ids": [
         "TC-HM-13"
       ],
+      "testcase_revisions": {
+        "TC-HM-13": 2
+      },
       "ui": false
     },
     {
@@ -602,13 +628,25 @@
         ],
         "required_business_facts": [
           "recovered_state",
+          "testcase_revision",
+          "fixture_sha256",
+          "fault_fixture_sha256",
+          "fault_seam_count",
+          "fault_evidence_index_sha256",
+          "conflict_atomicity_and_non_revival_proved",
           "incomplete_conflict_zero_disclosure",
+          "authority_event_cell_count",
+          "authority_event_evidence_index_sha256",
+          "unsupported_precedence_vector_sha256",
           "unsupported_candidate_query_zero",
-          "context_use_linearized",
-          "exact_conflicting_replay_checked",
+          "request_hash_mutation_count",
+          "request_hash_evidence_index_sha256",
+          "context_use_linearization_evidence_sha256",
+          "ranking_dedupe_projection_oracle_sha256",
+          "budget_literal_evidence_index_sha256",
           "half_state_zero",
           "durable_hash_rebuild_checked",
-          "budget_deadline_boundaries_checked"
+          "evidence_index_sha256"
         ],
         "required_identity": [
           "root_run_id"
@@ -616,18 +654,31 @@
         "required_timestamps": true
       },
       "gate_type": "negative-safety",
-      "impact_paths": [],
+      "impact_paths": [
+        "src/simple_harness_memory/**",
+        "/Users/denny/projects/simple-harness-sdk-memory-program/simple_harness_sdk/**"
+      ],
       "input_class": "typed-recall-fail-closed-replay-recovery",
       "lanes": [
         "temporal-fault"
       ],
       "manual_required": false,
       "min_root_runs": 1,
+      "oracle_pins": {
+        "fault_fixture_sha256": "6882fe06cb561cb8cd1fbe1f0ad8fff1589218ffa295c3d4d12cc36283e1446c",
+        "fixture_revision": 2,
+        "fixture_sha256": "71d87d7c9c67faf45b8e1f16bbf9a3b0d61596b40a186d0dd27f304241b6bddd",
+        "runner_sha256": "eda919b10601d651aa4720fcec5b29bccdd4aa9b559d222081277dd021bb8815",
+        "testcase_sha256": "e4813680d61c76187f0397140bc85a940580a17c4b2dc558f79cb58318b59f82"
+      },
       "required": true,
       "scenario_id": "HM-S13B",
       "testcase_ids": [
         "TC-HM-13"
       ],
+      "testcase_revisions": {
+        "TC-HM-13": 2
+      },
       "ui": false
     },
     {
@@ -790,5 +841,20 @@
     "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-12-digital-twin-views.md",
     "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-13-typed-recall-result.md",
     "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-X01-contract-init-quality.md"
-  ]
+  ],
+  "testcase_revision_pins": {
+    "TC-HM-03": 2,
+    "TC-HM-04": 2,
+    "TC-HM-08": 2,
+    "TC-HM-09": 2,
+    "TC-HM-11": 2,
+    "TC-HM-13": 2,
+    "TC-HM-X01": 3
+  },
+  "typed_recall_oracle_pins": {
+    "fault_fixture_sha256": "6882fe06cb561cb8cd1fbe1f0ad8fff1589218ffa295c3d4d12cc36283e1446c",
+    "fixture_sha256": "71d87d7c9c67faf45b8e1f16bbf9a3b0d61596b40a186d0dd27f304241b6bddd",
+    "runner_sha256": "eda919b10601d651aa4720fcec5b29bccdd4aa9b559d222081277dd021bb8815",
+    "testcase_sha256": "e4813680d61c76187f0397140bc85a940580a17c4b2dc558f79cb58318b59f82"
+  }
 }

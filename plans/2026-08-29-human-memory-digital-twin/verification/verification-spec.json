@@ -252,13 +252,40 @@
       "ui": false,
       "manual_required": false,
       "min_root_runs": 1,
-      "impact_paths": [],
+      "impact_paths": [
+        "src/simple_harness_memory/**",
+        "/Users/denny/projects/simple-harness-sdk-memory-program/simple_harness_sdk/**"
+      ],
+      "testcase_revisions": {"TC-HM-13": 2},
+      "oracle_pins": {
+        "testcase_sha256": "e4813680d61c76187f0397140bc85a940580a17c4b2dc558f79cb58318b59f82",
+        "fixture_revision": 2,
+        "fixture_sha256": "71d87d7c9c67faf45b8e1f16bbf9a3b0d61596b40a186d0dd27f304241b6bddd",
+        "fault_fixture_sha256": "6882fe06cb561cb8cd1fbe1f0ad8fff1589218ffa295c3d4d12cc36283e1446c",
+        "runner_sha256": "eda919b10601d651aa4720fcec5b29bccdd4aa9b559d222081277dd021bb8815"
+      },
       "evidence_contract": {
         "producer_types": ["gate-exec", "runtime-probe"],
         "required_artifact_kinds": ["business-result", "execution-log"],
         "required_identity": ["root_run_id"],
         "required_timestamps": true,
-        "required_business_facts": ["business_terminal", "decision_result_hash_bound", "mixed_short_only_roundtrip", "naked_ref_read_zero", "complete_confirmation_atomic", "eligibility_disclosure_matrix_passed"]
+        "required_business_facts": [
+          "business_terminal",
+          "testcase_revision",
+          "testcase_content_sha256",
+          "fixture_revision",
+          "fixture_sha256",
+          "runner_sha256",
+          "strict_v3_rejected",
+          "source_binding_cells_indexed",
+          "conflict_create_reject_resolve_cells_indexed",
+          "result_page_binding_cells_indexed",
+          "conflict_recall_cells_indexed",
+          "eligibility_cell_count",
+          "eligibility_evidence_index_sha256",
+          "fragment_assembly_authority_bound",
+          "evidence_index_sha256"
+        ]
       }
     },
     {
@@ -271,13 +298,45 @@
       "manual_required": false,
       "min_root_runs": 1,
       "lanes": ["temporal-fault"],
-      "impact_paths": [],
+      "impact_paths": [
+        "src/simple_harness_memory/**",
+        "/Users/denny/projects/simple-harness-sdk-memory-program/simple_harness_sdk/**"
+      ],
+      "testcase_revisions": {"TC-HM-13": 2},
+      "oracle_pins": {
+        "testcase_sha256": "e4813680d61c76187f0397140bc85a940580a17c4b2dc558f79cb58318b59f82",
+        "fixture_revision": 2,
+        "fixture_sha256": "71d87d7c9c67faf45b8e1f16bbf9a3b0d61596b40a186d0dd27f304241b6bddd",
+        "fault_fixture_sha256": "6882fe06cb561cb8cd1fbe1f0ad8fff1589218ffa295c3d4d12cc36283e1446c",
+        "runner_sha256": "eda919b10601d651aa4720fcec5b29bccdd4aa9b559d222081277dd021bb8815"
+      },
       "evidence_contract": {
         "producer_types": ["gate-exec", "runtime-probe"],
         "required_artifact_kinds": ["execution-log", "fault-recovery-log"],
         "required_identity": ["root_run_id"],
         "required_timestamps": true,
-        "required_business_facts": ["recovered_state", "incomplete_conflict_zero_disclosure", "unsupported_candidate_query_zero", "context_use_linearized", "exact_conflicting_replay_checked", "half_state_zero", "durable_hash_rebuild_checked", "budget_deadline_boundaries_checked"]
+        "required_business_facts": [
+          "recovered_state",
+          "testcase_revision",
+          "fixture_sha256",
+          "fault_fixture_sha256",
+          "fault_seam_count",
+          "fault_evidence_index_sha256",
+          "conflict_atomicity_and_non_revival_proved",
+          "incomplete_conflict_zero_disclosure",
+          "authority_event_cell_count",
+          "authority_event_evidence_index_sha256",
+          "unsupported_precedence_vector_sha256",
+          "unsupported_candidate_query_zero",
+          "request_hash_mutation_count",
+          "request_hash_evidence_index_sha256",
+          "context_use_linearization_evidence_sha256",
+          "ranking_dedupe_projection_oracle_sha256",
+          "budget_literal_evidence_index_sha256",
+          "half_state_zero",
+          "durable_hash_rebuild_checked",
+          "evidence_index_sha256"
+        ]
       }
     },
     {
@@ -361,6 +420,25 @@
       "plan_lines": 87,
       "high_risk_subsystems": 3,
       "concurrent_layer_kinds": 3
+    },
+    "testcase_revision_pins": {
+      "TC-HM-03": 2,
+      "TC-HM-04": 2,
+      "TC-HM-08": 2,
+      "TC-HM-09": 2,
+      "TC-HM-11": 2,
+      "TC-HM-13": 2,
+      "TC-HM-X01": 3
+    },
+    "typed_recall_oracle_pins": {
+      "testcase_sha256": "e4813680d61c76187f0397140bc85a940580a17c4b2dc558f79cb58318b59f82",
+      "fixture_sha256": "71d87d7c9c67faf45b8e1f16bbf9a3b0d61596b40a186d0dd27f304241b6bddd",
+      "fault_fixture_sha256": "6882fe06cb561cb8cd1fbe1f0ad8fff1589218ffa295c3d4d12cc36283e1446c",
+      "runner_sha256": "eda919b10601d651aa4720fcec5b29bccdd4aa9b559d222081277dd021bb8815"
+    },
+    "cross_repo_impact_map": {
+      "memory_sdk": "src/simple_harness_memory/**",
+      "harness_sdk": "/Users/denny/projects/simple-harness-sdk-memory-program/simple_harness_sdk/**"
     },
     "executor_engine": "codex",
     "auditor_engine": "independent-codex-agent"
