@@ -3,7 +3,7 @@
 > Release unit：S3（Memory SDK）  
 > 高风险子系统：认知状态机、检索资格/排序、派生投影（3）  
 > 覆盖：HM-AC-2/4/5/6/7/8
-> 执行状态：Task 1/2/3 COMPLETE（Memory Task 3 `31ffb15` + `3e45194`，Harness exact authority `a553cf3`）；classification/action authority、Procedure qualification 与 Prospective scheduler-signal repository 已闭合；machine `a2-004` resolved；Task 4—7 因 `a2-005` authority/quality gap 暂停并待用户 review
+> 执行状态：Task 1/2/3 COMPLETE（Memory Task 3 `31ffb15` + `3e45194`，Harness exact authority `a553cf3`）；classification/action authority、Procedure qualification 与 Prospective scheduler-signal repository 已闭合；machine `a2-004` resolved；用户已批准 `a2-005` 修正架构，Task 4—7 继续实施
 
 ## 交付边界
 
@@ -78,6 +78,12 @@ replay/open/close 做 rooted exact-chain 校验。验证命令与结果同步记
 
 ### Task 4 — 五天 Short-Horizon Conversation Index [HM-AC-4/6/8]
 
+- `a2-005` 用户批准的修正架构：active generation/cache 只能由 Memory repository 从 durable DB snapshot
+  加载并核验，公开入口不得接受调用方指定 generation 或 cache；permission/status/time/suppression 先形成完整
+  eligible universe，FTS 与 vector 在该 universe 上独立召回后融合，禁止以 FTS 命中集截断 vector candidates。
+- Harness 的 Host-owned conversation registration 必须额外绑定唯一 `public_text` JSON pointer/hash、effective
+  privacy class、information attributes 与 classification authority ref；Memory 只索引该授权文本并对 chunk 做
+  单调从严聚合，禁止遍历 sanitized payload 的任意 string leaves。
 - 对超过最近 10 causal groups 且 age≤5 days 的 immutable evidence 建 chunk；保留 roles/order/task/entity/time/source refs。
 - FTS5 + embedding candidate + recency/task/entity affinity；最近窗口 evidence 去重；到期只移除派生 index。
 - 按 V0 `SPIKE-VECTOR` 已冻结的 backend/容量/降级策略实现；统一 `VectorIndexPort` 仅在 spike 证明需要第二实现时保留，
@@ -87,6 +93,8 @@ replay/open/close 做 rooted exact-chain 校验。验证命令与结果同步记
   FTS/entity/time candidates 并记录 `VECTOR_DEGRADED`，绝不读取 stale generation。
 - 验证：五天边界、cross-task similar entity、index delete/rebuild、suppressed row、p95≤500ms/hard deadline 2s；V0
   synthetic backend 结果不替代 S3 真实 embedding/200-query semantic quality gate。
+- 真实质量门先生成不少于 200 条带 expected type/privacy outcome 的候选 corpus 与固定 hash；在用户或独立人工
+  完成标签 review/freeze 前，状态必须保持 `NOT_RUN/BLOCKED`，不得以 AI 草案或 synthetic benchmark 宣称 PASS。
 
 ### Task 5 — Typed RecallPlan 与资格门 [HM-AC-4/7/8]
 
