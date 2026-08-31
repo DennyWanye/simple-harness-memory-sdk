@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Protocol
 
-from simple_harness.runtime import MemoryMutationApplyReceiptRef, MemoryMutationPlan
+from simple_harness.runtime import MemoryMutationApplyResult, MemoryMutationPlan
 
 from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
 from simple_harness_memory.core.models import (
@@ -262,4 +262,4 @@ class CognitiveMemoryBackend(Protocol):
         principal: MemoryPrincipal,
         scope: MemoryScope,
         plan: MemoryMutationPlan,
-    ) -> MemoryMutationApplyReceiptRef: ...
+    ) -> MemoryMutationApplyResult: ...
