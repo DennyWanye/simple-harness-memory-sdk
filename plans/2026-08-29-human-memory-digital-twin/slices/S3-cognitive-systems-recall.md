@@ -3,7 +3,7 @@
 > Release unit：S3（Memory SDK）  
 > 高风险子系统：认知状态机、检索资格/排序、派生投影（3）  
 > 覆盖：HM-AC-2/4/5/6/7/8
-> 执行状态：Task 1/2/3 COMPLETE（Memory Task 3 `31ffb15` + `3e45194`，Harness exact authority `a553cf3`）；classification/action authority、Procedure qualification 与 Prospective scheduler-signal repository 已闭合；Task 4—7 pending
+> 执行状态：Task 1/2/3 COMPLETE（Memory Task 3 `31ffb15` + `3e45194`，Harness exact authority `a553cf3`）；classification/action authority、Procedure qualification 与 Prospective scheduler-signal repository 已闭合；machine `a2-004` resolved；Task 4—7 因 `a2-005` authority/quality gap 暂停并待用户 review
 
 ## 交付边界
 
