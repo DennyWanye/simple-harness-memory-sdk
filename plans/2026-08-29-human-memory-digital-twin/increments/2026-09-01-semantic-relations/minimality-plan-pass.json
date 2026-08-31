@@ -1,0 +1,31 @@
+{
+  "verdict": "LEAN",
+  "findings": [
+    {
+      "id": "min-1",
+      "tag": "delete",
+      "target": "plan.md §4.1 SemanticRelationMemoryPayload.qualifiers",
+      "current": "The proposed public relation payload added a bounded qualifiers field.",
+      "replacement": "Delete qualifiers from V1 and use existing shared evidence, classification, epistemic, valid-time and lifecycle fields.",
+      "preserves_acceptance": ["HM-AC-2", "HM-AC-6", "HM-AC-7", "HM-AC-8"],
+      "risk_impact": "Reduces untrusted payload and hash surface.",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false,
+      "applied": true
+    },
+    {
+      "id": "min-2",
+      "tag": "delete",
+      "target": "plan.md §4.1 knowledge relation kinds and Task 4 expansion",
+      "current": "The plan added supports and knowledge-domain relates_to without an approved positive oracle.",
+      "replacement": "Keep V1 knowledge relations to applies_to only; future kinds require a separately approved protocol and oracle.",
+      "preserves_acceptance": ["HM-AC-2", "HM-AC-6", "HM-AC-7", "HM-AC-8"],
+      "risk_impact": "Removes unapproved predicate/type/self-loop surface while preserving relation-integrity controls.",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false,
+      "applied": true
+    }
+  ]
+}

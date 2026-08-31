@@ -1,0 +1,124 @@
+{
+  "source_cluster_ids": [
+    "cluster-value-and-oracle-sequencing",
+    "cluster-immutable-evidence-rollback",
+    "cluster-relation-lineage-compatibility",
+    "cluster-parser-to-backend-audit-chain"
+  ],
+  "canonical_findings": [
+    {
+      "id": "semantic-relation-value-gated-by-full-scope",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-2", "HM-AC-6"],
+      "assurance_contract_ids": ["FAIL-RELATION-INTEGRITY"],
+      "evidence": "The approved minimum value proof only depends on applies_to protocol, atomic persistence, graph visibility, public suppression and exact-wheel execution; supports, relates_to and exhaustive matrices are not prerequisites.",
+      "status": "open",
+      "root_cause": "The full V1 relation surface and defensive matrix are prerequisites of the first applies_to value proof."
+    },
+    {
+      "id": "rollback-can-delete-protected-raw-evidence",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-1", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-DATA-LOSS"],
+      "evidence": "The plan permits discarding a fresh prototype database without proving it is synthetic-only, conflicting with the permanent raw-evidence rule.",
+      "status": "open",
+      "root_cause": "Rollback conflates reversible binaries and disposable synthetic state with protected evidence-bearing databases."
+    },
+    {
+      "id": "evolution-suppress-kind-renamed-without-compatibility-oracle",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-6", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-PROTOCOL-REPLAY", "FAIL-RELATION-INTEGRITY"],
+      "evidence": "Current SUPPRESS lineage binds relates_to into immutable relation IDs and hashes; relation_domain already disambiguates it from knowledge relations.",
+      "status": "open",
+      "root_cause": "The plan renames an immutable evolution kind even though relation_domain provides the needed namespace."
+    },
+    {
+      "id": "pre-admission-rejection-audit-owner-unspecified",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-2", "HM-AC-7", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-AUDIT-SECRET", "FAIL-LLM-PAYLOAD"],
+      "evidence": "Harness parser failures happen before Memory admission; Harness has no durable storage and current Memory rejection audit cannot truthfully represent malformed wire.",
+      "status": "open",
+      "root_cause": "Harness parsing, Host durable invocation audit and Memory post-admission rejection audit were treated as one owner."
+    },
+    {
+      "id": "black-box-relation-oracle-frozen-after-implementation",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-6", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-RELATION-INTEGRITY", "FAIL-PROTOCOL-REPLAY"],
+      "evidence": "Current task ordering updates TC-HM-12 runner semantics after implementation, while only artifact identity inherently requires post-build pinning.",
+      "status": "open",
+      "root_cause": "Behavioral oracle semantics and public choreography were conflated with post-build artifact pins."
+    }
+  ],
+  "resolved_finding_ids": [],
+  "open_finding_ids": [
+    "semantic-relation-value-gated-by-full-scope",
+    "rollback-can-delete-protected-raw-evidence",
+    "evolution-suppress-kind-renamed-without-compatibility-oracle",
+    "pre-admission-rejection-audit-owner-unspecified",
+    "black-box-relation-oracle-frozen-after-implementation"
+  ],
+  "decisions": [
+    {
+      "canonical_finding_id": "semantic-relation-value-gated-by-full-scope",
+      "source_finding_ids": ["semantic-relation-value-gated-by-full-scope"],
+      "action": "plan-change",
+      "rationale": "Cut Tasks 1-3 into an applies_to-only vertical slice and move extra kinds plus exhaustive matrices after the first exact-wheel value smoke."
+    },
+    {
+      "canonical_finding_id": "rollback-can-delete-protected-raw-evidence",
+      "source_finding_ids": ["rollback-can-delete-protected-raw-evidence"],
+      "action": "plan-change",
+      "rationale": "Classify state and prohibit deletion or downgrade of every evidence-bearing database; add a zero-data-loss rollback oracle."
+    },
+    {
+      "canonical_finding_id": "evolution-suppress-kind-renamed-without-compatibility-oracle",
+      "source_finding_ids": ["evolution-suppress-kind-renamed-without-compatibility-oracle"],
+      "action": "plan-change",
+      "rationale": "Preserve evolution/relates_to and use relation_domain plus exact owner to disambiguate knowledge/relates_to."
+    },
+    {
+      "canonical_finding_id": "pre-admission-rejection-audit-owner-unspecified",
+      "source_finding_ids": ["pre-admission-rejection-audit-owner-unspecified"],
+      "action": "plan-change",
+      "rationale": "Implement typed Harness diagnostics, freeze the Host audit contract as a later S5 gate, and keep Memory receipts post-admission only."
+    },
+    {
+      "canonical_finding_id": "black-box-relation-oracle-frozen-after-implementation",
+      "source_finding_ids": ["black-box-relation-oracle-frozen-after-implementation"],
+      "action": "plan-change",
+      "rationale": "Freeze dual-wheel public JSON/DTO/transition semantics and runner choreography before implementation; pin candidate artifacts only after build."
+    }
+  ],
+  "conflicts": [],
+  "required_spikes": [
+    {
+      "spike_id": "SPIKE-RELATION-ENDPOINT-DAG",
+      "purpose": "Prove a separate relation endpoint dependency validator can resolve cross-memory-type CREATE producers without weakening operation-target same-type revision rules."
+    },
+    {
+      "spike_id": "SPIKE-RELATION-DOMAIN-CHECK",
+      "purpose": "Prove SQLite FK/CHECK combinations for evolution owner NULL and knowledge exact owner, including both domain-scoped relates_to meanings."
+    }
+  ],
+  "plan_actions": [
+    "Add pre-implementation oracle freeze task and separate later artifact repin.",
+    "Make the first value milestone applies_to-only; defer supports/relates_to breadth and full matrices.",
+    "Preserve evolution SUPPRESS as relates_to.",
+    "Split parser/audit authority across Harness, Host and Memory with truthful blocked status.",
+    "Replace database-discard rollback with retained evidence-bearing database procedure and FAIL-DATA-LOSS oracle.",
+    "Run and record both required spikes before closure."
+  ]
+}

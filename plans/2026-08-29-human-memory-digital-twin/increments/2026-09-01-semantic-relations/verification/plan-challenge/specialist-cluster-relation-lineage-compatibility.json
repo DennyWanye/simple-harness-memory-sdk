@@ -1,0 +1,23 @@
+{
+  "cluster_id": "cluster-relation-lineage-compatibility",
+  "parent_finding_ids": ["evolution-suppress-kind-renamed-without-compatibility-oracle"],
+  "specialty": "data-state",
+  "findings": [
+    {
+      "id": "evolution-suppress-kind-renamed-without-compatibility-oracle",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-6", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-PROTOCOL-REPLAY", "FAIL-RELATION-INTEGRITY"],
+      "evidence": "Current schema_v5.py:740-768 permits relation_kind=relates_to and has no domain/owner discriminator. sqlite_v5.py:6462-6514 deterministically emits SUPPRESS lineage as relates_to and binds that value into immutable IDs/hashes; graph read consumes it without translation. relation_domain already supplies the namespace, so renaming it lacks authority and replay oracle.",
+      "status": "open",
+      "root_cause": "The plan treats evolution and knowledge relation kinds as globally disjoint even though relation_domain already supplies the required namespace, unnecessarily renaming an immutable lineage value."
+    }
+  ],
+  "cross_cluster_refs": [],
+  "conclusion": {
+    "status": "refined",
+    "summary": "Schema v7 should allow both (evolution, relates_to, owner NULL) and (knowledge, relates_to, exact owner non-NULL). Freeze SUPPRESS -> evolution/relates_to plus close/reopen and idempotent replay. Do not rename without separate user approval."
+  }
+}

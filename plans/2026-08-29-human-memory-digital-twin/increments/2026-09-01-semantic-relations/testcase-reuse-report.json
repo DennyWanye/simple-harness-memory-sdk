@@ -1,0 +1,77 @@
+{
+  "schema_version": "1.0",
+  "historical_pass_inherited": false,
+  "testcase_challenge": {
+    "iterations": 3,
+    "final_verdict": "PASS",
+    "reviewer": "relation_audit_specialist",
+    "evidence": "verification/testcase-iteration-03.md",
+    "remaining_product_gate": "NOT_RUN/BLOCKED"
+  },
+  "decisions": [
+    {
+      "obligation_id": "HM-TO-A2",
+      "decision": "reuse-with-extension",
+      "candidates": ["TC-HM-08@rev3", "TC-HM-12@rev2"],
+      "selected_testcases": ["TC-HM-08@rev4", "TC-HM-12@rev3"],
+      "reason": "Extend the existing fail-closed mutation case and display-only twin public-wheel case; typed recall is unaffected."
+    },
+    {
+      "obligation_id": "HM-TO-A6",
+      "decision": "reuse-with-extension",
+      "candidates": ["TC-HM-12@rev2"],
+      "selected_testcases": ["TC-HM-12@rev3"],
+      "reason": "The existing graph case is the exact user surface and now freezes 2 nodes plus one applies_to edge, relation-node exclusion and suppression/reopen removal."
+    },
+    {
+      "obligation_id": "HM-TO-A7",
+      "decision": "reuse-with-extension",
+      "candidates": ["TC-HM-08@rev3", "TC-HM-12@rev2"],
+      "selected_testcases": ["TC-HM-08@rev4", "TC-HM-12@rev3"],
+      "reason": "The relation memory shares existing evidence, mutation receipt, fault, close/reopen and graph trace paths; no historical PASS is inherited."
+    },
+    {
+      "obligation_id": "HM-TO-A8",
+      "decision": "reuse-with-extension",
+      "candidates": ["TC-HM-08@rev3", "TC-HM-12@rev2"],
+      "selected_testcases": ["TC-HM-08@rev4", "TC-HM-12@rev3"],
+      "reason": "Rev4/Rev3 freeze dual exact-wheel package-root execution plus admission, transaction, replay, lifecycle and corruption gates without duplicating another journey."
+    },
+    {
+      "obligation_id": "HM-TO-R9",
+      "decision": "reuse-with-extension",
+      "candidates": ["TC-HM-08@rev3", "TC-HM-12@rev2"],
+      "selected_testcases": ["TC-HM-08@rev4", "TC-HM-12@rev3"],
+      "reason": "The relation-integrity obligation extends the existing mutation fault matrix and graph oracle rather than creating a separate user journey."
+    }
+  ],
+  "testcase_revision_updates": [
+    {
+      "testcase_id": "TC-HM-08",
+      "decision": "reuse-with-extension",
+      "from_revision": 3,
+      "to_revision": 4,
+      "content_sha256": "188e393e9eaae0a88d02342d8e6b85e13ea34f8a7985b8ace78cec5f09b789bc",
+      "relation_integrity_fixture": "semantic-relation-integrity-v1.json@rev1",
+      "relation_integrity_fixture_sha256": "e56b8f88e0ed91a03a7b093c0d615a1b290089bd28464d4d9b8790b1552d8172",
+      "integrity_runner_sha256": "1429e8fc06e78571917cc2e514f66db55a936d97d715ec60a772f05970d32bd8",
+      "candidate_identity_status": "PENDING_POST_BUILD_PIN",
+      "quality_gate": "NOT_RUN/BLOCKED",
+      "host_pre_admission_audit": "NOT_RUN/BLOCKED_UNTIL_S5",
+      "reason": "Reuse the existing invalid-plan and fault-recovery journey for relation admission, atomicity, replay, lifecycle and restart integrity."
+    },
+    {
+      "testcase_id": "TC-HM-12",
+      "decision": "reuse-with-extension",
+      "from_revision": 2,
+      "to_revision": 3,
+      "content_sha256": "68009b52bb07d6458d147b8a9657955aea10fa28c0ef2bde356c2d687aadb32e",
+      "relation_fixture": "semantic-relations-v1.json@rev1",
+      "relation_fixture_sha256": "f4aab67c16fee324a6a257b6ede409be02d3477246025d57cb17f4bc6fda0f02",
+      "runner_sha256": "c797ce8d87e0738824adada8ed6286155b23b55b6bcbdd2db520104fa3050ae3",
+      "candidate_identity_status": "PENDING_POST_BUILD_PIN",
+      "quality_gate": "NOT_RUN/BLOCKED",
+      "reason": "Freeze behavior and public choreography before implementation; pin exact candidate identities only after reproducible builds."
+    }
+  ]
+}

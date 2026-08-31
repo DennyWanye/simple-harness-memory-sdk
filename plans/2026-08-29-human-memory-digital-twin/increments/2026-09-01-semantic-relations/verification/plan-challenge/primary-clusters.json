@@ -1,0 +1,41 @@
+{
+  "primary_contradiction": {
+    "id": "pc-semantic-relation-as-governed-memory",
+    "summary": "The deciding contradiction is whether a semantic relation can be created through the public atomic memory protocol as a governed long-term memory while the ordinary graph exposes only its current eligible edge. The plan states this correctly and its 2-node/1-edge action is minimal, but the scheduled milestone is not value-first because unrelated relation kinds and the full defensive matrix precede it.",
+    "acceptance_ids": ["HM-AC-2", "HM-AC-6"]
+  },
+  "challenge_clusters": [
+    {
+      "cluster_id": "cluster-value-and-oracle-sequencing",
+      "parent_finding_ids": ["semantic-relation-value-gated-by-full-scope", "black-box-relation-oracle-frozen-after-implementation"],
+      "specialty": "testability-evidence",
+      "question": "What is the smallest pre-frozen public applies_to oracle and minimum implementation slice that can prove governed relation value before additional kinds and exhaustive defense matrices?",
+      "required_evidence": ["pre-implementation TC-HM-12 relation oracle", "package-root Harness and Memory public call sequence", "minimal dependency list for the 2-node/1-edge smoke", "separate post-build exact wheel pin procedure"],
+      "specialist_required": true
+    },
+    {
+      "cluster_id": "cluster-immutable-evidence-rollback",
+      "parent_finding_ids": ["rollback-can-delete-protected-raw-evidence"],
+      "specialty": "release-rollback",
+      "question": "How will rollback return to prior wheels without deleting any database that may contain protected prototype evidence?",
+      "required_evidence": ["rollback state classification", "synthetic-only database boundary", "retained schema-v7 evidence procedure", "FAIL-DATA-LOSS rollback oracle"],
+      "specialist_required": true
+    },
+    {
+      "cluster_id": "cluster-relation-lineage-compatibility",
+      "parent_finding_ids": ["evolution-suppress-kind-renamed-without-compatibility-oracle"],
+      "specialty": "data-state",
+      "question": "Can relation_domain and exact owner be introduced while preserving the existing evolution lineage vocabulary and replay behavior?",
+      "required_evidence": ["current suppression lineage rows", "schema-v7 domain and kind constraints", "reopen and replay oracle for evolution edges", "approved behavior-change authority if a rename remains"],
+      "specialist_required": true
+    },
+    {
+      "cluster_id": "cluster-parser-to-backend-audit-chain",
+      "parent_finding_ids": ["pre-admission-rejection-audit-owner-unspecified"],
+      "specialty": "failure-recovery",
+      "question": "Which durable authority records each rejection before and after MemoryMutationPlan admission, and how is one LLM invocation trace linked across that boundary without half-state?",
+      "required_evidence": ["Host parser-failure audit port", "Harness validation reason-code contract", "Memory backend rejection receipt path", "end-to-end malformed-v5 trace oracle"],
+      "specialist_required": true
+    }
+  ]
+}

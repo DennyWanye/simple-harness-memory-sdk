@@ -1,0 +1,34 @@
+{
+  "cluster_id": "cluster-value-and-oracle-sequencing",
+  "parent_finding_ids": ["semantic-relation-value-gated-by-full-scope", "black-box-relation-oracle-frozen-after-implementation"],
+  "specialty": "testability-evidence",
+  "findings": [
+    {
+      "id": "semantic-relation-value-gated-by-full-scope",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-2", "HM-AC-6"],
+      "assurance_contract_ids": ["FAIL-RELATION-INTEGRITY"],
+      "evidence": "The direct minimum dependencies are Harness v5 claim/relation discrimination, created-by endpoint DAG validation for applies_to, Memory relation_domain/exact owner persistence, atomic endpoint resolution/canonical write, graph owner/endpoint visibility, one public suppression path and exact-wheel execution. supports, relates_to and the exhaustive negative matrix are not prerequisites of the approved 2-node/1-edge value smoke.",
+      "status": "open",
+      "root_cause": "The plan packages the complete V1 feature and defensive test matrix into prerequisites of the first value milestone instead of cutting an applies_to-only vertical slice."
+    },
+    {
+      "id": "black-box-relation-oracle-frozen-after-implementation",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-6", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-RELATION-INTEGRITY", "FAIL-PROTOCOL-REPLAY"],
+      "evidence": "Pre-implementation oracle can freeze allowed package roots, strict v5 three-operation JSON, exact 2-node/1-applies_to-edge DTO without a relation node, public endpoint suppression and close/reopen 0-edge behavior, plus fail-closed missing-symbol behavior. Only exact wheel/source/version/build hashes must be pinned after build. The runner can suppress an endpoint through its public graph node ref and needs no new private relation seed API.",
+      "status": "open",
+      "root_cause": "Behavioral oracle semantics, executable public-call choreography and post-build artifact identity are conflated into one late runner/repin activity."
+    }
+  ],
+  "cross_cluster_refs": [],
+  "conclusion": {
+    "status": "refined",
+    "summary": "Freeze the dual-wheel public protocol, exact JSON/DTO/transition oracles and failure classes before implementation; pin artifacts afterward. Move supports, relates_to and exhaustive matrices behind the first clean exact-wheel applies_to milestone."
+  }
+}

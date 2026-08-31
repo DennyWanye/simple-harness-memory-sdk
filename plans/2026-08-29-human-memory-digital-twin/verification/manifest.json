@@ -42,8 +42,8 @@
       ]
     },
     "input_hashes": {
-      "acceptance": "ab4dbe080e27ab4a29bf4be74b539363b489f9ad165eadf748fb3b8019cbc067",
-      "assurance_contract": "d828f016110bd876c364c9b17fdf2c316557988a7be6f8195d25aa0eb1b3e6a8",
+      "acceptance": "d0d78dfbd7f6d3743f047f9e2d2bd11fdbf60a1770cc13d20a7e8b432a26b2b8",
+      "assurance_contract": "49b13eabedd7af8b3d67ed84db52e128efe126ab3fc2a0d764e1d0db97e9be21",
       "reuse_report": "10e07fd2c0463276687e26200cd0286d161320c38733eef6d9d920b5068d25d0",
       "testcase_inventory": "79ffc95eb1d1835f43545240b44605cf0d6f53018f06dda4bb9a956d2cd65612",
       "verification_spec": "b70965a31b63742c23bc27d2607e6552d12a13c782ddda8ae8c2fa22bcdfb178"
@@ -55,7 +55,7 @@
       "testcase_inventory": "/Users/denny/projects/simple_harness-memory-plan/testcase/index.json",
       "verification_spec": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/verification/verification-spec.json"
     },
-    "seal_sha256": "a92ab7d3ac926ea2ec92507c29dcbb3e9f1c5067739e579cd236c9f57d61e599",
+    "seal_sha256": "8a88c34d89f7c504e2d57f101bdd1d64dc29d4632240041644361cb243bf9762",
     "selected_testcase_ids": [
       "TC-GS-03",
       "TC-GS-04",

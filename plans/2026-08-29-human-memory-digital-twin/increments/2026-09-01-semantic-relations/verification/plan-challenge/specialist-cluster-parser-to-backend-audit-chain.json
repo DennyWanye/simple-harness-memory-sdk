@@ -1,0 +1,23 @@
+{
+  "cluster_id": "cluster-parser-to-backend-audit-chain",
+  "parent_finding_ids": ["pre-admission-rejection-audit-owner-unspecified"],
+  "specialty": "failure-recovery",
+  "findings": [
+    {
+      "id": "pre-admission-rejection-audit-owner-unspecified",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-2", "HM-AC-7", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-AUDIT-SECRET", "FAIL-LLM-PAYLOAD"],
+      "evidence": "Harness parser currently raises generic TypeError/ValueError and has no typed stable reason-code contract. Memory apply only receives an already-constructed plan and its private rejection audit cannot represent malformed wire rejected before admission. Existing S3 boundary assigns strict parser failure audit to Host and does not call Memory; Host implementation is deferred to S5.",
+      "status": "open",
+      "root_cause": "The plan conflates three authorities: Harness owns deterministic parsing semantics without persistence, Host owns durable pre-admission invocation/validation audit, and Memory owns post-admission rejection audit."
+    }
+  ],
+  "cross_cluster_refs": [],
+  "conclusion": {
+    "status": "refined",
+    "summary": "Implement a bounded credential-safe Harness validation diagnostic with stable reason codes now. Freeze the future Host audit-port contract and malformed-v5 trace oracle, but keep durable Host execution NOT_RUN/BLOCKED until S5. Use Memory rejection audit only after valid-plan admission."
+  }
+}

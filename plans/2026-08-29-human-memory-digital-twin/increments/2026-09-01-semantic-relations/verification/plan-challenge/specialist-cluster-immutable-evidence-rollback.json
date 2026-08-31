@@ -1,0 +1,23 @@
+{
+  "cluster_id": "cluster-immutable-evidence-rollback",
+  "parent_finding_ids": ["rollback-can-delete-protected-raw-evidence"],
+  "specialty": "release-rollback",
+  "findings": [
+    {
+      "id": "rollback-can-delete-protected-raw-evidence",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-1", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-DATA-LOSS"],
+      "evidence": "acceptance.md HM-AC-1 and the physical deletion prohibition state that from the first new-prototype evidence onward no system, retention job, maintenance path, user forgetting request, or test helper may physically delete or overwrite raw evidence; HM-TO-R1 requires before/after raw-row counts and content hashes. assurance-contract.json defines ASSET-RAW-EVIDENCE and FAIL-DATA-LOSS and permits fresh data directories only as an initialization assumption, not as deletion authority. plan.md section 9 currently says rollback discards the fresh prototype DB, without classifying whether that DB is synthetic-only or contains committed Session/Turn/Tool/LLM evidence, and section 7 Task 6 has no rollback-specific FAIL-DATA-LOSS oracle.",
+      "status": "open",
+      "root_cause": "The rollback design conflates reversible release state with protected evidence state. It lacks an enforceable state classification that limits physical disposal to synthetic-only databases, lacks a retained schema-v7 evidence procedure for databases containing committed raw evidence, and lacks a decisive rollback oracle proving zero physical deletion or overwrite."
+    }
+  ],
+  "cross_cluster_refs": [],
+  "conclusion": {
+    "status": "refined",
+    "summary": "Classify rollback state; only manifest-proven synthetic-only databases may be disposable. Retain every evidence-bearing schema-v7 database unchanged, seal it read-only with exact schema/checksum/wheel/commit refs, and create a new directory for an older wheel. Add a FAIL-DATA-LOSS rollback oracle comparing protected row counts and canonical hashes across rollback and cleanup paths."
+  }
+}

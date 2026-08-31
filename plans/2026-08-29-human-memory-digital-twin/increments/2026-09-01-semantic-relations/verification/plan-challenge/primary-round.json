@@ -1,0 +1,70 @@
+{
+  "review_mode": "breadth",
+  "coverage": {
+    "acceptance_coverage": true,
+    "entry_and_trust_chain": true,
+    "data_flow_and_persistence": true,
+    "identity_permissions_concurrency_cleanup": true,
+    "failure_and_recovery": true,
+    "tests_and_evidence": true,
+    "release_and_rollback": true,
+    "trusted_boundary_stop": true
+  },
+  "findings": [
+    {
+      "id": "semantic-relation-value-gated-by-full-scope",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-2", "HM-AC-6"],
+      "assurance_contract_ids": ["FAIL-RELATION-INTEGRITY"],
+      "evidence": "plan.md:11-22 correctly identifies the main contradiction and a minimal 2-node/1-edge public-wheel action, but plan.md:143-162 places the VALUE milestone after Task 1 implements all three kinds and Task 2 completes the full invalid-kind/type/self-loop, cross-principal, stale/conflict/suppression, every-fault-seam, replay and reopen matrix. supports and relates_to plus the full defensive matrix are not direct dependencies of the approved applies_to value action.",
+      "status": "open",
+      "root_cause": "The stated primary contradiction is genuinely the deciding user-value problem and the stated smoke is minimal, but task batching places full protocol breadth and defenses before that value can be demonstrated."
+    },
+    {
+      "id": "rollback-can-delete-protected-raw-evidence",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-1", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-DATA-LOSS"],
+      "evidence": "acceptance.md:64 and acceptance.md:75-77 prohibit physical deletion by maintenance or test helpers from the first prototype evidence onward. plan.md:196-200 defines rollback as discarding the fresh prototype database while simultaneously claiming evidence is not deleted, without restricting discard to synthetic spike databases that can never contain protected evidence.",
+      "status": "open",
+      "root_cause": "Rollback is defined at whole-database granularity without separating disposable synthetic test state from protected append-only prototype evidence."
+    },
+    {
+      "id": "evolution-suppress-kind-renamed-without-compatibility-oracle",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-6", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-PROTOCOL-REPLAY", "FAIL-RELATION-INTEGRITY"],
+      "evidence": "Current sqlite_v5.py:6462-6466 emits SUPPRESS evolution lineage as relates_to. plan.md:84-103 both promises existing evolution behavior and changes the evolution kind to suppresses. relation_domain already disambiguates evolution relates_to from knowledge relates_to, so the rename is not required by the approved knowledge-relation increment and has no frozen compatibility/replay oracle.",
+      "status": "open",
+      "root_cause": "The plan mixes the new knowledge-relation discriminator with an unrelated mutation-lineage vocabulary change."
+    },
+    {
+      "id": "pre-admission-rejection-audit-owner-unspecified",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-2", "HM-AC-7", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-AUDIT-SECRET", "FAIL-LLM-PAYLOAD"],
+      "evidence": "plan.md:108-126 requires stable reason codes and decision/audit receipts for v4 or unknown wire and malformed dependency payloads, but the flow reaches MemoryManager only after the Harness strict parser. Tasks 1-6 assign no durable Host-side audit owner or evidence oracle for parser failures that cannot produce a valid MemoryMutationPlan. Existing sqlite_v5.py:6816-6845 records rejection audit only after backend apply has been entered.",
+      "status": "open",
+      "root_cause": "Audit ownership is specified only generically across a trust boundary where pre-parser failures and post-admission mutation rejections require different durable recording authorities."
+    },
+    {
+      "id": "black-box-relation-oracle-frozen-after-implementation",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-6", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-RELATION-INTEGRITY", "FAIL-PROTOCOL-REPLAY"],
+      "evidence": "The current TC-HM-12 rev2 remains NOT_RUN/BLOCKED because its public seed contract is pending. plan.md:157-162 first upgrades its fixture/runner after Harness and Memory implementation, while plan.md:172-176 freezes and repins the oracle still later. This permits the black-box expected contract and assertions to be derived from the completed implementation rather than frozen before it; only candidate identity hashes inherently need post-build repinning.",
+      "status": "open",
+      "root_cause": "Oracle semantics, runner implementation, and candidate artifact pinning are treated as one late task instead of freezing behavior independently before production implementation."
+    }
+  ]
+}

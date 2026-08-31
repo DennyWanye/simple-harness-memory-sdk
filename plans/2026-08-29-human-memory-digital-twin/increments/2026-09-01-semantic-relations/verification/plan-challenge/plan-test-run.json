@@ -1,0 +1,3023 @@
+{
+  "acceptance": {
+    "path": "plans/2026-08-29-human-memory-digital-twin/acceptance.md",
+    "sha256": "d0d78dfbd7f6d3743f047f9e2d2bd11fdbf60a1770cc13d20a7e8b432a26b2b8"
+  },
+  "active_run_required": true,
+  "applicability": {
+    "input_sensitive": {
+      "decided_by": "user",
+      "rationale": "记忆召回和提取依赖自然语言语义",
+      "value": true
+    },
+    "llm_payload_driven": {
+      "decided_by": "user",
+      "rationale": "LLM 结构化计划驱动确定性状态机",
+      "value": true
+    },
+    "stateful_init": {
+      "decided_by": "user",
+      "rationale": "空数据目录需要原子初始化持久状态",
+      "value": true
+    }
+  },
+  "auditor_engine": "independent-codex-agent",
+  "baseline": {
+    "content_digest": "dad612e994ac42eb2ae689dc98f1e1b3311d42f5c4020f22c73bfa5737674650",
+    "dirty_patch_sha256": "e421297aaf01ff0ef012e9e415d8af9e2451c788e0fd6fc6766de059fb591c24",
+    "exclusion_count": 1,
+    "exclusion_scope": [
+      ".plan-test/active-run.json",
+      "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge"
+    ],
+    "exclusions": [
+      [
+        ".plan-test/active-run.json",
+        "declared-scope:.plan-test/active-run.json"
+      ]
+    ],
+    "head": "dfd12ce50bd9f22f5f6ed1a7d81e55ca4b20d4a0",
+    "recorded_at": "2026-09-01T01:48:33+0800"
+  },
+  "behavior_changes": [],
+  "behavior_contract": {},
+  "challenge_loops": [
+    {
+      "acceptance_snapshots": [
+        {
+          "path": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/acceptance.md",
+          "recorded_at": "2026-09-01T01:48:44+0800",
+          "sha256": "d0d78dfbd7f6d3743f047f9e2d2bd11fdbf60a1770cc13d20a7e8b432a26b2b8"
+        }
+      ],
+      "baseline_hash": "c870ee1f1977af0cf0836e2d0809649b404f0465195a0d990e6160057e9fabf6",
+      "challenge_clusters": [
+        {
+          "cluster_id": "cluster-value-and-oracle-sequencing",
+          "parent_finding_ids": [
+            "semantic-relation-value-gated-by-full-scope",
+            "black-box-relation-oracle-frozen-after-implementation"
+          ],
+          "question": "What is the smallest pre-frozen public applies_to oracle and minimum implementation slice that can prove governed relation value before additional kinds and exhaustive defense matrices?",
+          "required_evidence": [
+            "pre-implementation TC-HM-12 relation oracle",
+            "package-root Harness and Memory public call sequence",
+            "minimal dependency list for the 2-node/1-edge smoke",
+            "separate post-build exact wheel pin procedure"
+          ],
+          "specialist_required": true,
+          "specialty": "testability-evidence"
+        },
+        {
+          "cluster_id": "cluster-immutable-evidence-rollback",
+          "parent_finding_ids": [
+            "rollback-can-delete-protected-raw-evidence"
+          ],
+          "question": "How will rollback return to prior wheels without deleting any database that may contain protected prototype evidence?",
+          "required_evidence": [
+            "rollback state classification",
+            "synthetic-only database boundary",
+            "retained schema-v7 evidence procedure",
+            "FAIL-DATA-LOSS rollback oracle"
+          ],
+          "specialist_required": true,
+          "specialty": "release-rollback"
+        },
+        {
+          "cluster_id": "cluster-relation-lineage-compatibility",
+          "parent_finding_ids": [
+            "evolution-suppress-kind-renamed-without-compatibility-oracle"
+          ],
+          "question": "Can relation_domain and exact owner be introduced while preserving the existing evolution lineage vocabulary and replay behavior?",
+          "required_evidence": [
+            "current suppression lineage rows",
+            "schema-v7 domain and kind constraints",
+            "reopen and replay oracle for evolution edges",
+            "approved behavior-change authority if a rename remains"
+          ],
+          "specialist_required": true,
+          "specialty": "data-state"
+        },
+        {
+          "cluster_id": "cluster-parser-to-backend-audit-chain",
+          "parent_finding_ids": [
+            "pre-admission-rejection-audit-owner-unspecified"
+          ],
+          "question": "Which durable authority records each rejection before and after MemoryMutationPlan admission, and how is one LLM invocation trace linked across that boundary without half-state?",
+          "required_evidence": [
+            "Host parser-failure audit port",
+            "Harness validation reason-code contract",
+            "Memory backend rejection receipt path",
+            "end-to-end malformed-v5 trace oracle"
+          ],
+          "specialist_required": true,
+          "specialty": "failure-recovery"
+        }
+      ],
+      "clusters_recorded_round": 1,
+      "contract_snapshots": [
+        {
+          "acceptance_ids": [
+            "HM-AC-1",
+            "HM-AC-2",
+            "HM-AC-3",
+            "HM-AC-4",
+            "HM-AC-5",
+            "HM-AC-6",
+            "HM-AC-7",
+            "HM-AC-8"
+          ],
+          "acceptance_sha256": "d0d78dfbd7f6d3743f047f9e2d2bd11fdbf60a1770cc13d20a7e8b432a26b2b8",
+          "assurance_ids": [
+            "ADV-LLM-OUTPUT",
+            "ADV-NATURAL-LANGUAGE",
+            "ASSET-AUDIT-LINEAGE",
+            "ASSET-AVAILABILITY-BUDGET",
+            "ASSET-DISPLAY-ONLY-TWIN",
+            "ASSET-FOREGROUND-RUN-ORDER",
+            "ASSET-MEMORY-TRUTH",
+            "ASSET-RAW-EVIDENCE",
+            "ASSET-SCOPE-PRIVACY",
+            "ASSET-TASK-CONTEXT",
+            "ASSET-TASK-CONTINUITY",
+            "ASSET-TASK-FOLDER-AUTHORITY",
+            "FAIL-AUDIT-SECRET",
+            "FAIL-AUTO-MODE-ESCALATION",
+            "FAIL-CONTEXT-OVERFLOW",
+            "FAIL-DATA-LOSS",
+            "FAIL-FALSE-MEMORY",
+            "FAIL-FOREGROUND-RUN-CONCURRENCY",
+            "FAIL-HALF-STATE",
+            "FAIL-HIGH-RISK-ACTION",
+            "FAIL-LATENCY-COST",
+            "FAIL-LLM-PAYLOAD",
+            "FAIL-PRIMARY-STREAM-SPLIT",
+            "FAIL-PRIVACY-RECALL",
+            "FAIL-PRIVACY-STALE",
+            "FAIL-PROTOCOL-REPLAY",
+            "FAIL-READ-VIEW-GROWTH",
+            "FAIL-RECALL-MISS",
+            "FAIL-RELATION-INTEGRITY",
+            "FAIL-SEMANTIC-CLOSURE",
+            "FAIL-STALE-CONFLICT",
+            "FAIL-TASK-CONTAMINATION",
+            "FAIL-TASK-FOLDER-REBIND",
+            "FAIL-TASK-RESUME-LOSS",
+            "FAIL-TASK-SEARCH-AUTHORITY",
+            "FAIL-TWIN-INFLUENCE",
+            "OOS-CLOUD-SYNC",
+            "OOS-COMPROMISED-HOST",
+            "OOS-GRAPH-DATABASE",
+            "OOS-HOST-EXECUTOR",
+            "OOS-LEGACY-DATA",
+            "OOS-MULTI-AGENT-RUN",
+            "OOS-TWIN-BEHAVIOR",
+            "TRUST-AUTH-CONTEXT",
+            "TRUST-FRESH-DATA-DIR",
+            "TRUST-LOCAL-HOST"
+          ],
+          "path": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/assurance-contract.json",
+          "profile": "standard",
+          "recorded_at": "2026-09-01T01:48:44+0800",
+          "scope_hash": "384e077077d2e714b1a545c18b9b682560c0a8ea939c50f0e80c72ddeae365e1",
+          "sha256": "49b13eabedd7af8b3d67ed84db52e128efe126ab3fc2a0d764e1d0db97e9be21",
+          "threat_model_hash": "407051a2b6a3f62e21ff02048be408bcdd9507033d99b6280f7db8eb7069b486"
+        }
+      ],
+      "control_events": [],
+      "limits": {
+        "hard": 8,
+        "soft": 3,
+        "user_review": 5
+      },
+      "loop_id": "plan-iteration-001",
+      "loop_type": "plan-iteration",
+      "orchestration": "clustered",
+      "primary_contradiction": {
+        "acceptance_ids": [
+          "HM-AC-2",
+          "HM-AC-6"
+        ],
+        "id": "pc-semantic-relation-as-governed-memory",
+        "summary": "The deciding contradiction is whether a semantic relation can be created through the public atomic memory protocol as a governed long-term memory while the ordinary graph exposes only its current eligible edge. The plan states this correctly and its 2-node/1-edge action is minimal, but the scheduled milestone is not value-first because unrelated relation kinds and the full defensive matrix precede it."
+      },
+      "rounds": [
+        {
+          "based_on_plan_hash": null,
+          "coverage": {
+            "acceptance_coverage": true,
+            "data_flow_and_persistence": true,
+            "entry_and_trust_chain": true,
+            "failure_and_recovery": true,
+            "identity_permissions_concurrency_cleanup": true,
+            "release_and_rollback": true,
+            "tests_and_evidence": true,
+            "trusted_boundary_stop": true
+          },
+          "findings": [
+            {
+              "assurance_contract_ids": [
+                "FAIL-RELATION-INTEGRITY"
+              ],
+              "evidence": "plan.md:11-22 correctly identifies the main contradiction and a minimal 2-node/1-edge public-wheel action, but plan.md:143-162 places the VALUE milestone after Task 1 implements all three kinds and Task 2 completes the full invalid-kind/type/self-loop, cross-principal, stale/conflict/suppression, every-fault-seam, replay and reopen matrix. supports and relates_to plus the full defensive matrix are not direct dependencies of the approved applies_to value action.",
+              "id": "semantic-relation-value-gated-by-full-scope",
+              "origin": "pre-existing",
+              "root_cause": "The stated primary contradiction is genuinely the deciding user-value problem and the stated smoke is minimal, but task batching places full protocol breadth and defenses before that value can be demonstrated.",
+              "scope_relation": "in-scope",
+              "severity": "P0",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-2",
+                "HM-AC-6"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-DATA-LOSS"
+              ],
+              "evidence": "acceptance.md:64 and acceptance.md:75-77 prohibit physical deletion by maintenance or test helpers from the first prototype evidence onward. plan.md:196-200 defines rollback as discarding the fresh prototype database while simultaneously claiming evidence is not deleted, without restricting discard to synthetic spike databases that can never contain protected evidence.",
+              "id": "rollback-can-delete-protected-raw-evidence",
+              "origin": "pre-existing",
+              "root_cause": "Rollback is defined at whole-database granularity without separating disposable synthetic test state from protected append-only prototype evidence.",
+              "scope_relation": "in-scope",
+              "severity": "P0",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-PROTOCOL-REPLAY",
+                "FAIL-RELATION-INTEGRITY"
+              ],
+              "evidence": "Current sqlite_v5.py:6462-6466 emits SUPPRESS evolution lineage as relates_to. plan.md:84-103 both promises existing evolution behavior and changes the evolution kind to suppresses. relation_domain already disambiguates evolution relates_to from knowledge relates_to, so the rename is not required by the approved knowledge-relation increment and has no frozen compatibility/replay oracle.",
+              "id": "evolution-suppress-kind-renamed-without-compatibility-oracle",
+              "origin": "pre-existing",
+              "root_cause": "The plan mixes the new knowledge-relation discriminator with an unrelated mutation-lineage vocabulary change.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-6",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-AUDIT-SECRET",
+                "FAIL-LLM-PAYLOAD"
+              ],
+              "evidence": "plan.md:108-126 requires stable reason codes and decision/audit receipts for v4 or unknown wire and malformed dependency payloads, but the flow reaches MemoryManager only after the Harness strict parser. Tasks 1-6 assign no durable Host-side audit owner or evidence oracle for parser failures that cannot produce a valid MemoryMutationPlan. Existing sqlite_v5.py:6816-6845 records rejection audit only after backend apply has been entered.",
+              "id": "pre-admission-rejection-audit-owner-unspecified",
+              "origin": "pre-existing",
+              "root_cause": "Audit ownership is specified only generically across a trust boundary where pre-parser failures and post-admission mutation rejections require different durable recording authorities.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-2",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-RELATION-INTEGRITY",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "The current TC-HM-12 rev2 remains NOT_RUN/BLOCKED because its public seed contract is pending. plan.md:157-162 first upgrades its fixture/runner after Harness and Memory implementation, while plan.md:172-176 freezes and repins the oracle still later. This permits the black-box expected contract and assertions to be derived from the completed implementation rather than frozen before it; only candidate identity hashes inherently need post-build repinning.",
+              "id": "black-box-relation-oracle-frozen-after-implementation",
+              "origin": "pre-existing",
+              "root_cause": "Oracle semantics, runner implementation, and candidate artifact pinning are treated as one late task instead of freezing behavior independently before production implementation.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-6",
+                "HM-AC-8"
+              ]
+            }
+          ],
+          "new_critical_findings": 5,
+          "plan_hash": "c870ee1f1977af0cf0836e2d0809649b404f0465195a0d990e6160057e9fabf6",
+          "review_mode": "breadth",
+          "reviewer_verdict": null,
+          "round": 1,
+          "scope_hash": "384e077077d2e714b1a545c18b9b682560c0a8ea939c50f0e80c72ddeae365e1",
+          "threat_model_hash": "407051a2b6a3f62e21ff02048be408bcdd9507033d99b6280f7db8eb7069b486",
+          "timestamp": "2026-09-01T01:59:18+0800"
+        },
+        {
+          "based_on_plan_hash": "c870ee1f1977af0cf0836e2d0809649b404f0465195a0d990e6160057e9fabf6",
+          "coverage": null,
+          "findings": [
+            {
+              "assurance_contract_ids": [
+                "FAIL-RELATION-INTEGRITY"
+              ],
+              "evidence": "Tasks 1-3 are now applies_to-only and Task 4 owns additional kinds and exhaustive matrices.",
+              "id": "semantic-relation-value-gated-by-full-scope",
+              "origin": "pre-existing",
+              "root_cause": "The former full-V1 prerequisite was replaced by an applies_to-only vertical value slice.",
+              "scope_relation": "in-scope",
+              "severity": "P0",
+              "status": "resolved",
+              "violated_acceptance_ids": [
+                "HM-AC-2",
+                "HM-AC-6"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-DATA-LOSS"
+              ],
+              "evidence": "Rollback now permits cleanup only for manifest-proven synthetic-only databases and preserves every evidence-bearing schema-7 database with row/hash oracles.",
+              "id": "rollback-can-delete-protected-raw-evidence",
+              "origin": "pre-existing",
+              "root_cause": "Rollback now separates disposable synthetic state from immutable evidence-bearing databases.",
+              "scope_relation": "in-scope",
+              "severity": "P0",
+              "status": "resolved",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-PROTOCOL-REPLAY",
+                "FAIL-RELATION-INTEGRITY"
+              ],
+              "evidence": "The plan preserves evolution/relates_to and the recorded SQLite spike proves domain-scoped coexistence with knowledge/relates_to.",
+              "id": "evolution-suppress-kind-renamed-without-compatibility-oracle",
+              "origin": "pre-existing",
+              "root_cause": "The revised design uses relation_domain and owner nullability without rewriting lineage vocabulary.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "resolved",
+              "violated_acceptance_ids": [
+                "HM-AC-6",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-AUDIT-SECRET",
+                "FAIL-LLM-PAYLOAD"
+              ],
+              "evidence": "The plan separates Harness diagnostics, Host durable pre-admission audit and Memory post-admission rejection audit, leaving Host evidence blocked until S5.",
+              "id": "pre-admission-rejection-audit-owner-unspecified",
+              "origin": "pre-existing",
+              "root_cause": "The revised trust chain gives each boundary one explicit owner.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "resolved",
+              "violated_acceptance_ids": [
+                "HM-AC-2",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-RELATION-INTEGRITY",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "Task 0 freezes semantics before implementation, but Task 3 still says to upgrade TC-HM-12 after implementation instead of executing the frozen assets unchanged.",
+              "id": "black-box-relation-oracle-frozen-after-implementation",
+              "origin": "pre-existing",
+              "root_cause": "The old post-implementation runner-upgrade instruction remains in the VALUE task.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-6",
+                "HM-AC-8"
+              ]
+            }
+          ],
+          "new_critical_findings": 0,
+          "plan_hash": "e0360ec4290003101c8fde1296223c919663df51f5ad75fb8b800b039f5125a9",
+          "review_mode": "diff",
+          "reviewer_verdict": null,
+          "round": 2,
+          "scope_hash": "384e077077d2e714b1a545c18b9b682560c0a8ea939c50f0e80c72ddeae365e1",
+          "threat_model_hash": "407051a2b6a3f62e21ff02048be408bcdd9507033d99b6280f7db8eb7069b486",
+          "timestamp": "2026-09-01T02:14:58+0800"
+        },
+        {
+          "based_on_plan_hash": "e0360ec4290003101c8fde1296223c919663df51f5ad75fb8b800b039f5125a9",
+          "coverage": null,
+          "findings": [
+            {
+              "assurance_contract_ids": [
+                "FAIL-RELATION-INTEGRITY"
+              ],
+              "evidence": "Unchanged from closure round 2: Tasks 1-3 remain applies_to-only and Task 4 owns additional kinds and exhaustive matrices.",
+              "id": "semantic-relation-value-gated-by-full-scope",
+              "origin": "pre-existing",
+              "root_cause": "The former full-V1 prerequisite was replaced by an applies_to-only vertical value slice.",
+              "scope_relation": "in-scope",
+              "severity": "P0",
+              "status": "resolved",
+              "violated_acceptance_ids": [
+                "HM-AC-2",
+                "HM-AC-6"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-DATA-LOSS"
+              ],
+              "evidence": "Unchanged from closure round 2: only manifest-proven synthetic-only databases are disposable; evidence-bearing databases and their hashes are retained.",
+              "id": "rollback-can-delete-protected-raw-evidence",
+              "origin": "pre-existing",
+              "root_cause": "Rollback separates disposable synthetic state from immutable evidence-bearing databases.",
+              "scope_relation": "in-scope",
+              "severity": "P0",
+              "status": "resolved",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-PROTOCOL-REPLAY",
+                "FAIL-RELATION-INTEGRITY"
+              ],
+              "evidence": "Unchanged from closure round 2: evolution/relates_to is preserved and domain-scoped coexistence was proven by the recorded SQLite spike.",
+              "id": "evolution-suppress-kind-renamed-without-compatibility-oracle",
+              "origin": "pre-existing",
+              "root_cause": "relation_domain and owner nullability disambiguate knowledge relations without rewriting lineage vocabulary.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "resolved",
+              "violated_acceptance_ids": [
+                "HM-AC-6",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-AUDIT-SECRET",
+                "FAIL-LLM-PAYLOAD"
+              ],
+              "evidence": "Unchanged from closure round 2: Harness, Host and Memory audit responsibilities are explicit and Host durable evidence remains blocked until S5.",
+              "id": "pre-admission-rejection-audit-owner-unspecified",
+              "origin": "pre-existing",
+              "root_cause": "Each trust-boundary stage has one explicit authority.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "resolved",
+              "violated_acceptance_ids": [
+                "HM-AC-2",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-RELATION-INTEGRITY",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "Plan hash 42a63af0199efaab6bb1a3d13cdedb43afa004a0766bfb161faa8e7875ffbab9 freezes behavior/DTO/transition semantics and hashes before implementation, requires Task 3 to execute them unchanged, and limits Task 5 to identity repinning guarded by behavior-change approval.",
+              "id": "black-box-relation-oracle-frozen-after-implementation",
+              "origin": "pre-existing",
+              "root_cause": "The post-implementation runner-upgrade instruction was replaced with execution of the pre-frozen black-box oracle.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "resolved",
+              "violated_acceptance_ids": [
+                "HM-AC-6",
+                "HM-AC-8"
+              ]
+            }
+          ],
+          "new_critical_findings": 0,
+          "plan_hash": "42a63af0199efaab6bb1a3d13cdedb43afa004a0766bfb161faa8e7875ffbab9",
+          "review_mode": "diff",
+          "reviewer_verdict": null,
+          "round": 3,
+          "scope_hash": "384e077077d2e714b1a545c18b9b682560c0a8ea939c50f0e80c72ddeae365e1",
+          "threat_model_hash": "407051a2b6a3f62e21ff02048be408bcdd9507033d99b6280f7db8eb7069b486",
+          "timestamp": "2026-09-01T02:17:04+0800"
+        }
+      ],
+      "specialist_challenges": [
+        {
+          "cluster_id": "cluster-value-and-oracle-sequencing",
+          "output": {
+            "cluster_id": "cluster-value-and-oracle-sequencing",
+            "conclusion": {
+              "status": "refined",
+              "summary": "Freeze the dual-wheel public protocol, exact JSON/DTO/transition oracles and failure classes before implementation; pin artifacts afterward. Move supports, relates_to and exhaustive matrices behind the first clean exact-wheel applies_to milestone."
+            },
+            "cross_cluster_refs": [],
+            "findings": [
+              {
+                "assurance_contract_ids": [
+                  "FAIL-RELATION-INTEGRITY"
+                ],
+                "evidence": "The direct minimum dependencies are Harness v5 claim/relation discrimination, created-by endpoint DAG validation for applies_to, Memory relation_domain/exact owner persistence, atomic endpoint resolution/canonical write, graph owner/endpoint visibility, one public suppression path and exact-wheel execution. supports, relates_to and the exhaustive negative matrix are not prerequisites of the approved 2-node/1-edge value smoke.",
+                "id": "semantic-relation-value-gated-by-full-scope",
+                "origin": "pre-existing",
+                "root_cause": "The plan packages the complete V1 feature and defensive test matrix into prerequisites of the first value milestone instead of cutting an applies_to-only vertical slice.",
+                "scope_relation": "in-scope",
+                "severity": "P0",
+                "status": "open",
+                "violated_acceptance_ids": [
+                  "HM-AC-2",
+                  "HM-AC-6"
+                ]
+              },
+              {
+                "assurance_contract_ids": [
+                  "FAIL-RELATION-INTEGRITY",
+                  "FAIL-PROTOCOL-REPLAY"
+                ],
+                "evidence": "Pre-implementation oracle can freeze allowed package roots, strict v5 three-operation JSON, exact 2-node/1-applies_to-edge DTO without a relation node, public endpoint suppression and close/reopen 0-edge behavior, plus fail-closed missing-symbol behavior. Only exact wheel/source/version/build hashes must be pinned after build. The runner can suppress an endpoint through its public graph node ref and needs no new private relation seed API.",
+                "id": "black-box-relation-oracle-frozen-after-implementation",
+                "origin": "pre-existing",
+                "root_cause": "Behavioral oracle semantics, executable public-call choreography and post-build artifact identity are conflated into one late runner/repin activity.",
+                "scope_relation": "in-scope",
+                "severity": "P1",
+                "status": "open",
+                "violated_acceptance_ids": [
+                  "HM-AC-6",
+                  "HM-AC-8"
+                ]
+              }
+            ],
+            "parent_finding_ids": [
+              "semantic-relation-value-gated-by-full-scope",
+              "black-box-relation-oracle-frozen-after-implementation"
+            ],
+            "specialty": "testability-evidence"
+          },
+          "output_path": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/specialist-cluster-value-and-oracle-sequencing.json",
+          "output_sha256": "44923fa8c7f0f71bb5532d4840d4c63de44803b1c5e32c8b51dff9ec5b740128",
+          "recorded_at": "2026-09-01T02:02:15+0800",
+          "specialty": "testability-evidence",
+          "status": "completed"
+        },
+        {
+          "cluster_id": "cluster-immutable-evidence-rollback",
+          "output": {
+            "cluster_id": "cluster-immutable-evidence-rollback",
+            "conclusion": {
+              "status": "refined",
+              "summary": "Classify rollback state; only manifest-proven synthetic-only databases may be disposable. Retain every evidence-bearing schema-v7 database unchanged, seal it read-only with exact schema/checksum/wheel/commit refs, and create a new directory for an older wheel. Add a FAIL-DATA-LOSS rollback oracle comparing protected row counts and canonical hashes across rollback and cleanup paths."
+            },
+            "cross_cluster_refs": [],
+            "findings": [
+              {
+                "assurance_contract_ids": [
+                  "FAIL-DATA-LOSS"
+                ],
+                "evidence": "acceptance.md HM-AC-1 and the physical deletion prohibition state that from the first new-prototype evidence onward no system, retention job, maintenance path, user forgetting request, or test helper may physically delete or overwrite raw evidence; HM-TO-R1 requires before/after raw-row counts and content hashes. assurance-contract.json defines ASSET-RAW-EVIDENCE and FAIL-DATA-LOSS and permits fresh data directories only as an initialization assumption, not as deletion authority. plan.md section 9 currently says rollback discards the fresh prototype DB, without classifying whether that DB is synthetic-only or contains committed Session/Turn/Tool/LLM evidence, and section 7 Task 6 has no rollback-specific FAIL-DATA-LOSS oracle.",
+                "id": "rollback-can-delete-protected-raw-evidence",
+                "origin": "pre-existing",
+                "root_cause": "The rollback design conflates reversible release state with protected evidence state. It lacks an enforceable state classification that limits physical disposal to synthetic-only databases, lacks a retained schema-v7 evidence procedure for databases containing committed raw evidence, and lacks a decisive rollback oracle proving zero physical deletion or overwrite.",
+                "scope_relation": "in-scope",
+                "severity": "P0",
+                "status": "open",
+                "violated_acceptance_ids": [
+                  "HM-AC-1",
+                  "HM-AC-8"
+                ]
+              }
+            ],
+            "parent_finding_ids": [
+              "rollback-can-delete-protected-raw-evidence"
+            ],
+            "specialty": "release-rollback"
+          },
+          "output_path": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/specialist-cluster-immutable-evidence-rollback.json",
+          "output_sha256": "6021a05e0f070b230f095fb4610fb9db5fce59cbb6b036a05bb856b7eb7283ac",
+          "recorded_at": "2026-09-01T02:02:15+0800",
+          "specialty": "release-rollback",
+          "status": "completed"
+        },
+        {
+          "cluster_id": "cluster-relation-lineage-compatibility",
+          "output": {
+            "cluster_id": "cluster-relation-lineage-compatibility",
+            "conclusion": {
+              "status": "refined",
+              "summary": "Schema v7 should allow both (evolution, relates_to, owner NULL) and (knowledge, relates_to, exact owner non-NULL). Freeze SUPPRESS -> evolution/relates_to plus close/reopen and idempotent replay. Do not rename without separate user approval."
+            },
+            "cross_cluster_refs": [],
+            "findings": [
+              {
+                "assurance_contract_ids": [
+                  "FAIL-PROTOCOL-REPLAY",
+                  "FAIL-RELATION-INTEGRITY"
+                ],
+                "evidence": "Current schema_v5.py:740-768 permits relation_kind=relates_to and has no domain/owner discriminator. sqlite_v5.py:6462-6514 deterministically emits SUPPRESS lineage as relates_to and binds that value into immutable IDs/hashes; graph read consumes it without translation. relation_domain already supplies the namespace, so renaming it lacks authority and replay oracle.",
+                "id": "evolution-suppress-kind-renamed-without-compatibility-oracle",
+                "origin": "pre-existing",
+                "root_cause": "The plan treats evolution and knowledge relation kinds as globally disjoint even though relation_domain already supplies the required namespace, unnecessarily renaming an immutable lineage value.",
+                "scope_relation": "in-scope",
+                "severity": "P1",
+                "status": "open",
+                "violated_acceptance_ids": [
+                  "HM-AC-6",
+                  "HM-AC-8"
+                ]
+              }
+            ],
+            "parent_finding_ids": [
+              "evolution-suppress-kind-renamed-without-compatibility-oracle"
+            ],
+            "specialty": "data-state"
+          },
+          "output_path": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/specialist-cluster-relation-lineage-compatibility.json",
+          "output_sha256": "bc761debdd5ee35b8a715827c1d3673919a73d11862af921fad8443990f230cb",
+          "recorded_at": "2026-09-01T02:02:57+0800",
+          "specialty": "data-state",
+          "status": "completed"
+        },
+        {
+          "cluster_id": "cluster-parser-to-backend-audit-chain",
+          "output": {
+            "cluster_id": "cluster-parser-to-backend-audit-chain",
+            "conclusion": {
+              "status": "refined",
+              "summary": "Implement a bounded credential-safe Harness validation diagnostic with stable reason codes now. Freeze the future Host audit-port contract and malformed-v5 trace oracle, but keep durable Host execution NOT_RUN/BLOCKED until S5. Use Memory rejection audit only after valid-plan admission."
+            },
+            "cross_cluster_refs": [],
+            "findings": [
+              {
+                "assurance_contract_ids": [
+                  "FAIL-AUDIT-SECRET",
+                  "FAIL-LLM-PAYLOAD"
+                ],
+                "evidence": "Harness parser currently raises generic TypeError/ValueError and has no typed stable reason-code contract. Memory apply only receives an already-constructed plan and its private rejection audit cannot represent malformed wire rejected before admission. Existing S3 boundary assigns strict parser failure audit to Host and does not call Memory; Host implementation is deferred to S5.",
+                "id": "pre-admission-rejection-audit-owner-unspecified",
+                "origin": "pre-existing",
+                "root_cause": "The plan conflates three authorities: Harness owns deterministic parsing semantics without persistence, Host owns durable pre-admission invocation/validation audit, and Memory owns post-admission rejection audit.",
+                "scope_relation": "in-scope",
+                "severity": "P1",
+                "status": "open",
+                "violated_acceptance_ids": [
+                  "HM-AC-2",
+                  "HM-AC-7",
+                  "HM-AC-8"
+                ]
+              }
+            ],
+            "parent_finding_ids": [
+              "pre-admission-rejection-audit-owner-unspecified"
+            ],
+            "specialty": "failure-recovery"
+          },
+          "output_path": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/specialist-cluster-parser-to-backend-audit-chain.json",
+          "output_sha256": "5e09dbc9e0db84285170f21aae7317ca749d1919ba2516987f774ce825a0927f",
+          "recorded_at": "2026-09-01T02:05:17+0800",
+          "specialty": "failure-recovery",
+          "status": "completed"
+        }
+      ],
+      "started_at": "2026-09-01T01:48:44+0800",
+      "status": "CONVERGED",
+      "synthesis": {
+        "after_round": 1,
+        "input_path": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/challenge-synthesis.json",
+        "input_sha256": "e654b2c534bcd874b14ebf5dc611c8a3863aed4a956c2d16adafef518205ff5c",
+        "payload": {
+          "canonical_findings": [
+            {
+              "assurance_contract_ids": [
+                "FAIL-RELATION-INTEGRITY"
+              ],
+              "evidence": "The approved minimum value proof only depends on applies_to protocol, atomic persistence, graph visibility, public suppression and exact-wheel execution; supports, relates_to and exhaustive matrices are not prerequisites.",
+              "id": "semantic-relation-value-gated-by-full-scope",
+              "origin": "pre-existing",
+              "root_cause": "The full V1 relation surface and defensive matrix are prerequisites of the first applies_to value proof.",
+              "scope_relation": "in-scope",
+              "severity": "P0",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-2",
+                "HM-AC-6"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-DATA-LOSS"
+              ],
+              "evidence": "The plan permits discarding a fresh prototype database without proving it is synthetic-only, conflicting with the permanent raw-evidence rule.",
+              "id": "rollback-can-delete-protected-raw-evidence",
+              "origin": "pre-existing",
+              "root_cause": "Rollback conflates reversible binaries and disposable synthetic state with protected evidence-bearing databases.",
+              "scope_relation": "in-scope",
+              "severity": "P0",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-PROTOCOL-REPLAY",
+                "FAIL-RELATION-INTEGRITY"
+              ],
+              "evidence": "Current SUPPRESS lineage binds relates_to into immutable relation IDs and hashes; relation_domain already disambiguates it from knowledge relations.",
+              "id": "evolution-suppress-kind-renamed-without-compatibility-oracle",
+              "origin": "pre-existing",
+              "root_cause": "The plan renames an immutable evolution kind even though relation_domain provides the needed namespace.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-6",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-AUDIT-SECRET",
+                "FAIL-LLM-PAYLOAD"
+              ],
+              "evidence": "Harness parser failures happen before Memory admission; Harness has no durable storage and current Memory rejection audit cannot truthfully represent malformed wire.",
+              "id": "pre-admission-rejection-audit-owner-unspecified",
+              "origin": "pre-existing",
+              "root_cause": "Harness parsing, Host durable invocation audit and Memory post-admission rejection audit were treated as one owner.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-2",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-RELATION-INTEGRITY",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "Current task ordering updates TC-HM-12 runner semantics after implementation, while only artifact identity inherently requires post-build pinning.",
+              "id": "black-box-relation-oracle-frozen-after-implementation",
+              "origin": "pre-existing",
+              "root_cause": "Behavioral oracle semantics and public choreography were conflated with post-build artifact pins.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-6",
+                "HM-AC-8"
+              ]
+            }
+          ],
+          "conflicts": [],
+          "decisions": [
+            {
+              "action": "plan-change",
+              "canonical_finding_id": "semantic-relation-value-gated-by-full-scope",
+              "rationale": "Cut Tasks 1-3 into an applies_to-only vertical slice and move extra kinds plus exhaustive matrices after the first exact-wheel value smoke.",
+              "source_finding_ids": [
+                "semantic-relation-value-gated-by-full-scope"
+              ]
+            },
+            {
+              "action": "plan-change",
+              "canonical_finding_id": "rollback-can-delete-protected-raw-evidence",
+              "rationale": "Classify state and prohibit deletion or downgrade of every evidence-bearing database; add a zero-data-loss rollback oracle.",
+              "source_finding_ids": [
+                "rollback-can-delete-protected-raw-evidence"
+              ]
+            },
+            {
+              "action": "plan-change",
+              "canonical_finding_id": "evolution-suppress-kind-renamed-without-compatibility-oracle",
+              "rationale": "Preserve evolution/relates_to and use relation_domain plus exact owner to disambiguate knowledge/relates_to.",
+              "source_finding_ids": [
+                "evolution-suppress-kind-renamed-without-compatibility-oracle"
+              ]
+            },
+            {
+              "action": "plan-change",
+              "canonical_finding_id": "pre-admission-rejection-audit-owner-unspecified",
+              "rationale": "Implement typed Harness diagnostics, freeze the Host audit contract as a later S5 gate, and keep Memory receipts post-admission only.",
+              "source_finding_ids": [
+                "pre-admission-rejection-audit-owner-unspecified"
+              ]
+            },
+            {
+              "action": "plan-change",
+              "canonical_finding_id": "black-box-relation-oracle-frozen-after-implementation",
+              "rationale": "Freeze dual-wheel public JSON/DTO/transition semantics and runner choreography before implementation; pin candidate artifacts only after build.",
+              "source_finding_ids": [
+                "black-box-relation-oracle-frozen-after-implementation"
+              ]
+            }
+          ],
+          "open_finding_ids": [
+            "semantic-relation-value-gated-by-full-scope",
+            "rollback-can-delete-protected-raw-evidence",
+            "evolution-suppress-kind-renamed-without-compatibility-oracle",
+            "pre-admission-rejection-audit-owner-unspecified",
+            "black-box-relation-oracle-frozen-after-implementation"
+          ],
+          "plan_actions": [
+            "Add pre-implementation oracle freeze task and separate later artifact repin.",
+            "Make the first value milestone applies_to-only; defer supports/relates_to breadth and full matrices.",
+            "Preserve evolution SUPPRESS as relates_to.",
+            "Split parser/audit authority across Harness, Host and Memory with truthful blocked status.",
+            "Replace database-discard rollback with retained evidence-bearing database procedure and FAIL-DATA-LOSS oracle.",
+            "Run and record both required spikes before closure."
+          ],
+          "required_spikes": [
+            {
+              "purpose": "Prove a separate relation endpoint dependency validator can resolve cross-memory-type CREATE producers without weakening operation-target same-type revision rules.",
+              "spike_id": "SPIKE-RELATION-ENDPOINT-DAG"
+            },
+            {
+              "purpose": "Prove SQLite FK/CHECK combinations for evolution owner NULL and knowledge exact owner, including both domain-scoped relates_to meanings.",
+              "spike_id": "SPIKE-RELATION-DOMAIN-CHECK"
+            }
+          ],
+          "resolved_finding_ids": [],
+          "source_cluster_ids": [
+            "cluster-value-and-oracle-sequencing",
+            "cluster-immutable-evidence-rollback",
+            "cluster-relation-lineage-compatibility",
+            "cluster-parser-to-backend-audit-chain"
+          ]
+        },
+        "recorded_at": "2026-09-01T02:07:23+0800"
+      },
+      "target_file": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/plan.md"
+    }
+  ],
+  "challenger_engine": null,
+  "compiled_manifest": {
+    "case_sets": {
+      "full": [
+        "HM-REG-GS-STATE",
+        "HM-REG-GS-UI",
+        "HM-S1",
+        "HM-S10",
+        "HM-S11",
+        "HM-S12",
+        "HM-S13A",
+        "HM-S13B",
+        "HM-S2",
+        "HM-S3",
+        "HM-S4",
+        "HM-S5",
+        "HM-S6",
+        "HM-S7",
+        "HM-S8",
+        "HM-S9",
+        "HM-X01"
+      ]
+    },
+    "input_hashes": {
+      "acceptance": "d0d78dfbd7f6d3743f047f9e2d2bd11fdbf60a1770cc13d20a7e8b432a26b2b8",
+      "assurance_contract": "49b13eabedd7af8b3d67ed84db52e128efe126ab3fc2a0d764e1d0db97e9be21",
+      "reuse_report": "10e07fd2c0463276687e26200cd0286d161320c38733eef6d9d920b5068d25d0",
+      "testcase_inventory": "79ffc95eb1d1835f43545240b44605cf0d6f53018f06dda4bb9a956d2cd65612",
+      "verification_spec": "b70965a31b63742c23bc27d2607e6552d12a13c782ddda8ae8c2fa22bcdfb178"
+    },
+    "input_paths": {
+      "acceptance": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/acceptance.md",
+      "assurance_contract": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/assurance-contract.json",
+      "reuse_report": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/verification/testcase-reuse-report.json",
+      "testcase_inventory": "/Users/denny/projects/simple_harness-memory-plan/testcase/index.json",
+      "verification_spec": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/verification/verification-spec.json"
+    },
+    "seal_sha256": "8a88c34d89f7c504e2d57f101bdd1d64dc29d4632240041644361cb243bf9762",
+    "selected_testcase_ids": [
+      "TC-GS-03",
+      "TC-GS-04",
+      "TC-GS-05",
+      "TC-GS-06",
+      "TC-GS-07",
+      "TC-GS-08",
+      "TC-GS-09",
+      "TC-GS-10",
+      "TC-HM-01",
+      "TC-HM-02",
+      "TC-HM-03",
+      "TC-HM-04",
+      "TC-HM-05",
+      "TC-HM-06",
+      "TC-HM-07",
+      "TC-HM-08",
+      "TC-HM-09",
+      "TC-HM-10",
+      "TC-HM-11",
+      "TC-HM-12",
+      "TC-HM-13",
+      "TC-HM-X01"
+    ],
+    "tool_version": "1.5.0"
+  },
+  "created_at": "2026-09-01T01:48:33+0800",
+  "declared_statuses": [],
+  "delivery": {},
+  "doc_only_globs": null,
+  "events": [
+    {
+      "action": "start",
+      "at": "2026-08-31T17:48:33Z",
+      "phase": "plan-challenge",
+      "type": "phase"
+    },
+    {
+      "action": "end",
+      "at": "2026-08-31T18:21:35Z",
+      "note": "clustered challenge converged; Ponytail applied",
+      "phase": "plan-challenge",
+      "rounds": 3,
+      "status": "ok",
+      "subagents": 4,
+      "type": "phase"
+    },
+    {
+      "at": "2026-08-31T18:21:35Z",
+      "dirty_patch_sha256": "5b369cd2564172ab9541aa4266d462822dc611631be1608f68487cf358c072ae",
+      "head": "dfd12ce50bd9f22f5f6ed1a7d81e55ca4b20d4a0",
+      "note": "finalized plan cce4ad26468adcf0df9ac3127d4f6e98251acb640350cb5ce418f2a32e5d263e",
+      "slice": "semantic-relations-plan",
+      "type": "checkpoint"
+    },
+    {
+      "action": "start",
+      "at": "2026-08-31T18:25:04Z",
+      "note": "Phase 2 converged round 3; finalized plan cce4ad26; baseline green",
+      "phase": "phase-3",
+      "type": "phase"
+    }
+  ],
+  "evidence": [],
+  "exclusion_scope": [
+    ".plan-test/active-run.json",
+    "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge"
+  ],
+  "executor_engine": "codex",
+  "external_run_dir": false,
+  "fixture_only": false,
+  "flow_tier": {
+    "decided_by": "user",
+    "rationale": "包含语义敏感 LLM 决策、新持久化状态机、永久原始数据和跨仓公共协议",
+    "value": "FULL"
+  },
+  "integrity": {
+    "chain": "6e05f0ce11a710cc1c725823a7d35b039f4e58491742e9377fc611c87748973e",
+    "genesis": "ace4d9115218ddd6aacfe7906e6f77136308189cb1f0e90bdff6742d2b8615ae",
+    "log": [
+      {
+        "at": "2026-09-01T01:48:33+0800",
+        "chain": "cc307c0f2af4bac76fe7104bb5f7eb95814b3bd36709d3727a5780dfbc915173",
+        "facts_digest": "f99062167d95cd5c595929e12b250ec91cd27d4c9b9c507610e39a0c984a826f",
+        "op": "init",
+        "seq": 1
+      },
+      {
+        "at": "2026-09-01T01:48:33+0800",
+        "chain": "5ce65aec706b8044d4550f3e68b956b5ad6e75a58f2bb2d11a57d358830ea4c7",
+        "facts_digest": "a4ec1241ef8412fd4bfdd30c904e394b6ce64f56ce87713ffbac11f77603bf2a",
+        "op": "phase-start",
+        "seq": 2
+      },
+      {
+        "at": "2026-09-01T01:48:44+0800",
+        "chain": "f68bc01f1be3a4c341fc45872df2ff45d847a600005ee07c72ef68877d0f79fe",
+        "facts_digest": "1f76f966e4f3804cf6126e4905f031698c350c7ee9b0b2c35f6eeaf6c48b6c65",
+        "op": "start_challenge_loop",
+        "seq": 3
+      },
+      {
+        "at": "2026-09-01T01:59:18+0800",
+        "chain": "8c238ce015a7492d4c1394d2644443826faa39512d20443e0d56842133a56f60",
+        "facts_digest": "883956bf6a1b26c963f683f222850925540309865dc193f9aa5d2c4dfae1b741",
+        "op": "record_challenge_round",
+        "seq": 4
+      },
+      {
+        "at": "2026-09-01T01:59:18+0800",
+        "chain": "0d112cc4eb5ae051628c88403bced1d3cfc6aa08c421d4a78292ef0012cfeb25",
+        "facts_digest": "4288da8d38080a2e419e4d7a0e9073aa37531903a0f7852bafd947f9d77d4848",
+        "op": "record_challenge_clusters",
+        "seq": 5
+      },
+      {
+        "at": "2026-09-01T02:02:15+0800",
+        "chain": "e08431b9c5c581d3d4ffce487031db0180b58cd9ce78f9e68e78331818638e9c",
+        "facts_digest": "03a630abb10c859542b094f39dabd10fd159617adeeddc7f8b1479cfe3e45fb1",
+        "op": "record_specialist_challenge",
+        "seq": 6
+      },
+      {
+        "at": "2026-09-01T02:02:15+0800",
+        "chain": "3d116c497b575bec54841971eb5c248871361e562f2c9ec4d6f457f620848fb0",
+        "facts_digest": "d3ab247463c7f5663ee773078e894836ea87d75401b042e301b1582d9a588a4d",
+        "op": "record_specialist_challenge",
+        "seq": 7
+      },
+      {
+        "at": "2026-09-01T02:02:57+0800",
+        "chain": "7f386151de8883ddec40b0c5b96223079276fbd67709d6ad763a03aab485ec84",
+        "facts_digest": "c5e26f8f161843704dfdecb3241f5ef2f33db5a86280b90f882a13dbba193b62",
+        "op": "record_specialist_challenge",
+        "seq": 8
+      },
+      {
+        "at": "2026-09-01T02:05:17+0800",
+        "chain": "ae7286e1980d06e9ac0e6536a1b077b6b85cf78169585a97571e26dd5dc85279",
+        "facts_digest": "22dce88814cd4850e3f1a0a87c94ad5dc33ef00dbff2b9cdab74c13c326ba707",
+        "op": "record_specialist_challenge",
+        "seq": 9
+      },
+      {
+        "at": "2026-09-01T02:07:23+0800",
+        "chain": "fa2aa8b821b6589006acd4ff3dbc1c4d10f631f469cc099d66fe624afd6361d1",
+        "facts_digest": "282d12996ac37f239d81b6d9a03a95c57d6a2aa086485d798b71d537878148a6",
+        "op": "record_challenge_synthesis",
+        "seq": 10
+      },
+      {
+        "at": "2026-09-01T02:14:58+0800",
+        "chain": "4e1599279c9bae84b6794be62e0ae365b604ffa26cd9337e829df3f06992b3e0",
+        "facts_digest": "2d1af4b6723865483da9aebc0559add4741b6b06d23a1f1e802a2a3a5cf59e55",
+        "op": "record_challenge_round",
+        "seq": 11
+      },
+      {
+        "at": "2026-09-01T02:17:04+0800",
+        "chain": "9868904413a3dca08c22d25ca3e5011cdcd4e1810aa1b0189d3a6659d94c6285",
+        "facts_digest": "cb00586bdd5b88cfd58f5c8cb91584ef32bc3c120bef8966e1f728fe690b70cf",
+        "op": "record_challenge_round",
+        "seq": 12
+      },
+      {
+        "at": "2026-09-01T02:21:35+0800",
+        "chain": "74b7c06095971bcc1895dc2d02685f00921054ba665ee8dafbc3b867a52c2d89",
+        "facts_digest": "e3a1dbced29808e302ddfef5e05697ea2d7bd70cbb2440b126c9cef6c16dc59a",
+        "op": "phase-end",
+        "seq": 13
+      },
+      {
+        "at": "2026-09-01T02:21:35+0800",
+        "chain": "a8470d789fdf24e69ba170ec2671069fe180a0c068e5fd90f21a966153ca8f87",
+        "facts_digest": "94171b81a03afc20b701a2cd580cee139347b1172c582ce228a2435a53e8a8a7",
+        "op": "checkpoint",
+        "seq": 14
+      },
+      {
+        "at": "2026-09-01T02:25:04+0800",
+        "chain": "6e05f0ce11a710cc1c725823a7d35b039f4e58491742e9377fc611c87748973e",
+        "facts_digest": "8ef91730e34507869e8fd25990eeb9162d353342a07609a5541046673b93e1b4",
+        "op": "phase-start",
+        "seq": 15
+      }
+    ]
+  },
+  "related_run_dirs": [],
+  "release_unit": {
+    "concurrent_layer_kinds": 3,
+    "high_risk_subsystems": 3,
+    "must_ac_count": 8,
+    "parent_program": "human-memory-digital-twin",
+    "plan_lines": 87,
+    "scope_hash": "303f4086283cf24117a30af38ee9e4a7c2d15389ce5a663db06d076e140fc7dc",
+    "slice_id": "V0",
+    "task_count": 7
+  },
+  "repo_root": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan",
+  "revision": 15,
+  "run_id": "run-20260901-014833",
+  "runs": [],
+  "runtime_attestation": {
+    "content_digest": "dad612e994ac42eb2ae689dc98f1e1b3311d42f5c4020f22c73bfa5737674650",
+    "content_entries": [
+      [
+        ".github/workflows/ci.yml",
+        "-:67d63459c4222ca522b3ccb711eb07f019a4d9029d84a3dc8d00561957137d74"
+      ],
+      [
+        ".github/workflows/release.yml",
+        "-:fc12be1f48cc0422e231622869777e97d1d5d704dff204aea15964d54177ab0e"
+      ],
+      [
+        ".gitignore",
+        "-:748e612b2b9431203c85c401754521f51b9633e5f0f3f06070ceb11e944aa0d9"
+      ],
+      [
+        "ARCHITECTURE/ARCHITECTURE.md",
+        "-:ee289dfe89c8756c952e3f21007e5ffcea91a98c2941e03082f1f72d6c3c280c"
+      ],
+      [
+        "ARCHITECTURE/PROJECT_STATUS.md",
+        "-:ab176d4cdb98e25ad5381a49d85d1548823795b6fd71825681fe708febccd7c1"
+      ],
+      [
+        "ARCHITECTURE/index.md",
+        "-:4197a2502fe0b1e06f9ce329761b619103804b218d918d042dc17c697d2574fc"
+      ],
+      [
+        "CHANGELOG.md",
+        "-:37fd0e690eb690c4700fe2b213a00f5b36c5330ca9eba404559179d1e434a377"
+      ],
+      [
+        "LICENSES/BUSL-1.1.txt",
+        "-:d90560217049db1d6020ec7cf482da4198bfa372dffd22270ba08fd8088cd93b"
+      ],
+      [
+        "README.md",
+        "-:d9fd1a5d63851947f599dea37401b19e99205ad51576f45a5f4ee5412a2a1f27"
+      ],
+      [
+        "REUSE.toml",
+        "-:488b15c3aa7fee94ce93800bc9914d2ef3e2c5b609c87956472d2b7c3e858ab2"
+      ],
+      [
+        "acceptance.md",
+        "-:8a6c63c446202587c172cbb1718108f0fbbc95b75600f3e45a80a607fbac6359"
+      ],
+      [
+        "assurance-contract.json",
+        "-:7ad44b0740e18e45df44afa40d5ff4f18fde6348038227d89b85c24cb19531ff"
+      ],
+      [
+        "docs/agent-memory-v1.md",
+        "-:87fa01a3142b50ca2ad489a3398f1663a045a1899267c09065c39da5acc1f61b"
+      ],
+      [
+        "docs/architecture.md",
+        "-:2b925a4ccb229d9cce7412950cf8eccd36c258e220f04644e484277f6ee6e08c"
+      ],
+      [
+        "docs/build-and-release.md",
+        "-:d968c90e271db9924e311f45e83a8d3509bda85d0c35465db5bd5738d7dc73c8"
+      ],
+      [
+        "docs/harness-compatibility-candidate-0.5.1-ac2e2add.json",
+        "-:3cf6227997a98fa50012a25da546d0d75e9ae05aec4aa257d44da34cab7fb22c"
+      ],
+      [
+        "docs/harness-compatibility-candidate-0.5.1.json",
+        "-:97d6bfe50c6b6ee0a87a592067f25b9a9c206904011f353076191c24be7e739b"
+      ],
+      [
+        "docs/harness-compatibility-release-0.5.1.json",
+        "-:70d0a052d727c5dded0b4e8223a23ffe58863676e05a8e557f4c80c0f7c62cf2"
+      ],
+      [
+        "docs/human-memory-v1-schema.md",
+        "-:c90de1735dd7ac3382544dbc68a584055735cb6a814dfa594e489a39709c8756"
+      ],
+      [
+        "docs/integration-status.md",
+        "-:32501838d6260e40ba8dafc788fca814ec1722d2bba89cb1f577985041e4b114"
+      ],
+      [
+        "docs/migration-v4.md",
+        "-:9bf553cc692e6f69a581ac9a84553e13c1420f98f992041acc981aaed62fd23a"
+      ],
+      [
+        "plans/2026-08-20-memory-m1-recall-privacy/acceptance.md",
+        "-:de0512efed495ea99727572ca5b263d9f59a87f7c9c33cbffde14d17d327e63c"
+      ],
+      [
+        "plans/2026-08-20-memory-m1-recall-privacy/assurance-contract.json",
+        "-:d57053626179fae88995b112046de6508ee4813a12531eae4907762ec9e1219a"
+      ],
+      [
+        "plans/2026-08-20-memory-m1-recall-privacy/manifest.json",
+        "-:1f2113f9565a03eedc1b81266bd289df73c07b2030cffaebc9fb87f0966eb125"
+      ],
+      [
+        "plans/2026-08-20-memory-m1-recall-privacy/plan.md",
+        "-:4e86f9f14a3d17f46d3493d8ea13fcf513fadd2798cb42f79cb0b929f2546582"
+      ],
+      [
+        "plans/2026-08-20-memory-m2-persistence/acceptance.md",
+        "-:50c06681ab814b5d6a0e329d66044ecdd79dd8b306b79e95f2cf35239a0651cb"
+      ],
+      [
+        "plans/2026-08-20-memory-m2-persistence/assurance-contract.json",
+        "-:f0b5758754e060fa1cbee78b0a57e63e422e62c25cf6edfb8b72601bc16079da"
+      ],
+      [
+        "plans/2026-08-20-memory-m2-persistence/manifest.json",
+        "-:1f90c02425870afe6b1c24248937a62670c63315026ed323680758ef36c4b5b6"
+      ],
+      [
+        "plans/2026-08-20-memory-m2-persistence/plan.md",
+        "-:0ee2cf5d9efe234c4c19eaf02adcc19ac0e7e12d6325d1435be29c4c770a3708"
+      ],
+      [
+        "plans/2026-08-20-memory-m3-delete-lineage-limits/acceptance.md",
+        "-:4d1957241fba7f85232355ade2475d53b749bb5ae313a0241fcbb3297a0253ef"
+      ],
+      [
+        "plans/2026-08-20-memory-m3-delete-lineage-limits/assurance-contract.json",
+        "-:4339d446aadc1ba6e6f045deb0f9ee4fb22ebe3d5eb2dfce9eea9079dbfaa713"
+      ],
+      [
+        "plans/2026-08-20-memory-m3-delete-lineage-limits/manifest.json",
+        "-:d96e2a0ac2fc719b4b561172e1d251bb6233ab48e953219712ec801a479d6a0d"
+      ],
+      [
+        "plans/2026-08-20-memory-m3-delete-lineage-limits/plan.md",
+        "-:53a45ab5be6d78f10207429044bb03b83fa1e03cf1e8fb23c5ba673e4696e234"
+      ],
+      [
+        "plans/2026-08-20-memory-m4-cloud-embedder/acceptance.md",
+        "-:96327109c6f698513fe5308e16c35bdc3a92f61a0c2d92e1658d3b9c2b2b015d"
+      ],
+      [
+        "plans/2026-08-20-memory-m4-cloud-embedder/assurance-contract.json",
+        "-:5a61361ccdcc45f7e1696668635fce64084792f78214a2b638511b27c02c39e2"
+      ],
+      [
+        "plans/2026-08-20-memory-m4-cloud-embedder/manifest.json",
+        "-:41c45d54ff45d5c99af26f0461c3a12bac2982f2eded5540ba3b1af1d38ba961"
+      ],
+      [
+        "plans/2026-08-20-memory-m4-cloud-embedder/plan.md",
+        "-:01e8f97ef501b4552b3d054efada576c4698f548fd173f8da635decf18debbc5"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/README.md",
+        "-:458ac5cb1ad74aefc98c9a2cb55eafdd3b2633f1fd4298466ee70c26f960ba7c"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/acceptance.md",
+        "-:d0d78dfbd7f6d3743f047f9e2d2bd11fdbf60a1770cc13d20a7e8b432a26b2b8"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/architecture-baseline.md",
+        "-:c8cf207fb9cd8e49382ff7cbcf0de852d338aab37dc2e130d766f0ac9705112e"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/assurance-contract.json",
+        "-:49b13eabedd7af8b3d67ed84db52e128efe126ab3fc2a0d764e1d0db97e9be21"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline.md",
+        "-:960f14c79cb712bf159683b840b695fdd3d48f813ff5cbb01b943e9d4ec03e68"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/BASELINE-INTERPRETATION.md",
+        "-:23787b86ea4559483e47c17e6e3abebbc0e987d092158b05d58d59d302706036"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/BASELINE-MANIFEST.md",
+        "-:e56c24730a6686f822b5df43856a69cfe23e77b3450f1f74b53b3bf0d15e3841"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/host-baseline-state-v2.json",
+        "-:61ea0f1d0ceb843fb8a537de3e81fa36149852cd7d7cdd97566bc870a4a0531f"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/host-baseline-state.json",
+        "-:ce05279277ca9232dac39e5e9be0a3303060ea080aba968a824740406bcae2c9"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/host-worktree-shards.json",
+        "-:79157acf1bcf5f89adf8ab343218568b44a911a9625b85cdc87accc10f2fa3fe"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/original-2026-08-17/01-memory-sdk-cognitive-architecture.md",
+        "-:b68a33296f92b493c19f414aeae34335995d55b11dec03c0cb05c0774ea539c0"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/original-2026-08-17/02-memory-sdk-deep-dive.md",
+        "-:3aa737326810f49f756665caccede3896f2e8f3660eaa4454b82f0fb701d2d93"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/original-2026-08-17/03-memory-sdk-design.md",
+        "-:36533fd89a4c8990046fb65f5fd28b342fa8be4140b1ccb49c86c1b9ecc08f07"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/original-2026-08-17/04-world-model-architecture.md",
+        "-:85479ecf54a206531778926a50e5cb300f3f18d4cb4ac99a4bda4d9e669933d6"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/original-2026-08-17/05-refactor-plan.md",
+        "-:4891f4aef427a8e72cc57f0712c590024f0d99b9f017d9870d65b1808557b30f"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/original-2026-08-17/06-memory-sdk-architecture.md",
+        "-:322e498d03fa3b9084955917b874ba2576af75e28520d15d9e23a6a72a90f353"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/best-practices.md",
+        "-:ea11560dd4f3159a4331fa7ec78f7baf00a052354953611ffcbd9a505e7da404"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/evidence/phase-0-architecture-challenge.md",
+        "-:fc31f54ac2e52d403c7267e8742ca838941eaed51d01b3986e1681627f2543f1"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/evidence/phase-2-spike-index.md",
+        "-:819a1936cd15d094bdec514a7079d0ffb69a0a91791016bd5e45f42b621fae18"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/plan.md",
+        "-:c870ee1f1977af0cf0836e2d0809649b404f0465195a0d990e6160057e9fabf6"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/plan.md",
+        "-:6327e6c36af648f021bb8b4eebcd8b730c56f647b3badf33eeeb727022774d8b"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/README.md",
+        "-:67dbe31a1924ec13110805b94feddf29c5c52112c9ccac13b989cca84101bbe1"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/generate_corpus.py",
+        "-:c5720e94331d2e2c2b0b356ca08a902336837267582d4b5c656caa966a3369cc"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/manifest.json",
+        "-:c8ec4bcbd667dc5445538c0958f1d1dbc2637db6899ac0299403bd63536dde13"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/recall-candidates.jsonl",
+        "-:e3d39fdf68ded5c4af94b7c7ca04587b724b46643d1ea6fd2ccecb0003e039d5"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/validate_corpus.py",
+        "-:e6036f731220964b5677ad1c776d074318f9d3c558d2278fe9d49be863464122"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/01-human-memory-cognitive-architecture-2026.md",
+        "-:e5923e42ad4be4730cae16bed14d438fabac83c020056dead74083f49c6207ef"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/02-memory-retrieval-routing-2026.md",
+        "-:dab25d91739a5b54aae25da1baff0fd4d012d8f3ef23a4ef60c05a92f8680f0f"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/03-recall-router-method-audit.md",
+        "-:a8570c67c075ae9112a08629345f6ceb304b3044edd35d7f1831fba08ec4c422"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/04-memory-write-evolution-audit-architecture.md",
+        "-:5cc8a2e7b7081ae859b8b2046e4cda1fc6aed6f81b98c350b08a623502b220b6"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/05-single-stream-dynamic-context-architecture.md",
+        "-:4f7527d78234b1dff8eb1c8938609f7e7d36a5e335c6c91b1eeb61ba003cc0a7"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/06-task-scope-code-execution-architecture.md",
+        "-:3eb568683dbe58927480430333a7f7a96cfa5ffada873a1ea5372a10d7ea75b8"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/07-durable-task-scope-archive-and-retrieval.md",
+        "-:8edc4f38ea11cb5a529dbee6f68f11584ef028adbacb51baf7622bb46fc95f23"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/08-task-scope-creation-and-folder-binding.md",
+        "-:8eb2e447f5dc3f6c41aebd9cd0822125a9ca5bea74659e639aeb114596c7910a"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/09-multi-root-task-scope-options.md",
+        "-:7d70302fec56ed420aeec7d99a4adb45bf77a13961f7756d80b553a297f219ef"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/10-task-scope-information-carriers.md",
+        "-:6425f0afcabc8c0209298ebb76e74a08057b37424aad5c9fc3b2a9069a484ac3"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/11-permanent-audit-privacy-and-logical-forgetting.md",
+        "-:c22783f3147d1d4f2b9803c3ed2a084ef35a7212defbd36dfd32d83592ddd458"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/12-task-scope-event-and-semantic-update-pipeline.md",
+        "-:d88e45d7ae4682133915acabc79ab1b42c9d46d6b54e21aa92774db7362fbb17"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/13-task-scope-routing-outcomes.md",
+        "-:bcd090668ded01d9ea42a97e2069902d5c56002616c16009b03db658549a97e8"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/14-initial-version-core-settings.md",
+        "-:32cedf0a1a58df1dc836a0e416e23e0df9f4b1a9d2b15a29d3e748471b56a73c"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/15-single-react-run-and-future-concurrency-boundary.md",
+        "-:c3b84973d1910b69a9b49ad3c15320fe322197c144c044f030e6471165b6274a"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/S1-protocol-and-react-barrier.md",
+        "-:0acd4026bed005e133f9e823855c3fffb8ee1f845a1db256c83487d1a6ce6369"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/S2-memory-evidence-audit-suppression.md",
+        "-:70fbeafb66659ac196ecebad994e0695ff7203633e175b802141a5a174e5797c"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/S3-cognitive-systems-recall.md",
+        "-:1996b8bcac3a64e984415d10aec0cb6ac671ea7c1f6a5eca2b71a8bdb1c8353e"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/S4-host-primary-taskscope.md",
+        "-:79f9772add15af1d0690c3b21c74f9f89b488a0764b7dc5fbb99db72225f0f0c"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/S5-host-context-integration.md",
+        "-:8be7828b889816bafea3385e397e9c2d5c9bcfd7a26028640cd34c20ccf45ff6"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/S6-ui-and-program-verification.md",
+        "-:fa537bd77b84aabc8f78cdddfa8081c1fcaa0cf70b69ca3ed1a5f086ea7dfa67"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/V0-verification-and-spikes.md",
+        "-:8d16d048abc14ad4a9437ad57333edfb252086bad6324755a165b832f7177070"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/spikes/README.md",
+        "-:ddf7c03d331571636b0b28a8b606001451056e8e0c70ed105543eb7d52d6ff50"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/spikes/manifests/spike-manifest.json",
+        "-:13a2f2b5a1f4d74993a573bac31ffdddd228dd782a78c31411eea04caaf3c326"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/spikes/results/capacity-results.json",
+        "-:8fe7cfd072393c341ecfe0c8fa7fdd5f8d94ed86fed55132695de5281919f296"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/spikes/results/protocol-results.json",
+        "-:cae43f696e195311d88619455ec77661365dade255d0aa1334065b1215815a01"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/spikes/run_capacity_spikes.py",
+        "-:b19896217ac7b28a8af423d4fb0410e86e46bbf74f793de4a236a01270048dd5"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/spikes/run_protocol_spikes.py",
+        "-:e2e04d787947b33f0f6a9c45def4046b4ef5e62ee503aeae3e39458c9c2d3884"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/verification/manifest.json",
+        "-:3a1f79a45b8c0250ecc13c02c0f1b376fd40b72f19ecce6bd6960b764634f4c1"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/verification/testcase-reuse-report.json",
+        "-:10e07fd2c0463276687e26200cd0286d161320c38733eef6d9d920b5068d25d0"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/verification/v0-closure.md",
+        "-:1482f961d03922d2a909797bf6af61fdce923b31493832cb741499af8897c430"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/verification/verification-spec.json",
+        "-:b70965a31b63742c23bc27d2607e6552d12a13c782ddda8ae8c2fa22bcdfb178"
+      ],
+      [
+        "plans/phase1-local-core/gate-manifest.json",
+        "-:b7a5e28a648c62fafec25982e46005f8aa8abd84a723ba71f752f6927834d3af"
+      ],
+      [
+        "plans/phase1-local-core/plan.md",
+        "-:c9c11685c99a464181f21e80039b3b470717b3acce37c784cf93d2e53064e913"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/auditor-input.json",
+        "-:3c8f4706cd4b2586079eb348490d254c128354531164d2990b92b954da66f393"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/auditor-output.json",
+        "-:d1b3efb9f5ed65f8cd357d9eee096cc22ba68ee3a6d8738c5f455f1c9903f9af"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/gate-receipt.json",
+        "-:3799930bb101345d046d2e3ed105bb1db02dd33e7afbb34a970a4b02e552ae27"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/plan-test-run.json",
+        "-:3f182d278006eb80c154cc958406ff8d82e84218d3aa9b573e484689f87b3e2b"
+      ],
+      [
+        "plans/phase2-embeddings/gate-manifest.json",
+        "-:4e60719678d5fb8642c475dd4d626a86eee8dc038e431d7d29bd2b5f402b3c49"
+      ],
+      [
+        "plans/phase2-embeddings/plan.md",
+        "-:94217ead11e300de26ace12504dba11a172ed6b58d01375f678eb869906b1422"
+      ],
+      [
+        "plans/phase2-embeddings/verification/run-1/auditor-input.json",
+        "-:b01b4f2c832e89da0f1d1cd9a7af494bb6166f62b3bfd055fce1c2689b217d49"
+      ],
+      [
+        "plans/phase2-embeddings/verification/run-1/auditor-output.json",
+        "-:c4422152fda941ef010fe9a23b708feb75f9982ec66cab6fa47ef27210d07798"
+      ],
+      [
+        "plans/phase2-embeddings/verification/run-1/gate-receipt.json",
+        "-:950949cc79348bcfef9c299bd0b8a628ca8c1c60781df27b6245a5fe4257d0be"
+      ],
+      [
+        "plans/phase2-embeddings/verification/run-1/plan-test-run.json",
+        "-:d7057bb3908a13d4972bf963565d7ccc711daa558ad4ff738ce9c79edbb82eda"
+      ],
+      [
+        "pyproject.toml",
+        "-:2e0708ace407788f9f6566337b3c2437a9c64973a47a1879f3a9874f2610e02d"
+      ],
+      [
+        "scripts/harness_compatibility_consumer.py",
+        "-:47c733a538345e96e94f1ed9f592905788650d47216c06dbebd66114d375a622"
+      ],
+      [
+        "scripts/verify_harness_compatibility.py",
+        "-:87bb05fd4932248958c75fad00d51d1317a1a3059e711db7312cc92387324ab3"
+      ],
+      [
+        "scripts/verify_quickstart.sh",
+        "x:e8ddc0fcc7b7fb077f0ccc55e7847f5b2b56d5de7ce3cbe476dd8dced2dfb230"
+      ],
+      [
+        "scripts/write_candidate_metadata.py",
+        "-:7797fa9cbbb753c182a7ff769910167b2fa8b830e2aff9690ff99f7cc3e31623"
+      ],
+      [
+        "src/simple_harness_memory/__init__.py",
+        "-:e302285a24c6f3ed7a01108239479deff62f27eea16501a6999ccba777a98604"
+      ],
+      [
+        "src/simple_harness_memory/backends/__init__.py",
+        "-:a3a54e31caa7cad22ea8a51a4a552e57a3656ae3308534f58408a404334cf551"
+      ],
+      [
+        "src/simple_harness_memory/backends/base.py",
+        "-:555e3ecf10298da4b673969446e06f16d0577cdd6aa3161f4973c6b00292a25b"
+      ],
+      [
+        "src/simple_harness_memory/backends/mock.py",
+        "-:c16ae63240796deb2406b2947635046b1ffda0dd16f3ea94cae1a16944507877"
+      ],
+      [
+        "src/simple_harness_memory/backends/schema_v5.py",
+        "-:f6f861f6891b8bd1c42b16af67115d10b2e6a8aa445e8fc6b8c7ee2cacece670"
+      ],
+      [
+        "src/simple_harness_memory/backends/sqlite.py",
+        "-:29118efc7545207426c95c1771863ed08a2f7e125303d4043e4d1bf355b1147c"
+      ],
+      [
+        "src/simple_harness_memory/backends/sqlite_v5.py",
+        "-:8ab6ab60217c920f6540424f8688966d45f70112b9b1a18cdffa408198709a7c"
+      ],
+      [
+        "src/simple_harness_memory/backends/storage.py",
+        "-:74446fcb41239ae5e9ead85b9d9d41eaddf82427431a016f1a3d6f7909cd8cc3"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/__init__.py",
+        "-:67c31f354d34b748dfd9432b02a8721862c9b2f9704ad2f95797c62b08d7927f"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/decay.py",
+        "-:98b8a2125fbd40188bbd6dd15491816d3d571a686d5fcdcbbaa52652d9cfa5d1"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/salience.py",
+        "-:2d96ea6377558f6cb57ed7e97a553931e3f6f299d50550937851a1697b473902"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/session_affinity.py",
+        "-:e6fcfc18202b19c878ecea49be9e97eaba314f55d923e584bf22dcb4cb46b80a"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/twin_builder.py",
+        "-:3e52e4fbf5bbba5be3896446b30daf1ee39abd5bfbf0f0d7aaa74fe6d2dca7a5"
+      ],
+      [
+        "src/simple_harness_memory/config.py",
+        "-:ee17c152efcc537ed2cc2531c53d9a20f59484d5f8845c65a2a6bebe2721d924"
+      ],
+      [
+        "src/simple_harness_memory/core/__init__.py",
+        "-:95ed6d2875c9943311ab81c52121c969912e4422e1e1a537b9a6c3a807383f68"
+      ],
+      [
+        "src/simple_harness_memory/core/audit.py",
+        "-:d50944f717d68b6b30a1f1078a17ce2345732d33418a8e4aea00f82631b92baa"
+      ],
+      [
+        "src/simple_harness_memory/core/cognitive.py",
+        "-:63766c51f85219afb5c994124b7a2ddfb2e3905c5575620bfb360f34cbf05205"
+      ],
+      [
+        "src/simple_harness_memory/core/conversation.py",
+        "-:6ff87f184c98529e4ca6ae033b2fcfdb141bcc56251a5feb32c4cb229e546d79"
+      ],
+      [
+        "src/simple_harness_memory/core/embedding.py",
+        "-:bf51b994fe76d1dcfd7adc13d44c8b83efad6b64e570ca8940c4fcfeb8f2a6db"
+      ],
+      [
+        "src/simple_harness_memory/core/errors.py",
+        "-:f33701b5da3440c19a3d347731391b169d62af4fbf4aeae5047e69905287921e"
+      ],
+      [
+        "src/simple_harness_memory/core/evidence.py",
+        "-:e0b549a6059ccde1f2148fb4f42409fa2bfd701e9ce27b89fbb2c81922141570"
+      ],
+      [
+        "src/simple_harness_memory/core/identity.py",
+        "-:943ef0e1d97e38979e3f1471793131342c44db99f91050023034f9c2bea4dbe1"
+      ],
+      [
+        "src/simple_harness_memory/core/jobs.py",
+        "-:792315f207d20ee438ffc38fea8b2b51f6d81ca32cd332ca25c089e9e80df2d1"
+      ],
+      [
+        "src/simple_harness_memory/core/lifecycle_results.py",
+        "-:4744dc2ddc0386fa7cf091d5041d116001cf3d702f75a8caa228f8105c7cf842"
+      ],
+      [
+        "src/simple_harness_memory/core/manager.py",
+        "-:350ec77dbc21f9080e70430ee976c5b2d0fdd246ab33bd36096b1014e97934d1"
+      ],
+      [
+        "src/simple_harness_memory/core/models.py",
+        "-:e2f7e0b8b38627714342b156467f9cf68b975b54811d3309aa6f40aa44fd4dab"
+      ],
+      [
+        "src/simple_harness_memory/core/mutations.py",
+        "-:effbbfa429859d8cb46ecf1266e43559299d5456185b9e0ce0cb06eb5d8fef39"
+      ],
+      [
+        "src/simple_harness_memory/core/observability.py",
+        "-:2733de92f0b8188dc430f005685cd558d5e7381b8651dd87d3c77011b463b254"
+      ],
+      [
+        "src/simple_harness_memory/core/port.py",
+        "-:9fd3ac4ed2c83545e1f0c972298892abbdbe84b9ac8d86baadde1a92ecdc4d42"
+      ],
+      [
+        "src/simple_harness_memory/core/prospective.py",
+        "-:1fff05456db666399f0ebcc94f3cefe69966f847f40a26c16081ce8a81122838"
+      ],
+      [
+        "src/simple_harness_memory/core/recall.py",
+        "-:37dae90c3329810ee6b90f89d564249c01271444a4aedae13af3ee0cbcb48c7f"
+      ],
+      [
+        "src/simple_harness_memory/core/short_horizon.py",
+        "-:6d57deb453ea117af1a493ab14e745cb50c8adbda7e4c1cb87be9d8c35f1dfbe"
+      ],
+      [
+        "src/simple_harness_memory/core/suppression.py",
+        "-:8964ebb1a5caf9e8af4844e4edf6d2dd9db58497f99a685b62889ad075b2af6f"
+      ],
+      [
+        "src/simple_harness_memory/core/twin.py",
+        "-:059b3b4912afe84df18e436bbb7cd3ceee0be17812d9d5cf033e00cc33493be2"
+      ],
+      [
+        "src/simple_harness_memory/embedders/__init__.py",
+        "-:3ad0863ec2c06d0ab76d529cbcf100e14e2c405b36392604b579c1f36789c13b"
+      ],
+      [
+        "src/simple_harness_memory/embedders/base.py",
+        "-:9259c3e5ecf3d37f6aba643cabc33870b90e6217c4170ca3eb2d268eaa2c3ffd"
+      ],
+      [
+        "src/simple_harness_memory/embedders/bge.py",
+        "-:d8544e1933330256036c08c85277c5bd69bd260c1cd17401502d03c31403af9e"
+      ],
+      [
+        "src/simple_harness_memory/embedders/cloud.py",
+        "-:4484bae2a578b33fc1435fd7cb441a304257b0e051bf34ecf91688061e1912b2"
+      ],
+      [
+        "src/simple_harness_memory/embedders/factory.py",
+        "-:0ef44e07f8e2ef79759180893d7fc7b0bde0c9a1b55c6f1e26ca30d8a57971af"
+      ],
+      [
+        "src/simple_harness_memory/embedders/mock.py",
+        "-:30900d01f1eeeea25f6b4a12b69fba687b994571a0e1b10c5ed366554e5cb348"
+      ],
+      [
+        "src/simple_harness_memory/embedders/openai_compatible.py",
+        "-:bef29a39d2364bdb1e5561242d728e8a94ee565bd4e4fb30439f5426883873b3"
+      ],
+      [
+        "src/simple_harness_memory/features/__init__.py",
+        "-:6806195e95a58a039fed60ab0ec0d393f73ae569fcac27ef5b59d9da20ab1d24"
+      ],
+      [
+        "src/simple_harness_memory/features/lexical.py",
+        "-:0236a2c91e0d455aeb74826b94f0587d9f5a8840fcfd22d574ab7c39aea1690b"
+      ],
+      [
+        "src/simple_harness_memory/features/reranker.py",
+        "-:939e26bdada527a2a88dc9dab01e3707bcc9f68a114c3f06fed412c0bf88b6d2"
+      ],
+      [
+        "src/simple_harness_memory/features/retriever.py",
+        "-:96a4ac30fd10a15317591353bd460741c4d3570163ea3fbfe6233a9397abd20d"
+      ],
+      [
+        "src/simple_harness_memory/features/rrf.py",
+        "-:21a95fc7802d8a2daefe3bbc602647e73760c13fc9e1128dc316ff5c27800feb"
+      ],
+      [
+        "src/simple_harness_memory/features/summarizer.py",
+        "-:10c71b4e8c3400b7a43a4f04b576583f61b48b64b4ffa687550ea9a5d32db51f"
+      ],
+      [
+        "src/simple_harness_memory/migrations/__init__.py",
+        "-:3e3fac9e755d913f8ba499aff3ce1a4830293ce4582685cb2f31edc092408b62"
+      ],
+      [
+        "src/simple_harness_memory/migrations/contracts.py",
+        "-:ddd1efbf081b0ddfdd0385c6ccafcf1a0a92821ea56afff420e8ef48b2dd7d7b"
+      ],
+      [
+        "src/simple_harness_memory/migrations/runtime.py",
+        "-:9acddf2867000b0c85f23ac011890bd3e8d9187aebd1d7d316e95b66a87df45d"
+      ],
+      [
+        "src/simple_harness_memory/migrations/v3_to_v4.py",
+        "-:c020f950b8343e4495bf49b2e4d0dd6e843ecfc3cb6b2b687e413cdc68497b9d"
+      ],
+      [
+        "src/simple_harness_memory/py.typed",
+        "-:01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+      ],
+      [
+        "src/simple_harness_memory/world/__init__.py",
+        "-:02ce6af950b38f653871f14e12736aa5335d8113694c01f51983d2ba99d0c00f"
+      ],
+      [
+        "src/simple_harness_memory/world/events.py",
+        "-:65631e08add963bb115a2c94d0bbb9276e6a2165c022d8855a9d0481dc889aca"
+      ],
+      [
+        "src/simple_harness_memory/world/geography.py",
+        "-:82015e9375d4976817aee52966f3f471cf5acab4a3c73c6c2a9698655f4c98f7"
+      ],
+      [
+        "src/simple_harness_memory/world/knowledge.py",
+        "-:0b10f5c30a7ea1eee01b62eda341160b6ff37366cc29b7c2d1e5d7f4c903ac73"
+      ],
+      [
+        "src/simple_harness_memory/world/model.py",
+        "-:48fd449aa32c6c5ee40f6c6b695be28ff40f4f5d7c4ee316b7526ab18401efbf"
+      ],
+      [
+        "src/simple_harness_memory/world/port.py",
+        "-:e790b246a8e457759800e3577af7ada7cf00c57196cad9b8edb8eb1e752f9f65"
+      ],
+      [
+        "src/simple_harness_memory/world/temporal.py",
+        "-:0808c2159f1c0e795d5f3b301eea797f3709d4bdbe381ba907562eecff71f323"
+      ],
+      [
+        "tests/__init__.py",
+        "-:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      [
+        "tests/artifact/conftest.py",
+        "-:4aa96852d23fa2ded800871da2dc039eafb25fca27b4cc05d54fbeec60be3696"
+      ],
+      [
+        "tests/artifact/public-api-0.4.0.json",
+        "-:7f18a5d26235b3713455876774c35e5ced2f69f466ff46225f0f5ca10668d52e"
+      ],
+      [
+        "tests/artifact/public-api-0.5.0.json",
+        "-:79d4be9a34ec6f45d4d1892aa80afe9f9647d81663cff833d84074a6cc1cbb62"
+      ],
+      [
+        "tests/artifact/public-api-0.5.1.json",
+        "-:4cbbb289c1f23353fe0e2836b60ee49d4a1e157d9baaa9d0347b81ebb5fbb7e4"
+      ],
+      [
+        "tests/artifact/public-api-0.5.2.json",
+        "-:11cc765df5634e315163b73a5dbb9a0d2fc54d3ad4683350cde1982990c7eb89"
+      ],
+      [
+        "tests/artifact/public-api-0.6.0.json",
+        "-:503de91666aa553bbab86467c06b10605b2a0561022b22782c83ad1b76746e36"
+      ],
+      [
+        "tests/artifact/test_exact_wheel_consumer.py",
+        "-:d44ac669741a64342538ed8c38ceb6794e52500e9573451ef70a25c2f756a1c1"
+      ],
+      [
+        "tests/artifact/test_harness_compatibility_receipt.py",
+        "-:33b8cade08dcdfdd463fd9c60c061b4ba436e057f53e030f45f192cddf8c2123"
+      ],
+      [
+        "tests/artifact/test_harness_extra_resolution.py",
+        "-:a7ac65ea8468b062a022d716212a7f2e1919793c1c1f6b6970286926cb451568"
+      ],
+      [
+        "tests/artifact/test_legacy_public_paths_removed.py",
+        "-:898467b63d70c2d997063f821bfc857ef5a80d7d578cb4e879e56db7d16b615a"
+      ],
+      [
+        "tests/artifact/test_public_api_snapshot.py",
+        "-:5f45c2a7618efcdcfdedcd473e9c7ba39e6d822ba8d5023f19733b95dd0d81e5"
+      ],
+      [
+        "tests/artifact/test_release_candidate_contract.py",
+        "-:f5eeae1719658d94b16cce02d76b6a49f5ad0d43853b58f3ef42687f4dbcaaee"
+      ],
+      [
+        "tests/artifact/test_twin_graph_isolation.py",
+        "-:33b4fc9f12eb9ae04c9558dbd81acd83bf261d017529c4f290e4a08b21ddd1e7"
+      ],
+      [
+        "tests/fixtures/__init__.py",
+        "-:2d44d8c90aeb3fa6a02fab2b90a678adee9454849742041113f6c6d0cbbf2571"
+      ],
+      [
+        "tests/fixtures/legacy_fact_jobs.py",
+        "-:c64b67295d2033516a99eb90a8c1cb915de0a71ef4e2782fa0041e992c073005"
+      ],
+      [
+        "tests/fixtures/legacy_facts.py",
+        "-:4e1927b58fae726d97e02594db971291ad1064c713626fd8cff9fd400449cef1"
+      ],
+      [
+        "tests/integration/__init__.py",
+        "-:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      [
+        "tests/integration/test_agent_memory_v4.py",
+        "-:09541784e51a54425fcd317bda85a9496bb27399d7f0029305fc271cb5f8170f"
+      ],
+      [
+        "tests/integration/test_audit_access_v6.py",
+        "-:70a1bbce84505715eec197719870c1eb68e648eca4130e28df31c005b0c91d38"
+      ],
+      [
+        "tests/integration/test_audit_ledger_v5.py",
+        "-:be178e2ece58f6a287717c0deabd943778a023228849b7a8ef2e62dd947940f4"
+      ],
+      [
+        "tests/integration/test_bounded_recall.py",
+        "-:24b7befa75c259398216ff1871b18e9fad19ff0387819b10edfad99cb7bbc2ac"
+      ],
+      [
+        "tests/integration/test_cognitive_mutation_repository_v5.py",
+        "-:36d49f1913ac376620fdc52d6cd7e946536dce7cba3f5792c2e14a6ab99a9861"
+      ],
+      [
+        "tests/integration/test_cognitive_schema_foundation.py",
+        "-:cdb5ad316a91a65990b1fcfb6484b2ace9e43e42c65adb33b75d66c2cde7f244"
+      ],
+      [
+        "tests/integration/test_durable_memory_jobs_v5.py",
+        "-:7bac63c667123c57e36873892827711b2936919a147ac2b3ebfed0fa43e8103d"
+      ],
+      [
+        "tests/integration/test_evidence_ingestion_v5.py",
+        "-:8b26fd00caaeca07cda44d83a75f11b1c43b509cdd5e8b03433be40b23f1bd08"
+      ],
+      [
+        "tests/integration/test_manager.py",
+        "-:f47fd51a0409545d75e4ece7e1e344a64dfe8ea45c36ac948fc7ad40ce80efef"
+      ],
+      [
+        "tests/integration/test_observability.py",
+        "-:37fc8e583416c6386627acf7da1548485785ce3a7dc37f19ae4ae4d39eeae271"
+      ],
+      [
+        "tests/integration/test_procedure_observation_repository_v5.py",
+        "-:7ab48f5a4164eb80e3b835571c61ae8a1b00b81a732d9bf292b38ded6dc17ced"
+      ],
+      [
+        "tests/integration/test_prospective_signal_repository_v5.py",
+        "-:01d42bf69134bbc38515b3604ca74d7ce5a4ac1194a566483f0e740c0a9d8101"
+      ],
+      [
+        "tests/integration/test_recall_result_idempotency.py",
+        "-:a4cc236b69dff99360da4af6ff870b38c4a652ace3b99f8dbaf3c8ac1eb32e0e"
+      ],
+      [
+        "tests/integration/test_recall_retention_horizon.py",
+        "-:956296459017c967fc5692e84cc220992e4868abbd33258e34d643300f761622"
+      ],
+      [
+        "tests/integration/test_schema_v3.py",
+        "-:eb0d901a944d4cb8fc42062b025ce2f7cc1eb00e8cef10f794c5dbf3fee2e775"
+      ],
+      [
+        "tests/integration/test_schema_v5_initialization.py",
+        "-:a4f6285b5ee8107514cca289849135eebdbd6784011d5778df721c3021780f11"
+      ],
+      [
+        "tests/integration/test_short_horizon_repository_v5.py",
+        "-:d23d298465e5b6f301a013d70036bc8b855c7aa2be49260a0e25235e7add6aee"
+      ],
+      [
+        "tests/integration/test_source_event_idempotency.py",
+        "-:a03e30adfb53e2bc1ce4fe53defed7688653b64494418d7c77e6b6382fab025c"
+      ],
+      [
+        "tests/integration/test_sqlite_backend.py",
+        "-:ffa4c3d43615e7ece6a086b82dc09d0a8b06f2f40624b11077ceac37c5f27c9e"
+      ],
+      [
+        "tests/integration/test_sqlite_concurrency_deadlines.py",
+        "-:e4969d674eeeeef75518c4a89280ade0811996eb16f2d8f31615c2f537f2e469"
+      ],
+      [
+        "tests/integration/test_sqlite_s4_operations.py",
+        "-:e5093269e550253e772ff72f776f0cc4d19f16f6bae93495f971d125fc7ae7f9"
+      ],
+      [
+        "tests/integration/test_storage_permissions.py",
+        "-:64ce566af617391d19cb119547b0617a2bcb77448b261560538c7aead82899ff"
+      ],
+      [
+        "tests/integration/test_suppression_v5.py",
+        "-:c73dc0ccee61d3019ab3de9936249c4b1185aeb91cb7e47eef8f52050a229940"
+      ],
+      [
+        "tests/integration/test_twin_graph_view_v6.py",
+        "-:359f937d74a3e3da7b9c112eaf76da9bb32d2a3e05ac2d1e63a307b739f62232"
+      ],
+      [
+        "tests/integration/test_typed_recall_v6.py",
+        "-:d1fa1ec437ab1561a93c06d32ddef0da58554813e4d08dbe85f65eeb707a389f"
+      ],
+      [
+        "tests/integration/test_user_scoped_maintenance.py",
+        "-:bc22faa13fd32837e82ee66e30ac8962b63786c5b037118737881cd9e5588382"
+      ],
+      [
+        "tests/integration/test_user_session_scope.py",
+        "-:000a4ec838e89c9d4223ba961089add345579202a9ae9b0e762bf7f6c66b0909"
+      ],
+      [
+        "tests/integration/test_v3_to_v4_migration.py",
+        "-:f1b5ab2cc5f152fd68156a523665c056d52c5dd2239c10c70b116324abc6d4c8"
+      ],
+      [
+        "tests/unit/__init__.py",
+        "-:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      [
+        "tests/unit/test_cloud_embedder.py",
+        "-:25aa2977abd15c5a23a032a13aab07966dbce2f697446803186acce46a274ec4"
+      ],
+      [
+        "tests/unit/test_cognitive.py",
+        "-:bc2d045c6e07b022c523fe17e71a83033d83c038d35316b20b08abecc644ffc7"
+      ],
+      [
+        "tests/unit/test_cognitive_kernel_v5.py",
+        "-:f3c1cc486cb2da5e900e0f3b2d9db8d3d13a4feaf83a6fea7b715dde7b4b6f34"
+      ],
+      [
+        "tests/unit/test_embedders.py",
+        "-:954d6032a33d63e03040d193b976cf9b7eda6217101772ef6a52eb68322a7ff8"
+      ],
+      [
+        "tests/unit/test_embedding_lineage.py",
+        "-:d2258a265a01b5857fa41fcce6841bea0528ec7cda3be9a7833173124e60d624"
+      ],
+      [
+        "tests/unit/test_facts.py",
+        "-:92770550858a72d0b2299f3848a846b0e135814e1cbb47c2b6cbe6aafb9d03c3"
+      ],
+      [
+        "tests/unit/test_logging_observability.py",
+        "-:c245035206b97311eacc5e353186f23bd0ddd3e394b4a4e3f486ef5a5c794525"
+      ],
+      [
+        "tests/unit/test_manager_recall_contract.py",
+        "-:ba36862eadea1866fd6bb062b784cb53964e61809070ac5b905349b710dd6e2e"
+      ],
+      [
+        "tests/unit/test_memory_mutations_v5.py",
+        "-:0b0bd968f9581f897f8446fac721392ee9cd9dd81fe9c7c0eefd1d9a05747bb3"
+      ],
+      [
+        "tests/unit/test_mock_backend.py",
+        "-:3aba3f55522058f71d8c42af77a6b0d516e31e32ed52cd23a2c15d48a4fa3284"
+      ],
+      [
+        "tests/unit/test_prospective_kernel_v5.py",
+        "-:f1f87e364b22c83d1f7c3a9f7354b6c5cd3d83434f0757c6c2005dccd1f6a1a3"
+      ],
+      [
+        "tests/unit/test_rrf.py",
+        "-:c17b4058db34862e64c1ec9ccf9d2acefd9cf2afecde3aae71338712765bc0eb"
+      ],
+      [
+        "tests/unit/test_short_horizon_v5.py",
+        "-:a5c58d2553f362763dc8bab254c315ed68b67f3ca2e7dc1b9217e93b5a65b17e"
+      ],
+      [
+        "tests/unit/test_twin_builder.py",
+        "-:32219c8bad82526424bb46cd593e30e868187642cb60d2bf2afa492b38e5bf7d"
+      ],
+      [
+        "tests/unit/test_twin_graph_builder.py",
+        "-:0e5021b559282ff3cc70978826a655f15c06b91e6cef54f5a5fa69875c0ddb0b"
+      ],
+      [
+        "tests/unit/test_typed_recall_eligibility_policy.py",
+        "-:4e70c2a4ee82501f3132faa7e64a71dad39676b1c0a850ce8d10d21f05efe56c"
+      ],
+      [
+        "tests/unit/test_typed_recall_selection.py",
+        "-:e88cbd60454b3d4a6a05853a03851d1eed4293da1f4d6b4c4e4b450fc3fcf073"
+      ],
+      [
+        "tests/unit/test_world.py",
+        "-:0dff02a49b0b382d0bfc6ad94e50d877213560645a44c6ef325334fa01ca7d31"
+      ],
+      [
+        "tests/unit/test_writer_lock_platform.py",
+        "-:96b249367f10203cd3212fb6df69bb26bd507d9d8230d61fa582976c401c5fb7"
+      ],
+      [
+        "uv.lock",
+        "-:893441f3b8f3facbe61fd4a9598f3de0cdd885f3b446cf7e7c87edf56f7d8de2"
+      ]
+    ],
+    "dirty_patch_sha256": "e421297aaf01ff0ef012e9e415d8af9e2451c788e0fd6fc6766de059fb591c24",
+    "exclusion_count": 1,
+    "exclusion_scope": [
+      ".plan-test/active-run.json",
+      "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge"
+    ],
+    "exclusions": [
+      [
+        ".plan-test/active-run.json",
+        "declared-scope:.plan-test/active-run.json"
+      ]
+    ],
+    "head": "dfd12ce50bd9f22f5f6ed1a7d81e55ca4b20d4a0",
+    "recorded_at": "2026-09-01T01:48:33+0800"
+  },
+  "scenarios": [
+    {
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe",
+          "desktop-ui-driver"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "ui-capture"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "no_recall_zero_query"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "simple_harness_sdk/**",
+        "backend/**",
+        "src/**"
+      ],
+      "input_class": "context-sufficient-no-recall",
+      "manual_required": true,
+      "min_root_runs": 2,
+      "required": true,
+      "scenario_id": "HM-S1",
+      "testcase_ids": [
+        "TC-HM-01"
+      ],
+      "ui": true
+    },
+    {
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe",
+          "desktop-ui-driver"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "ui-capture"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "exact_task_scope_open"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "backend/**",
+        "src/**"
+      ],
+      "input_class": "distant-task-resume",
+      "manual_required": true,
+      "min_root_runs": 2,
+      "required": true,
+      "scenario_id": "HM-S2",
+      "testcase_ids": [
+        "TC-HM-02"
+      ],
+      "ui": true
+    },
+    {
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe",
+          "desktop-ui-driver"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "ui-capture"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "active_revision"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "src/**",
+        "backend/**"
+      ],
+      "input_class": "fact-evolution-conflict",
+      "manual_required": true,
+      "min_root_runs": 2,
+      "required": true,
+      "scenario_id": "HM-S3",
+      "testcase_ids": [
+        "TC-HM-03"
+      ],
+      "ui": true
+    },
+    {
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe",
+          "desktop-ui-driver"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "ui-capture"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "single_occurrence"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "src/**",
+        "backend/**"
+      ],
+      "input_class": "procedure-and-event-intention",
+      "manual_required": true,
+      "min_root_runs": 2,
+      "required": true,
+      "scenario_id": "HM-S4",
+      "testcase_ids": [
+        "TC-HM-04"
+      ],
+      "ui": true
+    },
+    {
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe",
+          "desktop-ui-driver"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "ui-capture"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "scheduler_zero_delta"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "src/**",
+        "backend/**"
+      ],
+      "input_class": "ambiguous-wish-no-trigger",
+      "manual_required": true,
+      "min_root_runs": 2,
+      "required": true,
+      "scenario_id": "HM-S5",
+      "testcase_ids": [
+        "TC-HM-05"
+      ],
+      "ui": true
+    },
+    {
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe",
+          "desktop-ui-driver"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "ui-capture"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "private_canary_zero_hits"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "src/**",
+        "backend/**"
+      ],
+      "input_class": "third-party-recipient-privacy",
+      "manual_required": true,
+      "min_root_runs": 2,
+      "required": true,
+      "scenario_id": "HM-S6",
+      "testcase_ids": [
+        "TC-HM-06"
+      ],
+      "ui": true
+    },
+    {
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe",
+          "desktop-ui-driver"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "ui-capture",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "recovered_state",
+          "raw_hash_unchanged"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "src/**",
+        "backend/**"
+      ],
+      "input_class": "logical-forgetting-controlled-audit",
+      "lanes": [
+        "temporal-fault"
+      ],
+      "manual_required": true,
+      "min_root_runs": 2,
+      "oracle_pins": {
+        "candidate_memory_source_commit": "d069e0e949edb44d85d2ebeac6e49b05f9fb51b1",
+        "candidate_memory_wheel_sha256": "6f9a8c1a52cf8512232a12a9ea7fd7d98c6c5d59e837d2c5f777010bb30fe6b2",
+        "fixture_revision": 1,
+        "fixture_sha256": "57d6758f4c42dd18bcf1bd843cd000de31cafda7a04ec820236505db5843a758",
+        "quality_gate": "NOT_RUN/BLOCKED",
+        "runner_sha256": "d290b529dba99799c9f5d59b9ae5f101ac33054398cf40f4bb097d9dcc7b3c62",
+        "testcase_sha256": "e99fa71ff8a08efb87db03f86d2a08e6ecfd63a2234412c23c87fe021ea68c06"
+      },
+      "required": true,
+      "scenario_id": "HM-S7",
+      "testcase_ids": [
+        "TC-HM-07"
+      ],
+      "testcase_revisions": {
+        "TC-HM-07": 2
+      },
+      "ui": true
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "recovered_state",
+          "half_state_zero"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "src/**",
+        "simple_harness_sdk/**",
+        "backend/**"
+      ],
+      "input_class": "invalid-llm-plan-fault-matrix",
+      "lanes": [
+        "temporal-fault"
+      ],
+      "manual_required": false,
+      "min_root_runs": 1,
+      "required": true,
+      "scenario_id": "HM-S8",
+      "testcase_ids": [
+        "TC-HM-08"
+      ],
+      "ui": false
+    },
+    {
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe",
+          "desktop-ui-driver"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "ui-capture",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "recovered_state",
+          "unauthorized_write_zero"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "simple_harness_sdk/**",
+        "backend/**",
+        "src/**"
+      ],
+      "input_class": "taskscope-multi-root-authority",
+      "lanes": [
+        "temporal-fault"
+      ],
+      "manual_required": true,
+      "min_root_runs": 2,
+      "required": true,
+      "scenario_id": "HM-S9",
+      "testcase_ids": [
+        "TC-HM-09"
+      ],
+      "ui": true
+    },
+    {
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe",
+          "desktop-ui-driver"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "ui-capture"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "five_route_outcomes"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "simple_harness_sdk/**",
+        "backend/**",
+        "src/**"
+      ],
+      "input_class": "five-way-task-routing",
+      "manual_required": true,
+      "min_root_runs": 2,
+      "required": true,
+      "scenario_id": "HM-S10",
+      "testcase_ids": [
+        "TC-HM-10"
+      ],
+      "ui": true
+    },
+    {
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe",
+          "desktop-ui-driver"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "ui-capture",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "recovered_state",
+          "max_foreground_runs"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "simple_harness_sdk/**",
+        "backend/**",
+        "src/**"
+      ],
+      "input_class": "single-foreground-run-fifo",
+      "lanes": [
+        "temporal-fault"
+      ],
+      "manual_required": true,
+      "min_root_runs": 2,
+      "required": true,
+      "scenario_id": "HM-S11",
+      "testcase_ids": [
+        "TC-HM-11"
+      ],
+      "ui": true
+    },
+    {
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe",
+          "desktop-ui-driver"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "execution-log",
+          "graph-result",
+          "context-snapshot-diff",
+          "ui-capture"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "testcase_revision",
+          "testcase_content_sha256",
+          "fixture_revision",
+          "fixture_sha256",
+          "runner_sha256",
+          "public_manager_backend_seed_calls",
+          "canonical_rows_not_passed_to_graph_method",
+          "exact_node_edge_dto_and_payload_hash",
+          "active_contested_inferred_visible",
+          "suppressed_superseded_expired_restricted_absent",
+          "sensitive_label_edge_tooltip_canary_hits_zero",
+          "correction_forget_rebuild_current_view",
+          "source_refs_and_correction_forget_capabilities",
+          "graph_influence_zero_independent_host_probe",
+          "graph_only_marker_context_hits_zero"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id",
+          "candidate_memory_wheel_sha256",
+          "candidate_memory_source_commit"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "src/simple_harness_memory/**",
+        "/Users/denny/projects/simple_harness/backend/**"
+      ],
+      "input_class": "display-only-digital-twin",
+      "manual_required": true,
+      "min_root_runs": 2,
+      "oracle_pins": {
+        "candidate_memory_distribution": "simple-harness-memory-sdk",
+        "candidate_memory_identity_status": "PINNED",
+        "candidate_memory_source_commit": "8cdc103c01335849462779f1cf95e86fccb445f7",
+        "candidate_memory_version": "0.6.0",
+        "candidate_memory_wheel_sha256": "723bcbc36847f058f3f50c634f008ba12c399a3547b7bb3c2ba7eecf4d8bd182",
+        "fixture_revision": 1,
+        "fixture_sha256": "02c7e7e306cdccf1cb7e7a6d792b0e7e39a9bf4161db4eeaade7a4f70deaed61",
+        "public_graph_method": "get_twin_graph_view",
+        "public_manager_seed_contract_status": "PENDING_TASK6_PUBLIC_SEED_API_PIN",
+        "runner_sha256": "4971db29d56797b797ab2d30c9351c2ba781c5498bfb0297c0e2033aa397a1a3",
+        "testcase_sha256": "9b8c56abf7f6df7cbb15b09a0a33ee21f7c40e78609c8be64614cc7d7c89cc9c"
+      },
+      "required": true,
+      "scenario_id": "HM-S12",
+      "testcase_ids": [
+        "TC-HM-12"
+      ],
+      "testcase_revisions": {
+        "TC-HM-12": 2
+      },
+      "ui": true
+    },
+    {
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "execution-log",
+          "evidence-index"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "testcase_revision",
+          "testcase_content_sha256",
+          "fixture_revision",
+          "fixture_sha256",
+          "execution_layers_fixture_sha256",
+          "runner_sha256",
+          "candidate_harness_source_commit",
+          "candidate_harness_wheel_sha256",
+          "candidate_memory_source_commit",
+          "candidate_memory_wheel_sha256",
+          "installed_distribution_versions_and_module_origins",
+          "fresh_artifact_run_directory",
+          "exact_401_cell_set_verified",
+          "clean_wheel_public_manager_391_cell_set_verified",
+          "source_exact_commit_integration_10_cell_set_verified",
+          "combined_exact_union_zero_missing_zero_duplicate",
+          "artifact_and_evidence_index_sha256_recomputed",
+          "artifact_and_index_freshness_verified",
+          "strict_v3_rejected",
+          "source_binding_cells_indexed",
+          "conflict_create_reject_resolve_cells_indexed",
+          "result_page_binding_cells_indexed",
+          "conflict_recall_cells_indexed",
+          "eligibility_cell_count",
+          "eligibility_evidence_index_sha256",
+          "fragment_assembly_authority_bound",
+          "evidence_index_sha256"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "candidate_harness_wheel_sha256",
+          "candidate_memory_wheel_sha256",
+          "candidate_harness_source_commit",
+          "candidate_memory_source_commit"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "src/simple_harness_memory/**",
+        "/Users/denny/projects/simple-harness-sdk-memory-program/simple_harness_sdk/**",
+        "/Users/denny/projects/simple_harness/backend/deskpet/sdk_adapters/context_authority.py",
+        "/Users/denny/projects/simple_harness/backend/deskpet/memory/recall_adapter.py",
+        "/Users/denny/projects/simple_harness/backend/main.py"
+      ],
+      "input_class": "typed-recall-result-bound-disclosure",
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "candidate_harness_distribution_version": "simple-harness-sdk==0.7.0",
+        "candidate_harness_source_commit": "fb491574db8bb4d19d8a7f9df0c72ae460bb08f4",
+        "candidate_harness_wheel_sha256": "36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f",
+        "candidate_memory_distribution_version": "simple-harness-memory-sdk==0.6.0",
+        "candidate_memory_source_commit": "d069e0e949edb44d85d2ebeac6e49b05f9fb51b1",
+        "candidate_memory_wheel_sha256": "6f9a8c1a52cf8512232a12a9ea7fd7d98c6c5d59e837d2c5f777010bb30fe6b2",
+        "execution_layers_fixture_revision": 1,
+        "execution_layers_fixture_sha256": "2f18d942be3ddd4d4c95c4eadd888b15f49c783a27bd0f0c086462ce32b4d1ca",
+        "fault_fixture_sha256": "b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da",
+        "fixture_revision": 3,
+        "fixture_sha256": "373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12",
+        "runner_sha256": "cb537559eaea35eba33a57e69d95ec0b6c85cc86e131e6f468df166afe498e93",
+        "testcase_sha256": "9619e45d1a02b527f2bc53bb66f76a439c13da4df357cd320bec8f2258ac83b8"
+      },
+      "required": true,
+      "scenario_id": "HM-S13A",
+      "testcase_ids": [
+        "TC-HM-13"
+      ],
+      "testcase_revisions": {
+        "TC-HM-13": 4
+      },
+      "ui": false
+    },
+    {
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "fault-recovery-log",
+          "evidence-index"
+        ],
+        "required_business_facts": [
+          "recovered_state",
+          "testcase_revision",
+          "fixture_sha256",
+          "execution_layers_fixture_sha256",
+          "fault_fixture_sha256",
+          "fault_seam_count",
+          "fault_evidence_index_sha256",
+          "clean_wheel_public_manager_391_cell_set_verified",
+          "source_exact_commit_integration_10_cell_set_verified",
+          "combined_exact_union_zero_missing_zero_duplicate",
+          "candidate_harness_source_commit",
+          "candidate_harness_wheel_sha256",
+          "candidate_memory_source_commit",
+          "candidate_memory_wheel_sha256",
+          "installed_distribution_versions_and_module_origins",
+          "candidate_executed_nonzero_is_fail",
+          "evidence_index_exact_cells_hashes_and_freshness_verified",
+          "authority_receipt_policy_and_time_fields_hash_bound",
+          "context_use_receipt_known_answers_verified",
+          "conflict_cross_memory_cardinality_tamper_reopen_verified",
+          "valid_until_null_and_household_attribute_floors_verified",
+          "all_selection_tie_breaks_and_vector_degrade_verified",
+          "rich_source_minimal_projection_stripping_verified",
+          "conflict_atomicity_and_non_revival_proved",
+          "incomplete_conflict_zero_disclosure",
+          "authority_event_cell_count",
+          "authority_event_evidence_index_sha256",
+          "unsupported_precedence_vector_sha256",
+          "unsupported_candidate_query_zero",
+          "request_hash_mutation_count",
+          "request_hash_evidence_index_sha256",
+          "context_use_linearization_evidence_sha256",
+          "ranking_dedupe_projection_oracle_sha256",
+          "budget_literal_evidence_index_sha256",
+          "half_state_zero",
+          "durable_hash_rebuild_checked",
+          "evidence_index_sha256"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "candidate_harness_wheel_sha256",
+          "candidate_memory_wheel_sha256",
+          "candidate_harness_source_commit",
+          "candidate_memory_source_commit"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "src/simple_harness_memory/**",
+        "/Users/denny/projects/simple-harness-sdk-memory-program/simple_harness_sdk/**",
+        "/Users/denny/projects/simple_harness/backend/deskpet/sdk_adapters/context_authority.py",
+        "/Users/denny/projects/simple_harness/backend/deskpet/memory/recall_adapter.py",
+        "/Users/denny/projects/simple_harness/backend/main.py"
+      ],
+      "input_class": "typed-recall-fail-closed-replay-recovery",
+      "lanes": [
+        "temporal-fault"
+      ],
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "candidate_harness_distribution_version": "simple-harness-sdk==0.7.0",
+        "candidate_harness_source_commit": "fb491574db8bb4d19d8a7f9df0c72ae460bb08f4",
+        "candidate_harness_wheel_sha256": "36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f",
+        "candidate_memory_distribution_version": "simple-harness-memory-sdk==0.6.0",
+        "candidate_memory_source_commit": "d069e0e949edb44d85d2ebeac6e49b05f9fb51b1",
+        "candidate_memory_wheel_sha256": "6f9a8c1a52cf8512232a12a9ea7fd7d98c6c5d59e837d2c5f777010bb30fe6b2",
+        "execution_layers_fixture_revision": 1,
+        "execution_layers_fixture_sha256": "2f18d942be3ddd4d4c95c4eadd888b15f49c783a27bd0f0c086462ce32b4d1ca",
+        "fault_fixture_sha256": "b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da",
+        "fixture_revision": 3,
+        "fixture_sha256": "373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12",
+        "runner_sha256": "cb537559eaea35eba33a57e69d95ec0b6c85cc86e131e6f468df166afe498e93",
+        "testcase_sha256": "9619e45d1a02b527f2bc53bb66f76a439c13da4df357cd320bec8f2258ac83b8"
+      },
+      "required": true,
+      "scenario_id": "HM-S13B",
+      "testcase_ids": [
+        "TC-HM-13"
+      ],
+      "testcase_revisions": {
+        "TC-HM-13": 4
+      },
+      "ui": false
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "fault-recovery-log",
+          "model-eval-predictions",
+          "benchmark-samples",
+          "provider-usage"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "recovered_state",
+          "quality_thresholds_met",
+          "model_provider_identity",
+          "independent_root_run_count",
+          "primary_committed_turns",
+          "prediction_corpus_sha256",
+          "metric_numerators_denominators",
+          "provider_usage_samples",
+          "benchmark_samples",
+          "context_budget_assertions"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "src/**",
+        "simple_harness_sdk/**",
+        "backend/**"
+      ],
+      "input_class": "cross-repo-init-quality-benchmark",
+      "lanes": [
+        "temporal-fault"
+      ],
+      "manual_required": false,
+      "min_root_runs": 2,
+      "required": true,
+      "scenario_id": "HM-X01",
+      "testcase_ids": [
+        "TC-HM-X01"
+      ],
+      "ui": false
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe",
+          "desktop-ui-driver"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "ui-capture"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "global_skill_tool_regression_passed",
+          "current_testcase_revisions"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "simple_harness_sdk/**",
+        "backend/**",
+        "src/**"
+      ],
+      "input_class": "global-skill-tool-primary-conversation-regression",
+      "manual_required": true,
+      "min_root_runs": 2,
+      "required": true,
+      "scenario_id": "HM-REG-GS-UI",
+      "testcase_ids": [
+        "TC-GS-03",
+        "TC-GS-04",
+        "TC-GS-05",
+        "TC-GS-07",
+        "TC-GS-09",
+        "TC-GS-10"
+      ],
+      "ui": true
+    },
+    {
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "recovered_state",
+          "global_skill_half_state_zero"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "simple_harness_sdk/**",
+        "backend/**"
+      ],
+      "input_class": "global-skill-atomicity-idempotency-regression",
+      "lanes": [
+        "temporal-fault"
+      ],
+      "manual_required": false,
+      "min_root_runs": 1,
+      "required": true,
+      "scenario_id": "HM-REG-GS-STATE",
+      "testcase_ids": [
+        "TC-GS-06",
+        "TC-GS-08"
+      ],
+      "ui": false
+    }
+  ],
+  "schema_version": "1.5.0",
+  "source_request": {
+    "inline": true,
+    "sha256": "d9220d8b270d0fd21df96bdb6549476d7ac29bde589b4e35dfe89f5772fb814a"
+  },
+  "structured_audit_required": true,
+  "testcase_lock": {
+    "files": [
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-03-global-install.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-03-global-install.md",
+        "sha256": "7a77600f2ca0bf8cd7f9143304f635dee8f95ec9ef0b5f15de0fe02e1f0bd433"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-04-cross-session-skill.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-04-cross-session-skill.md",
+        "sha256": "af907d1641edc160d66e959e5f19c3d66b87667517df0d6522ec98524bc595cc"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-05-cold-restart.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-05-cold-restart.md",
+        "sha256": "b8ffa7579a33e0b0cafea9c40827b88509ac3baa081bc97fcc3774ba50c6a2f7"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-06-atomic-failure.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-06-atomic-failure.md",
+        "sha256": "cfba454b55179aceae4c2b833033ba26e546223d6fead247ba0b674bbcc5f215"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-07-global-tool-catalog.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-07-global-tool-catalog.md",
+        "sha256": "d48b61be2a54f4ef6d6b5036a07bb7b8f76e311680ca3cd249ec1e614d881236"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-08-concurrency-idempotency.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-08-concurrency-idempotency.md",
+        "sha256": "70d54a78df1e0ce2e5ba9d1a1607fb0e460adb09817a3988ec7352f5611b0d4f"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-09-auto-permission.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-09-auto-permission.md",
+        "sha256": "43b4c69fef57f92de6befbb45b95d19a3e1b98f443ba5b1d3b5dc10849272aed"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-10-install-run-convergence.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-10-install-run-convergence.md",
+        "sha256": "4c1eaffa0f96d957332beefbc61b0aa04b341e72172d8fb9ec9504278f7274e0"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-01-no-recall.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-01-no-recall.md",
+        "sha256": "ceb4c806a68014d2d4cf8e07d3ced994e2d97295d6ef53add74b13c244fb4572"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-02-task-resume.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-02-task-resume.md",
+        "sha256": "8088f86217fc1dbedfd679b71edea2a20f3143b906c3ad6cf47c5e98beafa454"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-03-conflict-evolution.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-03-conflict-evolution.md",
+        "sha256": "ca969d1e62ea88146973d59fa1eb5176642da3e0ec3a1cb431f3bf6f2d2d05a9"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-04-procedure-prospective.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-04-procedure-prospective.md",
+        "sha256": "604db3d72b2770e5d70e25945eaef6d722eee99cb1784a7983789566c3730e12"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-05-ambiguous-goal.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-05-ambiguous-goal.md",
+        "sha256": "c491bfb31b469b2f272676bb15d4957d59e4a6a62ef678bc587dff1fc4b076b1"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-06-recipient-privacy.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-06-recipient-privacy.md",
+        "sha256": "a28b5db7d6352d5ab1076cff7d4e1fdc050945ac4b592cea4c5c308cf69d88ad"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-07-audit-forgetting.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-07-audit-forgetting.md",
+        "sha256": "e99fa71ff8a08efb87db03f86d2a08e6ecfd63a2234412c23c87fe021ea68c06"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-08-invalid-plan-recovery.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-08-invalid-plan-recovery.md",
+        "sha256": "b889111694c8825657b185ab32ad6b654bbb50279d1ad1ab704b3cc317c0504f"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-09-taskscope-bindings.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-09-taskscope-bindings.md",
+        "sha256": "3c9b0fdd053a2fa7d5a3f5151dc3c098b2792754dd2161ec7b7b00f2a283fdb1"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-10-routing-resume.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-10-routing-resume.md",
+        "sha256": "85c5c85a6973114d1fea1db0221f3891dda57ddf02eba079e7b65e01fea62dbf"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-11-single-run-context.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-11-single-run-context.md",
+        "sha256": "72deb121c615b8a0bfff4c8860f0ab1c4a17e19735d538b4307fbe62367db7fb"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-12-digital-twin-views.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-12-digital-twin-views.md",
+        "sha256": "9b8c56abf7f6df7cbb15b09a0a33ee21f7c40e78609c8be64614cc7d7c89cc9c"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-13-typed-recall-result.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-13-typed-recall-result.md",
+        "sha256": "9619e45d1a02b527f2bc53bb66f76a439c13da4df357cd320bec8f2258ac83b8"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-X01-contract-init-quality.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-X01-contract-init-quality.md",
+        "sha256": "aaec15d4e2b1c61280d4bdcd995d9a34102c0f7d99a97ed6d7dc4fbc3a8010e8"
+      }
+    ],
+    "locked_at": "2026-09-01T01:48:33+0800"
+  },
+  "thresholds": {},
+  "toolchain": {
+    "gate_path": "/Users/denny/.codex/skills/plan-test/scripts/plan_test_gate.py",
+    "gate_sha256": "4d1ad47e37e1cfe4a2a3819e268ab59c847dbd5d3704f1ab47e0d8a0317d38f3",
+    "gate_version": "1.5.0",
+    "host": "Mac",
+    "platform": "Darwin-25.4.0-arm64",
+    "plugin_version": "",
+    "python_version": "3.9.6",
+    "recorded_at": "2026-09-01T01:48:33+0800"
+  }
+}

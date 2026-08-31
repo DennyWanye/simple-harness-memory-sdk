@@ -1,0 +1,35 @@
+{
+  "review_mode": "diff",
+  "findings": [
+    {
+      "id": "semantic-relation-value-gated-by-full-scope", "severity": "P0", "scope_relation": "in-scope", "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-2", "HM-AC-6"], "assurance_contract_ids": ["FAIL-RELATION-INTEGRITY"],
+      "evidence": "Tasks 1-3 are now applies_to-only and Task 4 owns additional kinds and exhaustive matrices.", "status": "resolved",
+      "root_cause": "The former full-V1 prerequisite was replaced by an applies_to-only vertical value slice."
+    },
+    {
+      "id": "rollback-can-delete-protected-raw-evidence", "severity": "P0", "scope_relation": "in-scope", "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-1", "HM-AC-8"], "assurance_contract_ids": ["FAIL-DATA-LOSS"],
+      "evidence": "Rollback now permits cleanup only for manifest-proven synthetic-only databases and preserves every evidence-bearing schema-7 database with row/hash oracles.", "status": "resolved",
+      "root_cause": "Rollback now separates disposable synthetic state from immutable evidence-bearing databases."
+    },
+    {
+      "id": "evolution-suppress-kind-renamed-without-compatibility-oracle", "severity": "P1", "scope_relation": "in-scope", "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-6", "HM-AC-8"], "assurance_contract_ids": ["FAIL-PROTOCOL-REPLAY", "FAIL-RELATION-INTEGRITY"],
+      "evidence": "The plan preserves evolution/relates_to and the recorded SQLite spike proves domain-scoped coexistence with knowledge/relates_to.", "status": "resolved",
+      "root_cause": "The revised design uses relation_domain and owner nullability without rewriting lineage vocabulary."
+    },
+    {
+      "id": "pre-admission-rejection-audit-owner-unspecified", "severity": "P1", "scope_relation": "in-scope", "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-2", "HM-AC-7", "HM-AC-8"], "assurance_contract_ids": ["FAIL-AUDIT-SECRET", "FAIL-LLM-PAYLOAD"],
+      "evidence": "The plan separates Harness diagnostics, Host durable pre-admission audit and Memory post-admission rejection audit, leaving Host evidence blocked until S5.", "status": "resolved",
+      "root_cause": "The revised trust chain gives each boundary one explicit owner."
+    },
+    {
+      "id": "black-box-relation-oracle-frozen-after-implementation", "severity": "P1", "scope_relation": "in-scope", "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-6", "HM-AC-8"], "assurance_contract_ids": ["FAIL-RELATION-INTEGRITY", "FAIL-PROTOCOL-REPLAY"],
+      "evidence": "Task 0 freezes semantics before implementation, but Task 3 still says to upgrade TC-HM-12 after implementation instead of executing the frozen assets unchanged.", "status": "open",
+      "root_cause": "The old post-implementation runner-upgrade instruction remains in the VALUE task."
+    }
+  ]
+}

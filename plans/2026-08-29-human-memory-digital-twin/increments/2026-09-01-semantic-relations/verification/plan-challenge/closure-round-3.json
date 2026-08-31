@@ -1,0 +1,40 @@
+{
+  "review_mode": "diff",
+  "findings": [
+    {
+      "id": "semantic-relation-value-gated-by-full-scope", "severity": "P0", "scope_relation": "in-scope", "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-2", "HM-AC-6"], "assurance_contract_ids": ["FAIL-RELATION-INTEGRITY"],
+      "evidence": "Unchanged from closure round 2: Tasks 1-3 remain applies_to-only and Task 4 owns additional kinds and exhaustive matrices.", "status": "resolved",
+      "root_cause": "The former full-V1 prerequisite was replaced by an applies_to-only vertical value slice."
+    },
+    {
+      "id": "rollback-can-delete-protected-raw-evidence", "severity": "P0", "scope_relation": "in-scope", "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-1", "HM-AC-8"], "assurance_contract_ids": ["FAIL-DATA-LOSS"],
+      "evidence": "Unchanged from closure round 2: only manifest-proven synthetic-only databases are disposable; evidence-bearing databases and their hashes are retained.", "status": "resolved",
+      "root_cause": "Rollback separates disposable synthetic state from immutable evidence-bearing databases."
+    },
+    {
+      "id": "evolution-suppress-kind-renamed-without-compatibility-oracle", "severity": "P1", "scope_relation": "in-scope", "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-6", "HM-AC-8"], "assurance_contract_ids": ["FAIL-PROTOCOL-REPLAY", "FAIL-RELATION-INTEGRITY"],
+      "evidence": "Unchanged from closure round 2: evolution/relates_to is preserved and domain-scoped coexistence was proven by the recorded SQLite spike.", "status": "resolved",
+      "root_cause": "relation_domain and owner nullability disambiguate knowledge relations without rewriting lineage vocabulary."
+    },
+    {
+      "id": "pre-admission-rejection-audit-owner-unspecified", "severity": "P1", "scope_relation": "in-scope", "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-2", "HM-AC-7", "HM-AC-8"], "assurance_contract_ids": ["FAIL-AUDIT-SECRET", "FAIL-LLM-PAYLOAD"],
+      "evidence": "Unchanged from closure round 2: Harness, Host and Memory audit responsibilities are explicit and Host durable evidence remains blocked until S5.", "status": "resolved",
+      "root_cause": "Each trust-boundary stage has one explicit authority."
+    },
+    {
+      "id": "black-box-relation-oracle-frozen-after-implementation",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-6", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-RELATION-INTEGRITY", "FAIL-PROTOCOL-REPLAY"],
+      "evidence": "Plan hash 42a63af0199efaab6bb1a3d13cdedb43afa004a0766bfb161faa8e7875ffbab9 freezes behavior/DTO/transition semantics and hashes before implementation, requires Task 3 to execute them unchanged, and limits Task 5 to identity repinning guarded by behavior-change approval.",
+      "status": "resolved",
+      "root_cause": "The post-implementation runner-upgrade instruction was replaced with execution of the pre-frozen black-box oracle."
+    }
+  ]
+}
