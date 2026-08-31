@@ -62,6 +62,7 @@ from simple_harness_memory.core.errors import (
     MemoryValidationError,
     MemoryWriterConflict,
 )
+from simple_harness_memory.core.identity import MemoryPrincipal
 from simple_harness_memory.core.jobs import (
     AnalysisBatchClaim,
     AnalysisDeliveryAuthorityTransientError,
@@ -1988,7 +1989,8 @@ async def test_every_rejected_provider_result_has_one_public_only_audit_record(
                 "actor-1",
                 AuditTraceSelector.INVOCATION,
                 str(invocation_id[0]),
-            )
+            ),
+            principal=MemoryPrincipal("actor-1", "actor-1", "actor-1", "session-1"),
         )
         canary = (
             PRIVATE_CREDENTIAL_CANARY

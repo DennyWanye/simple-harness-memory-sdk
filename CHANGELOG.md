@@ -29,6 +29,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Human Memory audit access
+
+- Added the public fresh-v6 `build_human_memory_v6` manager facade, including evidence/conversation
+  admission, mutation, suppression/revocation, typed recall, display graph and audit methods.
+- Added resolver-backed `AuditAccessAuthorityRefV1`; direct caller-minted sealed decisions now fail
+  closed. Grant/deny, replay, expiry and shared read-budget outcomes are durable hash-only events.
+- Added MEMORY trace with hash-only cognitive lineage, ordinary-visible fixed aggregate metrics and
+  sealed canonical state manifests with independently reproducible table roots and access-event
+  binding.
+- Bound the audit cursor authority hash into the initialization receipt, made public trace/evidence
+  reads principal/requester-mandatory, and froze full required-table manifest coverage with explicit
+  derived/global exclusions.
+
 ## [0.5.1] - 2026-08-24
 
 ### Compatibility

@@ -452,6 +452,11 @@ class SQLiteHumanMemoryBackend:
                 await self._validate_integrity()
                 await self._load_short_horizon_cache_unlocked()
                 self._audit_cursor_hmac_key = await self._read_audit_cursor_hmac_key()
+                if (
+                    hashlib.sha256(self._audit_cursor_hmac_key).hexdigest()
+                    != receipt.audit_cursor_authority_hash
+                ):
+                    raise MemoryCorruptionError("audit cursor authority hash differs")
                 verify_sqlite_path(self._secure_path)
                 self._receipt = receipt
                 self._short_horizon_closing = False
@@ -11311,7 +11316,7 @@ class SQLiteHumanMemoryBackend:
         self,
         query: AuditTraceQuery,
         *,
-        principal: MemoryPrincipal | None = None,
+        principal: MemoryPrincipal,
         limit: int = 20,
         cursor: AuditTraceCursor | None = None,
     ) -> AuditTracePage:
@@ -11326,7 +11331,7 @@ class SQLiteHumanMemoryBackend:
         query: AuditTraceQuery,
         access_receipt: SealedAuditAccessReceipt,
         *,
-        principal: MemoryPrincipal | None = None,
+        requester: MemoryPrincipal,
         limit: int = 20,
         cursor: AuditTraceCursor | None = None,
     ) -> AuditTracePage:
@@ -11334,7 +11339,7 @@ class SQLiteHumanMemoryBackend:
 
         return await self._export_audit_trace(
             query,
-            principal=principal,
+            principal=requester,
             limit=limit,
             cursor=cursor,
             access_receipt=access_receipt,
@@ -11504,6 +11509,20 @@ class SQLiteHumanMemoryBackend:
                 )
                 await self._db.execute("COMMIT")
                 committed = True
+            except MemoryCorruptionError:
+                with suppress(Exception):
+                    await self._db.execute("ROLLBACK")
+                await self._db.execute("BEGIN IMMEDIATE")
+                await self._append_manifest_access_event_unlocked(
+                    access_receipt_id=access_receipt.access_receipt_id,
+                    manifest_payload_hash="0" * 64,
+                    outcome="denied",
+                    reason_code="canonical_manifest_integrity_rejected",
+                    occurred_at=now,
+                )
+                await self._db.execute("COMMIT")
+                committed = True
+                raise
             finally:
                 if not committed:
                     with suppress(Exception):
@@ -11544,6 +11563,120 @@ class SQLiteHumanMemoryBackend:
 
         assert self._db is not None
         specs = (
+            (
+                "audit",
+                "sealed_audit_access_receipts",
+                "SELECT t.* FROM sealed_audit_access_receipts t WHERE t.principal_id=? "
+                "ORDER BY t.access_receipt_id",
+            ),
+            (
+                "audit",
+                "audit_access_authority_events",
+                "SELECT t.* FROM audit_access_authority_events t WHERE t.principal_id=? "
+                "ORDER BY t.event_id",
+            ),
+            (
+                "audit",
+                "canonical_manifest_access_events",
+                "SELECT t.* FROM canonical_manifest_access_events t "
+                "JOIN sealed_audit_access_receipts r "
+                "ON r.access_receipt_id=t.access_receipt_id WHERE r.principal_id=? "
+                "ORDER BY t.event_id",
+            ),
+            (
+                "audit",
+                "sealed_audit_access_events",
+                "SELECT t.* FROM sealed_audit_access_events t "
+                "JOIN sealed_audit_access_receipts r "
+                "ON r.access_receipt_id=t.access_receipt_id WHERE r.principal_id=? "
+                "ORDER BY t.event_id",
+            ),
+            (
+                "audit",
+                "audit_trace_access_events",
+                "SELECT t.* FROM audit_trace_access_events t "
+                "JOIN sealed_audit_access_receipts r "
+                "ON r.access_receipt_id=t.access_receipt_id WHERE r.principal_id=? "
+                "ORDER BY t.event_id",
+            ),
+            (
+                "analysis",
+                "llm_invocations",
+                "SELECT t.* FROM llm_invocations t WHERE t.principal_id=? "
+                "ORDER BY t.invocation_sequence",
+            ),
+            (
+                "analysis",
+                "llm_invocation_evidence_refs",
+                "SELECT t.* FROM llm_invocation_evidence_refs t JOIN llm_invocations i "
+                "ON i.invocation_id=t.invocation_id WHERE i.principal_id=? "
+                "ORDER BY t.invocation_id,t.ordinal",
+            ),
+            (
+                "analysis",
+                "llm_reasoning_refs",
+                "SELECT t.* FROM llm_reasoning_refs t JOIN llm_invocations i "
+                "ON i.invocation_id=t.invocation_id WHERE i.principal_id=? "
+                "ORDER BY t.invocation_id,t.ordinal",
+            ),
+            (
+                "analysis",
+                "decision_evidence_refs",
+                "SELECT t.* FROM decision_evidence_refs t JOIN decision_records d "
+                "ON d.decision_id=t.decision_id WHERE d.principal_id=? "
+                "ORDER BY t.decision_id,t.ordinal",
+            ),
+            (
+                "analysis",
+                "jobs",
+                "SELECT t.* FROM jobs t WHERE t.principal_id=? ORDER BY t.job_id",
+            ),
+            (
+                "analysis",
+                "job_attempts",
+                "SELECT t.* FROM job_attempts t JOIN jobs j ON j.job_id=t.job_id "
+                "WHERE j.principal_id=? ORDER BY t.job_id,t.attempt",
+            ),
+            (
+                "analysis",
+                "analysis_batches",
+                "SELECT t.* FROM analysis_batches t WHERE t.principal_id=? "
+                "ORDER BY t.batch_id",
+            ),
+            (
+                "analysis",
+                "analysis_batch_members",
+                "SELECT t.* FROM analysis_batch_members t JOIN analysis_batches b "
+                "ON b.batch_id=t.batch_id WHERE b.principal_id=? "
+                "ORDER BY t.batch_id,t.ordinal",
+            ),
+            (
+                "analysis",
+                "job_attempt_events",
+                "SELECT t.* FROM job_attempt_events t JOIN jobs j ON j.job_id=t.job_id "
+                "WHERE j.principal_id=? ORDER BY t.event_id",
+            ),
+            (
+                "analysis",
+                "accepted_analysis_plans",
+                "SELECT t.* FROM accepted_analysis_plans t WHERE t.principal_id=? "
+                "ORDER BY t.batch_id",
+            ),
+            (
+                "analysis",
+                "outbox",
+                "SELECT t.* FROM outbox t WHERE t.principal_id=? ORDER BY t.outbox_id",
+            ),
+            (
+                "current_heads",
+                "analysis_apply_heads",
+                "SELECT t.* FROM analysis_apply_heads t WHERE t.principal_id=?",
+            ),
+            (
+                "current_heads",
+                "cognitive_apply_heads",
+                "SELECT t.* FROM cognitive_apply_heads t WHERE t.principal_id=?",
+            ),
             (
                 "current_heads",
                 "cognitive_memory_heads",
@@ -11628,6 +11761,20 @@ class SQLiteHumanMemoryBackend:
             ),
             (
                 "rows",
+                "evidence_items",
+                "SELECT t.* FROM evidence_items t JOIN evidence_envelopes e "
+                "ON e.evidence_id=t.evidence_id WHERE e.principal_id=? "
+                "ORDER BY t.evidence_id,t.ordinal",
+            ),
+            (
+                "rows",
+                "evidence_links",
+                "SELECT t.* FROM evidence_links t JOIN evidence_envelopes e "
+                "ON e.evidence_id=t.evidence_id WHERE e.principal_id=? "
+                "ORDER BY t.evidence_id,t.ordinal",
+            ),
+            (
+                "rows",
                 "episode_records",
                 "SELECT t.* FROM episode_records t JOIN cognitive_memory_revisions r "
                 "ON r.memory_id=t.memory_id AND r.revision=t.revision "
@@ -11686,6 +11833,22 @@ class SQLiteHumanMemoryBackend:
                 "JOIN cognitive_memory_revisions r ON r.memory_id=t.memory_id "
                 "AND r.revision=t.revision WHERE r.principal_id=? "
                 "ORDER BY t.memory_id,t.revision,t.ordinal",
+            ),
+            (
+                "rows",
+                "cognitive_revision_task_scope_origins",
+                "SELECT t.* FROM cognitive_revision_task_scope_origins t "
+                "JOIN cognitive_memory_revisions r ON r.memory_id=t.memory_id "
+                "AND r.revision=t.revision WHERE r.principal_id=? "
+                "ORDER BY t.memory_id,t.revision,t.task_scope_id,t.evidence_id",
+            ),
+            (
+                "rows",
+                "cognitive_classification_evidence_authorities",
+                "SELECT t.* FROM cognitive_classification_evidence_authorities t "
+                "JOIN cognitive_classification_decisions d "
+                "ON d.classification_decision_id=t.classification_decision_id "
+                "WHERE d.principal_id=? ORDER BY t.classification_decision_id,t.ordinal",
             ),
             (
                 "rows",
@@ -11751,6 +11914,130 @@ class SQLiteHumanMemoryBackend:
                 "memory_action_authority_consumptions",
                 "SELECT t.* FROM memory_action_authority_consumptions t "
                 "WHERE t.principal_id=? ORDER BY t.consumption_id",
+            ),
+            (
+                "rows",
+                "memory_mutation_rejection_audits",
+                "SELECT t.* FROM memory_mutation_rejection_audits t "
+                "WHERE t.principal_id=? ORDER BY t.rejection_id",
+            ),
+            (
+                "rows",
+                "procedure_observation_authority_consumptions",
+                "SELECT t.* FROM procedure_observation_authority_consumptions t "
+                "WHERE t.principal_id=? ORDER BY t.consumption_id",
+            ),
+            (
+                "rows",
+                "procedure_observations",
+                "SELECT t.* FROM procedure_observations t WHERE t.principal_id=? "
+                "ORDER BY t.observation_id",
+            ),
+            (
+                "decisions",
+                "procedure_observation_decisions",
+                "SELECT t.* FROM procedure_observation_decisions t "
+                "JOIN procedure_observation_authority_consumptions c "
+                "ON c.consumption_id=t.consumption_id WHERE c.principal_id=? "
+                "ORDER BY t.decision_id",
+            ),
+            (
+                "results",
+                "procedure_observation_results",
+                "SELECT t.* FROM procedure_observation_results t "
+                "JOIN procedure_observation_authority_consumptions c "
+                "ON c.consumption_id=t.consumption_id WHERE c.principal_id=? "
+                "ORDER BY t.result_id",
+            ),
+            (
+                "rows",
+                "procedure_observation_rejections",
+                "SELECT t.* FROM procedure_observation_rejections t "
+                "WHERE t.principal_id=? ORDER BY t.rejection_id",
+            ),
+            (
+                "rows",
+                "prospective_signal_authority_consumptions",
+                "SELECT t.* FROM prospective_signal_authority_consumptions t "
+                "WHERE t.principal_id=? ORDER BY t.consumption_id",
+            ),
+            (
+                "rows",
+                "prospective_scheduler_registrations",
+                "SELECT t.* FROM prospective_scheduler_registrations t "
+                "WHERE t.principal_id=? ORDER BY t.registration_event_id",
+            ),
+            (
+                "rows",
+                "prospective_trigger_events",
+                "SELECT t.* FROM prospective_trigger_events t WHERE t.principal_id=? "
+                "ORDER BY t.event_id",
+            ),
+            (
+                "decisions",
+                "prospective_signal_decisions",
+                "SELECT t.* FROM prospective_signal_decisions t "
+                "JOIN prospective_signal_authority_consumptions c "
+                "ON c.consumption_id=t.consumption_id WHERE c.principal_id=? "
+                "ORDER BY t.decision_id",
+            ),
+            (
+                "results",
+                "prospective_signal_results",
+                "SELECT t.* FROM prospective_signal_results t "
+                "JOIN prospective_signal_authority_consumptions c "
+                "ON c.consumption_id=t.consumption_id WHERE c.principal_id=? "
+                "ORDER BY t.result_id",
+            ),
+            (
+                "rows",
+                "prospective_signal_rejections",
+                "SELECT t.* FROM prospective_signal_rejections t "
+                "WHERE t.principal_id=? ORDER BY t.rejection_id",
+            ),
+            (
+                "rows",
+                "conversation_evidence_registrations",
+                "SELECT t.* FROM conversation_evidence_registrations t "
+                "WHERE t.principal_id=? ORDER BY t.registration_id",
+            ),
+            (
+                "rows",
+                "short_horizon_chunks",
+                "SELECT t.* FROM short_horizon_chunks t WHERE t.principal_id=? "
+                "ORDER BY t.chunk_id",
+            ),
+            (
+                "rows",
+                "short_horizon_chunk_evidence",
+                "SELECT t.* FROM short_horizon_chunk_evidence t "
+                "JOIN short_horizon_chunks c ON c.chunk_id=t.chunk_id "
+                "WHERE c.principal_id=? ORDER BY t.chunk_id,t.item_ordinal",
+            ),
+            (
+                "audit",
+                "short_horizon_audit",
+                "SELECT t.* FROM short_horizon_audit t WHERE t.principal_id=? "
+                "ORDER BY t.audit_id",
+            ),
+            (
+                "decisions",
+                "recall_decisions",
+                "SELECT t.* FROM recall_decisions t WHERE t.principal_id=? "
+                "ORDER BY t.decision_id",
+            ),
+            (
+                "rows",
+                "recall_decision_items",
+                "SELECT t.* FROM recall_decision_items t JOIN recall_decisions d "
+                "ON d.decision_id=t.decision_id WHERE d.principal_id=? "
+                "ORDER BY t.decision_id,t.ordinal",
+            ),
+            (
+                "audit",
+                "recall_authority_events",
+                "SELECT t.* FROM recall_authority_events t WHERE t.principal_id=? "
+                "ORDER BY t.event_id",
             ),
             (
                 "terminals",
@@ -11837,7 +12124,7 @@ class SQLiteHumanMemoryBackend:
         self,
         query: AuditTraceQuery,
         *,
-        principal: MemoryPrincipal | None,
+        principal: MemoryPrincipal,
         limit: int,
         cursor: AuditTraceCursor | None,
         access_receipt: SealedAuditAccessReceipt | None = None,
@@ -11868,10 +12155,9 @@ class SQLiteHumanMemoryBackend:
             raise MemoryValidationError("audit_trace_cursor_signature_invalid")
         predicate, parameters = _audit_trace_predicate(query)
         async with self._write_lock:
-            if principal is not None:
-                await self._authorize_short_horizon_principal_unlocked(principal)
-                if query.subject != principal.actor_id:
-                    raise MemoryOwnershipConflict("audit_trace_principal_rejected")
+            await self._authorize_short_horizon_principal_unlocked(principal)
+            if access_receipt is None and query.subject != principal.actor_id:
+                raise MemoryOwnershipConflict("audit_trace_principal_rejected")
             if cursor is None:
                 async with self._db.execute(
                     "SELECT COALESCE(MAX(i.invocation_sequence),0) FROM llm_invocations i "
@@ -11929,6 +12215,7 @@ class SQLiteHumanMemoryBackend:
                     query_hash,
                     page,
                     access_receipt,
+                    principal,
                 )
             elif query.selector is AuditTraceSelector.EVIDENCE:
                 from simple_harness_memory.core.suppression import (
@@ -12072,6 +12359,7 @@ class SQLiteHumanMemoryBackend:
         query_hash: str,
         page: AuditTracePage,
         access_receipt: SealedAuditAccessReceipt,
+        requester: MemoryPrincipal,
     ) -> None:
         from simple_harness_memory.core.suppression import (
             SealedAuditAccessDenied,
@@ -12083,9 +12371,33 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("access_receipt must use SealedAuditAccessReceipt")
         assert self._db is not None
         stored = await self._read_audit_access_by_decision(access_receipt.decision_id)
+        authority_ref = await self._read_audit_authority_ref_by_decision(
+            access_receipt.decision_id
+        )
+        async with self._db.execute(
+            "SELECT deployment_id,household_id,actor_id FROM principals "
+            "WHERE principal_id=?",
+            (query.subject,),
+        ) as target_cursor:
+            target_row = await target_cursor.fetchone()
         denial: str | None = None
-        if stored != access_receipt:
+        if stored != access_receipt or authority_ref is None:
             denial = "sealed_audit_receipt_differs"
+        elif (
+            authority_ref.requester_deployment_id != requester.deployment_id
+            or authority_ref.requester_household_id != requester.household_id
+            or authority_ref.requester_actor_id != requester.actor_id
+            or authority_ref.requester_session_id != requester.session_id
+        ):
+            denial = "sealed_audit_requester_differs"
+        elif (
+            target_row is None
+            or authority_ref.target_deployment_id != str(target_row["deployment_id"])
+            or authority_ref.target_household_id != str(target_row["household_id"])
+            or authority_ref.target_actor_id != str(target_row["actor_id"])
+            or authority_ref.target_subject != query.subject
+        ):
+            denial = "sealed_audit_target_differs"
         now = _timestamp(self._now())
         evidence_ids = {
             ref.evidence_id for item in page.items for ref in item.invocation.public_input_refs
@@ -12650,7 +12962,10 @@ class SQLiteHumanMemoryBackend:
         self,
         evidence_id: str,
         access_receipt: SealedAuditAccessReceipt,
+        *,
+        requester: MemoryPrincipal,
     ) -> IngestedEvidenceRecord:
+        from simple_harness_memory.core.identity import MemoryPrincipal
         from simple_harness_memory.core.suppression import (
             SealedAuditAccessDenied,
             SealedAuditAccessReceipt,
@@ -12659,6 +12974,8 @@ class SQLiteHumanMemoryBackend:
 
         if type(access_receipt) is not SealedAuditAccessReceipt:
             raise TypeError("access_receipt must use SealedAuditAccessReceipt")
+        if type(requester) is not MemoryPrincipal:
+            raise TypeError("requester must use MemoryPrincipal")
         if not isinstance(evidence_id, str) or not evidence_id.strip() or "\x00" in evidence_id:
             raise MemoryValidationError("evidence_id_invalid")
         if self._db is None or self._receipt is None:
@@ -12666,14 +12983,43 @@ class SQLiteHumanMemoryBackend:
         denial: str | None = None
         record: IngestedEvidenceRecord | None = None
         async with self._write_lock:
+            await self._authorize_short_horizon_principal_unlocked(requester)
             stored = await self._read_audit_access_by_decision(access_receipt.decision_id)
-            if stored != access_receipt:
+            authority_ref = await self._read_audit_authority_ref_by_decision(
+                access_receipt.decision_id
+            )
+            if stored != access_receipt or authority_ref is None:
                 denial = "sealed_audit_receipt_differs"
+            elif (
+                authority_ref.requester_deployment_id != requester.deployment_id
+                or authority_ref.requester_household_id != requester.household_id
+                or authority_ref.requester_actor_id != requester.actor_id
+                or authority_ref.requester_session_id != requester.session_id
+            ):
+                denial = "sealed_audit_requester_differs"
             now = _timestamp(self._now())
             subject = await self._read_evidence_subject(evidence_id)
             if denial is None and subject is None:
                 denial = "sealed_audit_evidence_not_found"
-            elif denial is None and now >= access_receipt.expires_at:
+            elif denial is None:
+                async with self._db.execute(
+                    "SELECT deployment_id,household_id,actor_id FROM principals "
+                    "WHERE principal_id=?",
+                    (subject,),
+                ) as target_cursor:
+                    target_row = await target_cursor.fetchone()
+                if (
+                    target_row is None
+                    or authority_ref is None
+                    or authority_ref.target_deployment_id
+                    != str(target_row["deployment_id"])
+                    or authority_ref.target_household_id
+                    != str(target_row["household_id"])
+                    or authority_ref.target_actor_id != str(target_row["actor_id"])
+                    or authority_ref.target_subject != subject
+                ):
+                    denial = "sealed_audit_target_differs"
+            if denial is None and now >= access_receipt.expires_at:
                 denial = "sealed_audit_access_expired"
             elif denial is None and now < access_receipt.issued_at:
                 denial = "sealed_audit_access_not_yet_valid"
@@ -12977,7 +13323,12 @@ class SQLiteHumanMemoryBackend:
 
     async def _initialize_fresh(self) -> InitializationReceipt:
         assert self._db is not None
-        receipt = InitializationReceipt(f"init-{uuid4().hex}", self._now())
+        audit_cursor_hmac_key = secrets.token_bytes(32)
+        receipt = InitializationReceipt(
+            f"init-{uuid4().hex}",
+            self._now(),
+            hashlib.sha256(audit_cursor_hmac_key).hexdigest(),
+        )
         begun = False
         committed = False
         try:
@@ -12991,18 +13342,20 @@ class SQLiteHumanMemoryBackend:
                 self._fault(f"after_ddl.{index}")
             await self._db.execute(
                 "INSERT INTO audit_cursor_authority(singleton,hmac_key_hex) VALUES(1,?)",
-                (secrets.token_hex(32),),
+                (audit_cursor_hmac_key.hex(),),
             )
             self._fault("before_receipt")
             await self._db.execute(
                 "INSERT INTO initialization_receipts("
-                "singleton,receipt_id,schema_version,schema_epoch,schema_checksum,created_at,"
-                "receipt_hash) VALUES(1,?,?,?,?,?,?)",
+                "singleton,receipt_id,schema_version,schema_epoch,schema_checksum,"
+                "audit_cursor_authority_hash,created_at,receipt_hash) "
+                "VALUES(1,?,?,?,?,?,?,?)",
                 (
                     receipt.receipt_id,
                     receipt.schema_version,
                     receipt.schema_epoch,
                     receipt.schema_checksum,
+                    receipt.audit_cursor_authority_hash,
                     receipt.created_at,
                     receipt.receipt_hash,
                 ),
@@ -15770,11 +16123,12 @@ def _receipt_from_row(
 ) -> InitializationReceipt:
     _validate_meta(meta)
     receipt = InitializationReceipt(
-        str(row["receipt_id"]),
-        float(row["created_at"]),
-        int(row["schema_version"]),
-        str(row["schema_epoch"]),
-        str(row["schema_checksum"]),
+        receipt_id=str(row["receipt_id"]),
+        created_at=float(row["created_at"]),
+        audit_cursor_authority_hash=str(row["audit_cursor_authority_hash"]),
+        schema_version=int(row["schema_version"]),
+        schema_epoch=str(row["schema_epoch"]),
+        schema_checksum=str(row["schema_checksum"]),
     )
     if str(row["receipt_hash"]) != receipt.receipt_hash:
         raise MemoryCorruptionError("initialization receipt hash differs")

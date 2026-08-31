@@ -26,7 +26,19 @@
     "SQLiteMemoryBackend.recover_fact_jobs"
   ],
   "root": [
+    "AuditAccessAuthorityPort",
+    "AuditAccessAuthorityRefV1",
+    "AuditAggregateMetricsV1",
+    "AuditTraceCursor",
+    "AuditTraceItem",
+    "AuditTraceLineageRef",
+    "AuditTracePage",
+    "AuditTraceQuery",
+    "AuditTraceSelector",
     "BoundedRecallResult",
+    "CanonicalStateManifestAccessV1",
+    "CanonicalStateManifestV1",
+    "CanonicalStateTableRootV1",
     "CognitiveMemoryBackend",
     "DigitalTwin",
     "ExportPage",
@@ -47,6 +59,9 @@
     "ProcedureObservationApplyResult",
     "ProspectiveSignalApplyResult",
     "ScopeKind",
+    "SealedAuditAccessDecision",
+    "SealedAuditAccessDenied",
+    "SealedAuditAccessReceipt",
     "ShortHorizonDegradationCode",
     "ShortHorizonGenerationBuildResult",
     "ShortHorizonProjectionBuildResult",
@@ -57,7 +72,8 @@
     "TwinGraphSourceRef",
     "TwinGraphView",
     "TypedRecallExecution",
-    "WorldModelPort"
+    "WorldModelPort",
+    "build_human_memory_v6"
   ],
   "migrations": [
     "EXECUTION_MANIFEST_PROTOCOL",

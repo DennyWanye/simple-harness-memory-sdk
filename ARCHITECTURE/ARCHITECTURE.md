@@ -3,7 +3,7 @@
 # ARCHITECTURE — simple-harness-memory-sdk（v0.6.0 candidate）
 
 > 最后更新：2026-08-31
-> 当前事实：Human Memory V0/S1/S2 与 S3 Task 1/2/3/4/5/6 已闭合；S3 Task 7、Host/UI 接线与最终 candidate
+> 当前事实：Human Memory V0/S1/S2 与 S3 Task 1/2/3/4/5/6/7 已闭合；Host/UI 接线与最终 candidate
 > packaging 尚未完成。旧 Agent Memory v1 能力仍保留，但不是新认知 mutation 的 authority。
 
 ## Human Memory Program 当前边界（2026-08-31）
@@ -70,6 +70,24 @@
 - 架构测试固定单向依赖：`core.recall` 不得 import twin projection，`cognitive.twin_builder` 不得 import Host runtime、
   recall candidate、Context fragment、ranking 或 current-use authorization。DTO 没有到 recall/context/action 的转换方法。
 - 本 program 不迁移旧内容数据；schema v6 必须 fresh 初始化，旧数据库由 loader 稳定拒绝。
+- `build_human_memory_v6` 是 fresh v6 的公开构造入口，返回单一 `MemoryManager` facade。consumer 可经该
+  facade 完成 evidence/conversation admission、mutation、suppression/revoke、typed recall、display graph、
+  trace、metrics 与 manifest，不需要导入 `sqlite_v5` 或读取 backend connection。
+- sealed audit 只接受 `AuditAccessAuthorityRefV1`。Memory 通过 injected `AuditAccessAuthorityPort` resolve 后
+  exact 校验 requester deployment/household/actor/session、target identity、decision/scope/time/hash/replay；旧
+  caller-minted decision issuance 永久 fail closed。每次 granted/denied 都是 hash-only immutable event，trace、
+  evidence 与 manifest 共用同一 `max_reads` budget。ordinary trace 必须传 target principal；sealed trace/evidence
+  必须传 authenticated requester，并对 durable authority ref 重验 requester、实际 target row 与 scope。
+- ordinary audit trace 支持 TURN/INVOCATION/DECISION/EVIDENCE/MEMORY。MEMORY selector 附带 hash-only proposal、
+  accepted plan、mutation receipt/decision、classification、canonical revision 与 evidence lineage；不暴露内部 ID
+  或内容。fixed aggregate metrics 只统计 ordinary-visible invocation/decision/token/cost/latency，无 caller label、
+  provider/model/ref/content group，suppressed row 不进入任何字段。
+- canonical state manifest 在单一 `BEGIN IMMEDIATE` snapshot 中先执行全库/跨行 validator，再按冻结 coverage
+  registry 对全部 required v6 table 生成 principal-scoped root 或显式 derived/global exclusion；随后写独立、绑定
+  manifest payload hash 的 access event。历史 audit access ledger 进入当前 snapshot，当前 access event 只进入下次
+  snapshot。cursor HMAC key 的 hash 绑定 initialization receipt 并在 reopen 重验。
+  manifest 不输出 raw ID、内容或 wall time；它必须与外部保存的旧 hash 比较才能检测具备 DB owner 权限的同步改写，
+  不宣称本地自证明真实性。
 
 ## 分层
 
@@ -265,6 +283,13 @@ src/simple_harness_memory/
   `MemoryManager`/port 与 import-isolation guard 已闭合。focused DTO/policy/correction/forget/conflict/reopen/public-API
   `11 passed`；全仓 `1006 passed, 8 skipped`，Ruff `src tests`、mypy `58 source files` 与 `git diff --check` 全绿。
   该证据证明 Memory library projection，不代表尚未实现的 Host/UI 接线或交互验收。
+
+- Human Memory S3 Task 7：fresh-v6 public builder/Manager facade、external authority-ref sealed access、
+  MEMORY hash-only lineage trace、ordinary-visible fixed metrics 与 sealed canonical state manifest 已闭合。
+  access resolver miss、requester/target identity drift、ref/body/replay/time/max_reads、suppression、cursor/reopen、
+  manifest coverage/independent root rebuild/tamper、no-mutation invocation 与 public consumer 均由仓内测试覆盖。
+  Task 7 focused `12 passed`；兼容 focused `598 passed`；全仓 `1036 passed, 8 skipped`，Ruff `src tests`、
+  mypy `58 source files` 与 `git diff --check` 全绿。
 
 - 0.6.0 Task 6 source audit：冻结 Harness 0.7 下全仓 `493 passed, 8 skipped`；Ruff、项目 mypy
   `97 source files`、3 个发布脚本 strict mypy 与 REUSE 全绿。非最终 dirty-tree wheel/sdist 通过 Twine，

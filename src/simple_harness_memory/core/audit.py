@@ -24,7 +24,10 @@ from simple_harness.runtime import (
 )
 
 from simple_harness_memory.core.errors import MemoryLimitError, MemoryValidationError
-from simple_harness_memory.core.suppression import SuppressionScopeKind
+from simple_harness_memory.core.suppression import (
+    SealedAuditAccessDecision,
+    SuppressionScopeKind,
+)
 
 MAX_AUDIT_PUBLIC_BYTES = 256 * 1024
 MAX_AUDIT_PUBLIC_NODES = 8192
@@ -211,7 +214,7 @@ class AuditAccessAuthorityRefV1:
 class AuditAccessAuthorityPort(Protocol):
     async def resolve_audit_access(
         self, reference: AuditAccessAuthorityRefV1
-    ) -> object: ...
+    ) -> SealedAuditAccessDecision: ...
 
 
 @dataclass(frozen=True, slots=True)

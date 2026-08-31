@@ -32,7 +32,7 @@ from simple_harness_memory.core.audit import (
     AuditTraceQuery,
     CanonicalStateManifestAccessV1,
 )
-from simple_harness_memory.core.evidence import EvidenceIngestionReceipt
+from simple_harness_memory.core.evidence import EvidenceIngestionReceipt, IngestedEvidenceRecord
 from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
 from simple_harness_memory.core.lifecycle_results import (
     ProcedureObservationApplyResult,
@@ -404,7 +404,7 @@ class CognitiveMemoryBackend(Protocol):
         self,
         query: AuditTraceQuery,
         *,
-        principal: MemoryPrincipal | None = None,
+        principal: MemoryPrincipal,
         limit: int = 20,
         cursor: AuditTraceCursor | None = None,
     ) -> AuditTracePage: ...
@@ -414,10 +414,18 @@ class CognitiveMemoryBackend(Protocol):
         query: AuditTraceQuery,
         access_receipt: SealedAuditAccessReceipt,
         *,
-        principal: MemoryPrincipal | None = None,
+        requester: MemoryPrincipal,
         limit: int = 20,
         cursor: AuditTraceCursor | None = None,
     ) -> AuditTracePage: ...
+
+    async def export_sealed_evidence(
+        self,
+        evidence_id: str,
+        access_receipt: SealedAuditAccessReceipt,
+        *,
+        requester: MemoryPrincipal,
+    ) -> IngestedEvidenceRecord: ...
 
     async def get_audit_aggregate_metrics(
         self, *, principal: MemoryPrincipal

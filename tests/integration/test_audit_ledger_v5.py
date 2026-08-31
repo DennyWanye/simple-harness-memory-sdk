@@ -31,6 +31,7 @@ from simple_harness_memory.core.audit import (
     ReasoningItemType,
 )
 from simple_harness_memory.core.errors import MemoryIdempotencyConflict, MemoryValidationError
+from simple_harness_memory.core.identity import MemoryPrincipal
 from simple_harness_memory.core.jobs import AnalysisBatchClaim
 from simple_harness_memory.core.suppression import (
     SealedAuditAccessDecision,
@@ -46,6 +47,10 @@ from tests.integration.test_suppression_v5 import (
     _disclosure,
     _SealedAccessAuthority,
 )
+
+
+def _principal() -> MemoryPrincipal:
+    return MemoryPrincipal("actor-1", "actor-1", "actor-1", "session-1")
 
 
 def _analysis_authority(
@@ -307,7 +312,7 @@ async def test_invocation_and_decision_lineage_is_replayable_immutable_and_query
     )
     for selector, selector_ref in selectors:
         page = await backend.export_audit_trace(
-            AuditTraceQuery("actor-1", selector, selector_ref)
+            AuditTraceQuery("actor-1", selector, selector_ref), principal=_principal()
         )
         assert [item.invocation.invocation_id for item in page.items] == ["invocation-1"]
         assert page.items[0].decisions == (decision,)
@@ -351,7 +356,7 @@ async def test_stable_cursor_watermark_excludes_later_append(tmp_path: Path) -> 
             (_decision(evidence_ref, ordinal),),
         )
     query = AuditTraceQuery("actor-1", AuditTraceSelector.TURN, "turn-page")
-    first = await backend.export_audit_trace(query, limit=1)
+    first = await backend.export_audit_trace(query, principal=_principal(), limit=1)
     assert first.next_cursor is not None
 
     request, result, delivery, receipt = _analysis_authority(evidence_ref, 4)
@@ -372,15 +377,19 @@ async def test_stable_cursor_watermark_excludes_later_append(tmp_path: Path) -> 
         first.next_cursor.cursor_hash,
     )
     with pytest.raises(MemoryValidationError, match="cursor_signature_invalid"):
-        await backend.export_audit_trace(query, limit=10, cursor=forged)
+        await backend.export_audit_trace(
+            query, principal=_principal(), limit=10, cursor=forged
+        )
     old_snapshot = [first.items[0].invocation.invocation_id]
     cursor: AuditTraceCursor | None = first.next_cursor
     while cursor is not None:
-        page = await backend.export_audit_trace(query, limit=1, cursor=cursor)
+        page = await backend.export_audit_trace(
+            query, principal=_principal(), limit=1, cursor=cursor
+        )
         old_snapshot.extend(item.invocation.invocation_id for item in page.items)
         cursor = page.next_cursor
     assert old_snapshot == ["invocation-1", "invocation-2", "invocation-3"]
-    fresh = await backend.export_audit_trace(query, limit=10)
+    fresh = await backend.export_audit_trace(query, principal=_principal(), limit=10)
     assert [item.invocation.invocation_id for item in fresh.items] == [
         "invocation-1",
         "invocation-2",
@@ -391,13 +400,16 @@ async def test_stable_cursor_watermark_excludes_later_append(tmp_path: Path) -> 
     with pytest.raises(MemoryValidationError, match="cursor_query_differs"):
         await backend.export_audit_trace(
             AuditTraceQuery("actor-1", AuditTraceSelector.TURN, "another-turn"),
+            principal=_principal(),
             cursor=first.next_cursor,
         )
     await backend.close()
 
     reopened = _audit_backend(tmp_path / "pagination.db", now=lambda: 121.0)
     await reopened.initialize()
-    resumed = await reopened.export_audit_trace(query, limit=10, cursor=first.next_cursor)
+    resumed = await reopened.export_audit_trace(
+        query, principal=_principal(), limit=10, cursor=first.next_cursor
+    )
     assert [item.invocation.invocation_id for item in resumed.items] == [
         "invocation-2",
         "invocation-3",
@@ -451,7 +463,8 @@ async def test_invalid_private_output_records_rejection_without_body_anywhere(
     assert record.output_storage_status is OutputStorageStatus.REJECTED_UNSAFE
     assert record.public_output is None
     page = await backend.export_audit_trace(
-        AuditTraceQuery("actor-1", AuditTraceSelector.INVOCATION, "invocation-unsafe")
+        AuditTraceQuery("actor-1", AuditTraceSelector.INVOCATION, "invocation-unsafe"),
+        principal=_principal(),
     )
     assert page.items[0].decisions[0].outcome is DecisionOutcome.REJECTED
     assert canary not in json.dumps(logs, sort_keys=True)
@@ -659,10 +672,11 @@ async def test_suppression_blocks_ordinary_trace_but_sealed_receipt_is_limited_a
     )
     query = AuditTraceQuery("actor-1", AuditTraceSelector.EVIDENCE, "evidence-1")
     with pytest.raises(SuppressionDenied):
-        await backend.export_audit_trace(query)
+        await backend.export_audit_trace(query, principal=_principal())
     assert (
         await backend.export_audit_trace(
-            AuditTraceQuery("actor-1", AuditTraceSelector.TURN, "turn-1")
+            AuditTraceQuery("actor-1", AuditTraceSelector.TURN, "turn-1"),
+            principal=_principal(),
         )
     ).items == ()
 
@@ -681,10 +695,14 @@ async def test_suppression_blocks_ordinary_trace_but_sealed_receipt_is_limited_a
             130.0,
         )
     )
-    sealed = await backend.export_sealed_audit_trace(query, access)
+    sealed = await backend.export_sealed_audit_trace(
+        query, access, requester=_principal()
+    )
     assert [item.invocation.invocation_id for item in sealed.items] == ["invocation-1"]
     with pytest.raises(SealedAuditAccessDenied, match="exhausted"):
-        await backend.export_sealed_audit_trace(query, access)
+        await backend.export_sealed_audit_trace(
+            query, access, requester=_principal()
+        )
     async with backend.connection.execute(
         "SELECT outcome,reason_code FROM audit_trace_access_events ORDER BY rowid"
     ) as cursor:
@@ -749,7 +767,9 @@ async def test_sealed_audit_time_bounds_fail_closed_at_issue_and_use(tmp_path: P
     )
     clock[0] = 114.0
     with pytest.raises(SealedAuditAccessDenied, match="access_not_yet_valid"):
-        await backend.export_sealed_evidence("evidence-1", receipt)
+        await backend.export_sealed_evidence(
+            "evidence-1", receipt, requester=_principal()
+        )
     await backend.close()
 
 

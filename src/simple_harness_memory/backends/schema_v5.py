@@ -21,6 +21,7 @@ CREATE TABLE initialization_receipts (
     schema_version INTEGER NOT NULL CHECK (schema_version = 6),
     schema_epoch TEXT NOT NULL CHECK (schema_epoch = 'human-memory-v1'),
     schema_checksum TEXT NOT NULL,
+    audit_cursor_authority_hash TEXT NOT NULL CHECK (length(audit_cursor_authority_hash) = 64),
     created_at REAL NOT NULL CHECK (created_at >= 0),
     receipt_hash TEXT NOT NULL UNIQUE
 );
@@ -1848,11 +1849,35 @@ REQUIRED_TABLES = frozenset(
     }
 )
 
+# Canonical manifests intentionally omit only schema-global authority and reproducible
+# search/vector projections. Every other REQUIRED_TABLE must have a principal-scoped
+# root in SQLiteHumanMemoryBackend._canonical_manifest_roots_unlocked.
+CANONICAL_MANIFEST_DERIVED_EXCLUSIONS = frozenset(
+    {
+        "schema_meta",  # represented by the manifest schema fields
+        "initialization_receipts",  # represented by initialization_receipt_hash
+        "audit_cursor_authority",  # secret; its hash is bound into the init receipt
+        "principals",  # represented by principal_ref_hash
+        "embedding_lineages",  # derived vector configuration
+        "embedding_generations",  # rebuildable vector generation
+        "evidence_vectors",  # rebuildable vector cache
+        "short_horizon_fts",  # rebuildable FTS projection and shadow tables
+        "short_horizon_fts_data",
+        "short_horizon_fts_idx",
+        "short_horizon_fts_content",
+        "short_horizon_fts_docsize",
+        "short_horizon_fts_config",
+        "short_horizon_generations",  # rebuildable vector generation
+        "short_horizon_vectors",  # rebuildable vector cache
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class InitializationReceipt:
     receipt_id: str
     created_at: float
+    audit_cursor_authority_hash: str
     schema_version: int = SCHEMA_VERSION
     schema_epoch: str = SCHEMA_EPOCH
     schema_checksum: str = SCHEMA_CHECKSUM
@@ -1867,6 +1892,15 @@ class InitializationReceipt:
             raise ValueError("initialization receipt schema epoch differs")
         if self.schema_checksum != SCHEMA_CHECKSUM:
             raise ValueError("initialization receipt schema checksum differs")
+        if (
+            not isinstance(self.audit_cursor_authority_hash, str)
+            or len(self.audit_cursor_authority_hash) != 64
+        ):
+            raise ValueError("initialization receipt cursor authority hash differs")
+        try:
+            bytes.fromhex(self.audit_cursor_authority_hash)
+        except ValueError as exc:
+            raise ValueError("initialization receipt cursor authority hash differs") from exc
         if isinstance(self.created_at, bool) or not isinstance(self.created_at, (int, float)):
             raise TypeError("created_at must be numeric")
         if self.created_at < 0:
@@ -1880,6 +1914,7 @@ class InitializationReceipt:
             "schema_version": self.schema_version,
             "schema_epoch": self.schema_epoch,
             "schema_checksum": self.schema_checksum,
+            "audit_cursor_authority_hash": self.audit_cursor_authority_hash,
             "created_at": self.created_at,
         }
 
@@ -1897,6 +1932,7 @@ def _receipt_hash(receipt: InitializationReceipt) -> str:
 
 __all__ = (
     "DDL",
+    "CANONICAL_MANIFEST_DERIVED_EXCLUSIONS",
     "InitializationReceipt",
     "REQUIRED_TABLES",
     "SCHEMA_CHECKSUM",

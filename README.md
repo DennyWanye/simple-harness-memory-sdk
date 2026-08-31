@@ -74,6 +74,47 @@ async def main():
 asyncio.run(main())
 ```
 
+### Human Memory v6 public facade
+
+Fresh Human Memory databases use the explicit `build_human_memory_v6` entry point. It returns the
+same public `MemoryManager` facade used for evidence admission, conversation registration, strict
+mutation/recall, display-only twin graph, suppression and audit reads; consumers do not import the
+SQLite implementation or access its connection.
+
+```python fragment
+from simple_harness_memory import MemoryPrincipal, build_human_memory_v6
+
+principal = MemoryPrincipal(deployment_id, household_id, actor_id, session_id)
+memory = await build_human_memory_v6(
+    "human-memory-v6.db",
+    evidence_authority=evidence_authority,
+    conversation_evidence_authority=conversation_authority,
+    classification_policy=classification_policy,
+    memory_action_authority=memory_action_authority,
+    audit_access_authority=audit_access_authority,
+)
+metrics = await memory.get_audit_aggregate_metrics(principal=principal)
+```
+
+Ordinary trace supports turn, invocation, decision, evidence and final memory ID selectors. Memory
+trace includes hash-only proposal/accepted-plan/mutation/classification/revision/evidence lineage.
+Sealed trace and canonical state manifests require an `AuditAccessAuthorityRefV1` resolved by an
+injected authority; caller-constructed `SealedAuditAccessDecision` values are rejected. Every grant
+and denial is append-only and hash-only. Ordinary trace requires the target `MemoryPrincipal`;
+sealed trace and `export_sealed_evidence` require the authenticated requester principal and re-check
+the durable ref's requester, target and scope binding. Aggregate metrics use a fixed schema over ordinary-visible
+rows only: suppressed rows, content, provider/model identity, source refs and caller-defined grouping
+never enter the result. An authenticated subject can observe changes in their own visible aggregates;
+that first-party observation is within the API threat boundary and is not presented as differential privacy.
+
+The sealed canonical manifest is a read-only snapshot of allowlisted v6 business tables. It exposes
+only category/table roots, counts, first/last leaf canaries and a payload hash. The coverage registry
+accounts for every required v6 table as a principal-scoped root or an explicitly derived/global exclusion.
+Prior audit-read events are included; the access event for the current snapshot is appended afterward,
+bound to the manifest hash, and therefore appears only in a later snapshot. The
+hash detects changes only when compared with an independently retained earlier manifest; a database
+owner able to rewrite all rows and hashes is outside the local self-authentication boundary.
+
 同一个 `source_event_id` 与相同 canonical payload 重放返回
 `already_applied`；同 ID 不同 payload 稳定拒绝。standalone user 作为 deployment 边界，同名
 `session_id` 可在不同 user/deployment 共存，但同一 deployment 内首次绑定后不可改绑。
@@ -168,6 +209,9 @@ action 遗忘已删除 fact 返回并持久化稳定 `False` no-op。同 action 
 
 ### 持久化边界
 
+- Human Memory only accepts fresh schema v6/checksum through `build_human_memory_v6`; it never
+  upgrades legacy content in place. `MemoryManager.build()` remains the standalone v4 compatibility
+  builder.
 - SQLite 接受 fresh schema v4；v3/未知 version/checksum 一律 fail-fast。仅已发布且可识别的早期 v4
   recall-snapshot 全局键缺陷会在同一事务内修复为 deployment-scoped key；内容迁移仍只允许显式 migrator。
 - v4 全链路保存 deployment/household/actor/session 与 personal/family scope；session 和 turn receipt

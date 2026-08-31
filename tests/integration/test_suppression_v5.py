@@ -472,11 +472,15 @@ async def test_sealed_audit_access_is_exact_limited_logged_and_not_an_ordinary_b
         path, now=lambda: clock[0], audit_access_authority=access_authority
     )
     await backend.initialize()
-    assert (await backend.export_sealed_evidence("evidence-1", receipt)).envelope.evidence_id == (
-        "evidence-1"
-    )
+    assert (
+        await backend.export_sealed_evidence(
+            "evidence-1", receipt, requester=principal
+        )
+    ).envelope.evidence_id == "evidence-1"
     with pytest.raises(SealedAuditAccessDenied, match="exhausted"):
-        await backend.export_sealed_evidence("evidence-1", receipt)
+        await backend.export_sealed_evidence(
+            "evidence-1", receipt, requester=principal
+        )
     with pytest.raises(SuppressionDenied):
         await backend.export_ingested_evidence("evidence-1")
 
@@ -493,7 +497,9 @@ async def test_sealed_audit_access_is_exact_limited_logged_and_not_an_ordinary_b
     )
     wrong_receipt = await _authorize_audit(backend, access_authority, wrong_scope)
     with pytest.raises(SealedAuditAccessDenied, match="scope_differs"):
-        await backend.export_sealed_evidence("evidence-1", wrong_receipt)
+        await backend.export_sealed_evidence(
+            "evidence-1", wrong_receipt, requester=principal
+        )
     async with backend.connection.execute(
         "SELECT outcome,reason_code FROM sealed_audit_access_events ORDER BY rowid"
     ) as cursor:
@@ -535,7 +541,11 @@ async def test_expired_or_tampered_sealed_receipt_is_denied_and_logged(tmp_path:
     receipt = await _authorize_audit(backend, access_authority, decision)
     clock[0] = 50.0
     with pytest.raises(SealedAuditAccessDenied, match="expired"):
-        await backend.export_sealed_evidence("evidence-1", receipt)
+        await backend.export_sealed_evidence(
+            "evidence-1", receipt, requester=MemoryPrincipal(
+                "actor-1", "actor-1", "actor-1", "session-1"
+            )
+        )
     tampered = SealedAuditAccessReceipt(
         receipt.access_receipt_id,
         receipt.decision_id,
@@ -549,7 +559,11 @@ async def test_expired_or_tampered_sealed_receipt_is_denied_and_logged(tmp_path:
         receipt.expires_at,
     )
     with pytest.raises(SealedAuditAccessDenied, match="receipt_differs"):
-        await backend.export_sealed_evidence("evidence-1", tampered)
+        await backend.export_sealed_evidence(
+            "evidence-1", tampered, requester=MemoryPrincipal(
+                "actor-1", "actor-1", "actor-1", "session-1"
+            )
+        )
     async with backend.connection.execute(
         "SELECT reason_code FROM sealed_audit_access_events ORDER BY rowid"
     ) as cursor:

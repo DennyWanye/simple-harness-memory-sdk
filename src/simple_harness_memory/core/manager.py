@@ -26,7 +26,7 @@ from simple_harness_memory.core.errors import (
     MemoryOwnershipConflict,
     MemoryProductionConfigurationError,
 )
-from simple_harness_memory.core.evidence import EvidenceIngestionReceipt
+from simple_harness_memory.core.evidence import EvidenceIngestionReceipt, IngestedEvidenceRecord
 from simple_harness_memory.core.identity import (
     ExportPage,
     MemoryPrincipal,
@@ -188,9 +188,22 @@ class MemoryManager:
         return await self._backend.export_sealed_audit_trace(
             query,
             access_receipt,
-            principal=requester,
+            requester=requester,
             limit=limit,
             cursor=cursor,
+        )
+
+    async def export_sealed_evidence(
+        self,
+        *,
+        requester: MemoryPrincipal,
+        evidence_id: str,
+        access_receipt: SealedAuditAccessReceipt,
+    ) -> IngestedEvidenceRecord:
+        return await self._backend.export_sealed_evidence(
+            evidence_id,
+            access_receipt,
+            requester=requester,
         )
 
     async def get_audit_aggregate_metrics(
