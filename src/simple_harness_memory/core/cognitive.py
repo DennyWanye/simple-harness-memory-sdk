@@ -21,6 +21,7 @@ from simple_harness.runtime.evidence_protocol import (
     verify_evidence_span,
 )
 from simple_harness.runtime.memory_protocol import (
+    ConflictStatus,
     EpisodeLifecycleState,
     EpisodeMemoryPayload,
     EpistemicStatus,
@@ -110,12 +111,6 @@ class EvidenceAuthorityAdapter:
         except (TypeError, ValueError) as exc:
             raise MemoryValidationError("evidence_authority_rejected") from exc
         return VerifiedEvidenceSet(spans, _VERIFIED_EVIDENCE_GUARD)
-
-
-class ConflictStatus(StrEnum):
-    UNCONTESTED = "uncontested"
-    CONTESTED = "contested"
-    RESOLVED = "resolved"
 
 
 @dataclass(frozen=True, slots=True)
