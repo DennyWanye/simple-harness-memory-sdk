@@ -1,7 +1,10 @@
 {
-  "acceptance_sha256": "ab4dbe080e27ab4a29bf4be74b539363b489f9ad165eadf748fb3b8019cbc067",
-  "candidate_content_digest": "9c9c9b00c70a74813575f736da8da06d00686bd472a996f188bd7fcc8dbc33f8",
-  "run_dir": "plans/2026-08-29-human-memory-digital-twin/verification/program-delivery-20260830-v2",
-  "run_id": "run-20260830-103900",
-  "updated_at": "2026-08-30T10:40:27+0800"
+  "acceptance_sha256": "c482949678ca1faf6e6116d84bb8aba40254f241e0b55f5b62486261cfce2e46",
+  "candidate_content_digest": "41137247aa268397f9c2213724cd64484267aa097604379dce53298e6d7ffd68",
+  "latest_valid_receipt_digest": "9095e6062ff389e8971b0e652fc20ed708e33dc424521a6fe65bc98d9bd45ce2",
+  "latest_valid_receipt_path": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/gate-receipt.json",
+  "receipt_finalized_at": "2026-09-01T07:13:51+0800",
+  "run_dir": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03",
+  "run_id": "run-20260901-065117",
+  "updated_at": "2026-09-01T06:55:59+0800"
 }
