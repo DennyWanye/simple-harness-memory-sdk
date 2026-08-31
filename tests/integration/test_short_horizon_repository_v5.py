@@ -46,6 +46,11 @@ from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
 from simple_harness_memory.core.errors import MemoryCorruptionError, MemoryOwnershipConflict
 from simple_harness_memory.core.identity import MemoryPrincipal
 from simple_harness_memory.core.short_horizon import ShortHorizonDegradationCode
+from simple_harness_memory.core.suppression import (
+    OrdinaryMemoryPurpose,
+    SuppressionRequest,
+    SuppressionScopeKind,
+)
 from simple_harness_memory.embedders.mock import HashEmbedder
 
 NOW = 1_000_000.0
@@ -244,13 +249,15 @@ async def test_pointer_only_projection_and_repository_owned_generation_reopen(
     assert rebuilt.projected_chunk_count == 2
     async with backend.connection.execute(
         "SELECT public_text,effective_privacy_class,information_attributes_json,"
-        "classification_authority_refs_json FROM short_horizon_chunks ORDER BY chunk_id"
+        "classification_authority_refs_json,source_refs_json "
+        "FROM short_horizon_chunks ORDER BY chunk_id"
     ) as cursor:
         rows = tuple(await cursor.fetchall())
     assert all("secret-never-index" not in str(row[0]) for row in rows)
     assert {str(row[1]) for row in rows} == {"sensitive"}
     assert {str(row[2]) for row in rows} == {'["work"]'}
     assert {str(row[3]) for row in rows} == {'["classification-authority-1"]'}
+    assert all(json.loads(str(row[4]))[0].startswith("turn-") for row in rows)
 
     generation = await backend.rebuild_short_horizon_generation()
     assert generation.activated is True
@@ -327,6 +334,45 @@ async def test_unapproved_registration_is_durable_but_never_projected_and_cleanu
     await backend.close()
 
 
+@pytest.mark.asyncio
+async def test_projection_audit_counts_replaced_chunks_when_cardinality_is_unchanged(
+    tmp_path: Path,
+) -> None:
+    pairs = tuple(_registration(index) for index in range(1, 15))
+    backend = await _backend(tmp_path / "projection-replacement.db", pairs)
+    initial = await backend.rebuild_short_horizon_projection(principal=PRINCIPAL)
+    assert initial.projected_chunk_count == 4
+
+    added, added_ref = _registration(15)
+    authority = cast(_Authority, backend._conversation_evidence_authority)
+    authority.registrations[added.registration_id] = added
+    await backend.ingest_committed_evidence(added.envelope, added.admission_receipt)
+    await backend.register_conversation_evidence(added_ref)
+
+    await backend.suppress(
+        SuppressionRequest(
+            "forget-evidence-1",
+            "actor-1",
+            SuppressionScopeKind.EVIDENCE,
+            "evidence-1",
+            "user_forget",
+            NOW,
+            OrdinaryMemoryPurpose.PROJECTION,
+        )
+    )
+    rebuilt = await backend.rebuild_short_horizon_projection(principal=PRINCIPAL)
+    assert rebuilt.projected_chunk_count == 4
+    assert rebuilt.removed_chunk_count == 1
+    async with backend.connection.execute(
+        "SELECT audit_json FROM short_horizon_audit WHERE audit_id=?",
+        (rebuilt.audit_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    assert row is not None
+    assert json.loads(str(row[0]))["details"]["removed_chunk_count"] == 1
+    await backend.close()
+
+
 class _SlowEmbedder(HashEmbedder):
     async def embed(self, text: str) -> list[float]:
         await asyncio.sleep(1)
@@ -368,6 +414,72 @@ async def test_stale_generation_and_slow_query_embedding_degrade_without_stale_r
     assert result.vector_count == 0
     assert result.degradation_code is ShortHorizonDegradationCode.DEADLINE_EXCEEDED
     assert result.fts_count == 3
+    await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_slow_eligibility_gate_returns_by_deadline_with_durable_start_audit(
+    tmp_path: Path,
+) -> None:
+    pairs = tuple(_registration(index) for index in range(1, 13))
+    backend = await _backend(tmp_path / "slow-gate.db", pairs)
+    await backend.rebuild_short_horizon_projection(principal=PRINCIPAL)
+    original = backend._resolve_suppression_unlocked
+
+    async def slow_gate(*args: object, **kwargs: object) -> object:
+        await asyncio.sleep(1)
+        return await original(*args, **kwargs)
+
+    backend._resolve_suppression_unlocked = slow_gate  # type: ignore[method-assign]
+    started = time.monotonic()
+    result = await backend.recall_short_horizon(
+        principal=PRINCIPAL,
+        query="Project",
+        disclosure_context=_disclosure(),
+        deadline_ms=30,
+    )
+    assert time.monotonic() - started < 0.25
+    assert result.hits == ()
+    assert result.degradation_code is ShortHorizonDegradationCode.DEADLINE_EXCEEDED
+    async with backend.connection.execute(
+        "SELECT event_kind,audit_json FROM short_horizon_audit WHERE audit_id=?",
+        (result.audit_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    assert row is not None
+    assert tuple(row)[0] == "recall_started"
+    assert json.loads(str(tuple(row)[1]))["details"]["gate_outcome"] == "in_progress"
+    await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_slow_attempt_audit_never_extends_public_deadline(tmp_path: Path) -> None:
+    pairs = tuple(_registration(index) for index in range(1, 13))
+    backend = await _backend(tmp_path / "slow-attempt-audit.db", pairs)
+    original = backend._append_short_horizon_audit_unlocked
+
+    async def slow_audit(*args: object, **kwargs: object) -> str:
+        await asyncio.sleep(0.1)
+        return await original(*args, **kwargs)
+
+    backend._append_short_horizon_audit_unlocked = slow_audit  # type: ignore[method-assign]
+    started = time.monotonic()
+    result = await backend.recall_short_horizon(
+        principal=PRINCIPAL,
+        query="Project",
+        disclosure_context=_disclosure(),
+        deadline_ms=30,
+    )
+    assert time.monotonic() - started < 0.25
+    assert result.hits == ()
+    assert result.degradation_code is ShortHorizonDegradationCode.DEADLINE_EXCEEDED
+    await asyncio.sleep(0.12)
+    async with backend.connection.execute(
+        "SELECT event_kind FROM short_horizon_audit WHERE audit_id=?",
+        (result.audit_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    assert row is not None and str(row[0]) == "recall_started"
     await backend.close()
 
 
@@ -424,3 +536,42 @@ async def test_close_fails_closed_on_projection_or_vector_tamper(tmp_path: Path)
     )
     with pytest.raises(MemoryCorruptionError, match="vectors are invalid"):
         await vector.close()
+
+    fts = await _backend(tmp_path / "fts-tamper.db", pairs)
+    await fts.rebuild_short_horizon_projection(principal=PRINCIPAL)
+    await fts.connection.execute(
+        "INSERT INTO short_horizon_fts(chunk_id,public_text) VALUES('forged-chunk','forged')"
+    )
+    with pytest.raises(MemoryCorruptionError, match="FTS mirror differs"):
+        await fts.close()
+
+    legal_dimension = await _backend(tmp_path / "dimension-tamper.db", pairs)
+    await legal_dimension.rebuild_short_horizon_projection(principal=PRINCIPAL)
+    await legal_dimension.rebuild_short_horizon_generation()
+    await legal_dimension.connection.execute(
+        "UPDATE short_horizon_vectors SET embedding=?",
+        (b"[1.0,2.0]",),
+    )
+    with pytest.raises(MemoryCorruptionError, match="vectors are invalid"):
+        await legal_dimension.close()
+
+
+@pytest.mark.asyncio
+async def test_mixed_causal_group_metadata_is_rejected_and_audited(tmp_path: Path) -> None:
+    pairs = tuple(_registration(index) for index in range(1, 13))
+    backend = await _backend(tmp_path / "mixed-group.db", pairs)
+    await backend.connection.execute(
+        "DROP TRIGGER conversation_evidence_registrations_immutable_update"
+    )
+    await backend.connection.execute(
+        "UPDATE conversation_evidence_registrations SET causal_group_id='group-1', "
+        "item_ordinal=2,group_item_count=2 WHERE registration_id='registration-2'"
+    )
+    with pytest.raises(MemoryCorruptionError, match="causal group metadata differs"):
+        await backend.rebuild_short_horizon_projection(principal=PRINCIPAL)
+    async with backend.connection.execute(
+        "SELECT audit_json FROM short_horizon_audit WHERE event_kind='projection_rejected'"
+    ) as cursor:
+        row = await cursor.fetchone()
+    assert row is not None
+    assert json.loads(str(row[0]))["details"]["reason_code"] == "causal_group_metadata_inconsistent"

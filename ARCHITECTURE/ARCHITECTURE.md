@@ -230,10 +230,9 @@ src/simple_harness_memory/
   epoch/rolling window/first bind/CAS/fault/tamper 与 Prospective ACK/trigger/invalidation/expire/stale/replay/outbox/
   audit-chain；该证据只关闭 S3 Task 1—3，不代表 S3 整体完成。
 
-- Human Memory S3 Task 4：Memory `a32a837` 基于 exact Harness `aa45a51` conversation evidence v3；focused public/pointer/
-  projection/generation/reopen/fault/tamper/deadline `10 passed`，S3 schema/cognitive/lifecycle 回归 `481 passed`，
-  全仓 `855 passed, 8 skipped`。Ruff scoped/full source、mypy scoped 与 `git diff --check` 全绿。该证据只关闭
-  五天 Short-Horizon repository；真实 200-query semantic quality corpus、Typed RecallPlan、graph 与 Host/UI 仍未完成。
+- Human Memory S3 Task 4：`a32a837` 的独立终审发现 total deadline、projection replacement audit、FTS/vector
+  integrity 与 causal-group completeness 四项 P1；remediation 正在实施，Task 4 不得宣称闭合。真实 200-query
+  semantic quality corpus、Typed RecallPlan、graph 与 Host/UI 同样仍未完成。
 
 - 0.6.0 Task 6 source audit：冻结 Harness 0.7 下全仓 `493 passed, 8 skipped`；Ruff、项目 mypy
   `97 source files`、3 个发布脚本 strict mypy 与 REUSE 全绿。非最终 dirty-tree wheel/sdist 通过 Twine，

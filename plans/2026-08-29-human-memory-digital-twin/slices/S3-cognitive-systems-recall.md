@@ -3,7 +3,7 @@
 > Release unit：S3（Memory SDK）  
 > 高风险子系统：认知状态机、检索资格/排序、派生投影（3）  
 > 覆盖：HM-AC-2/4/5/6/7/8
-> 执行状态：Task 1/2/3/4 COMPLETE（Memory Task 3 `31ffb15` + `3e45194`，Task 4 `a32a837`；Harness exact authority `aa45a51`）；classification/action authority、Procedure/Prospective 与五天 Short-Horizon repository 已闭合；machine `a2-004` resolved；Task 5—7 继续实施
+> 执行状态：Task 1/2/3 COMPLETE（Memory Task 3 `31ffb15` + `3e45194`；Harness exact authority `aa45a51`）。Task 4 `a32a837` 终审发现 total deadline、projection replacement audit、FTS/vector integrity 与 causal-group completeness P1，当前 remediation 后待复审；machine `a2-004` resolved；Task 4 冻结后继续 Task 5—7
 
 ## 交付边界
 

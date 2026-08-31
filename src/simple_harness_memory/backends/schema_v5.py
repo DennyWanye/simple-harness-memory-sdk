@@ -1311,6 +1311,7 @@ CREATE TABLE short_horizon_generations (
     lineage_id TEXT NOT NULL REFERENCES embedding_lineages(lineage_id),
     state TEXT NOT NULL CHECK (state IN ('building', 'active', 'retired', 'failed')),
     content_hash TEXT,
+    vector_manifest_hash TEXT NOT NULL,
     last_error_code TEXT,
     created_at REAL NOT NULL CHECK (created_at >= 0),
     activated_at REAL
@@ -1321,6 +1322,7 @@ CREATE TABLE short_horizon_vectors (
     chunk_id TEXT NOT NULL REFERENCES short_horizon_chunks(chunk_id) ON DELETE CASCADE,
     generation_id TEXT NOT NULL REFERENCES short_horizon_generations(generation_id),
     embedding BLOB NOT NULL,
+    embedding_hash TEXT NOT NULL,
     dimension INTEGER NOT NULL CHECK (dimension >= 1),
     PRIMARY KEY (chunk_id, generation_id)
 );
@@ -1328,7 +1330,10 @@ CREATE TABLE short_horizon_audit (
     audit_id TEXT PRIMARY KEY,
     principal_id TEXT NOT NULL REFERENCES principals(principal_id),
     event_kind TEXT NOT NULL CHECK (
-        event_kind IN ('projection_rebuilt', 'generation_activated', 'recall', 'cleanup')
+        event_kind IN (
+            'projection_rebuilt', 'projection_rejected', 'generation_activated',
+            'recall_started', 'recall', 'cleanup'
+        )
     ),
     disclosure_context_hash TEXT,
     query_hash TEXT,

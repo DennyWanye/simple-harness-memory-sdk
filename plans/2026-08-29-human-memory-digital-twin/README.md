@@ -1,7 +1,7 @@
 # Human Memory Digital Twin Plan Workspace
 
 > 创建日期：2026-08-29
-> 状态：用户已批准直接实施；V0、S1、S2 与 S3 Task 1/2/3/4 已闭合；Host-owned mutation/action/procedure/prospective authority、Memory 原子 consumer 与五天 Short-Horizon repository 已通过门禁，machine `a2-004` resolved；S3 Task 5—7 继续实施
+> 状态：用户已批准直接实施；V0、S1、S2 与 S3 Task 1/2/3 已闭合。五天 Short-Horizon repository 在独立审查后进入 P1 remediation，未冻结为完成；machine `a2-004` resolved；Task 4 复审后再进入 S3 Task 5—7
 > 主计划仓库：`simple-harness-memory-sdk`
 > Worktree：`/Users/denny/projects/simple-harness-memory-sdk-memory-plan`
 > 分支：`feat/human-memory-plan`

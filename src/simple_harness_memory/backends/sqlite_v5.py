@@ -1147,46 +1147,56 @@ class SQLiteHumanMemoryBackend:
         async with self._write_lock:
             await self._authorize_short_horizon_principal_unlocked(principal)
             async with self._db.execute(
-                "SELECT * FROM conversation_evidence_registrations "
-                "WHERE principal_id=? AND public_text IS NOT NULL "
+                "SELECT r.*,e.source_ref AS evidence_source_ref "
+                "FROM conversation_evidence_registrations r JOIN evidence_envelopes e "
+                "ON e.evidence_id=r.evidence_id WHERE r.principal_id=? "
+                "AND r.public_text IS NOT NULL "
                 "ORDER BY primary_conversation_id,"
                 "causal_group_sequence,item_ordinal",
                 (principal.actor_id,),
             ) as cursor:
                 rows = tuple(await cursor.fetchall())
-            groups: dict[tuple[str, str], list[aiosqlite.Row]] = {}
+            groups: dict[tuple[str, str, str], list[aiosqlite.Row]] = {}
             for row in rows:
                 groups.setdefault(
-                    (str(row["primary_conversation_id"]), str(row["causal_group_id"])), []
+                    (
+                        str(row["subject"]),
+                        str(row["primary_conversation_id"]),
+                        str(row["causal_group_id"]),
+                    ),
+                    [],
                 ).append(row)
-            recent: set[tuple[str, str]] = set()
-            by_conversation: dict[str, list[tuple[int, str]]] = {}
-            for (conversation_id, group_id), items in groups.items():
-                first = items[0]
-                count = int(first["group_item_count"])
-                if len(items) != count or [int(item["item_ordinal"]) for item in items] != list(
-                    range(1, count + 1)
-                ):
-                    continue
-                by_conversation.setdefault(conversation_id, []).append(
-                    (int(first["causal_group_sequence"]), group_id)
+            complete_groups: dict[tuple[str, str, str], tuple[aiosqlite.Row, ...]] = {}
+            try:
+                for key, group_rows in groups.items():
+                    items = tuple(sorted(group_rows, key=lambda item: int(item["item_ordinal"])))
+                    if self._short_horizon_group_is_complete(items):
+                        complete_groups[key] = items
+            except MemoryCorruptionError:
+                await self._append_short_horizon_audit_transaction(
+                    principal_id=principal.actor_id,
+                    event_kind="projection_rejected",
+                    details={"reason_code": "causal_group_metadata_inconsistent"},
+                    created_at=effective_now,
                 )
-            for conversation_id, values in by_conversation.items():
+                raise
+            recent: set[tuple[str, str, str]] = set()
+            by_conversation: dict[tuple[str, str], list[tuple[int, str]]] = {}
+            for (subject, conversation_id, group_id), items in complete_groups.items():
+                by_conversation.setdefault((subject, conversation_id), []).append(
+                    (int(items[0]["causal_group_sequence"]), group_id)
+                )
+            for (subject, conversation_id), values in by_conversation.items():
                 recent.update(
-                    (conversation_id, group_id)
+                    (subject, conversation_id, group_id)
                     for _, group_id in sorted(values, reverse=True)[:RECENT_CAUSAL_GROUP_LIMIT]
                 )
             projection: list[dict[str, object]] = []
             privacy_rank = {"public": 0, "personal": 1, "sensitive": 2, "restricted": 3}
-            for key, items in groups.items():
+            for key, items in complete_groups.items():
                 if key in recent:
                     continue
                 first = items[0]
-                count = int(first["group_item_count"])
-                if len(items) != count or [int(item["item_ordinal"]) for item in items] != list(
-                    range(1, count + 1)
-                ):
-                    continue
                 occurred_at = max(float(item["occurred_at"]) for item in items)
                 expires_at = occurred_at + SHORT_HORIZON_RETENTION_SECONDS
                 if occurred_at > effective_now or effective_now > expires_at:
@@ -1225,8 +1235,8 @@ class SQLiteHumanMemoryBackend:
                 )
                 chunk_payload = {
                     "subject": principal.actor_id,
-                    "primary_conversation_id": key[0],
-                    "causal_group_id": key[1],
+                    "primary_conversation_id": key[1],
+                    "causal_group_id": key[2],
                     "registration_hashes": [str(item["registration_hash"]) for item in items],
                     "content_hash": content_hash,
                     "effective_privacy_class": aggregate_privacy,
@@ -1260,6 +1270,10 @@ class SQLiteHumanMemoryBackend:
             desired_projection = tuple(
                 sorted((str(item["chunk_id"]), str(item["content_hash"])) for item in projection)
             )
+            removed_chunk_count = len(
+                {chunk_id for chunk_id, _ in existing_projection}
+                - {chunk_id for chunk_id, _ in desired_projection}
+            )
             registration_manifest_hash = hashlib.sha256(
                 canonical_json(
                     cast(
@@ -1284,13 +1298,6 @@ class SQLiteHumanMemoryBackend:
             await self._db.execute("BEGIN IMMEDIATE")
             committed = False
             try:
-                async with self._db.execute(
-                    "SELECT COUNT(*) FROM short_horizon_chunks WHERE principal_id=?",
-                    (principal.actor_id,),
-                ) as cursor:
-                    count_row = await cursor.fetchone()
-                assert count_row is not None
-                previous = int(count_row[0])
                 if existing_projection == desired_projection:
                     audit_id = await self._append_short_horizon_audit_unlocked(
                         principal_id=principal.actor_id,
@@ -1313,8 +1320,10 @@ class SQLiteHumanMemoryBackend:
                     (principal.actor_id,),
                 )
                 for projection_item in projection:
-                    items = cast(list[aiosqlite.Row], projection_item["items"])
-                    first = items[0]
+                    projection_items = cast(
+                        tuple[aiosqlite.Row, ...], projection_item["items"]
+                    )
+                    first = projection_items[0]
                     await self._db.execute(
                         "INSERT INTO short_horizon_chunks(chunk_id,principal_id,subject,"
                         "primary_conversation_id,causal_group_id,causal_group_sequence,roles_json,"
@@ -1330,13 +1339,13 @@ class SQLiteHumanMemoryBackend:
                             first["causal_group_id"],
                             first["causal_group_sequence"],
                             canonical_json(
-                                cast(JsonValue, [str(row["role"]) for row in items])
+                                cast(JsonValue, [str(row["role"]) for row in projection_items])
                             ),
                             canonical_json(
                                 cast(JsonValue, sorted(
                                     {
                                         str(row["task_scope_id"])
-                                        for row in items
+                                        for row in projection_items
                                         if row["task_scope_id"] is not None
                                     }
                                 ))
@@ -1345,7 +1354,7 @@ class SQLiteHumanMemoryBackend:
                                 cast(JsonValue, sorted(
                                     {
                                         value
-                                        for row in items
+                                        for row in projection_items
                                         for value in json.loads(str(row["entities_json"]))
                                     }
                                 ))
@@ -1353,7 +1362,10 @@ class SQLiteHumanMemoryBackend:
                             canonical_json(
                                 cast(
                                     JsonValue,
-                                    [str(row["registration_id"]) for row in items],
+                                    [
+                                        str(row["evidence_source_ref"])
+                                        for row in projection_items
+                                    ],
                                 )
                             ),
                             projection_item["privacy"],
@@ -1368,7 +1380,7 @@ class SQLiteHumanMemoryBackend:
                             effective_now,
                         ),
                     )
-                    for row in items:
+                    for row in projection_items:
                         await self._db.execute(
                             "INSERT INTO short_horizon_chunk_evidence(chunk_id,item_ordinal,"
                             "registration_id,evidence_id,envelope_hash) VALUES(?,?,?,?,?)",
@@ -1389,7 +1401,7 @@ class SQLiteHumanMemoryBackend:
                         "registration_count": len(rows),
                         "registration_manifest_hash": registration_manifest_hash,
                         "chunk_manifest_hash": projection_manifest_hash,
-                        "removed_chunk_count": max(0, previous - len(projection)),
+                        "removed_chunk_count": removed_chunk_count,
                         "replayed": False,
                     },
                     created_at=effective_now,
@@ -1399,7 +1411,7 @@ class SQLiteHumanMemoryBackend:
                 committed = True
                 self._short_horizon_cache = None
                 return ShortHorizonProjectionBuildResult(
-                    len(projection), max(0, previous - len(projection)), audit_id
+                    len(projection), removed_chunk_count, audit_id
                 )
             finally:
                 if not committed:
@@ -1467,6 +1479,16 @@ class SQLiteHumanMemoryBackend:
                 return ShortHorizonGenerationBuildResult(None, 0, False, False, audit_id)
             vectors = await embedder.embed_batch([str(row["public_text"]) for row in rows])
             embedder.validate_vectors(vectors, expected_count=len(rows))
+            encoded_vectors = tuple(encode_vector(vector) for vector in vectors)
+            vector_hashes = tuple(
+                hashlib.sha256(encoded).hexdigest() for encoded in encoded_vectors
+            )
+            vector_manifest_hash = self._short_horizon_vector_manifest_hash(
+                tuple(
+                    (str(row["chunk_id"]), vector_hash)
+                    for row, vector_hash in zip(rows, vector_hashes, strict=True)
+                )
+            )
             generation_id = f"short-gen:{uuid4().hex}"
             await self._db.execute("BEGIN IMMEDIATE")
             committed = False
@@ -1491,14 +1513,28 @@ class SQLiteHumanMemoryBackend:
                 )
                 await self._db.execute(
                     "INSERT INTO short_horizon_generations(generation_id,lineage_id,state,"
-                    "content_hash,created_at) VALUES(?,?,'building',?,?)",
-                    (generation_id, lineage.lineage_id, manifest_hash, effective_now),
+                    "content_hash,vector_manifest_hash,created_at) VALUES(?,?,'building',?,?,?)",
+                    (
+                        generation_id,
+                        lineage.lineage_id,
+                        manifest_hash,
+                        vector_manifest_hash,
+                        effective_now,
+                    ),
                 )
-                for row, vector in zip(rows, vectors, strict=True):
+                for row, encoded_vector, vector_hash in zip(
+                    rows, encoded_vectors, vector_hashes, strict=True
+                ):
                     await self._db.execute(
                         "INSERT INTO short_horizon_vectors(chunk_id,generation_id,embedding,"
-                        "dimension) VALUES(?,?,?,?)",
-                        (row["chunk_id"], generation_id, encode_vector(vector), lineage.dimension),
+                        "embedding_hash,dimension) VALUES(?,?,?,?,?)",
+                        (
+                            row["chunk_id"],
+                            generation_id,
+                            encoded_vector,
+                            vector_hash,
+                            lineage.dimension,
+                        ),
                     )
                 self._fault("short_horizon.generation.before_activate")
                 await self._db.execute(
@@ -1543,6 +1579,109 @@ class SQLiteHumanMemoryBackend:
         limit: int = 10,
         deadline_ms: int = 2_000,
         now: float | None = None,
+    ) -> ShortHorizonRecallResult:
+        """Return before the caller deadline, retaining a durable start audit on timeout.
+
+        The preflight audit is deliberately committed before the bounded work.  If a
+        slow eligibility authority or SQLite operation exhausts the budget, the
+        completion audit is cancelled atomically and this durable start record is
+        the authoritative explanation for the empty, degraded result.
+        """
+
+        from simple_harness.runtime import DisclosureContext
+
+        from simple_harness_memory.core.identity import MemoryPrincipal
+        from simple_harness_memory.core.short_horizon import (
+            SHORT_HORIZON_HARD_DEADLINE_MS,
+            ShortHorizonDegradationCode,
+            ShortHorizonRecallResult,
+        )
+
+        if type(principal) is not MemoryPrincipal:
+            raise TypeError("principal must use MemoryPrincipal")
+        if type(disclosure_context) is not DisclosureContext:
+            raise TypeError("disclosure_context must use DisclosureContext")
+        if not isinstance(query, str) or not query.strip() or "\x00" in query:
+            raise MemoryValidationError("short_horizon_query_invalid")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise MemoryLimitError("short_horizon_limit_invalid")
+        if (
+            isinstance(deadline_ms, bool)
+            or not isinstance(deadline_ms, int)
+            or not 1 <= deadline_ms <= SHORT_HORIZON_HARD_DEADLINE_MS
+        ):
+            raise MemoryLimitError("short_horizon_deadline_invalid")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v5 backend is not initialized")
+
+        started = time.monotonic()
+        deadline = started + deadline_ms / 1_000
+        effective_now = _timestamp(self._now() if now is None else now)
+        started_audit_id = f"short-audit:{uuid4().hex}"
+        attempt_task = asyncio.create_task(
+            self._record_short_horizon_recall_attempt(
+                principal=principal,
+                audit_id=started_audit_id,
+                disclosure_context_hash=disclosure_context.context_hash,
+                query_hash=hashlib.sha256(query.encode()).hexdigest(),
+                deadline_ms=deadline_ms,
+                created_at=effective_now,
+            )
+        )
+        attempt_task.add_done_callback(self._consume_short_horizon_attempt_task)
+        try:
+            await asyncio.wait_for(
+                asyncio.shield(attempt_task),
+                timeout=max(0.0, deadline - time.monotonic()),
+            )
+        except TimeoutError:
+            return ShortHorizonRecallResult(
+                (),
+                started_audit_id,
+                0,
+                0,
+                0,
+                0,
+                None,
+                ShortHorizonDegradationCode.DEADLINE_EXCEEDED,
+            )
+        try:
+            return await asyncio.wait_for(
+                self._recall_short_horizon_after_start(
+                    principal=principal,
+                    query=query,
+                    disclosure_context=disclosure_context,
+                    limit=limit,
+                    deadline_ms=deadline_ms,
+                    now=effective_now,
+                    started=started,
+                    deadline=deadline,
+                ),
+                timeout=deadline_ms / 1_000,
+            )
+        except TimeoutError:
+            return ShortHorizonRecallResult(
+                (),
+                started_audit_id,
+                0,
+                0,
+                0,
+                0,
+                None,
+                ShortHorizonDegradationCode.DEADLINE_EXCEEDED,
+            )
+
+    async def _recall_short_horizon_after_start(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        query: str,
+        disclosure_context: DisclosureContext,
+        limit: int = 10,
+        deadline_ms: int = 2_000,
+        now: float | None = None,
+        started: float,
+        deadline: float,
     ) -> ShortHorizonRecallResult:
         """Recall from one gated universe; generation and cache stay repository-private."""
 
@@ -1591,8 +1730,6 @@ class SQLiteHumanMemoryBackend:
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v5 backend is not initialized")
         effective_now = _timestamp(self._now() if now is None else now)
-        started = time.monotonic()
-        deadline = started + deadline_ms / 1000
         async with self._write_lock:
             await self._authorize_short_horizon_principal_unlocked(principal)
             if not disclosure_allowed:
@@ -1699,7 +1836,8 @@ class SQLiteHumanMemoryBackend:
                     async with self._db.execute(
                         "SELECT f.chunk_id FROM short_horizon_fts f "
                         "JOIN short_horizon_eligible_tmp e ON e.chunk_id=f.chunk_id "
-                        "WHERE short_horizon_fts MATCH ?",
+                        "WHERE short_horizon_fts MATCH ? "
+                        "ORDER BY bm25(short_horizon_fts),f.chunk_id",
                         (fts_query,),
                     ) as cursor:
                         fts_refs = [str(row[0]) for row in await cursor.fetchall()]
@@ -1743,7 +1881,15 @@ class SQLiteHumanMemoryBackend:
                     try:
                         if self._short_horizon_embedder is None:
                             raise MemoryValidationError("short_horizon_embedder_required")
-                        remaining = deadline - time.monotonic()
+                        # Keep a bounded reserve for immutable completion audit/return
+                        # work.  If the vector lane consumes the entire caller budget,
+                        # the outer deadline would cancel the audit and erase the
+                        # useful non-vector fallback result.
+                        audit_reserve = min(
+                            0.050,
+                            max(0.001, (deadline - started) * 0.25),
+                        )
+                        remaining = deadline - time.monotonic() - audit_reserve
                         if remaining <= 0:
                             raise TimeoutError
                         query_vector = await asyncio.wait_for(
@@ -8944,6 +9090,54 @@ class SQLiteHumanMemoryBackend:
             ).encode()
         ).hexdigest()
 
+    @staticmethod
+    def _short_horizon_vector_manifest_hash(
+        rows: tuple[tuple[str, str], ...],
+    ) -> str:
+        return hashlib.sha256(
+            canonical_json(
+                [
+                    {"chunk_id": chunk_id, "embedding_hash": embedding_hash}
+                    for chunk_id, embedding_hash in sorted(rows)
+                ]
+            ).encode()
+        ).hexdigest()
+
+    @staticmethod
+    def _short_horizon_group_is_complete(rows: tuple[aiosqlite.Row, ...]) -> bool:
+        """Reject mixed Host metadata; allow only genuinely in-flight incomplete groups."""
+
+        if not rows:
+            raise MemoryCorruptionError("short horizon causal group is empty")
+        first = rows[0]
+        expected = (
+            str(first["subject"]),
+            str(first["primary_conversation_id"]),
+            str(first["causal_group_id"]),
+            int(first["causal_group_sequence"]),
+            int(first["group_item_count"]),
+            str(first["ordered_group_manifest_hash"]),
+        )
+        if expected[4] < 1 or any(
+            (
+                str(row["subject"]),
+                str(row["primary_conversation_id"]),
+                str(row["causal_group_id"]),
+                int(row["causal_group_sequence"]),
+                int(row["group_item_count"]),
+                str(row["ordered_group_manifest_hash"]),
+            )
+            != expected
+            for row in rows
+        ):
+            raise MemoryCorruptionError("short horizon causal group metadata differs")
+        ordinals = {int(row["item_ordinal"]) for row in rows}
+        registrations = {str(row["registration_id"]) for row in rows}
+        evidence_ids = {str(row["evidence_id"]) for row in rows}
+        if len(registrations) != len(rows) or len(evidence_ids) != len(rows):
+            raise MemoryCorruptionError("short horizon causal group contains duplicates")
+        return ordinals == set(range(1, expected[4] + 1))
+
     async def _current_short_horizon_manifest_hash_unlocked(self) -> str:
         assert self._db is not None
         async with self._db.execute(
@@ -8967,7 +9161,7 @@ class SQLiteHumanMemoryBackend:
             self._short_horizon_cache = None
             return
         async with self._db.execute(
-            "SELECT g.generation_id,g.lineage_id,g.content_hash,l.dimension "
+            "SELECT g.generation_id,g.lineage_id,g.content_hash,g.vector_manifest_hash,l.dimension "
             "FROM short_horizon_generations g JOIN embedding_lineages l "
             "ON l.lineage_id=g.lineage_id WHERE g.state='active'"
         ) as cursor:
@@ -8980,7 +9174,8 @@ class SQLiteHumanMemoryBackend:
             self._short_horizon_cache = None
             return
         async with self._db.execute(
-            "SELECT c.chunk_id,v.embedding,v.dimension FROM short_horizon_chunks c "
+            "SELECT c.chunk_id,v.embedding,v.embedding_hash,v.dimension "
+            "FROM short_horizon_chunks c "
             "LEFT JOIN short_horizon_vectors v ON v.chunk_id=c.chunk_id "
             "AND v.generation_id=? ORDER BY c.chunk_id",
             (generation["generation_id"],),
@@ -8993,6 +9188,32 @@ class SQLiteHumanMemoryBackend:
             raise MemoryCorruptionError("active short horizon vector dimension differs")
         try:
             vectors = [decode_vector(bytes(row["embedding"])) for row in rows]
+            if any(
+                not isinstance(vector, list)
+                or len(vector) != dimension
+                or any(
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(float(value))
+                    for value in vector
+                )
+                or not any(float(value) != 0.0 for value in vector)
+                for vector in vectors
+            ):
+                raise ValueError("active short horizon vector values are invalid")
+            vector_rows = tuple(
+                (str(row["chunk_id"]), str(row["embedding_hash"])) for row in rows
+            )
+            if (
+                any(
+                    hashlib.sha256(bytes(row["embedding"])).hexdigest()
+                    != str(row["embedding_hash"])
+                    for row in rows
+                )
+                or self._short_horizon_vector_manifest_hash(vector_rows)
+                != str(generation["vector_manifest_hash"])
+            ):
+                raise ValueError("active short horizon vector hashes are invalid")
             self._short_horizon_cache = _ExactVectorGenerationCache(
                 generation_id=str(generation["generation_id"]),
                 lineage_id=str(generation["lineage_id"]),
@@ -9025,6 +9246,35 @@ class SQLiteHumanMemoryBackend:
             if await cursor.fetchone() is None:
                 raise MemoryOwnershipConflict("short_horizon_principal_rejected")
 
+    async def _record_short_horizon_recall_attempt(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        audit_id: str,
+        disclosure_context_hash: str,
+        query_hash: str,
+        deadline_ms: int,
+        created_at: float,
+    ) -> str:
+        async with self._write_lock:
+            await self._authorize_short_horizon_principal_unlocked(principal)
+            return await self._append_short_horizon_audit_transaction(
+                audit_id=audit_id,
+                principal_id=principal.actor_id,
+                event_kind="recall_started",
+                disclosure_context_hash=disclosure_context_hash,
+                query_hash=query_hash,
+                details={"deadline_ms": deadline_ms, "gate_outcome": "in_progress"},
+                created_at=created_at,
+            )
+
+    @staticmethod
+    def _consume_short_horizon_attempt_task(task: asyncio.Task[str]) -> None:
+        """Observe a late best-effort attempt audit without delaying recall callers."""
+
+        with suppress(asyncio.CancelledError, Exception):
+            task.result()
+
     async def _append_short_horizon_audit_transaction(self, **kwargs: object) -> str:
         assert self._db is not None
         await self._db.execute("BEGIN IMMEDIATE")
@@ -9055,6 +9305,7 @@ class SQLiteHumanMemoryBackend:
         degradation_code: object = None,
         details: object = None,
         created_at: object,
+        audit_id: object = None,
     ) -> str:
         assert self._db is not None
         principal_value = str(principal_id)
@@ -9067,10 +9318,12 @@ class SQLiteHumanMemoryBackend:
             detail_value = cast(dict[str, JsonValue], details)
         else:
             raise TypeError("short horizon audit details must be a dictionary")
-        audit_id = f"short-audit:{uuid4().hex}"
+        audit_id_value = f"short-audit:{uuid4().hex}" if audit_id is None else str(audit_id)
+        if not audit_id_value.startswith("short-audit:") or len(audit_id_value) > 128:
+            raise MemoryValidationError("short_horizon_audit_id_invalid")
         payload: dict[str, JsonValue] = {
             "schema_version": 1,
-            "audit_id": audit_id,
+            "audit_id": audit_id_value,
             "principal_id": principal_value,
             "event_kind": str(event_kind),
             "disclosure_context_hash": cast(str | None, disclosure_context_hash),
@@ -9093,7 +9346,7 @@ class SQLiteHumanMemoryBackend:
             "fts_count,entity_time_count,vector_count,degradation_code,audit_json,audit_hash,"
             "created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
-                audit_id,
+                audit_id_value,
                 principal_value,
                 event_kind,
                 disclosure_context_hash,
@@ -9110,7 +9363,7 @@ class SQLiteHumanMemoryBackend:
                 created,
             ),
         )
-        return audit_id
+        return audit_id_value
 
     async def _validate_integrity(self) -> None:
         assert self._db is not None
@@ -9282,22 +9535,63 @@ class SQLiteHumanMemoryBackend:
             ):
                 raise MemoryCorruptionError("conversation registration root differs")
 
+        registrations_by_group: dict[tuple[str, str, str], tuple[aiosqlite.Row, ...]] = {}
+        raw_groups: dict[tuple[str, str, str], list[aiosqlite.Row]] = {}
+        for row in registrations:
+            raw_groups.setdefault(
+                (
+                    str(row["subject"]),
+                    str(row["primary_conversation_id"]),
+                    str(row["causal_group_id"]),
+                ),
+                [],
+            ).append(row)
+        for key, raw_rows in raw_groups.items():
+            group_rows = tuple(sorted(raw_rows, key=lambda item: int(item["item_ordinal"])))
+            if self._short_horizon_group_is_complete(group_rows):
+                registrations_by_group[key] = group_rows
+
         async with self._db.execute(
             "SELECT * FROM short_horizon_chunks ORDER BY chunk_id"
         ) as cursor:
             chunks = tuple(await cursor.fetchall())
+        async with self._db.execute(
+            "SELECT chunk_id,public_text FROM short_horizon_fts ORDER BY chunk_id,public_text"
+        ) as cursor:
+            fts_rows = tuple((str(row[0]), str(row[1])) for row in await cursor.fetchall())
+        expected_fts_rows = tuple(
+            sorted((str(chunk["chunk_id"]), str(chunk["public_text"])) for chunk in chunks)
+        )
+        if fts_rows != expected_fts_rows:
+            raise MemoryCorruptionError("short horizon FTS mirror differs")
         privacy_rank = {"public": 0, "personal": 1, "sensitive": 2, "restricted": 3}
         for chunk in chunks:
             async with self._db.execute(
-                "SELECT r.* FROM short_horizon_chunk_evidence e "
+                "SELECT r.*,e.evidence_id AS chunk_evidence_id,"
+                "e.envelope_hash AS chunk_evidence_envelope_hash,"
+                "en.source_ref AS evidence_source_ref FROM short_horizon_chunk_evidence e "
                 "JOIN conversation_evidence_registrations r "
-                "ON r.registration_id=e.registration_id WHERE e.chunk_id=? "
+                "ON r.registration_id=e.registration_id JOIN evidence_envelopes en "
+                "ON en.evidence_id=e.evidence_id WHERE e.chunk_id=? "
                 "ORDER BY e.item_ordinal",
                 (chunk["chunk_id"],),
             ) as cursor:
                 items = tuple(await cursor.fetchall())
             if not items:
                 raise MemoryCorruptionError("short horizon chunk has no evidence")
+            group_key = (
+                str(chunk["subject"]),
+                str(chunk["primary_conversation_id"]),
+                str(chunk["causal_group_id"]),
+            )
+            expected_group = registrations_by_group.get(group_key)
+            if (
+                expected_group is None
+                or not self._short_horizon_group_is_complete(items)
+                or {str(row["registration_id"]) for row in items}
+                != {str(row["registration_id"]) for row in expected_group}
+            ):
+                raise MemoryCorruptionError("short horizon chunk causal group differs")
             content = "\n".join(f"{row['role']}: {row['public_text']}" for row in items)
             content_hash = hashlib.sha256(content.encode()).hexdigest()
             privacy = max(
@@ -9316,6 +9610,18 @@ class SQLiteHumanMemoryBackend:
             classification_refs = sorted(
                 {str(row["classification_authority_ref"]) for row in items}
             )
+            roles = [str(row["role"]) for row in items]
+            task_scope_ids = sorted(
+                {str(row["task_scope_id"]) for row in items if row["task_scope_id"] is not None}
+            )
+            entities = sorted(
+                {
+                    str(value)
+                    for row in items
+                    for value in canonical_array(row["entities_json"], "registration entities")
+                }
+            )
+            source_refs = [str(row["evidence_source_ref"]) for row in items]
             occurred_at = max(float(row["occurred_at"]) for row in items)
             payload = {
                 "subject": str(chunk["subject"]),
@@ -9335,6 +9641,13 @@ class SQLiteHumanMemoryBackend:
                 or str(chunk["public_text"]) != content
                 or str(chunk["content_hash"]) != content_hash
                 or str(chunk["effective_privacy_class"]) != privacy
+                or int(chunk["causal_group_sequence"])
+                != int(items[0]["causal_group_sequence"])
+                or canonical_array(chunk["roles_json"], "chunk roles") != roles
+                or canonical_array(chunk["task_scope_ids_json"], "chunk task scopes")
+                != task_scope_ids
+                or canonical_array(chunk["entities_json"], "chunk entities") != entities
+                or canonical_array(chunk["source_refs_json"], "chunk source refs") != source_refs
                 or canonical_array(chunk["information_attributes_json"], "chunk attributes")
                 != attributes
                 or canonical_array(
@@ -9344,6 +9657,12 @@ class SQLiteHumanMemoryBackend:
                 != classification_refs
                 or float(chunk["occurred_at"]) != occurred_at
                 or float(chunk["expires_at"]) != occurred_at + SHORT_HORIZON_RETENTION_SECONDS
+                or any(
+                    str(row["chunk_evidence_id"]) != str(row["evidence_id"])
+                    or str(row["chunk_evidence_envelope_hash"])
+                    != str(row["envelope_hash"])
+                    for row in items
+                )
             ):
                 raise MemoryCorruptionError("short horizon chunk projection differs")
 
