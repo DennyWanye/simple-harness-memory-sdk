@@ -29,6 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Semantic relation memory
+
+- Added fresh schema v7 knowledge relations with an exact canonical Semantic relation owner while preserving
+  existing immutable evolution relations.
+- Added strict atomic `applies_to` persistence for Semantic claim to Procedure/Prospective endpoints, including
+  same-plan exact endpoint resolution, fault rollback, replay, lifecycle and restart integrity gates.
+- Added the principal-scoped public committed mutation receipt view and display-only graph projection that
+  excludes relation memories as nodes and removes edges when the owner or either endpoint becomes ineligible.
+
 ### Human Memory audit access
 
 - Added the public fresh-v6 `build_human_memory_v6` manager facade, including evidence/conversation

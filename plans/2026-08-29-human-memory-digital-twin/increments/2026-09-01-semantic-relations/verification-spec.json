@@ -1,0 +1,193 @@
+{
+  "acceptance_file": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/acceptance.md",
+  "assurance_contract": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/assurance-contract.json",
+  "testcase_inventory": "/Users/denny/projects/simple_harness-memory-plan/testcase/index.json",
+  "reuse_report": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/testcase-reuse-report.json",
+  "obligations": [
+    {"obligation_id": "HM-TO-A2", "ac_ids": ["HM-AC-2", "HM-AC-6"]},
+    {"obligation_id": "HM-TO-A6", "ac_ids": ["HM-AC-6"]},
+    {"obligation_id": "HM-TO-A7", "ac_ids": ["HM-AC-7"]},
+    {"obligation_id": "HM-TO-A8", "ac_ids": ["HM-AC-8"]},
+    {"obligation_id": "HM-TO-R9", "ac_ids": ["HM-AC-2", "HM-AC-6", "HM-AC-7"]}
+  ],
+  "scenarios": [
+    {
+      "scenario_id": "REL-VALUE",
+      "required": true,
+      "testcase_ids": ["TC-HM-12"],
+      "gate_type": "positive-value",
+      "input_class": "exact-wheel-public-relation-value",
+      "ui": false,
+      "manual_required": false,
+      "min_root_runs": 1,
+      "cold_start": true,
+      "impact_paths": [
+        "src/simple_harness_memory/**",
+        "/Users/denny/projects/simple-harness-sdk-memory-program/src/simple_harness/**"
+      ],
+      "testcase_revisions": {"TC-HM-12": 3},
+      "oracle_pins": {
+        "testcase_sha256": "3565ffb286eb367dce7777990f92c81b5668ca2d269872e37a57bd8a3d876b96",
+        "fixture_revision": 1,
+        "fixture_sha256": "224d8f864eb52f285d96f957cd60a455b37eaa97e18fe1f36f8674d055b8f439",
+        "runner_sha256": "8a8d4bdc169f3cbc2e254f8b888d350e8e9245c749bad564ef8affa19ce3e1b0",
+        "adapter_sha256": "21209b70eb38de4e77635e1fb9edc4adeb1acdfc03cdb9e64f84f75f6492684e",
+        "candidate_harness_source_commit": "3e7a71af1dfea2e065530208225ac13fc5f17300",
+        "candidate_harness_wheel_sha256": "d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd",
+        "candidate_memory_source_commit": "64284059f9ee82d886d85151a95c542660d09c1a",
+        "candidate_memory_wheel_sha256": "844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e"
+      },
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe"],
+        "required_artifact_kinds": ["business-result", "execution-log"],
+        "required_identity": ["root_run_id", "candidate_harness_wheel_sha256", "candidate_memory_wheel_sha256"],
+        "required_timestamps": true,
+        "required_business_facts": [
+          "business_terminal",
+          "two_nodes_one_edge",
+          "relation_node_zero",
+          "suppression_reopen_zero_edge",
+          "package_root_public_only"
+        ]
+      }
+    },
+    {
+      "scenario_id": "REL-INTEGRITY",
+      "required": true,
+      "testcase_ids": ["TC-HM-08", "TC-HM-12"],
+      "gate_type": "negative-safety",
+      "input_class": "relation-admission-atomicity-replay-lifecycle-corruption",
+      "ui": false,
+      "manual_required": false,
+      "min_root_runs": 1,
+      "lanes": ["temporal-fault"],
+      "cold_start": true,
+      "impact_paths": [
+        "src/simple_harness_memory/**",
+        "/Users/denny/projects/simple-harness-sdk-memory-program/src/simple_harness/**"
+      ],
+      "testcase_revisions": {"TC-HM-08": 4, "TC-HM-12": 3},
+      "oracle_pins": {
+        "testcase_sha256": "550eb75cbd6901e02233f33368444c1ce317e9416f30f0dcc1df19f10947df2f",
+        "fixture_revision": 1,
+        "fixture_sha256": "fe03e8eaa283626766829689b6d46507a3b9f308986bb15702fdf65ede552d91",
+        "runner_sha256": "6ec3b646700eab44321630b1fb5dd185759a2d8cb62e35e6016c5ba7fc75055f",
+        "adapter_sha256": "f98ba55ed7d44170363bbac5de1e0b07fcc6f8e285a5913c7a55bf2a2e1956d8",
+        "candidate_harness_source_commit": "3e7a71af1dfea2e065530208225ac13fc5f17300",
+        "candidate_harness_wheel_sha256": "d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd",
+        "candidate_memory_source_commit": "64284059f9ee82d886d85151a95c542660d09c1a",
+        "candidate_memory_wheel_sha256": "844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e"
+      },
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe"],
+        "required_artifact_kinds": ["execution-log", "fault-recovery-log"],
+        "required_identity": ["root_run_id", "candidate_harness_wheel_sha256", "candidate_memory_wheel_sha256"],
+        "required_timestamps": true,
+        "required_business_facts": [
+          "business_terminal",
+          "recovered_state",
+          "verified_case_count_40",
+          "half_state_zero",
+          "raw_evidence_unchanged",
+          "corruption_fail_closed"
+        ]
+      }
+    },
+    {
+      "scenario_id": "REL-REGRESSION",
+      "required": true,
+      "testcase_ids": ["TC-HM-08", "TC-HM-12"],
+      "gate_type": "negative-safety",
+      "input_class": "cross-repository-full-regression",
+      "ui": false,
+      "manual_required": false,
+      "min_root_runs": 1,
+      "impact_paths": [
+        "src/simple_harness_memory/**",
+        "/Users/denny/projects/simple-harness-sdk-memory-program/src/simple_harness/**"
+      ],
+      "testcase_revisions": {"TC-HM-08": 4, "TC-HM-12": 3},
+      "oracle_pins": {
+        "runner_sha256": "9a965002079b44bb694a74c1c570d6f76c36c3b58bde22515405cd2c3bfdaabe"
+      },
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe"],
+        "required_artifact_kinds": ["execution-log"],
+        "required_identity": ["root_run_id"],
+        "required_timestamps": true,
+        "required_business_facts": [
+          "business_terminal",
+          "harness_full_regression",
+          "memory_full_regression",
+          "oracle_self_checks"
+        ]
+      }
+    }
+  ],
+  "manifest": {
+    "repo_root": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan",
+    "source_request_text": "采用，记得使用更新过的plan-test skill来继续做",
+    "flow_tier": {
+      "value": "FULL",
+      "rationale": "新增跨仓公共协议、fresh 持久化 schema、原子关系状态机、故障恢复与永久 evidence 完整性门",
+      "decided_by": "user"
+    },
+    "applicability": {
+      "input_sensitive": {
+        "value": false,
+        "rationale": "本增量只验证冻结的 typed relation plan 与确定性 SDK 行为；自然语言提取质量留待真实主模型门",
+        "decided_by": "user"
+      },
+      "llm_payload_driven": {
+        "value": false,
+        "rationale": "生产上由 LLM 提案，但本增量输入是预冻结的严格 v5 payload；不把 provider 质量纳入 SDK slice",
+        "decided_by": "user"
+      },
+      "stateful_init": {
+        "value": true,
+        "rationale": "fresh schema v7、原子 relation write、close/reopen、fault replay 与 corruption 都是本增量核心",
+        "decided_by": "user"
+      }
+    },
+    "release_unit": {
+      "slice_id": "S3-T6-RELATION",
+      "parent_program": "human-memory-digital-twin",
+      "scope_hash": "8c9d56b2e4407e11238fa2a163d17095795195c2c41bc4c8c77bdf69b0a70f9c",
+      "must_ac_count": 4,
+      "task_count": 7,
+      "plan_lines": 251,
+      "high_risk_subsystems": 3,
+      "concurrent_layer_kinds": 3
+    },
+    "testcase_revision_pins": {
+      "TC-HM-08": 4,
+      "TC-HM-12": 3
+    },
+    "semantic_relation_oracle_pins": {
+      "candidate_harness": {
+        "distribution": "simple-harness-sdk",
+        "version": "0.7.0",
+        "source_commit": "3e7a71af1dfea2e065530208225ac13fc5f17300",
+        "wheel_sha256": "d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd"
+      },
+      "candidate_memory": {
+        "distribution": "simple-harness-memory-sdk",
+        "version": "0.6.0",
+        "source_commit": "64284059f9ee82d886d85151a95c542660d09c1a",
+        "wheel_sha256": "844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e"
+      },
+      "public_runner_sha256": "8a8d4bdc169f3cbc2e254f8b888d350e8e9245c749bad564ef8affa19ce3e1b0",
+      "integrity_runner_sha256": "6ec3b646700eab44321630b1fb5dd185759a2d8cb62e35e6016c5ba7fc75055f",
+      "regression_runner_sha256": "9a965002079b44bb694a74c1c570d6f76c36c3b58bde22515405cd2c3bfdaabe",
+      "host_pre_admission_audit": "NOT_RUN/BLOCKED_UNTIL_S5",
+      "real_llm_quality": "NOT_RUN/BLOCKED"
+    },
+    "cross_repo_impact_map": {
+      "memory_sdk": "src/simple_harness_memory/**",
+      "harness_sdk": "/Users/denny/projects/simple-harness-sdk-memory-program/src/simple_harness/**",
+      "testcase_oracle": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/**"
+    },
+    "executor_engine": "codex",
+    "auditor_engine": "independent-codex-agent"
+  }
+}

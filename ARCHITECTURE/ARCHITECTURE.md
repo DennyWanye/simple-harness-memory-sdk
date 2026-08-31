@@ -3,18 +3,19 @@
 # ARCHITECTURE — simple-harness-memory-sdk（v0.6.0 candidate）
 
 > 最后更新：2026-09-01
-> 当前事实：Human Memory V0/S1/S2 与 S3 Task 1/2/3/4/5/7 已闭合；S3 Task 6 因 exact-wheel
-> black-box 证明缺少一等语义关系 proposal/seed contract 而重开。Host/UI 接线与最终 candidate packaging
-> 尚未完成。旧 Agent Memory v1 能力仍保留，但不是新认知 mutation 的 authority。
+> 当前事实：Human Memory V0/S1/S2 与 S3 Task 1–7 的 SDK 范围已闭合；S3 Task 6 已补齐一等
+> `applies_to` 语义关系 proposal、原子持久化、公开收据视图与 display-only graph 投影。Host/UI 接线、
+> Host durable pre-admission audit 与最终 candidate packaging 尚未完成。旧 Agent Memory v1 能力仍保留，
+> 但不是新认知 mutation 的 authority。
 
 ## Human Memory Program 当前边界（2026-09-01）
 
 以下是 0.6 candidate 的已验证生产边界：
 
-- fresh `human-memory-v1` schema v6 保存不可覆盖的原始 evidence、conversation registration、suppression、
+- fresh `human-memory-v1` schema v7 保存不可覆盖的原始 evidence、conversation registration、suppression、
   durable analysis，以及 Episode、Semantic、Procedure、Prospective 四类 typed revision/head/relation。Working
   Memory 仍只存在于运行 Context，不建立长期存储表。
-- `MemoryMutationPlan` 只接受 Harness mutation schema v4；四类 payload、生命周期、epistemic/conflict/
+- `MemoryMutationPlan` 只接受 Harness mutation schema v5；Semantic payload 显式区分 claim/relation，四类 payload、生命周期、epistemic/conflict/
   verification/valid-time、classification 与 TaskScope origin 在同一 strict-atomic transaction 落库。
 - CREATE 依靠 exact admitted evidence 与 Memory classification policy；修改既有记忆的 REVISE、SUPERSEDE、
   SUPPRESS 必须解析 Host `MemoryActionAuthority` schema v2，并精确绑定 subject、whole plan intent、canonical
@@ -64,31 +65,25 @@
   correction/forget capability；confidence 是明确的确定性展示 heuristic，不反写 canonical record，也不参与 eligibility、
   recall、ranking、Context 或 action authority。关系只有在同 deployment/household/principal 的两个可见 current endpoint
   都存在时才展示。
-- 当前 `cognitive_relations` 只由 REVISE/SUPERSEDE/CONTEST/SUPPRESS mutation 自动生成 `amends`、
-  `supersedes`、`contests`、`relates_to` **mutation-evolution lineage rows**。这类行继续由新/旧 canonical
-  revision、plan 与 operation 共同拥有，不伪装成独立 Semantic relation memory。Harness schema v4 的 Semantic payload
-  没有 canonical endpoint specification，Memory package root/Manager 也没有独立语义关系 admission；因此 clean-wheel
-  consumer 无法合法创建 `supports`、`applies_to` 等知识关系。单元层直接构造 `TwinGraphRelationInput` 只证明 builder，
-  不能证明生产写入链。
-  新增的 **Semantic knowledge-relation derivative rows** 必须与上述演变行有数据库级 discriminator（显式
-  `relation_domain` + CHECK，或等价拆表），并且 knowledge kind 必须且只能 hash-bound 回指 owning Semantic relation
-  memory 的 exact `memory_id/revision`；不得用 nullable owner + 应用层惯例放行 knowledge row，也不得要求 evolution row
-  伪造 relation-memory owner。relation memory revision 复用普通记忆的 evidence、classification、epistemic、lifecycle、
-  revision/conflict/suppression 与审计状态；knowledge row 只是同一事务由确定性代码生成的派生索引，不能拥有独立状态机，
-  也不能由 LLM 或 UI 直写。普通图谱只有在 relation memory 与两个 exact endpoint 都通过 ordinary projection policy，
-  且 owning relation revision 与两个 endpoint revision 均不属于 unresolved/contested conflict 时才发 knowledge edge；
-  并只排除 knowledge relation memory 自身成为重复 node。该 non-contested gate 只作用于 knowledge row，现有
-  evolution `contests` edge 与 conflict nodes/edges 不因该过滤被删除。两类 edge 都继续要求 exact endpoint 可见。
-  该缺口已由 2026-09-01 用户批准的增量 AC 重开 Task 6；在 exact-wheel 价值 smoke 通过前，“知识图谱关系能力完成”
-  不得作为生产事实。
+- `cognitive_relations` 以数据库 CHECK/FK 区分 `relation_domain=evolution|knowledge`。既有
+  `amends/supersedes/contests/relates_to` evolution rows 保持 owner=NULL 与旧 immutable lineage；knowledge rows
+  必须由 exact Semantic relation memory revision 拥有。V1 只允许 `applies_to`，source 为 Semantic claim，target 为
+  Procedure/Prospective，禁止 self-loop、relation-as-endpoint、跨 principal 或 stale endpoint。
+- LLM 只能在 strict v5 `MemoryMutationPlan` 中提出 relation operation；Memory 在一个事务内把 same-plan created refs
+  解析为 exact revision，写 canonical relation memory、knowledge derivative、receipt/decision/evidence/audit/root。
+  public `get_memory_mutation_receipt_view` 返回当前 principal 拥有的 bounded exact operation bindings，使 clean-wheel
+  consumer 无需 private import/SQL 即可核对 relation owner、endpoints、classification、evidence 与 hash。
+- relation memory 复用普通 Semantic 的 evidence、classification、epistemic、lifecycle、revision/conflict/suppression。
+  ordinary graph 仅在 owner/source/target 全部 current、active、uncontested、未过期、未 suppression 且可展示时发 edge；
+  relation memory 自身不成为 node。失效后 edge 立即退出，close/reopen 不复活；evolution edge 语义不变。
 - ordinary projection policy 在构图前执行 current-head、active/inferred lifecycle、half-open validity、完整 conflict group
   与 suppression gate。RESTRICTED 记录及 incident edge 完全不可见；SENSITIVE/敏感 attribute 仅显示固定 generic label，
   tooltip/edge/source refs 不携带内容或原始 evidence/span ID。suppressed、superseded、expired 或不完整 conflict group 不得
   通过 label、tooltip、hash-only refs 或 relation 泄露。
 - 架构测试固定单向依赖：`core.recall` 不得 import twin projection，`cognitive.twin_builder` 不得 import Host runtime、
   recall candidate、Context fragment、ranking 或 current-use authorization。DTO 没有到 recall/context/action 的转换方法。
-- 本 program 不迁移旧内容数据；schema v6 必须 fresh 初始化，旧数据库由 loader 稳定拒绝。
-- `build_human_memory_v6` 是 fresh v6 的公开构造入口，返回单一 `MemoryManager` facade。consumer 可经该
+- 本 program 不迁移旧内容数据；schema v7 必须 fresh 初始化，旧数据库由 loader 稳定拒绝。
+- `build_human_memory_v7` 是 fresh v7 的公开构造入口；`build_human_memory_v6` 仅为同一路径的兼容别名。consumer 可经该
   facade 完成 evidence/conversation admission、mutation、suppression/revoke、typed recall、display graph、
   trace、metrics 与 manifest，不需要导入 `sqlite_v5` 或读取 backend connection。suppression request/decision/
   scope enums、classification policy/effective result 与 stable evidence receipt/record DTO 均从 package root
@@ -149,11 +144,12 @@ src/simple_harness_memory/
   返回 degraded/closed schema 而不影响业务。禁止查询 content、result_payload、fact value、embedding、
   文件 path 或 exception repr；recent error codes 最多 20 项，age clamp 为非负值。
 
-## Fresh schema v6 与 identity/scope
+## Fresh Human Memory schema v7 与 identity/scope
 
-- SQLite 只接受 fresh v6/checksum；旧版本、缺 meta 或未知 checksum 漂移均
+- Human Memory builder 只接受 fresh v7/checksum；旧版本、缺 meta 或未知 checksum 漂移均
   `MemorySchemaIncompatible`，不执行内容迁移或删除。历史文件名 `schema_v5.py`/`sqlite_v5.py` 仅为内部路径兼容，
-  initialization receipt、probe 与 runtime 错误均声明 v6。
+  initialization receipt、probe 与 runtime 错误均声明 v7；standalone `MemoryManager.build()` 仍维持独立的 v4
+  compatibility store，不能与 Human Memory schema 混读。
 - sessions/messages/facts/recall snapshots/receipts/jobs/erasure state 全链路保存
   deployment/household/actor/session/scope_kind/scope_owner；sessions主键为deployment+session，turn receipt
   主键为deployment+turn，允许不同deployment复用外部ID；同一deployment内的household/actor/session

@@ -227,6 +227,10 @@ action 遗忘已删除 fact 返回并持久化稳定 `False` no-op。同 action 
 - Human Memory only accepts fresh schema v7/checksum through `build_human_memory_v7`; it never
   upgrades legacy content in place. `MemoryManager.build()` remains the standalone v4 compatibility
   builder. `build_human_memory_v6` remains a compatibility alias for fresh callers.
+- Harness mutation schema v5 可在同一 strict-atomic plan 中创建 Semantic claim、Procedure/Prospective 与
+  `applies_to` Semantic relation memory。`MemoryManager.get_memory_mutation_receipt_view()` 提供 principal-scoped、
+  bounded 的 committed operation bindings；普通 Digital Twin graph 只投影 owner 与两个 exact endpoints 均可展示的
+  relation，relation memory 本身不重复成为 node。
 - SQLite 接受 fresh schema v4；v3/未知 version/checksum 一律 fail-fast。仅已发布且可识别的早期 v4
   recall-snapshot 全局键缺陷会在同一事务内修复为 deployment-scoped key；内容迁移仍只允许显式 migrator。
 - v4 全链路保存 deployment/household/actor/session 与 personal/family scope；session 和 turn receipt

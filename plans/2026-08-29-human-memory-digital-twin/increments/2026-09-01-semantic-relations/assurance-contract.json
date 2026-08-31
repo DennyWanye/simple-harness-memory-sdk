@@ -1,0 +1,87 @@
+{
+  "profile": "standard",
+  "acceptance_ids": ["HM-AC-2", "HM-AC-6", "HM-AC-7", "HM-AC-8"],
+  "protected_assets": [
+    {
+      "id": "ASSET-RELATION-TRUTH",
+      "description": "关系命题的 evidence、主体、exact endpoints、classification、epistemic 和 lifecycle 真实性"
+    },
+    {
+      "id": "ASSET-RELATION-ATOMICITY",
+      "description": "canonical relation memory、derivative row、receipt、manifest 与 audit 的原子一致性"
+    },
+    {
+      "id": "ASSET-RAW-EVIDENCE",
+      "description": "所有已提交原始 evidence 的不可物理删除与 byte-identical 可复查性"
+    },
+    {
+      "id": "ASSET-DISPLAY-ONLY-TWIN",
+      "description": "普通图谱只显示 eligible 关系且不反向进入 recall、Context、回答或工具控制"
+    }
+  ],
+  "trusted_assumptions": [
+    {
+      "id": "TRUST-LOCAL-HOST",
+      "description": "本地开发者账户、OS/kernel 与绝对路径 Python/uv 程序可信"
+    },
+    {
+      "id": "TRUST-AUTH-CONTEXT",
+      "description": "Host 传入的 authenticated principal 可信，所有 relation 权限与状态仍由 SDK 确定性验证"
+    },
+    {
+      "id": "TRUST-FRESH-DATA-DIR",
+      "description": "本原型增量使用全新 schema-7 数据库，不承担旧数据迁移"
+    }
+  ],
+  "in_scope_failures": [
+    {
+      "id": "FAIL-RELATION-INTEGRITY",
+      "description": "非法、过期、跨主体、无证据、受限或已失效 relation 进入 canonical state 或 ordinary graph"
+    },
+    {
+      "id": "FAIL-HALF-STATE",
+      "description": "解析、验证、事务、重放或重启故障留下半个 relation memory、孤边或不一致 receipt"
+    },
+    {
+      "id": "FAIL-DATA-LOSS",
+      "description": "suppression、maintenance、test cleanup 或恢复路径物理删除或覆盖原始 evidence"
+    },
+    {
+      "id": "FAIL-PROTOCOL-REPLAY",
+      "description": "Harness v5/Memory v7 协议漂移、operation-local ref 或 hash 不稳定导致错误重放"
+    },
+    {
+      "id": "FAIL-TWIN-INFLUENCE",
+      "description": "relation projection 泄露 restricted/stale 数据或反向改变 Agent recall/Context"
+    }
+  ],
+  "in_scope_adversaries": [
+    {
+      "id": "ADV-LLM-OUTPUT",
+      "description": "LLM relation plan 可乱序、重复、错枚举、缺依赖、跨主体、过长或语义错误"
+    },
+    {
+      "id": "ADV-CORRUPT-DERIVATIVE",
+      "description": "derivative relation row 或 owner/domain/FK/hash 可因故障或人工损坏而与 canonical state 不一致"
+    }
+  ],
+  "out_of_scope_conditions": [
+    {
+      "id": "OOS-HOST-PREADMISSION-AUDIT",
+      "description": "Harness parser failure 的 Host durable audit 实装留待 S5；本增量只冻结 diagnostic/port contract"
+    },
+    {
+      "id": "OOS-REAL-LLM-QUALITY",
+      "description": "真实主模型是否能从自然语言稳定提出正确 relation plan"
+    },
+    {
+      "id": "OOS-UI-AGENT-INTEGRATION",
+      "description": "桌面 UI、图谱视觉美化以及图参与 Agent 行为"
+    },
+    {
+      "id": "OOS-LEGACY-MIGRATION",
+      "description": "schema 6 或任何旧数据的迁移、兼容读取与降级"
+    }
+  ],
+  "maximum_acceptable_impact": "任意不确定或非法 relation 必须 fail-closed；允许拒绝派生写入，但不得丢失原始 evidence、留下孤边、泄露不可展示关系或影响 Agent 行为。"
+}

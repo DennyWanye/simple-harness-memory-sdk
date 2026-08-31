@@ -2,11 +2,11 @@
   "schema_version": "1.0",
   "historical_pass_inherited": false,
   "testcase_challenge": {
-    "iterations": 3,
+    "iterations": 8,
     "final_verdict": "PASS",
-    "reviewer": "relation_audit_specialist",
-    "evidence": "verification/testcase-iteration-03.md",
-    "remaining_product_gate": "NOT_RUN/BLOCKED"
+    "reviewer": "task5_closure_challenge",
+    "evidence": "verification/testcase-iteration-08.md",
+    "remaining_product_gate": "PASS_EXACT_WHEEL_SDK_SCOPE"
   },
   "decisions": [
     {
@@ -51,12 +51,12 @@
       "decision": "reuse-with-extension",
       "from_revision": 3,
       "to_revision": 4,
-      "content_sha256": "188e393e9eaae0a88d02342d8e6b85e13ea34f8a7985b8ace78cec5f09b789bc",
+      "content_sha256": "550eb75cbd6901e02233f33368444c1ce317e9416f30f0dcc1df19f10947df2f",
       "relation_integrity_fixture": "semantic-relation-integrity-v1.json@rev1",
-      "relation_integrity_fixture_sha256": "e56b8f88e0ed91a03a7b093c0d615a1b290089bd28464d4d9b8790b1552d8172",
-      "integrity_runner_sha256": "1429e8fc06e78571917cc2e514f66db55a936d97d715ec60a772f05970d32bd8",
-      "candidate_identity_status": "PENDING_POST_BUILD_PIN",
-      "quality_gate": "NOT_RUN/BLOCKED",
+      "relation_integrity_fixture_sha256": "fe03e8eaa283626766829689b6d46507a3b9f308986bb15702fdf65ede552d91",
+      "integrity_runner_sha256": "6ec3b646700eab44321630b1fb5dd185759a2d8cb62e35e6016c5ba7fc75055f",
+      "candidate_identity_status": "PINNED",
+      "quality_gate": "PASS_40_OF_40_EXACT_WHEEL",
       "host_pre_admission_audit": "NOT_RUN/BLOCKED_UNTIL_S5",
       "reason": "Reuse the existing invalid-plan and fault-recovery journey for relation admission, atomicity, replay, lifecycle and restart integrity."
     },
@@ -65,12 +65,12 @@
       "decision": "reuse-with-extension",
       "from_revision": 2,
       "to_revision": 3,
-      "content_sha256": "68009b52bb07d6458d147b8a9657955aea10fa28c0ef2bde356c2d687aadb32e",
+      "content_sha256": "3565ffb286eb367dce7777990f92c81b5668ca2d269872e37a57bd8a3d876b96",
       "relation_fixture": "semantic-relations-v1.json@rev1",
-      "relation_fixture_sha256": "f4aab67c16fee324a6a257b6ede409be02d3477246025d57cb17f4bc6fda0f02",
-      "runner_sha256": "c797ce8d87e0738824adada8ed6286155b23b55b6bcbdd2db520104fa3050ae3",
-      "candidate_identity_status": "PENDING_POST_BUILD_PIN",
-      "quality_gate": "NOT_RUN/BLOCKED",
+      "relation_fixture_sha256": "224d8f864eb52f285d96f957cd60a455b37eaa97e18fe1f36f8674d055b8f439",
+      "runner_sha256": "8a8d4bdc169f3cbc2e254f8b888d350e8e9245c749bad564ef8affa19ce3e1b0",
+      "candidate_identity_status": "PINNED",
+      "quality_gate": "PASS_EXACT_WHEEL_PUBLIC_MANAGER",
       "reason": "Freeze behavior and public choreography before implementation; pin exact candidate identities only after reproducible builds."
     }
   ]

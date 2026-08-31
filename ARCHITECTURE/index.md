@@ -1,7 +1,7 @@
 # ARCHITECTURE 索引
 
 本目录是 simple-harness-memory-sdk 的当前架构事实源。当前 **0.6.0 source candidate**
-新增 fresh `human-memory-v1` schema v6 的 immutable evidence、append-only suppression/audit、durable analysis
+新增 fresh `human-memory-v1` schema v7 的 immutable evidence、append-only suppression/audit、durable analysis
 四阶段 authority、四类认知记录的 strict mutation/classification/action-authority 事务底座，以及 strict v4 typed
 RecallPlan 执行与最终使用 authority，以及严格 display-only 的 Digital Twin graph projection，并精确依赖
 Harness `>=0.7,<0.8`。0.6 不再默认实例化 regex fact
@@ -12,12 +12,12 @@ extractor，不导出物理会话删除 API；旧 v4 Message/Fact 类型和私�
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 包结构、分层、本地后端与召回/认知/世界对象的生产边界 |
 
-Human Memory Program 当前闭合到 S3 Task 7，但 Task 6 因生产关系写入缺口重开：长期认知与五天 Short-Horizon 统一进入 typed recall eligibility、
+Human Memory Program 的 SDK 范围当前闭合到 S3 Task 7：长期认知与五天 Short-Horizon 统一进入 typed recall eligibility、
 disclosure、lane-cap/weighted-RRF、去重和 provider-visible budget；durable request/attempt/decision/result/terminal
 ledger 支持 exact replay、reopen hash rebuild、atomic confirmation、result-bound page-in 与 final current-use fence；
 Digital Twin graph 从 canonical current cognitive records/relation rows 按普通展示 policy 即时重建，且 API/依赖
-方向禁止它进入 recall、ranking、Context 或动作 authority；但现有公开协议只能产生 mutation 演化边，不能从
-exact-wheel 根 API 创建知识语义边，故 Task 6 仍未完成。resolver-backed sealed audit、MEMORY lineage trace、
+方向禁止它进入 recall、ranking、Context 或动作 authority。Harness v5 + Memory v7 已从 exact-wheel package root
+原子创建一等 `applies_to` relation memory，并通过 owner/endpoint 状态门投影知识边。resolver-backed sealed audit、MEMORY lineage trace、
 ordinary-visible metrics 与 canonical state manifest 均通过 public v6 Manager facade 提供。Host/UI 接线仍未实现。
 
 <!-- last-updated: 2026-09-01 -->
