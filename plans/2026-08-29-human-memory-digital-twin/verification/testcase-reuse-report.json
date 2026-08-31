@@ -7,11 +7,11 @@
       "decision": "reuse-with-extension",
       "from_revision": 2,
       "to_revision": 3,
-      "content_sha256": "061bbb1f7c1e495d44fa202ffb8abdcde3fc91a04d2a2a1082a097b007c7d41b",
+      "content_sha256": "00c333f8f76e5bacf27f4e6f5323bf40fd72c30f5fe2c1592b8c588d90906a4f",
       "fixture": "typed-recall-v3.json@rev3",
-      "fixture_sha256": "92202927c9817c8a1fc2eed2f26751ac8971b52452144bebc5e8c545e9a79e10",
-      "fault_fixture_sha256": "c67881ae20a3f6b442f1ac46db9e6e9a472edc3ec09079e8a42ef219e9b6bc6b",
-      "runner_sha256": "85cd4d61005d818fa6dca6bdea451606b2e8841af6a671dc269dc2ee6e724a1f",
+      "fixture_sha256": "373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12",
+      "fault_fixture_sha256": "b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da",
+      "runner_sha256": "61cd4dd7c3e5fa9c5ac6fa0765a8051c2cdf90a50461af71b26e3d14c153afcb",
       "harness_candidate": {"distribution": "simple-harness-sdk", "version": "0.7.0", "source_commit": "fb491574db8bb4d19d8a7f9df0c72ae460bb08f4", "wheel_sha256": "36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f"},
       "memory_candidate": {"status": "PINNED", "distribution": "simple-harness-memory-sdk", "version": "0.6.0", "source_commit": "9c79fa7ed96214aac7de93a11970e02891afedae", "wheel_sha256": "cd324e68aa851e0cb7940b44bfe0bbf1b3a5cbb33a6803e035ab503e1760de1c"},
       "reason": "iteration-002 保持一个最小 testcase 文档，新增逐 cell/hash/freshness public runner、完整 authority receipt hash、conflict/eligibility 负边界、全 tie-break/vector degrade/rich projection 和 exact candidate identity pin。历史 PASS 不继承。"
@@ -21,7 +21,7 @@
       "decision": "reuse-with-extension",
       "from_revision": 2,
       "to_revision": 3,
-      "content_sha256": "6a13709034f88172d4327cb58777e12774543e00c504a5e6c29b7a4f8672308a",
+      "content_sha256": "ca969d1e62ea88146973d59fa1eb5176642da3e0ec3a1cb431f3bf6f2d2d05a9",
       "reason": "fault-matrix revision 2 hash pin propagated atomically."
     },
     {
@@ -29,7 +29,7 @@
       "decision": "reuse-with-extension",
       "from_revision": 2,
       "to_revision": 3,
-      "content_sha256": "ee37aa50ac1d9538fcb785e7eddb170ca9eaadf83363ff06c08542e7f40a2457",
+      "content_sha256": "604db3d72b2770e5d70e25945eaef6d722eee99cb1784a7983789566c3730e12",
       "reason": "fault-matrix revision 2 hash pin propagated atomically."
     },
     {
@@ -37,7 +37,7 @@
       "decision": "reuse-with-extension",
       "from_revision": 2,
       "to_revision": 3,
-      "content_sha256": "824c70d9ac5838af473f8cd4c65be5911d5b9f2b410ea9f1ff74b96dc10fc172",
+      "content_sha256": "b889111694c8825657b185ab32ad6b654bbb50279d1ad1ab704b3cc317c0504f",
       "reason": "fault-matrix revision 2 hash pin propagated atomically."
     },
     {
@@ -45,7 +45,7 @@
       "decision": "reuse-with-extension",
       "from_revision": 2,
       "to_revision": 3,
-      "content_sha256": "9ce33e91bf209a0da71e8fd673cfe7ebb87e5343a5c977403f0407854ddf0948",
+      "content_sha256": "3c9b0fdd053a2fa7d5a3f5151dc3c098b2792754dd2161ec7b7b00f2a283fdb1",
       "reason": "fault-matrix revision 2 hash pin propagated atomically."
     },
     {
@@ -53,7 +53,7 @@
       "decision": "reuse-with-extension",
       "from_revision": 2,
       "to_revision": 3,
-      "content_sha256": "b95ea2f23310cd347bf7a95b7cf35be5bdd3a5f33fbd6b1ca327e1bcdd247b71",
+      "content_sha256": "72deb121c615b8a0bfff4c8860f0ab1c4a17e19735d538b4307fbe62367db7fb",
       "reason": "fault-matrix revision 2 hash pin propagated atomically."
     },
     {
@@ -61,8 +61,21 @@
       "decision": "reuse-with-extension",
       "from_revision": 3,
       "to_revision": 4,
-      "content_sha256": "7a28778ef9a3254fa4b67b56132922329e470bea62f14363282a7caacdd653ab",
+      "content_sha256": "aaec15d4e2b1c61280d4bdcd995d9a34102c0f7d99a97ed6d7dc4fbc3a8010e8",
       "reason": "typed-recall revision 3 fixture, runner, fault fixture, and both candidate identities pinned atomically."
+    },
+    {
+      "testcase_id": "TC-HM-12",
+      "decision": "reuse-with-extension",
+      "from_revision": 1,
+      "to_revision": 2,
+      "content_sha256": "cef6d9e4d28fe347e77eeb0d3c55b45117dc6f775d32446ae1fd4ea1377a8e1b",
+      "fixture": "twin-graph-v1.json@rev1",
+      "fixture_sha256": "b79932d076e38dee4f97bca782444751a2c5c8f714771e1d47c99aae3c810f4b",
+      "runner_sha256": "c370d6731e9be5254591fdfba163c14a9452a63d0c44468a3ec7555c08850ed2",
+      "memory_candidate": {"status": "PENDING_TASK6_FINAL_PIN", "distribution": "simple-harness-memory-sdk", "version": null, "source_commit": null, "wheel_sha256": null},
+      "public_manager_seed_contract": {"status": "PENDING_TASK6_PUBLIC_SEED_API_PIN", "graph_method": "get_twin_graph_view"},
+      "reason": "扩展已有最小 hybrid 用例，冻结 display-only graph DTO/hash/privacy/correction/forget/rebuild oracle；canonical DB 必须由 package-root public Manager/backend API 建立，identity/seed contract 缺失保持 NOT_RUN/BLOCKED。"
     }
   ],
   "legacy_testcase_dispositions": [
@@ -115,14 +128,14 @@
       "obligation_id": "HM-TO-A6",
       "decision": "create-new",
       "candidates": [],
-      "selected_testcases": ["TC-HM-02@rev1", "TC-HM-11@rev3", "TC-HM-12@rev1"],
+      "selected_testcases": ["TC-HM-02@rev1", "TC-HM-11@rev3", "TC-HM-12@rev2"],
       "reason": "需要冻结最近十因果组、预算化 Context、可重建有界视图与 display-only twin 的联合 oracle。"
     },
     {
       "obligation_id": "HM-TO-A7",
       "decision": "create-new",
       "candidates": [],
-      "selected_testcases": ["TC-HM-02@rev1", "TC-HM-07@rev1", "TC-HM-12@rev1", "TC-HM-13@rev3"],
+      "selected_testcases": ["TC-HM-02@rev1", "TC-HM-07@rev1", "TC-HM-12@rev2", "TC-HM-13@rev3"],
       "reason": "旧日志用例未覆盖全部 LLM decision、受控审计读取、typed decision/result/page/use binding 和 canonical facts 到六视图的 lineage。"
     },
     {
@@ -150,7 +163,7 @@
       "obligation_id": "HM-TO-R3",
       "decision": "create-new",
       "candidates": [],
-      "selected_testcases": ["TC-HM-03@rev3", "TC-HM-06@rev1", "TC-HM-07@rev1", "TC-HM-10@rev1", "TC-HM-12@rev1", "TC-HM-13@rev3"],
+      "selected_testcases": ["TC-HM-03@rev3", "TC-HM-06@rev1", "TC-HM-07@rev1", "TC-HM-10@rev1", "TC-HM-12@rev2", "TC-HM-13@rev3"],
       "reason": "跨 recipient、contested/superseded/suppressed、旧 checkpoint、Context、page-in 和图谱的 stale privacy 风险没有旧统一 oracle；TC-HM-13 冻结完整/残缺冲突组零泄露和使用时再授权。"
     },
     {
@@ -164,7 +177,7 @@
       "obligation_id": "HM-TO-R5",
       "decision": "create-new",
       "candidates": [],
-      "selected_testcases": ["TC-HM-06@rev1", "TC-HM-07@rev1", "TC-HM-12@rev1", "TC-HM-13@rev3", "TC-HM-X01@rev4"],
+      "selected_testcases": ["TC-HM-06@rev1", "TC-HM-07@rev1", "TC-HM-12@rev2", "TC-HM-13@rev3", "TC-HM-X01@rev4"],
       "reason": "受控审计、typed decision/result/page/use lineage、普通导出与 credentials/hidden reasoning 全域零命中必须合并验证。"
     },
     {
@@ -178,7 +191,7 @@
       "obligation_id": "HM-TO-R7",
       "decision": "create-new",
       "candidates": ["TC-GS-04", "TC-GS-05"],
-      "selected_testcases": ["TC-HM-02@rev1", "TC-HM-10@rev1", "TC-HM-11@rev3", "TC-HM-12@rev1"],
+      "selected_testcases": ["TC-HM-02@rev1", "TC-HM-10@rev1", "TC-HM-11@rev3", "TC-HM-12@rev2"],
       "reason": "取消 Session 边界后要专门证明多任务交错、最近窗口、短时域和 display projection 不串线。"
     },
     {

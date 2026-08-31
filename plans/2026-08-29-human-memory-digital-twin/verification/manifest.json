@@ -44,9 +44,9 @@
     "input_hashes": {
       "acceptance": "ab4dbe080e27ab4a29bf4be74b539363b489f9ad165eadf748fb3b8019cbc067",
       "assurance_contract": "d828f016110bd876c364c9b17fdf2c316557988a7be6f8195d25aa0eb1b3e6a8",
-      "reuse_report": "23ee019f22a742a99b1ef7b1676967631bf6e36cbab7739c6f4ff8927617cc94",
-      "testcase_inventory": "96c2c37c06f104f1c29a3d28a26a8b93d0d7bff18c55ebe5478adc46fdce975e",
-      "verification_spec": "1201978e90186a3b61d7fdf4126c61885c212c047667dedfaaba4133b1df5f37"
+      "reuse_report": "fa91d69f8467edf85cc8f3159e9a3fef74b0ede661f229ee726fa2ed3a4ec51c",
+      "testcase_inventory": "9d8a7fbec972786380361f435921d64f793f076258e6eda398388704b59c13e3",
+      "verification_spec": "7c0eb4587d3ef9b1cff2aac36459cd6f3e68813f929771662c05cc91960d6562"
     },
     "input_paths": {
       "acceptance": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/acceptance.md",
@@ -55,7 +55,7 @@
       "testcase_inventory": "/Users/denny/projects/simple_harness-memory-plan/testcase/index.json",
       "verification_spec": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/verification/verification-spec.json"
     },
-    "seal_sha256": "ee042603394194fb29e335897573f21b4f7637354a28637756de99accfc964a9",
+    "seal_sha256": "7ab458f3b938a0f6caf86971df52046986899cf83745058256c12a6bba2a3fc0",
     "selected_testcase_ids": [
       "TC-GS-03",
       "TC-GS-04",
@@ -535,31 +535,62 @@
         ],
         "required_artifact_kinds": [
           "business-result",
+          "execution-log",
+          "graph-result",
+          "context-snapshot-diff",
           "ui-capture"
         ],
         "required_business_facts": [
           "business_terminal",
-          "graph_influence_zero"
+          "testcase_revision",
+          "testcase_content_sha256",
+          "fixture_revision",
+          "fixture_sha256",
+          "runner_sha256",
+          "public_manager_backend_seed_calls",
+          "canonical_rows_not_passed_to_graph_method",
+          "exact_node_edge_dto_and_payload_hash",
+          "active_contested_inferred_visible",
+          "suppressed_superseded_expired_restricted_absent",
+          "sensitive_label_edge_tooltip_canary_hits_zero",
+          "correction_forget_rebuild_current_view",
+          "source_refs_and_correction_forget_capabilities",
+          "graph_influence_zero_independent_host_probe",
+          "graph_only_marker_context_hits_zero"
         ],
         "required_identity": [
           "root_run_id",
-          "session_id"
+          "session_id",
+          "candidate_memory_wheel_sha256",
+          "candidate_memory_source_commit"
         ],
         "required_timestamps": true
       },
       "gate_type": "positive-value",
       "impact_paths": [
-        "backend/**",
-        "src/**"
+        "src/simple_harness_memory/**",
+        "/Users/denny/projects/simple_harness/backend/**"
       ],
       "input_class": "display-only-digital-twin",
       "manual_required": true,
       "min_root_runs": 2,
+      "oracle_pins": {
+        "candidate_memory_identity_status": "PENDING_TASK6_FINAL_PIN",
+        "fixture_revision": 1,
+        "fixture_sha256": "b79932d076e38dee4f97bca782444751a2c5c8f714771e1d47c99aae3c810f4b",
+        "public_graph_method": "get_twin_graph_view",
+        "public_manager_seed_contract_status": "PENDING_TASK6_PUBLIC_SEED_API_PIN",
+        "runner_sha256": "c370d6731e9be5254591fdfba163c14a9452a63d0c44468a3ec7555c08850ed2",
+        "testcase_sha256": "cef6d9e4d28fe347e77eeb0d3c55b45117dc6f775d32446ae1fd4ea1377a8e1b"
+      },
       "required": true,
       "scenario_id": "HM-S12",
       "testcase_ids": [
         "TC-HM-12"
       ],
+      "testcase_revisions": {
+        "TC-HM-12": 2
+      },
       "ui": true
     },
     {
@@ -626,11 +657,11 @@
         "candidate_memory_distribution_version": "simple-harness-memory-sdk==0.6.0",
         "candidate_memory_source_commit": "9c79fa7ed96214aac7de93a11970e02891afedae",
         "candidate_memory_wheel_sha256": "cd324e68aa851e0cb7940b44bfe0bbf1b3a5cbb33a6803e035ab503e1760de1c",
-        "fault_fixture_sha256": "c67881ae20a3f6b442f1ac46db9e6e9a472edc3ec09079e8a42ef219e9b6bc6b",
+        "fault_fixture_sha256": "b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da",
         "fixture_revision": 3,
-        "fixture_sha256": "92202927c9817c8a1fc2eed2f26751ac8971b52452144bebc5e8c545e9a79e10",
-        "runner_sha256": "85cd4d61005d818fa6dca6bdea451606b2e8841af6a671dc269dc2ee6e724a1f",
-        "testcase_sha256": "061bbb1f7c1e495d44fa202ffb8abdcde3fc91a04d2a2a1082a097b007c7d41b"
+        "fixture_sha256": "373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12",
+        "runner_sha256": "61cd4dd7c3e5fa9c5ac6fa0765a8051c2cdf90a50461af71b26e3d14c153afcb",
+        "testcase_sha256": "00c333f8f76e5bacf27f4e6f5323bf40fd72c30f5fe2c1592b8c588d90906a4f"
       },
       "required": true,
       "scenario_id": "HM-S13A",
@@ -718,11 +749,11 @@
         "candidate_memory_distribution_version": "simple-harness-memory-sdk==0.6.0",
         "candidate_memory_source_commit": "9c79fa7ed96214aac7de93a11970e02891afedae",
         "candidate_memory_wheel_sha256": "cd324e68aa851e0cb7940b44bfe0bbf1b3a5cbb33a6803e035ab503e1760de1c",
-        "fault_fixture_sha256": "c67881ae20a3f6b442f1ac46db9e6e9a472edc3ec09079e8a42ef219e9b6bc6b",
+        "fault_fixture_sha256": "b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da",
         "fixture_revision": 3,
-        "fixture_sha256": "92202927c9817c8a1fc2eed2f26751ac8971b52452144bebc5e8c545e9a79e10",
-        "runner_sha256": "85cd4d61005d818fa6dca6bdea451606b2e8841af6a671dc269dc2ee6e724a1f",
-        "testcase_sha256": "061bbb1f7c1e495d44fa202ffb8abdcde3fc91a04d2a2a1082a097b007c7d41b"
+        "fixture_sha256": "373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12",
+        "runner_sha256": "61cd4dd7c3e5fa9c5ac6fa0765a8051c2cdf90a50461af71b26e3d14c153afcb",
+        "testcase_sha256": "00c333f8f76e5bacf27f4e6f5323bf40fd72c30f5fe2c1592b8c588d90906a4f"
       },
       "required": true,
       "scenario_id": "HM-S13B",
@@ -901,8 +932,26 @@
     "TC-HM-08": 3,
     "TC-HM-09": 3,
     "TC-HM-11": 3,
+    "TC-HM-12": 2,
     "TC-HM-13": 3,
     "TC-HM-X01": 4
+  },
+  "twin_graph_oracle_pins": {
+    "candidate_memory": {
+      "distribution": "simple-harness-memory-sdk",
+      "source_commit": null,
+      "status": "PENDING_TASK6_FINAL_PIN",
+      "version": null,
+      "wheel_sha256": null
+    },
+    "fixture_revision": 1,
+    "fixture_sha256": "b79932d076e38dee4f97bca782444751a2c5c8f714771e1d47c99aae3c810f4b",
+    "public_manager_seed_contract": {
+      "graph_method": "get_twin_graph_view",
+      "status": "PENDING_TASK6_PUBLIC_SEED_API_PIN"
+    },
+    "runner_sha256": "c370d6731e9be5254591fdfba163c14a9452a63d0c44468a3ec7555c08850ed2",
+    "testcase_sha256": "cef6d9e4d28fe347e77eeb0d3c55b45117dc6f775d32446ae1fd4ea1377a8e1b"
   },
   "typed_recall_oracle_pins": {
     "candidate_harness": {
@@ -918,9 +967,9 @@
       "version": "0.6.0",
       "wheel_sha256": "cd324e68aa851e0cb7940b44bfe0bbf1b3a5cbb33a6803e035ab503e1760de1c"
     },
-    "fault_fixture_sha256": "c67881ae20a3f6b442f1ac46db9e6e9a472edc3ec09079e8a42ef219e9b6bc6b",
-    "fixture_sha256": "92202927c9817c8a1fc2eed2f26751ac8971b52452144bebc5e8c545e9a79e10",
-    "runner_sha256": "85cd4d61005d818fa6dca6bdea451606b2e8841af6a671dc269dc2ee6e724a1f",
-    "testcase_sha256": "061bbb1f7c1e495d44fa202ffb8abdcde3fc91a04d2a2a1082a097b007c7d41b"
+    "fault_fixture_sha256": "b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da",
+    "fixture_sha256": "373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12",
+    "runner_sha256": "61cd4dd7c3e5fa9c5ac6fa0765a8051c2cdf90a50461af71b26e3d14c153afcb",
+    "testcase_sha256": "00c333f8f76e5bacf27f4e6f5323bf40fd72c30f5fe2c1592b8c588d90906a4f"
   }
 }

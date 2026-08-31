@@ -234,13 +234,40 @@
       "ui": true,
       "manual_required": true,
       "min_root_runs": 2,
-      "impact_paths": ["backend/**", "src/**"],
+      "impact_paths": ["src/simple_harness_memory/**", "/Users/denny/projects/simple_harness/backend/**"],
+      "testcase_revisions": {"TC-HM-12": 2},
+      "oracle_pins": {
+        "testcase_sha256": "cef6d9e4d28fe347e77eeb0d3c55b45117dc6f775d32446ae1fd4ea1377a8e1b",
+        "fixture_revision": 1,
+        "fixture_sha256": "b79932d076e38dee4f97bca782444751a2c5c8f714771e1d47c99aae3c810f4b",
+        "runner_sha256": "c370d6731e9be5254591fdfba163c14a9452a63d0c44468a3ec7555c08850ed2",
+        "candidate_memory_identity_status": "PENDING_TASK6_FINAL_PIN",
+        "public_manager_seed_contract_status": "PENDING_TASK6_PUBLIC_SEED_API_PIN",
+        "public_graph_method": "get_twin_graph_view"
+      },
       "evidence_contract": {
         "producer_types": ["gate-exec", "runtime-probe", "desktop-ui-driver"],
-        "required_artifact_kinds": ["business-result", "ui-capture"],
-        "required_identity": ["root_run_id", "session_id"],
+        "required_artifact_kinds": ["business-result", "execution-log", "graph-result", "context-snapshot-diff", "ui-capture"],
+        "required_identity": ["root_run_id", "session_id", "candidate_memory_wheel_sha256", "candidate_memory_source_commit"],
         "required_timestamps": true,
-        "required_business_facts": ["business_terminal", "graph_influence_zero"]
+        "required_business_facts": [
+          "business_terminal",
+          "testcase_revision",
+          "testcase_content_sha256",
+          "fixture_revision",
+          "fixture_sha256",
+          "runner_sha256",
+          "public_manager_backend_seed_calls",
+          "canonical_rows_not_passed_to_graph_method",
+          "exact_node_edge_dto_and_payload_hash",
+          "active_contested_inferred_visible",
+          "suppressed_superseded_expired_restricted_absent",
+          "sensitive_label_edge_tooltip_canary_hits_zero",
+          "correction_forget_rebuild_current_view",
+          "source_refs_and_correction_forget_capabilities",
+          "graph_influence_zero_independent_host_probe",
+          "graph_only_marker_context_hits_zero"
+        ]
       }
     },
     {
@@ -261,11 +288,11 @@
       ],
       "testcase_revisions": {"TC-HM-13": 3},
       "oracle_pins": {
-        "testcase_sha256": "061bbb1f7c1e495d44fa202ffb8abdcde3fc91a04d2a2a1082a097b007c7d41b",
+        "testcase_sha256": "00c333f8f76e5bacf27f4e6f5323bf40fd72c30f5fe2c1592b8c588d90906a4f",
         "fixture_revision": 3,
-        "fixture_sha256": "92202927c9817c8a1fc2eed2f26751ac8971b52452144bebc5e8c545e9a79e10",
-        "fault_fixture_sha256": "c67881ae20a3f6b442f1ac46db9e6e9a472edc3ec09079e8a42ef219e9b6bc6b",
-        "runner_sha256": "85cd4d61005d818fa6dca6bdea451606b2e8841af6a671dc269dc2ee6e724a1f",
+        "fixture_sha256": "373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12",
+        "fault_fixture_sha256": "b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da",
+        "runner_sha256": "61cd4dd7c3e5fa9c5ac6fa0765a8051c2cdf90a50461af71b26e3d14c153afcb",
         "candidate_harness_source_commit": "fb491574db8bb4d19d8a7f9df0c72ae460bb08f4",
         "candidate_harness_wheel_sha256": "36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f",
         "candidate_harness_distribution_version": "simple-harness-sdk==0.7.0",
@@ -325,11 +352,11 @@
       ],
       "testcase_revisions": {"TC-HM-13": 3},
       "oracle_pins": {
-        "testcase_sha256": "061bbb1f7c1e495d44fa202ffb8abdcde3fc91a04d2a2a1082a097b007c7d41b",
+        "testcase_sha256": "00c333f8f76e5bacf27f4e6f5323bf40fd72c30f5fe2c1592b8c588d90906a4f",
         "fixture_revision": 3,
-        "fixture_sha256": "92202927c9817c8a1fc2eed2f26751ac8971b52452144bebc5e8c545e9a79e10",
-        "fault_fixture_sha256": "c67881ae20a3f6b442f1ac46db9e6e9a472edc3ec09079e8a42ef219e9b6bc6b",
-        "runner_sha256": "85cd4d61005d818fa6dca6bdea451606b2e8841af6a671dc269dc2ee6e724a1f",
+        "fixture_sha256": "373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12",
+        "fault_fixture_sha256": "b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da",
+        "runner_sha256": "61cd4dd7c3e5fa9c5ac6fa0765a8051c2cdf90a50461af71b26e3d14c153afcb",
         "candidate_harness_source_commit": "fb491574db8bb4d19d8a7f9df0c72ae460bb08f4",
         "candidate_harness_wheel_sha256": "36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f",
         "candidate_harness_distribution_version": "simple-harness-sdk==0.7.0",
@@ -467,16 +494,25 @@
       "TC-HM-08": 3,
       "TC-HM-09": 3,
       "TC-HM-11": 3,
+      "TC-HM-12": 2,
       "TC-HM-13": 3,
       "TC-HM-X01": 4
     },
     "typed_recall_oracle_pins": {
-      "testcase_sha256": "061bbb1f7c1e495d44fa202ffb8abdcde3fc91a04d2a2a1082a097b007c7d41b",
-      "fixture_sha256": "92202927c9817c8a1fc2eed2f26751ac8971b52452144bebc5e8c545e9a79e10",
-      "fault_fixture_sha256": "c67881ae20a3f6b442f1ac46db9e6e9a472edc3ec09079e8a42ef219e9b6bc6b",
-      "runner_sha256": "85cd4d61005d818fa6dca6bdea451606b2e8841af6a671dc269dc2ee6e724a1f",
+      "testcase_sha256": "00c333f8f76e5bacf27f4e6f5323bf40fd72c30f5fe2c1592b8c588d90906a4f",
+      "fixture_sha256": "373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12",
+      "fault_fixture_sha256": "b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da",
+      "runner_sha256": "61cd4dd7c3e5fa9c5ac6fa0765a8051c2cdf90a50461af71b26e3d14c153afcb",
       "candidate_harness": {"distribution": "simple-harness-sdk", "version": "0.7.0", "source_commit": "fb491574db8bb4d19d8a7f9df0c72ae460bb08f4", "wheel_sha256": "36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f"},
       "candidate_memory": {"status": "PINNED", "distribution": "simple-harness-memory-sdk", "version": "0.6.0", "source_commit": "9c79fa7ed96214aac7de93a11970e02891afedae", "wheel_sha256": "cd324e68aa851e0cb7940b44bfe0bbf1b3a5cbb33a6803e035ab503e1760de1c"}
+    },
+    "twin_graph_oracle_pins": {
+      "testcase_sha256": "cef6d9e4d28fe347e77eeb0d3c55b45117dc6f775d32446ae1fd4ea1377a8e1b",
+      "fixture_revision": 1,
+      "fixture_sha256": "b79932d076e38dee4f97bca782444751a2c5c8f714771e1d47c99aae3c810f4b",
+      "runner_sha256": "c370d6731e9be5254591fdfba163c14a9452a63d0c44468a3ec7555c08850ed2",
+      "candidate_memory": {"status": "PENDING_TASK6_FINAL_PIN", "distribution": "simple-harness-memory-sdk", "version": null, "source_commit": null, "wheel_sha256": null},
+      "public_manager_seed_contract": {"status": "PENDING_TASK6_PUBLIC_SEED_API_PIN", "graph_method": "get_twin_graph_view"}
     },
     "cross_repo_impact_map": {
       "memory_sdk": "src/simple_harness_memory/**",
