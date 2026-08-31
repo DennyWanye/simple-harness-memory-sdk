@@ -74,9 +74,9 @@ async def main():
 asyncio.run(main())
 ```
 
-### Human Memory v6 public facade
+### Human Memory v7 public facade
 
-Fresh Human Memory databases use the explicit `build_human_memory_v6` entry point. It returns the
+Fresh Human Memory databases use the explicit `build_human_memory_v7` entry point. It returns the
 same public `MemoryManager` facade used for evidence admission, conversation registration, strict
 mutation/recall, display-only twin graph, suppression and audit reads; consumers do not import the
 SQLite implementation or access its connection.
@@ -89,7 +89,7 @@ from simple_harness_memory import (
     SuppressionRequest,
     SuppressionRevokeRequest,
     SuppressionScopeKind,
-    build_human_memory_v6,
+    build_human_memory_v7,
 )
 
 principal = MemoryPrincipal(deployment_id, household_id, actor_id, session_id)
@@ -100,8 +100,8 @@ classification_policy = InformationClassificationPolicy(
     required_privacy_class=PrivacyClass.PERSONAL,
     required_information_attributes=(InformationAttribute.PREFERENCE,),
 )
-memory = await build_human_memory_v6(
-    "human-memory-v6.db",
+memory = await build_human_memory_v7(
+    "human-memory-v7.db",
     evidence_authority=evidence_authority,
     conversation_evidence_authority=conversation_authority,
     classification_policy=classification_policy,
@@ -224,9 +224,9 @@ action 遗忘已删除 fact 返回并持久化稳定 `False` no-op。同 action 
 
 ### 持久化边界
 
-- Human Memory only accepts fresh schema v6/checksum through `build_human_memory_v6`; it never
+- Human Memory only accepts fresh schema v7/checksum through `build_human_memory_v7`; it never
   upgrades legacy content in place. `MemoryManager.build()` remains the standalone v4 compatibility
-  builder.
+  builder. `build_human_memory_v6` remains a compatibility alias for fresh callers.
 - SQLite 接受 fresh schema v4；v3/未知 version/checksum 一律 fail-fast。仅已发布且可识别的早期 v4
   recall-snapshot 全局键缺陷会在同一事务内修复为 deployment-scoped key；内容迁移仍只允许显式 migrator。
 - v4 全链路保存 deployment/household/actor/session 与 personal/family scope；session 和 turn receipt

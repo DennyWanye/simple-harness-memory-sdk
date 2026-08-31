@@ -84,7 +84,8 @@
     "TwinGraphView",
     "TypedRecallExecution",
     "WorldModelPort",
-    "build_human_memory_v6"
+    "build_human_memory_v6",
+    "build_human_memory_v7"
   ],
   "migrations": [
     "EXECUTION_MANIFEST_PROTOCOL",
