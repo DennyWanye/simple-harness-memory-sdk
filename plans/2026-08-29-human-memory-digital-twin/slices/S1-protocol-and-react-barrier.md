@@ -158,3 +158,6 @@ P0/P1/P2=0；reproducible wheel `49e42eaa189d7a6e238b17d39bf4c4ebb5352e9113b67f5
 无法同时表达“冲突双方 + 需要确认”；把双方塞进 selected refs 会把待确认候选误标为事实，在 Memory SDK
 另建 wrapper 又会制造第二套 wire。用户已批准升级独立 RecallDecision v3 和 typed confirmation item；原
 `64d409d`/wheel `49e42eaa…` 因此仅保留历史 S1 证据，不再是 program candidate。
+闭合提交 `884bc2694c2ae6e89ae25d69fe91e0015f878147`：clean commit 全仓 `1641 passed, 2 skipped`，
+ruff/scoped mypy/diff/clean-state PASS；独立审计先发现 deny count side-channel、outcome/reason/type 矩阵和旧 decoder
+三个 P1，整改后 closure P0/P1/P2=0。新 exact wheel 须在 S3 consumer 接线完成后统一重建，当前仍未发布。
