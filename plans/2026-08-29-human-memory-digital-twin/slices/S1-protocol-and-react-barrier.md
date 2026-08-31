@@ -180,5 +180,8 @@ tag/publish，最终 wheel 要等 S3 consumer 闭合后重建。
 `a2-006`（machine gate event `a2-003`）action-authority 回炉：S3 repository 独立审查实证，模型控制的
 `EvidenceSpanRef.support_kind` 可把普通 authenticated user assertion 重标为 correction，继而取得 SUPPRESS/SUPERSEDE
 权限；当前 Host `EvidenceItemAuthority v3` 只绑定 item/actor/provenance/classification，不证明用户授权了哪个记忆动作。
-这不是 SQLite validator 能从开放自然语言确定性补出的事实。S1-T7 与 S3-T2 的 action-authority 线已暂停，等待用户
-批准 Host-owned、target/revision/action/expiry/replay-bound authority 及自然语言确认语义；不得用正则或继续信任模型标签绕过。
+这不是 SQLite validator 能从开放自然语言确定性补出的事实。用户已批准 Host-owned、subject/action/target revision/
+exact evidence/run-turn/plan-operation/expiry/nonce/issuer/hash 全绑定的 `MemoryActionAuthority`：REVISE、SUPERSEDE、SUPPRESS
+必须持有该 authority；模型只提议，普通自然语言路径无 authority 时返回 `NEEDS_USER_CONFIRMATION`，由用户确认后 Host
+签发；专用记忆 UI 的可信手势可直接触发签发。不得用正则、第二模型或继续信任模型标签绕过。machine `a2-003` 在
+Harness 协议、Memory consumer、防重放与审计测试全部闭合前保持 open。

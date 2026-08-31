@@ -1,7 +1,7 @@
 # Human Memory Digital Twin Plan Workspace
 
 > 创建日期：2026-08-29
-> 状态：用户已批准直接实施；V0、S1、S2 已闭合；S3 Mutation 的 classification authority 已闭合，但 action-authority owner 缺失进入 machine `a2-003` 用户 review；S4 候选待后续集成
+> 状态：用户已批准直接实施；V0、S1、S2 已闭合；S3 Mutation 的 classification authority 已闭合，Host-owned `MemoryActionAuthority` 修订获用户确认并进入 machine `a2-003` 实施复验；S4 候选待后续集成
 > 主计划仓库：`simple-harness-memory-sdk`
 > Worktree：`/Users/denny/projects/simple-harness-memory-sdk-memory-plan`
 > 分支：`feat/human-memory-plan`
