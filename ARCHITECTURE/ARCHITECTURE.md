@@ -72,7 +72,8 @@
 - 本 program 不迁移旧内容数据；schema v6 必须 fresh 初始化，旧数据库由 loader 稳定拒绝。
 - `build_human_memory_v6` 是 fresh v6 的公开构造入口，返回单一 `MemoryManager` facade。consumer 可经该
   facade 完成 evidence/conversation admission、mutation、suppression/revoke、typed recall、display graph、
-  trace、metrics 与 manifest，不需要导入 `sqlite_v5` 或读取 backend connection。
+  trace、metrics 与 manifest，不需要导入 `sqlite_v5` 或读取 backend connection。suppression request/decision/
+  scope enums 与 stable evidence receipt/record DTO 均从 package root 导出，exact-wheel consumer 不需 core import。
 - sealed audit 只接受 `AuditAccessAuthorityRefV1`。Memory 通过 injected `AuditAccessAuthorityPort` resolve 后
   exact 校验 requester deployment/household/actor/session、target identity、decision/scope/time/hash/replay；旧
   caller-minted decision issuance 永久 fail closed。每次 granted/denied 都是 hash-only immutable event，trace、
@@ -288,7 +289,7 @@ src/simple_harness_memory/
   MEMORY hash-only lineage trace、ordinary-visible fixed metrics 与 sealed canonical state manifest 已闭合。
   access resolver miss、requester/target identity drift、ref/body/replay/time/max_reads、suppression、cursor/reopen、
   manifest coverage/independent root rebuild/tamper、no-mutation invocation 与 public consumer 均由仓内测试覆盖。
-  Task 7 focused `12 passed`；兼容 focused `598 passed`；全仓 `1036 passed, 8 skipped`，Ruff `src tests`、
+  Task 7 focused `12 passed`；public-surface focused `15 passed`；全仓 `1037 passed, 8 skipped`，Ruff `src tests`、
   mypy `58 source files` 与 `git diff --check` 全绿。
 
 - 0.6.0 Task 6 source audit：冻结 Harness 0.7 下全仓 `493 passed, 8 skipped`；Ruff、项目 mypy

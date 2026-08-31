@@ -31,6 +31,10 @@ from simple_harness_memory.core.errors import (
     MemoryOwnershipConflict,
     MemoryValidationError,
 )
+from simple_harness_memory.core.evidence import (
+    EvidenceIngestionReceipt,
+    IngestedEvidenceRecord,
+)
 from simple_harness_memory.core.identity import (
     ExportPage,
     MemoryPrincipal,
@@ -61,9 +65,16 @@ from simple_harness_memory.core.short_horizon import (
     ShortHorizonRecallResult,
 )
 from simple_harness_memory.core.suppression import (
+    OrdinaryMemoryPurpose,
     SealedAuditAccessDecision,
     SealedAuditAccessDenied,
     SealedAuditAccessReceipt,
+    SealedAuditPurpose,
+    SuppressionAction,
+    SuppressionDecision,
+    SuppressionRequest,
+    SuppressionRevokeRequest,
+    SuppressionScopeKind,
 )
 from simple_harness_memory.core.twin import DigitalTwin
 from simple_harness_memory.world.port import WorldModelPort
@@ -106,6 +117,15 @@ __all__ = [
     "SealedAuditAccessDecision",
     "SealedAuditAccessDenied",
     "SealedAuditAccessReceipt",
+    "SealedAuditPurpose",
+    "OrdinaryMemoryPurpose",
+    "SuppressionAction",
+    "SuppressionDecision",
+    "SuppressionRequest",
+    "SuppressionRevokeRequest",
+    "SuppressionScopeKind",
+    "EvidenceIngestionReceipt",
+    "IngestedEvidenceRecord",
     "MemoryBackend",
     "CognitiveMemoryBackend",
     "TypedRecallExecution",

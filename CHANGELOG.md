@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bound the audit cursor authority hash into the initialization receipt, made public trace/evidence
   reads principal/requester-mandatory, and froze full required-table manifest coverage with explicit
   derived/global exclusions.
+- Exported suppression request/decision/scope contracts and stable evidence receipt/record DTOs from
+  the package root so exact-wheel consumers can use the complete Manager facade without core imports.
 
 ## [0.5.1] - 2026-08-24
 

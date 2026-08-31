@@ -82,7 +82,13 @@ mutation/recall, display-only twin graph, suppression and audit reads; consumers
 SQLite implementation or access its connection.
 
 ```python fragment
-from simple_harness_memory import MemoryPrincipal, build_human_memory_v6
+from simple_harness_memory import (
+    MemoryPrincipal,
+    SuppressionRequest,
+    SuppressionRevokeRequest,
+    SuppressionScopeKind,
+    build_human_memory_v6,
+)
 
 principal = MemoryPrincipal(deployment_id, household_id, actor_id, session_id)
 memory = await build_human_memory_v6(

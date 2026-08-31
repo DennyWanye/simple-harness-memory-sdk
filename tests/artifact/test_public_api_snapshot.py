@@ -26,6 +26,40 @@ def test_public_api_0_6_0_snapshot_is_frozen_and_0_5_2_is_preserved() -> None:
     assert "ConversationMemoryAdapter" not in snapshot["root"]
 
 
+def test_root_exports_construct_public_suppression_requests() -> None:
+    from simple_harness_memory import (
+        EvidenceIngestionReceipt,
+        IngestedEvidenceRecord,
+        SealedAuditPurpose,
+        SuppressionDecision,
+        SuppressionRequest,
+        SuppressionRevokeRequest,
+        SuppressionScopeKind,
+    )
+
+    request = SuppressionRequest(
+        "root-suppress-1",
+        "actor-1",
+        SuppressionScopeKind.EVIDENCE,
+        "evidence-1",
+        "user_forget",
+        1.0,
+    )
+    revoke = SuppressionRevokeRequest(
+        "root-revoke-1",
+        "actor-1",
+        "directive-1",
+        "user_restore",
+        2.0,
+    )
+    assert request.scope_kind is SuppressionScopeKind.EVIDENCE
+    assert revoke.directive_id == "directive-1"
+    assert SealedAuditPurpose.EVIDENCE_AUDIT.value == "sealed_evidence_audit"
+    assert SuppressionDecision.__module__.endswith("core.suppression")
+    assert EvidenceIngestionReceipt.__module__.endswith("core.evidence")
+    assert IngestedEvidenceRecord.__module__.endswith("core.evidence")
+
+
 def test_0_6_0_candidate_sources_and_docs_are_consistent() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert pyproject["project"]["dynamic"] == ["version"]
