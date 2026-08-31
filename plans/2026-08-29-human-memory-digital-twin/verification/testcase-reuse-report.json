@@ -3,6 +3,19 @@
   "historical_pass_inherited": false,
   "testcase_revision_updates": [
     {
+      "testcase_id": "TC-HM-07",
+      "decision": "reuse-with-extension",
+      "from_revision": 1,
+      "to_revision": 2,
+      "content_sha256": "e3a5c76d0b5b03000e4271dce888487055b28a6b5c9b0eea065b6ada923532ae",
+      "fixture": "sealed-audit-v1.json@rev1",
+      "fixture_sha256": "3f60c0591846ca5a38470314e1b0b2aa7a652ea1debb78f8287ddafc49adb141",
+      "runner_sha256": "d290b529dba99799c9f5d59b9ae5f101ac33054398cf40f4bb097d9dcc7b3c62",
+      "harness_candidate": {"distribution": "simple-harness-sdk", "version": "0.7.0", "source_commit": "fb491574db8bb4d19d8a7f9df0c72ae460bb08f4", "wheel_sha256": "36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f"},
+      "memory_candidate": {"distribution": "simple-harness-memory-sdk", "version": "0.6.0", "source_commit": "0b6bf875cce888b16e4b96399cb6407fb06e0ae9", "wheel_sha256": "79b07b574275decb464ba8fcf8ff3cf6d210787682080b3577f3fe7b95e64dad"},
+      "reason": "新增 exact-wheel package-root public Manager sealed evidence/trace/canonical-manifest consumer；保留完整逻辑遗忘与真实模型/UI gate，不继承历史 PASS。"
+    },
+    {
       "testcase_id": "TC-HM-13",
       "decision": "reuse-with-extension",
       "from_revision": 2,
@@ -93,7 +106,7 @@
       "obligation_id": "HM-TO-A1",
       "decision": "create-new",
       "candidates": ["TC-PS-08"],
-      "selected_testcases": ["TC-HM-07@rev1", "TC-HM-X01@rev4"],
+      "selected_testcases": ["TC-HM-07@rev2", "TC-HM-X01@rev4"],
       "reason": "旧迁移用例以物理删除为成功标准；新用例共同证明永久 raw evidence、逻辑遗忘和 fresh init。"
     },
     {
@@ -135,7 +148,7 @@
       "obligation_id": "HM-TO-A7",
       "decision": "create-new",
       "candidates": [],
-      "selected_testcases": ["TC-HM-02@rev1", "TC-HM-07@rev1", "TC-HM-12@rev2", "TC-HM-13@rev3"],
+      "selected_testcases": ["TC-HM-02@rev1", "TC-HM-07@rev2", "TC-HM-12@rev2", "TC-HM-13@rev3"],
       "reason": "旧日志用例未覆盖全部 LLM decision、受控审计读取、typed decision/result/page/use binding 和 canonical facts 到六视图的 lineage。"
     },
     {
@@ -149,7 +162,7 @@
       "obligation_id": "HM-TO-R1",
       "decision": "create-new",
       "candidates": ["TC-PS-08"],
-      "selected_testcases": ["TC-HM-07@rev1", "TC-HM-X01@rev4"],
+      "selected_testcases": ["TC-HM-07@rev2", "TC-HM-X01@rev4"],
       "reason": "以 raw row count 和逐项 hash 对 retention、forget、maintenance、test cleanup 和 rebuild 做零物理删除断言。"
     },
     {
@@ -163,7 +176,7 @@
       "obligation_id": "HM-TO-R3",
       "decision": "create-new",
       "candidates": [],
-      "selected_testcases": ["TC-HM-03@rev3", "TC-HM-06@rev1", "TC-HM-07@rev1", "TC-HM-10@rev1", "TC-HM-12@rev2", "TC-HM-13@rev3"],
+      "selected_testcases": ["TC-HM-03@rev3", "TC-HM-06@rev1", "TC-HM-07@rev2", "TC-HM-10@rev1", "TC-HM-12@rev2", "TC-HM-13@rev3"],
       "reason": "跨 recipient、contested/superseded/suppressed、旧 checkpoint、Context、page-in 和图谱的 stale privacy 风险没有旧统一 oracle；TC-HM-13 冻结完整/残缺冲突组零泄露和使用时再授权。"
     },
     {
@@ -177,7 +190,7 @@
       "obligation_id": "HM-TO-R5",
       "decision": "create-new",
       "candidates": [],
-      "selected_testcases": ["TC-HM-06@rev1", "TC-HM-07@rev1", "TC-HM-12@rev2", "TC-HM-13@rev3", "TC-HM-X01@rev4"],
+      "selected_testcases": ["TC-HM-06@rev1", "TC-HM-07@rev2", "TC-HM-12@rev2", "TC-HM-13@rev3", "TC-HM-X01@rev4"],
       "reason": "受控审计、typed decision/result/page/use lineage、普通导出与 credentials/hidden reasoning 全域零命中必须合并验证。"
     },
     {

@@ -141,6 +141,16 @@
       "min_root_runs": 2,
       "lanes": ["temporal-fault"],
       "impact_paths": ["src/**", "backend/**"],
+      "testcase_revisions": {"TC-HM-07": 2},
+      "oracle_pins": {
+        "testcase_sha256": "e3a5c76d0b5b03000e4271dce888487055b28a6b5c9b0eea065b6ada923532ae",
+        "fixture_revision": 1,
+        "fixture_sha256": "3f60c0591846ca5a38470314e1b0b2aa7a652ea1debb78f8287ddafc49adb141",
+        "runner_sha256": "d290b529dba99799c9f5d59b9ae5f101ac33054398cf40f4bb097d9dcc7b3c62",
+        "candidate_memory_source_commit": "0b6bf875cce888b16e4b96399cb6407fb06e0ae9",
+        "candidate_memory_wheel_sha256": "79b07b574275decb464ba8fcf8ff3cf6d210787682080b3577f3fe7b95e64dad",
+        "quality_gate": "NOT_RUN/BLOCKED"
+      },
       "evidence_contract": {
         "producer_types": ["gate-exec", "runtime-probe", "desktop-ui-driver"],
         "required_artifact_kinds": ["business-result", "ui-capture", "fault-recovery-log"],
@@ -493,6 +503,7 @@
       "concurrent_layer_kinds": 3
     },
     "testcase_revision_pins": {
+      "TC-HM-07": 2,
       "TC-HM-03": 3,
       "TC-HM-04": 3,
       "TC-HM-08": 3,
@@ -501,6 +512,15 @@
       "TC-HM-12": 2,
       "TC-HM-13": 3,
       "TC-HM-X01": 4
+    },
+    "sealed_audit_oracle_pins": {
+      "testcase_sha256": "e3a5c76d0b5b03000e4271dce888487055b28a6b5c9b0eea065b6ada923532ae",
+      "fixture_revision": 1,
+      "fixture_sha256": "3f60c0591846ca5a38470314e1b0b2aa7a652ea1debb78f8287ddafc49adb141",
+      "runner_sha256": "d290b529dba99799c9f5d59b9ae5f101ac33054398cf40f4bb097d9dcc7b3c62",
+      "candidate_harness": {"distribution": "simple-harness-sdk", "version": "0.7.0", "source_commit": "fb491574db8bb4d19d8a7f9df0c72ae460bb08f4", "wheel_sha256": "36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f"},
+      "candidate_memory": {"distribution": "simple-harness-memory-sdk", "version": "0.6.0", "source_commit": "0b6bf875cce888b16e4b96399cb6407fb06e0ae9", "wheel_sha256": "79b07b574275decb464ba8fcf8ff3cf6d210787682080b3577f3fe7b95e64dad"},
+      "semantic_quality_gate": "NOT_RUN/BLOCKED"
     },
     "typed_recall_oracle_pins": {
       "testcase_sha256": "00c333f8f76e5bacf27f4e6f5323bf40fd72c30f5fe2c1592b8c588d90906a4f",
