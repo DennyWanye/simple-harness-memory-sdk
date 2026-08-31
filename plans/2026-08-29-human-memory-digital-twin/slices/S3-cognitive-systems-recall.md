@@ -3,7 +3,7 @@
 > Release unit：S3（Memory SDK）  
 > 高风险子系统：认知状态机、检索资格/排序、派生投影（3）  
 > 覆盖：HM-AC-2/4/5/6/7/8
-> 执行状态：Task 1/2 repository candidate 已完成首轮实现；receipt corruption/P1/P2 独立整改已 CLOSED；用户已批准 machine `a2-003` action-authority 修订，正在实施与复验；未提交业务 candidate
+> 执行状态：Task 1/2 COMPLETE（Memory `e5ce4b8`，Harness exact `baaefac2`）；classification/action authority、receipt corruption、CONTEST 与 replay/clock 边界独立审计 CLOSED；Task 3—7 pending
 
 ## 交付边界
 

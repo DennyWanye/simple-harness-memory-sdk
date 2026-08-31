@@ -183,5 +183,11 @@ tag/publish，最终 wheel 要等 S3 consumer 闭合后重建。
 这不是 SQLite validator 能从开放自然语言确定性补出的事实。用户已批准 Host-owned、subject/action/target revision/
 exact evidence/run-turn/plan-operation/expiry/nonce/issuer/hash 全绑定的 `MemoryActionAuthority`：REVISE、SUPERSEDE、SUPPRESS
 必须持有该 authority；模型只提议，普通自然语言路径无 authority 时返回 `NEEDS_USER_CONFIRMATION`，由用户确认后 Host
-签发；专用记忆 UI 的可信手势可直接触发签发。不得用正则、第二模型或继续信任模型标签绕过。machine `a2-003` 在
-Harness 协议、Memory consumer、防重放与审计测试全部闭合前保持 open。
+签发；专用记忆 UI 的可信手势可直接触发签发。不得用正则、第二模型或继续信任模型标签绕过。
+
+`a2-006` 已闭合：Harness `baaefac2d15699ae6daf657c93cce6c12e6e750e` 冻结 action schema v2、mutation
+schema v4、authority-free whole-plan intent、canonical operation index、typed apply result 与 receipt fail-closed；
+全仓 `1687 passed, 2 skipped`，独立协议审计 P0/P1/P2=0。Memory `e5ce4b8` 实现同事务 nonce/replay 双唯一
+消费、classification/action/decision/receipt/apply-result 不可变链、CONTEST exact-slot、clock rollback 与重启防篡改；
+全仓 `758 passed, 9 skipped`，Ruff/mypy/diff-check PASS，独立 repository 审计 P0/P1/P2=0。machine `a2-003`
+可标记 resolved；两仓仍未 tag/push/publish。
