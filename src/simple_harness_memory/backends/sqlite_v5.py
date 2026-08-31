@@ -69,6 +69,12 @@ if TYPE_CHECKING:
         ProcedureObservationAuthorityRef,
         ProspectiveSignalAuthorityPort,
         ProspectiveSignalAuthorityRef,
+        RecallContext,
+        RecallContextUseAuthorizationRequestV1,
+        RecallContextUseReceiptV1,
+        RecallPlan,
+        RecallResultPageRequestV1,
+        RecallResultPageV1,
         SanitizedEvidenceEnvelope,
         SanitizedEvidenceReceipt,
     )
@@ -102,6 +108,11 @@ if TYPE_CHECKING:
         ProspectiveSignalApplyResult,
     )
     from simple_harness_memory.core.mutations import InformationClassificationPolicy
+    from simple_harness_memory.core.recall import (
+        RecallCandidate,
+        RecallConfirmationCandidate,
+        TypedRecallExecution,
+    )
     from simple_harness_memory.core.short_horizon import (
         ShortHorizonGenerationBuildResult,
         ShortHorizonProjectionBuildResult,
@@ -193,6 +204,17 @@ COGNITIVE_CONFLICT_FAULT_POINTS = (
     "mutation.after_conflict_member_2",
     "mutation.after_conflict_resolution",
 )
+TYPED_RECALL_FAULT_POINTS = (
+    "typed_recall.after_request",
+    "typed_recall.after_attempt",
+    "typed_recall.after_decision_header",
+    "typed_recall.after_decision_item",
+    "typed_recall.after_result_header",
+    "typed_recall.after_result_item",
+    "typed_recall.after_terminal",
+    "typed_recall.before_commit",
+    "typed_recall.after_commit",
+)
 PROCEDURE_OBSERVATION_FAULT_POINTS = (
     "procedure.before_begin",
     "procedure.after_begin",
@@ -215,6 +237,22 @@ PROSPECTIVE_SIGNAL_FAULT_POINTS = (
 )
 logger = structlog.get_logger("simple_harness_memory.backends.sqlite_v5")
 _DEFAULT_FILTER_POLICIES = frozenset({"credential-filter/v1"})
+_RECALL_POLICY_HASH = hashlib.sha256(
+    canonical_json(
+        {
+            "policy": "typed-recall-eligibility/v1",
+            "schema": 6,
+            "rrf_k": 60,
+            "weights": {
+                "vector": 0.40,
+                "full_text": 0.30,
+                "entity": 0.15,
+                "task_scope": 0.10,
+                "temporal": 0.05,
+            },
+        }
+    ).encode("utf-8")
+).hexdigest()
 _AUDIT_IDENTIFIER_CREDENTIAL_PATTERNS = (
     re.compile(r"(?i)\bbearer\s+[a-z0-9._~+/=-]{8,}"),
     re.compile(r"\b(?:sk|key|tsk)-?[A-Za-z0-9_-]{8,}"),
@@ -246,7 +284,7 @@ class _DeliveryAdmissionState:
 
 
 class SQLiteHumanMemoryBackend:
-    """Own the fresh v5 SQLite root and suppression-first repository APIs."""
+    """Own the fresh v6 SQLite root and suppression-first repository APIs."""
 
     def __init__(
         self,
@@ -361,7 +399,7 @@ class SQLiteHumanMemoryBackend:
     @property
     def connection(self) -> aiosqlite.Connection:
         if self._db is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         return self._db
 
     async def initialize(self) -> InitializationReceipt:
@@ -443,7 +481,7 @@ class SQLiteHumanMemoryBackend:
             supported_filter_policies=tuple(self._supported_filter_policies),
         )
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         accepted_at = _timestamp(self._now())
         principal_id = envelope.subject
         ingestion_receipt_id = _stable_id(
@@ -678,7 +716,7 @@ class SQLiteHumanMemoryBackend:
         if not isinstance(evidence_id, str) or not evidence_id.strip() or "\x00" in evidence_id:
             raise MemoryValidationError("evidence_id_invalid")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         async with self._write_lock:
             subject = await self._read_evidence_subject(evidence_id)
             if subject is None:
@@ -701,7 +739,7 @@ class SQLiteHumanMemoryBackend:
         if not isinstance(subject, str) or not subject.strip() or "\x00" in subject:
             raise MemoryValidationError("suppression_subject_invalid")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         async with self._write_lock:
             async with self._db.execute(
                 "SELECT evidence_id FROM evidence_envelopes WHERE subject=? ORDER BY evidence_id",
@@ -754,7 +792,7 @@ class SQLiteHumanMemoryBackend:
         if type(request) is not SuppressionRevokeRequest:
             raise TypeError("request must use SuppressionRevokeRequest")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         async with self._write_lock:
             replay = await self._read_suppression_by_request(request.request_id)
             if replay is not None:
@@ -812,7 +850,7 @@ class SQLiteHumanMemoryBackend:
         if not isinstance(purpose, OrdinaryMemoryPurpose):
             raise TypeError("purpose must use OrdinaryMemoryPurpose")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         async with self._write_lock:
             return await self._resolve_suppression_unlocked(candidate, purpose)
 
@@ -855,7 +893,7 @@ class SQLiteHumanMemoryBackend:
         self, decision: SuppressionDecision
     ) -> SuppressionDecision:
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         async with self._write_lock:
             replay = await self._read_suppression_by_request(decision.request_id)
             if replay is not None:
@@ -939,6 +977,12 @@ class SQLiteHumanMemoryBackend:
                 ),
             )
             self._fault("suppression.after_outbox")
+            await self._advance_recall_authority_unlocked(
+                decision.subject,
+                event_kind="suppression_changed",
+                source_ref=decision.directive_id,
+                now=decision.effective_at,
+            )
             self._fault("suppression.before_commit")
             await self._db.execute("COMMIT")
             committed = True
@@ -969,7 +1013,7 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("reference must use ConversationEvidenceRegistrationRef")
         typed_reference = cast(ConversationEvidenceRegistrationRef, reference)
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         if self._conversation_evidence_authority is None:
             raise MemoryValidationError("conversation_evidence_authority_required")
         registration = (
@@ -1160,7 +1204,7 @@ class SQLiteHumanMemoryBackend:
         if type(principal) is not MemoryPrincipal:
             raise TypeError("principal must use MemoryPrincipal")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         effective_now = _timestamp(self._now() if now is None else now)
         async with self._write_lock:
             await self._authorize_short_horizon_principal_unlocked(principal)
@@ -1432,6 +1476,12 @@ class SQLiteHumanMemoryBackend:
                     },
                     created_at=effective_now,
                 )
+                await self._advance_recall_authority_unlocked(
+                    principal.actor_id,
+                    event_kind="short_horizon_projection_changed",
+                    source_ref=projection_manifest_hash,
+                    now=effective_now,
+                )
                 self._fault("short_horizon.projection.before_commit")
                 await self._db.execute("COMMIT")
                 committed = True
@@ -1453,14 +1503,15 @@ class SQLiteHumanMemoryBackend:
         from simple_harness_memory.embedders.base import EMBEDDING_FORMAT_VERSION, encode_vector
 
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         if self._short_horizon_embedder is None:
             raise MemoryValidationError("short_horizon_embedder_required")
         effective_now = _timestamp(self._now() if now is None else now)
         embedder = self._short_horizon_embedder
         async with self._write_lock:
             async with self._db.execute(
-                "SELECT chunk_id,public_text,content_hash FROM short_horizon_chunks "
+                "SELECT chunk_id,principal_id,public_text,content_hash "
+                "FROM short_horizon_chunks "
                 "ORDER BY chunk_id"
             ) as cursor:
                 rows = tuple(await cursor.fetchall())
@@ -1584,6 +1635,13 @@ class SQLiteHumanMemoryBackend:
                     },
                     created_at=effective_now,
                 )
+                for principal_id in sorted({str(row["principal_id"]) for row in rows}):
+                    await self._advance_recall_authority_unlocked(
+                        principal_id,
+                        event_kind="short_horizon_generation_changed",
+                        source_ref=generation_id,
+                        now=effective_now,
+                    )
                 self._fault("short_horizon.generation.before_commit")
                 await self._db.execute("COMMIT")
                 committed = True
@@ -1632,6 +1690,40 @@ class SQLiteHumanMemoryBackend:
         finally:
             await self._finish_short_horizon_recall()
 
+    async def _recall_short_horizon_for_typed_plan(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        query: str,
+        disclosure_context: DisclosureContext,
+        plan: RecallPlan,
+        limit: int,
+        now: float,
+        deadline_monotonic: float,
+    ) -> ShortHorizonRecallResult:
+        """Use the frozen typed-recall cap without widening the legacy public API."""
+
+        started = time.monotonic()
+        remaining_ms = max(1, min(2_000, int((deadline_monotonic - started) * 1_000)))
+        await self._begin_short_horizon_recall()
+        try:
+            if time.monotonic() >= deadline_monotonic:
+                raise TimeoutError
+            return await self._recall_short_horizon_lifecycle_locked(
+                principal=principal,
+                query=query,
+                disclosure_context=disclosure_context,
+                limit=limit,
+                deadline_ms=remaining_ms,
+                now=now,
+                started=started,
+                deadline=deadline_monotonic,
+                max_limit=128,
+                typed_plan=plan,
+            )
+        finally:
+            await self._finish_short_horizon_recall()
+
     async def _recall_short_horizon_lifecycle_locked(
         self,
         *,
@@ -1643,6 +1735,8 @@ class SQLiteHumanMemoryBackend:
         now: float | None = None,
         started: float,
         deadline: float,
+        max_limit: int = 100,
+        typed_plan: RecallPlan | None = None,
     ) -> ShortHorizonRecallResult:
         """Return before one absolute caller deadline with a durable audit trail.
 
@@ -1666,7 +1760,11 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("disclosure_context must use DisclosureContext")
         if not isinstance(query, str) or not query.strip() or "\x00" in query:
             raise MemoryValidationError("short_horizon_query_invalid")
-        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= max_limit
+        ):
             raise MemoryLimitError("short_horizon_limit_invalid")
         if (
             isinstance(deadline_ms, bool)
@@ -1675,7 +1773,7 @@ class SQLiteHumanMemoryBackend:
         ):
             raise MemoryLimitError("short_horizon_deadline_invalid")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
 
         effective_now = _timestamp(self._now() if now is None else now)
         started_audit_id = f"short-audit:{uuid4().hex}"
@@ -1729,6 +1827,8 @@ class SQLiteHumanMemoryBackend:
                     started=started,
                     deadline=deadline,
                     attempt_audit_id=started_audit_id,
+                    max_limit=max_limit,
+                    typed_plan=typed_plan,
                 ),
                 timeout=remaining,
             )
@@ -1764,6 +1864,8 @@ class SQLiteHumanMemoryBackend:
         started: float,
         deadline: float,
         attempt_audit_id: str,
+        max_limit: int = 100,
+        typed_plan: RecallPlan | None = None,
     ) -> ShortHorizonRecallResult:
         """Recall from one gated universe; generation and cache stay repository-private."""
 
@@ -1801,7 +1903,11 @@ class SQLiteHumanMemoryBackend:
         )
         if not isinstance(query, str) or not query.strip() or "\x00" in query:
             raise MemoryValidationError("short_horizon_query_invalid")
-        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= max_limit
+        ):
             raise MemoryLimitError("short_horizon_limit_invalid")
         if (
             isinstance(deadline_ms, bool)
@@ -1810,7 +1916,7 @@ class SQLiteHumanMemoryBackend:
         ):
             raise MemoryLimitError("short_horizon_deadline_invalid")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         effective_now = _timestamp(self._now() if now is None else now)
         async with self._write_lock:
             await self._authorize_short_horizon_principal_unlocked(principal)
@@ -1848,12 +1954,13 @@ class SQLiteHumanMemoryBackend:
             total_count = int(total_row[0])
             async with self._db.execute(
                 "SELECT * FROM short_horizon_chunks WHERE principal_id=? "
-                "AND occurred_at<=? AND expires_at>=? ORDER BY occurred_at DESC,chunk_id",
+                "AND occurred_at<=? AND expires_at>? ORDER BY occurred_at DESC,chunk_id",
                 (principal.actor_id, effective_now, effective_now),
             ) as cursor:
                 candidate_rows = tuple(await cursor.fetchall())
             universe: list[aiosqlite.Row] = []
             privacy_filtered_count = 0
+            classification_filtered_count = 0
             suppression_filtered_count = 0
             self_delivery = (
                 disclosure.recipient is DeliveryRecipient.USER_SELF
@@ -1874,6 +1981,39 @@ class SQLiteHumanMemoryBackend:
                 ):
                     raise MemoryCorruptionError("short horizon classification binding invalid")
                 tuple(InformationAttribute(value) for value in attributes)
+                if typed_plan is not None:
+                    if not self._candidate_disclosure_allowed(
+                        typed_plan.disclosure_context,
+                        str(row["effective_privacy_class"]),
+                        tuple(str(value) for value in attributes),
+                    ):
+                        classification_filtered_count += 1
+                        continue
+                    scopes = set(json.loads(str(row["task_scope_ids_json"])))
+                    entities = {
+                        str(value).casefold()
+                        for value in json.loads(str(row["entities_json"]))
+                    }
+                    if typed_plan.task_scope_ids and not scopes & set(
+                        typed_plan.task_scope_ids
+                    ):
+                        classification_filtered_count += 1
+                        continue
+                    if typed_plan.entity_constraints and not entities & {
+                        value.casefold() for value in typed_plan.entity_constraints
+                    }:
+                        classification_filtered_count += 1
+                        continue
+                    occurred_at = float(row["occurred_at"])
+                    if (
+                        typed_plan.earliest_occurred_at is not None
+                        and occurred_at < typed_plan.earliest_occurred_at
+                    ) or (
+                        typed_plan.latest_occurred_at is not None
+                        and occurred_at > typed_plan.latest_occurred_at
+                    ):
+                        classification_filtered_count += 1
+                        continue
                 async with self._db.execute(
                     "SELECT e.evidence_id,r.entities_json FROM short_horizon_chunk_evidence e "
                     "JOIN conversation_evidence_registrations r "
@@ -2034,11 +2174,19 @@ class SQLiteHumanMemoryBackend:
                 vector_count=len(vector_hits),
                 degradation_code=None if degradation is None else degradation.value,
                 details={
-                    "candidate_count": total_count,
-                    "time_filtered_count": total_count - len(candidate_rows),
-                    "privacy_filtered_count": privacy_filtered_count,
-                    "classification_filtered_count": 0,
-                    "suppression_filtered_count": suppression_filtered_count,
+                    "candidate_count": len(universe) if typed_plan is not None else total_count,
+                    "time_filtered_count": (
+                        0 if typed_plan is not None else total_count - len(candidate_rows)
+                    ),
+                    "privacy_filtered_count": (
+                        0 if typed_plan is not None else privacy_filtered_count
+                    ),
+                    "classification_filtered_count": (
+                        0 if typed_plan is not None else classification_filtered_count
+                    ),
+                    "suppression_filtered_count": (
+                        0 if typed_plan is not None else suppression_filtered_count
+                    ),
                     "eligible": [
                         {
                             "chunk_ref_hash": _opaque_hash(ref),
@@ -2107,7 +2255,7 @@ class SQLiteHumanMemoryBackend:
         if type(principal) is not MemoryPrincipal:
             raise TypeError("principal must use MemoryPrincipal")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         effective_now = _timestamp(self._now() if now is None else now)
         async with self._write_lock:
             await self._authorize_short_horizon_principal_unlocked(principal)
@@ -2133,6 +2281,13 @@ class SQLiteHumanMemoryBackend:
                     details={"removed_chunk_count": count},
                     created_at=effective_now,
                 )
+                if count:
+                    await self._advance_recall_authority_unlocked(
+                        principal.actor_id,
+                        event_kind="short_horizon_cleanup",
+                        source_ref=f"cleanup:{effective_now}:{count}",
+                        now=effective_now,
+                    )
                 self._fault("short_horizon.cleanup.before_commit")
                 await self._db.execute("COMMIT")
                 committed = True
@@ -2142,6 +2297,2295 @@ class SQLiteHumanMemoryBackend:
                 if not committed:
                     with suppress(Exception):
                         await self._db.execute("ROLLBACK")
+
+    async def execute_typed_recall(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        context: RecallContext,
+        plan: RecallPlan,
+        now: float | None = None,
+    ) -> TypedRecallExecution:
+        """Execute strict RecallPlan v4 with durable replay before candidate access."""
+
+        from simple_harness.runtime import RecallContext, RecallPlan
+
+        from simple_harness_memory.core.identity import MemoryPrincipal
+        from simple_harness_memory.core.recall import (
+            TypedRecallExecution,
+            apply_budget,
+            apply_confirmation_budget,
+            build_host_execution,
+            capability_rejections,
+            rank_candidates,
+            request_hash,
+        )
+
+        if type(principal) is not MemoryPrincipal:
+            raise TypeError("principal must use MemoryPrincipal")
+        if type(context) is not RecallContext:
+            raise TypeError("context must use RecallContext")
+        if type(plan) is not RecallPlan:
+            raise TypeError("plan must use RecallPlan")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v6 backend is not initialized")
+        started_monotonic = time.monotonic()
+        deadline_monotonic = started_monotonic + plan.budget.deadline_ms / 1_000
+        effective_now = _timestamp(self._now() if now is None else now)
+        if context.subject != principal.actor_id or plan.subject != principal.actor_id:
+            raise MemoryOwnershipConflict("typed_recall_subject_not_owned")
+        plan.validate_narrowing(context, current_time=effective_now)
+        digest = request_hash(principal_id=principal.actor_id, context=context, plan=plan)
+        replay, request_id, attempt_id = await self._admit_typed_recall_request(
+            principal=principal,
+            context=context,
+            plan=plan,
+            request_digest=digest,
+            now=effective_now,
+        )
+        if replay is not None:
+            return replay
+        if time.monotonic() >= deadline_monotonic:
+            await self._persist_typed_recall_timeout(
+                request_id=request_id, attempt_id=attempt_id, now=effective_now
+            )
+            raise TimeoutError("DEADLINE_EXCEEDED")
+
+        unsupported = capability_rejections(plan)
+        degradation_codes: list[str] = []
+        if (
+            any(mode.value == "vector" for mode in plan.retrieval_modes)
+            and plan.requested_memory_types
+        ):
+            degradation_codes.append("cognitive_vector_unavailable")
+        globally_denied = not self._ordinary_recall_disclosure_allowed(plan.disclosure_context)
+        if unsupported or globally_denied:
+            async with self._write_lock:
+                epoch, policy_hash = await self._recall_authority_unlocked(principal.actor_id)
+                execution = build_host_execution(
+                    request_digest=digest,
+                    context=context,
+                    plan=plan,
+                    candidates=(),
+                    authority_epoch=epoch,
+                    policy_hash=policy_hash,
+                    evaluated_at=effective_now,
+                    authority_expires_at=context.expires_at,
+                    candidate_count=0,
+                    truncated=False,
+                    rejected=True,
+                    rejection_reason=(
+                        "recall_invalid_plan" if unsupported else "recall_disclosure_denied"
+                    ),
+                    unsupported_capabilities=unsupported,
+                    degradation_codes=tuple(degradation_codes),
+                )
+                await self._persist_typed_recall_terminal_unlocked(
+                    request_id=request_id,
+                    attempt_id=attempt_id,
+                    execution=execution,
+                    terminal_kind="rejected",
+                    now=effective_now,
+                    deadline_monotonic=deadline_monotonic,
+                )
+            return execution
+
+        async with self._write_lock:
+            collected_epoch, collected_policy_hash = await self._recall_authority_unlocked(
+                principal.actor_id
+            )
+
+        try:
+            confirmations = await asyncio.wait_for(
+                self._collect_typed_recall_confirmation(
+                    principal=principal,
+                    context=context,
+                    plan=plan,
+                    now=effective_now,
+                    deadline_monotonic=deadline_monotonic,
+                ),
+                timeout=max(0.0, deadline_monotonic - time.monotonic()),
+            )
+        except TimeoutError:
+            await self._persist_typed_recall_timeout(
+                request_id=request_id, attempt_id=attempt_id, now=effective_now
+            )
+            raise TimeoutError("DEADLINE_EXCEEDED") from None
+        if confirmations:
+            from simple_harness_memory.core.recall import build_host_confirmation_execution
+
+            confirmation_selection = apply_confirmation_budget(
+                confirmations,
+                max_items=plan.budget.max_items,
+                max_bytes=plan.budget.max_bytes,
+                max_tokens=plan.budget.max_tokens,
+            )
+            if confirmation_selection.selected:
+                async with self._write_lock:
+                    epoch, policy_hash = await self._recall_authority_unlocked(
+                        principal.actor_id
+                    )
+                    if (epoch, policy_hash) != (
+                        collected_epoch,
+                        collected_policy_hash,
+                    ):
+                        raise MemoryValidationError("RECALL_AUTHORITY_STALE")
+                    execution = build_host_confirmation_execution(
+                        request_digest=digest,
+                        context=context,
+                        plan=plan,
+                        confirmations=confirmation_selection.selected,
+                        authority_epoch=epoch,
+                        policy_hash=policy_hash,
+                        evaluated_at=effective_now,
+                        authority_expires_at=min(
+                            context.expires_at,
+                            *(
+                                item.authority_expires_at
+                                for group in confirmation_selection.selected
+                                for item in group.members
+                            ),
+                        ),
+                        truncated=confirmation_selection.truncated,
+                        degradation_codes=tuple(degradation_codes),
+                    )
+                    await self._validate_recall_context_use_sources_unlocked(
+                        principal_id=principal.actor_id,
+                        result=execution.result,
+                        decision=execution.decision,
+                        supplied_item_ids=frozenset(
+                            member.member.item_id
+                            for group in execution.result.confirmation_groups
+                            for member in group.members
+                        ),
+                        procedure_applicability_fingerprints=frozenset(
+                            context.procedure_applicability_fingerprints
+                        ),
+                        now=effective_now,
+                    )
+                    await self._persist_typed_recall_terminal_unlocked(
+                        request_id=request_id,
+                        attempt_id=attempt_id,
+                        execution=execution,
+                        terminal_kind="completed",
+                        now=effective_now,
+                        deadline_monotonic=deadline_monotonic,
+                    )
+                return execution
+
+        try:
+            candidates = await asyncio.wait_for(
+                self._collect_typed_recall_candidates(
+                    principal=principal,
+                    context=context,
+                    plan=plan,
+                    now=effective_now,
+                    deadline_monotonic=deadline_monotonic,
+                ),
+                timeout=max(0.0, deadline_monotonic - time.monotonic()),
+            )
+        except TimeoutError:
+            await self._persist_typed_recall_timeout(
+                request_id=request_id, attempt_id=attempt_id, now=effective_now
+            )
+            raise TimeoutError("DEADLINE_EXCEEDED") from None
+        if time.monotonic() >= deadline_monotonic:
+            await self._persist_typed_recall_timeout(
+                request_id=request_id, attempt_id=attempt_id, now=effective_now
+            )
+            raise TimeoutError("DEADLINE_EXCEEDED")
+        short_candidates: tuple[RecallCandidate, ...] = ()
+        if plan.include_short_horizon:
+            try:
+                short_candidates, short_degradation = (
+                    await self._collect_typed_recall_short_candidates(
+                    principal=principal,
+                    context=context,
+                    plan=plan,
+                    now=effective_now,
+                    deadline_monotonic=deadline_monotonic,
+                    )
+                )
+                if short_degradation is not None:
+                    degradation_codes.append(short_degradation)
+            except TimeoutError:
+                await self._persist_typed_recall_timeout(
+                    request_id=request_id, attempt_id=attempt_id, now=effective_now
+                )
+                raise TimeoutError("DEADLINE_EXCEEDED") from None
+        candidates = (*candidates, *short_candidates)
+        ranked = rank_candidates(candidates)
+        selection = apply_budget(
+            ranked,
+            max_items=plan.budget.max_items,
+            max_bytes=plan.budget.max_bytes,
+            max_tokens=plan.budget.max_tokens,
+        )
+        expiry = min(
+            (context.expires_at, *(item.authority_expires_at for item in selection.selected))
+        )
+        if expiry <= effective_now:
+            await self._persist_typed_recall_timeout(
+                request_id=request_id, attempt_id=attempt_id, now=effective_now
+            )
+            raise TimeoutError("DEADLINE_EXCEEDED")
+        async with self._write_lock:
+            epoch, policy_hash = await self._recall_authority_unlocked(principal.actor_id)
+            if (epoch, policy_hash) != (collected_epoch, collected_policy_hash):
+                raise MemoryValidationError("RECALL_AUTHORITY_STALE")
+            execution = build_host_execution(
+                request_digest=digest,
+                context=context,
+                plan=plan,
+                candidates=selection.selected,
+                authority_epoch=epoch,
+                policy_hash=policy_hash,
+                evaluated_at=effective_now,
+                authority_expires_at=expiry,
+                candidate_count=len(ranked),
+                truncated=selection.truncated or bool(confirmations),
+                degradation_codes=tuple(dict.fromkeys(degradation_codes)),
+            )
+            assert isinstance(execution, TypedRecallExecution)
+            await self._validate_recall_context_use_sources_unlocked(
+                principal_id=principal.actor_id,
+                result=execution.result,
+                decision=execution.decision,
+                supplied_item_ids=frozenset(
+                    item.selected_item.item_id for item in execution.result.items
+                ),
+                procedure_applicability_fingerprints=frozenset(
+                    context.procedure_applicability_fingerprints
+                ),
+                now=effective_now,
+            )
+            await self._persist_typed_recall_terminal_unlocked(
+                request_id=request_id,
+                attempt_id=attempt_id,
+                execution=execution,
+                terminal_kind="completed",
+                now=effective_now,
+                deadline_monotonic=deadline_monotonic,
+            )
+        return execution
+
+    async def _collect_typed_recall_short_candidates(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        context: RecallContext,
+        plan: RecallPlan,
+        now: float,
+        deadline_monotonic: float,
+    ) -> tuple[tuple[RecallCandidate, ...], str | None]:
+        """Reuse the authority-filtered short-horizon search and preserve its lanes."""
+
+        from simple_harness_memory.core.recall import RecallCandidate
+
+        assert self._db is not None
+        result = await self._recall_short_horizon_for_typed_plan(
+            principal=principal,
+            query=plan.query,
+            disclosure_context=plan.disclosure_context,
+            plan=plan,
+            limit=min(128, max(32, 8 * plan.budget.max_items)),
+            now=now,
+            deadline_monotonic=deadline_monotonic,
+        )
+        degradation = (
+            None if result.degradation_code is None else result.degradation_code.value
+        )
+        if degradation == "DEADLINE_EXCEEDED":
+            raise TimeoutError
+        async with self._write_lock:
+            if time.monotonic() >= deadline_monotonic:
+                raise TimeoutError
+            async with self._db.execute(
+                "SELECT audit_json FROM short_horizon_audit WHERE audit_id=?",
+                (result.audit_id,),
+            ) as cursor:
+                audit_row = await cursor.fetchone()
+            if audit_row is None:
+                raise MemoryCorruptionError("typed recall short-horizon audit missing")
+            raw_audit_json = audit_row[0]
+            if isinstance(raw_audit_json, bytes):
+                raw_audit_json = raw_audit_json.decode()
+            audit_payload = json.loads(str(raw_audit_json))
+            if not isinstance(audit_payload, dict):
+                raise MemoryCorruptionError("typed recall short-horizon audit invalid")
+            details = audit_payload.get("details")
+            if not isinstance(details, dict):
+                raise MemoryCorruptionError("typed recall short-horizon audit invalid")
+            eligible_audit = details.get("eligible", [])
+            if not isinstance(eligible_audit, list):
+                raise MemoryCorruptionError("typed recall short-horizon eligible set invalid")
+            eligible_hashes = {
+                str(item["chunk_ref_hash"])
+                for item in eligible_audit
+                if isinstance(item, dict) and "chunk_ref_hash" in item
+            }
+            lane_hashes: dict[str, list[str]] = {}
+            requested_audit_lanes = {
+                "fts_lane": "full_text",
+                "vector_lane": "vector",
+            }
+            for audit_lane, lane_name in requested_audit_lanes.items():
+                requested = any(
+                    mode.value == lane_name for mode in plan.retrieval_modes
+                )
+                if not requested:
+                    continue
+                raw_lane = details.get(audit_lane, [])
+                if not isinstance(raw_lane, list):
+                    raise MemoryCorruptionError("typed recall short-horizon lane invalid")
+                lane_hashes[lane_name] = [
+                    str(item["chunk_ref_hash"])
+                    for item in raw_lane
+                    if isinstance(item, dict) and "chunk_ref_hash" in item
+                ]
+            async with self._db.execute(
+                "SELECT * FROM short_horizon_chunks WHERE principal_id=? "
+                "AND occurred_at<=? AND expires_at>? ORDER BY chunk_id",
+                (principal.actor_id, now, now),
+            ) as cursor:
+                rows = tuple(await cursor.fetchall())
+            eligible_rows: dict[str, aiosqlite.Row] = {}
+            entity_constraints = {item.casefold() for item in plan.entity_constraints}
+            for row in rows:
+                if time.monotonic() >= deadline_monotonic:
+                    raise TimeoutError
+                ref_hash = _opaque_hash(str(row["chunk_id"]))
+                if ref_hash not in eligible_hashes:
+                    continue
+                attributes = tuple(
+                    sorted(json.loads(str(row["information_attributes_json"])))
+                )
+                if not self._candidate_disclosure_allowed(
+                    plan.disclosure_context,
+                    str(row["effective_privacy_class"]),
+                    attributes,
+                ):
+                    continue
+                scopes = tuple(json.loads(str(row["task_scope_ids_json"])))
+                if plan.task_scope_ids and not set(scopes) & set(plan.task_scope_ids):
+                    continue
+                entities = {
+                    str(item).casefold()
+                    for item in json.loads(str(row["entities_json"]))
+                }
+                if entity_constraints and not entity_constraints & entities:
+                    continue
+                occurred_at = float(row["occurred_at"])
+                if (
+                    plan.earliest_occurred_at is not None
+                    and occurred_at < plan.earliest_occurred_at
+                ) or (
+                    plan.latest_occurred_at is not None
+                    and occurred_at > plan.latest_occurred_at
+                ):
+                    continue
+                eligible_rows[ref_hash] = row
+
+            if entity_constraints:
+                lane_hashes["entity"] = [
+                    ref_hash
+                    for ref_hash, _row in sorted(
+                        eligible_rows.items(),
+                        key=lambda item: (
+                            -len(
+                                entity_constraints
+                                & {
+                                    str(value).casefold()
+                                    for value in json.loads(
+                                        str(item[1]["entities_json"])
+                                    )
+                                }
+                            ),
+                            item[0],
+                        ),
+                    )
+                ]
+            if (
+                plan.earliest_occurred_at is not None
+                or plan.latest_occurred_at is not None
+            ):
+                anchor = plan.latest_occurred_at or plan.earliest_occurred_at or now
+                lane_hashes["temporal"] = [
+                    ref_hash
+                    for ref_hash, _row in sorted(
+                        eligible_rows.items(),
+                        key=lambda item: (
+                            abs(float(item[1]["occurred_at"]) - anchor),
+                            -float(item[1]["occurred_at"]),
+                            item[0],
+                        ),
+                    )
+                ]
+            if plan.task_scope_ids:
+                requested_scopes = set(plan.task_scope_ids)
+                lane_hashes["task_scope"] = [
+                    ref_hash
+                    for ref_hash, _row in sorted(
+                        eligible_rows.items(),
+                        key=lambda item: (
+                            -len(
+                                requested_scopes
+                                & set(json.loads(str(item[1]["task_scope_ids_json"])))
+                            ),
+                            item[0],
+                        ),
+                    )
+                ]
+            lane_cap = min(128, max(32, 8 * plan.budget.max_items))
+            ranks_by_lane = {
+                lane: {
+                    ref_hash: rank
+                    for rank, ref_hash in enumerate(
+                        (item for item in hashes if item in eligible_rows), start=1
+                    )
+                    if rank <= lane_cap
+                }
+                for lane, hashes in lane_hashes.items()
+            }
+            selected_hashes = {
+                ref_hash for ranks in ranks_by_lane.values() for ref_hash in ranks
+            }
+            candidates: list[RecallCandidate] = []
+            for ref_hash in sorted(selected_hashes):
+                if time.monotonic() >= deadline_monotonic:
+                    raise TimeoutError
+                row = eligible_rows[ref_hash]
+                chunk_ref = str(row["chunk_id"])
+                scopes = tuple(json.loads(str(row["task_scope_ids_json"])))
+                hit_attributes = tuple(
+                    sorted(json.loads(str(row["information_attributes_json"])))
+                )
+                async with self._db.execute(
+                    "SELECT evidence_id,envelope_hash FROM short_horizon_chunk_evidence "
+                    "WHERE chunk_id=? ORDER BY item_ordinal",
+                    (chunk_ref,),
+                ) as cursor:
+                    evidence_rows = tuple(await cursor.fetchall())
+                if not evidence_rows:
+                    raise MemoryCorruptionError("typed recall short-horizon lineage missing")
+                lane_ranks = tuple(
+                    (lane, ranks[ref_hash])
+                    for lane, ranks in ranks_by_lane.items()
+                    if ref_hash in ranks
+                )
+                if not lane_ranks:
+                    continue
+                evidence_manifest_hash = hashlib.sha256(
+                    canonical_json(
+                        cast(JsonValue, sorted({str(item[0]) for item in evidence_rows}))
+                    ).encode()
+                ).hexdigest()
+                candidates.append(
+                    RecallCandidate(
+                        source_kind="short_horizon",
+                        source_ref=chunk_ref,
+                        source_revision=None,
+                        memory_type=None,
+                        public_payload={
+                            "content": str(row["public_text"]),
+                            "occurred_at": float(row["occurred_at"]),
+                        },
+                        source_content_hash=str(row["content_hash"]),
+                        effective_privacy_class=str(row["effective_privacy_class"]),
+                        information_attributes=hit_attributes,
+                        evidence_manifest_hash=evidence_manifest_hash,
+                        source_task_scope_ids=scopes,
+                        active_task_scope_id=context.active_task_scope_id,
+                        source_time=float(row["occurred_at"]),
+                        authority_expires_at=min(context.expires_at, float(row["expires_at"])),
+                        lane_ranks=lane_ranks,
+                    )
+                )
+        from simple_harness_memory.core.recall import rank_candidates
+
+        return rank_candidates(tuple(candidates))[:128], degradation
+
+    async def page_typed_recall_result(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        request: RecallResultPageRequestV1,
+    ) -> RecallResultPageV1:
+        """Page only a durable typed result; naked source references are never accepted."""
+
+        from simple_harness.runtime import (
+            RecallPageBindingKind,
+            RecallPageConfirmationGroupBindingV1,
+            RecallPageConfirmationMemberBindingV1,
+            RecallPageSelectedItemBindingV1,
+            RecallResultPageBindingV1,
+            RecallResultPageRequestV1,
+            RecallResultPageV1,
+            TypedRecallResultV1,
+        )
+
+        from simple_harness_memory.core.identity import MemoryPrincipal
+
+        if type(principal) is not MemoryPrincipal:
+            raise TypeError("principal must use MemoryPrincipal")
+        if type(request) is not RecallResultPageRequestV1:
+            raise TypeError("request must use RecallResultPageRequestV1")
+        typed_request = cast(RecallResultPageRequestV1, request)
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v6 backend is not initialized")
+        async with self._write_lock:
+            async with self._db.execute(
+                "SELECT r.result_json,r.result_hash,r.authority_expires_at "
+                "FROM typed_recall_results r JOIN typed_recall_requests q "
+                "ON q.request_id=r.request_id WHERE r.result_id=? AND q.principal_id=?",
+                (typed_request.result_id, principal.actor_id),
+            ) as cursor:
+                row = await cursor.fetchone()
+            if row is None or str(row["result_hash"]) != typed_request.result_hash:
+                raise MemoryValidationError("typed_recall_result_binding_invalid")
+            raw_result = json.loads(str(row["result_json"]))
+            if not isinstance(raw_result, dict):
+                raise MemoryCorruptionError("typed recall result body invalid")
+            result = TypedRecallResultV1.from_json(raw_result)
+            if result.result_hash != str(row["result_hash"]):
+                raise MemoryCorruptionError("typed recall result hash differs")
+            trusted_now = _timestamp(self._now())
+            if (
+                typed_request.requested_at < result.evaluated_at
+                or typed_request.requested_at > trusted_now
+                or trusted_now >= result.authority_expires_at
+            ):
+                raise MemoryValidationError("typed_recall_result_expired")
+            carriers: list[RecallResultPageBindingV1] = [
+                RecallPageSelectedItemBindingV1(
+                    RecallPageBindingKind.SELECTED_ITEM,
+                    ordinal,
+                    item.selected_item.item_id,
+                    item.result_item_hash,
+                )
+                for ordinal, item in enumerate(result.items, start=1)
+            ]
+            carriers.extend(
+                RecallPageConfirmationGroupBindingV1(
+                    RecallPageBindingKind.CONFIRMATION_GROUP,
+                    group.group,
+                    group.result_group_hash,
+                    tuple(
+                        RecallPageConfirmationMemberBindingV1(
+                            member.member.ordinal,
+                            member.member.item_id,
+                            member.result_member_hash,
+                        )
+                        for member in group.members
+                    ),
+                )
+                for group in result.confirmation_groups
+            )
+            if typed_request.item_offset >= len(carriers):
+                raise MemoryValidationError("typed_recall_page_offset_invalid")
+            selected: list[RecallResultPageBindingV1] = []
+            byte_count = 0
+            for carrier in carriers[
+                typed_request.item_offset : typed_request.item_offset
+                + typed_request.max_items
+            ]:
+                size = len(canonical_json(carrier.to_json()).encode())
+                if byte_count + size > typed_request.max_bytes:
+                    break
+                selected.append(carrier)
+                byte_count += size
+            if not selected:
+                raise MemoryLimitError("typed_recall_page_budget_too_small")
+            page = RecallResultPageV1(
+                _stable_id(
+                    "typed-recall-page",
+                    typed_request.result_hash,
+                    str(typed_request.page_ordinal),
+                    str(typed_request.item_offset),
+                    str(typed_request.max_items),
+                    str(typed_request.max_bytes),
+                ),
+                typed_request.result_id,
+                typed_request.result_hash,
+                typed_request.page_ordinal,
+                typed_request.item_offset,
+                tuple(selected),
+                byte_count,
+                typed_request.item_offset + len(selected) == len(carriers),
+            )
+        return page
+
+    async def authorize_recall_context_use(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        request: RecallContextUseAuthorizationRequestV1,
+        now: float | None = None,
+    ) -> RecallContextUseReceiptV1:
+        """Fence final provider use against the current recall authority epoch."""
+
+        from simple_harness.runtime import (
+            RecallContext,
+            RecallContextUseAuthorizationRequestV1,
+            RecallContextUseReceiptV1,
+            RecallDecisionV4,
+            TypedRecallResultV1,
+        )
+
+        from simple_harness_memory.core.identity import MemoryPrincipal
+
+        if type(principal) is not MemoryPrincipal:
+            raise TypeError("principal must use MemoryPrincipal")
+        if type(request) is not RecallContextUseAuthorizationRequestV1:
+            raise TypeError("request must use RecallContextUseAuthorizationRequestV1")
+        typed_request = cast(RecallContextUseAuthorizationRequestV1, request)
+        if typed_request.subject != principal.actor_id:
+            raise MemoryOwnershipConflict("typed_recall_context_use_subject_not_owned")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v6 backend is not initialized")
+        effective_now = _timestamp(self._now() if now is None else now)
+        async with self._write_lock:
+            await self._db.execute("BEGIN IMMEDIATE")
+            committed = False
+            try:
+                async with self._db.execute(
+                    "SELECT * FROM recall_context_use_receipts WHERE principal_id=? "
+                    "AND provider_attempt_id=?",
+                    (principal.actor_id, typed_request.provider_attempt_id),
+                ) as cursor:
+                    replay_row = await cursor.fetchone()
+                if replay_row is not None:
+                    if str(replay_row["request_hash"]) != typed_request.request_hash:
+                        raise MemoryIdempotencyConflict(
+                            "RECALL_CONTEXT_USE_IDEMPOTENCY_CONFLICT"
+                        )
+                    raw_receipt = json.loads(str(replay_row["receipt_json"]))
+                    if not isinstance(raw_receipt, dict):
+                        raise MemoryCorruptionError("recall context-use receipt invalid")
+                    replay = RecallContextUseReceiptV1.from_json(raw_receipt)
+                    if replay.receipt_hash != str(replay_row["receipt_hash"]):
+                        raise MemoryCorruptionError("recall context-use receipt hash differs")
+                    replay.validate_request(typed_request)
+                    await self._db.execute("COMMIT")
+                    committed = True
+                    return replay
+                async with self._db.execute(
+                    "SELECT r.*,q.principal_id,q.request_json AS recall_request_json "
+                    "FROM typed_recall_results r "
+                    "JOIN typed_recall_requests q ON q.request_id=r.request_id "
+                    "WHERE r.result_id=?",
+                    (typed_request.result_id,),
+                ) as cursor:
+                    result_row = await cursor.fetchone()
+                if (
+                    result_row is None
+                    or str(result_row["principal_id"]) != principal.actor_id
+                    or str(result_row["result_hash"]) != typed_request.result_hash
+                    or str(result_row["decision_id"]) != typed_request.decision_id
+                ):
+                    raise MemoryValidationError("typed_recall_context_use_binding_invalid")
+                async with self._db.execute(
+                    "SELECT * FROM typed_recall_decisions WHERE decision_id=?",
+                    (typed_request.decision_id,),
+                ) as cursor:
+                    decision_row = await cursor.fetchone()
+                if (
+                    decision_row is None
+                    or str(decision_row["decision_hash"]) != typed_request.decision_hash
+                ):
+                    raise MemoryValidationError("typed_recall_context_use_binding_invalid")
+                raw_decision = json.loads(str(decision_row["decision_json"]))
+                raw_result = json.loads(str(result_row["result_json"]))
+                if not isinstance(raw_decision, dict) or not isinstance(raw_result, dict):
+                    raise MemoryCorruptionError("typed recall context-use body invalid")
+                decision = RecallDecisionV4.from_json(raw_decision)
+                result = TypedRecallResultV1.from_json(raw_result)
+                raw_recall_request = json.loads(str(result_row["recall_request_json"]))
+                if not isinstance(raw_recall_request, dict):
+                    raise MemoryCorruptionError("typed recall request body invalid")
+                raw_context = raw_recall_request.get("context")
+                if not isinstance(raw_context, dict):
+                    raise MemoryCorruptionError("typed recall context body invalid")
+                stored_context = RecallContext.from_json(raw_context)
+                if (
+                    decision.decision_hash != typed_request.decision_hash
+                    or result.result_hash != typed_request.result_hash
+                ):
+                    raise MemoryCorruptionError("typed recall context-use hash differs")
+                result.validate_decision(decision)
+                if (
+                    typed_request.run_id != decision.run_id
+                    or typed_request.subject != decision.subject
+                    or typed_request.turn_id != stored_context.turn_id
+                    or stored_context.run_id != decision.run_id
+                    or stored_context.subject != decision.subject
+                    or stored_context.context_hash != decision.context_hash
+                    or stored_context.context_revision != decision.context_revision
+                ):
+                    raise MemoryValidationError(
+                        "typed_recall_context_use_invocation_binding_invalid"
+                    )
+                epoch, policy_hash = await self._recall_authority_unlocked(
+                    principal.actor_id
+                )
+                if (
+                    epoch != result.authority_epoch
+                    or policy_hash != result.policy_hash
+                    or effective_now >= result.authority_expires_at
+                ):
+                    raise MemoryValidationError("RECALL_AUTHORITY_STALE")
+                expected = {
+                    item.selected_item.item_id: item.result_item_hash
+                    for item in result.items
+                }
+                confirmation_groups: list[set[str]] = []
+                for group in result.confirmation_groups:
+                    member_ids = {member.member.item_id for member in group.members}
+                    confirmation_groups.append(member_ids)
+                    expected.update(
+                        {
+                            member.member.item_id: member.result_member_hash
+                            for member in group.members
+                        }
+                    )
+                supplied = {
+                    item.item_id: item.item_hash for item in typed_request.item_bindings
+                }
+                if any(
+                    expected.get(item_id) != item_hash
+                    for item_id, item_hash in supplied.items()
+                ):
+                    raise MemoryValidationError("typed_recall_context_use_item_invalid")
+                for member_ids in confirmation_groups:
+                    if member_ids & supplied.keys() and not member_ids <= supplied.keys():
+                        raise MemoryValidationError(
+                            "typed_recall_confirmation_group_must_be_complete"
+                        )
+                await self._validate_recall_context_use_sources_unlocked(
+                    principal_id=principal.actor_id,
+                    result=result,
+                    decision=decision,
+                    supplied_item_ids=frozenset(supplied),
+                    procedure_applicability_fingerprints=frozenset(
+                        stored_context.procedure_applicability_fingerprints
+                    ),
+                    now=effective_now,
+                )
+                receipt = RecallContextUseReceiptV1(
+                    _stable_id(
+                        "recall-context-use-receipt",
+                        principal.actor_id,
+                        typed_request.provider_attempt_id,
+                    ),
+                    typed_request.request_hash,
+                    principal.actor_id,
+                    typed_request.run_id,
+                    typed_request.turn_id,
+                    typed_request.provider_attempt_id,
+                    typed_request.decision_id,
+                    typed_request.decision_hash,
+                    typed_request.result_id,
+                    typed_request.result_hash,
+                    typed_request.item_bindings,
+                    typed_request.snapshot_manifest_hash,
+                    epoch,
+                    policy_hash,
+                    effective_now,
+                    result.authority_expires_at,
+                )
+                await self._db.execute(
+                    "INSERT INTO recall_context_use_receipts(receipt_id,principal_id,"
+                    "provider_attempt_id,request_hash,request_json,receipt_json,receipt_hash,"
+                    "authority_epoch,policy_hash,authorized_at,expires_at) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        receipt.receipt_id,
+                        principal.actor_id,
+                        typed_request.provider_attempt_id,
+                        typed_request.request_hash,
+                        canonical_json(typed_request.to_json()),
+                        canonical_json(receipt.to_json()),
+                        receipt.receipt_hash,
+                        epoch,
+                        policy_hash,
+                        effective_now,
+                        receipt.expires_at,
+                    ),
+                )
+                self._fault("typed_recall.context_use.before_commit")
+                await self._db.execute("COMMIT")
+                committed = True
+                return receipt
+            finally:
+                if not committed:
+                    with suppress(Exception):
+                        await self._db.execute("ROLLBACK")
+
+    async def _validate_recall_context_use_sources_unlocked(
+        self,
+        *,
+        principal_id: str,
+        result: Any,
+        decision: Any,
+        supplied_item_ids: frozenset[str],
+        procedure_applicability_fingerprints: frozenset[str],
+        now: float,
+    ) -> None:
+        """Re-evaluate every bound durable source under the suppression transaction."""
+
+        from simple_harness_memory.core.suppression import (
+            OrdinaryMemoryPurpose,
+            SuppressionCandidate,
+        )
+
+        assert self._db is not None
+        bound: list[tuple[Any, Any, bool]] = [
+            (item.selected_item, item, False)
+            for item in result.items
+            if item.selected_item.item_id in supplied_item_ids
+        ]
+        bound.extend(
+            (member.member, member, True)
+            for group in result.confirmation_groups
+            for member in group.members
+            if member.member.item_id in supplied_item_ids
+        )
+        for source, typed_item, confirmation_member in bound:
+            if confirmation_member or source.source_kind.value == "cognitive_memory":
+                if confirmation_member:
+                    query = (
+                        "SELECT r.*,h.memory_type AS memory_type FROM cognitive_memory_revisions r "
+                        "JOIN cognitive_memory_heads h ON h.memory_id=r.memory_id "
+                        "JOIN cognitive_conflict_members m ON m.memory_id=r.memory_id "
+                        "AND m.revision=r.revision JOIN cognitive_conflict_groups g "
+                        "ON g.group_id=m.group_id LEFT JOIN cognitive_conflict_resolutions x "
+                        "ON x.group_id=g.group_id WHERE r.memory_id=? AND r.revision=? "
+                        "AND h.principal_id=? AND h.current_revision=g.challenger_revision "
+                        "AND x.group_id IS NULL"
+                    )
+                else:
+                    query = (
+                        "SELECT r.*,h.memory_type AS memory_type FROM cognitive_memory_revisions r "
+                        "JOIN cognitive_memory_heads h ON h.memory_id=r.memory_id "
+                        "WHERE r.memory_id=? AND r.revision=? AND h.principal_id=? "
+                        "AND h.current_revision=r.revision"
+                    )
+                async with self._db.execute(
+                    query,
+                    (source.source_ref, source.source_revision, principal_id),
+                ) as cursor:
+                    row = await cursor.fetchone()
+                if (
+                    row is None
+                    or str(row["content_hash"]) != source.source_content_hash
+                    or not self._cognitive_recall_state_allowed(
+                        row, allow_contested=confirmation_member
+                    )
+                    or not self._cognitive_recall_valid_at(row, now)
+                    or str(row["effective_privacy_class"])
+                    != typed_item.effective_privacy_class.value
+                    or tuple(sorted(json.loads(str(row["information_attributes_json"]))))
+                    != tuple(item.value for item in typed_item.information_attributes)
+                ):
+                    raise MemoryValidationError("RECALL_AUTHORITY_STALE")
+                if not await self._cognitive_recall_type_authority_allowed_unlocked(
+                    row,
+                    procedure_applicability_fingerprints=(
+                        procedure_applicability_fingerprints
+                    ),
+                ):
+                    raise MemoryValidationError("RECALL_AUTHORITY_STALE")
+                _scopes, evidence_ids, _manifest = (
+                    await self._cognitive_recall_lineage_unlocked(
+                        source.source_ref, source.source_revision
+                    )
+                )
+                suppressed = (
+                    await self._resolve_suppression_unlocked(
+                        SuppressionCandidate(principal_id, memory_id=source.source_ref),
+                        OrdinaryMemoryPurpose.RECALL,
+                    )
+                ).denied
+                for evidence_id in evidence_ids:
+                    suppressed = suppressed or (
+                        await self._resolve_suppression_unlocked(
+                            SuppressionCandidate(principal_id, evidence_id=evidence_id),
+                            OrdinaryMemoryPurpose.RECALL,
+                        )
+                    ).denied
+                if suppressed or not self._candidate_disclosure_allowed(
+                    decision.disclosure_context,
+                    typed_item.effective_privacy_class.value,
+                    tuple(item.value for item in typed_item.information_attributes),
+                ):
+                    raise MemoryValidationError("RECALL_AUTHORITY_STALE")
+                continue
+            async with self._db.execute(
+                "SELECT * FROM short_horizon_chunks WHERE chunk_id=? AND principal_id=?",
+                (source.source_ref, principal_id),
+            ) as cursor:
+                row = await cursor.fetchone()
+            if (
+                row is None
+                or now >= float(row["expires_at"])
+                or str(row["content_hash"]) != source.source_content_hash
+                or str(row["effective_privacy_class"])
+                != typed_item.effective_privacy_class.value
+                or tuple(sorted(json.loads(str(row["information_attributes_json"]))))
+                != tuple(item.value for item in typed_item.information_attributes)
+            ):
+                raise MemoryValidationError("RECALL_AUTHORITY_STALE")
+            if not self._candidate_disclosure_allowed(
+                decision.disclosure_context,
+                typed_item.effective_privacy_class.value,
+                tuple(item.value for item in typed_item.information_attributes),
+            ):
+                raise MemoryValidationError("RECALL_AUTHORITY_STALE")
+            async with self._db.execute(
+                "SELECT evidence_id FROM short_horizon_chunk_evidence WHERE chunk_id=?",
+                (source.source_ref,),
+            ) as cursor:
+                evidence_ids = tuple(str(item[0]) for item in await cursor.fetchall())
+            if not evidence_ids:
+                raise MemoryValidationError("RECALL_AUTHORITY_STALE")
+            for evidence_id in evidence_ids:
+                if (
+                    await self._resolve_suppression_unlocked(
+                        SuppressionCandidate(principal_id, evidence_id=evidence_id),
+                        OrdinaryMemoryPurpose.RECALL,
+                    )
+                ).denied:
+                    raise MemoryValidationError("RECALL_AUTHORITY_STALE")
+
+    async def _collect_typed_recall_confirmation(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        context: RecallContext,
+        plan: RecallPlan,
+        now: float,
+        deadline_monotonic: float,
+    ) -> tuple[RecallConfirmationCandidate, ...]:
+        from simple_harness_memory.core.recall import (
+            RecallCandidate,
+            RecallConfirmationCandidate,
+        )
+        from simple_harness_memory.core.suppression import (
+            OrdinaryMemoryPurpose,
+            SuppressionCandidate,
+        )
+
+        assert self._db is not None
+        requested = {item.value for item in plan.requested_memory_types}
+        found: list[
+            tuple[RecallConfirmationCandidate, str, dict[str, float], float]
+        ] = []
+        async with self._write_lock:
+            if time.monotonic() >= deadline_monotonic:
+                raise TimeoutError
+            async with self._db.execute(
+                "SELECT g.* FROM cognitive_conflict_groups g "
+                "JOIN cognitive_memory_heads h ON h.memory_id=g.memory_id "
+                "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
+                "AND r.revision=h.current_revision "
+                "LEFT JOIN cognitive_conflict_resolutions x ON x.group_id=g.group_id "
+                "WHERE g.principal_id=? AND h.current_revision=g.challenger_revision "
+                "AND r.conflict_status='contested' AND x.group_id IS NULL "
+                "ORDER BY g.created_at DESC,g.group_id",
+                (principal.actor_id,),
+            ) as cursor:
+                groups = tuple(await cursor.fetchall())
+            for group in groups:
+                if time.monotonic() >= deadline_monotonic:
+                    raise TimeoutError
+                async with self._db.execute(
+                    "SELECT m.*,r.*,h.memory_type AS memory_type "
+                    "FROM cognitive_conflict_members m "
+                    "JOIN cognitive_memory_revisions r ON r.memory_id=m.memory_id "
+                    "AND r.revision=m.revision "
+                    "JOIN cognitive_memory_heads h ON h.memory_id=m.memory_id "
+                    "WHERE m.group_id=? ORDER BY m.ordinal",
+                    (group["group_id"],),
+                ) as cursor:
+                    member_rows = tuple(await cursor.fetchall())
+                if len(member_rows) != 2 or str(member_rows[0]["memory_type"]) not in requested:
+                    continue
+                members: list[RecallCandidate] = []
+                group_has_requested_lane = False
+                group_lane_scores: dict[str, float] = {}
+                group_source_time = 0.0
+                complete = True
+                for row in member_rows:
+                    if time.monotonic() >= deadline_monotonic:
+                        raise TimeoutError
+                    if (
+                        str(row["memory_type"]) not in requested
+                        or not self._cognitive_recall_state_allowed(
+                            row, allow_contested=True
+                        )
+                        or not self._cognitive_recall_valid_at(row, now)
+                    ):
+                        complete = False
+                        break
+                    if not await self._cognitive_recall_type_authority_allowed_unlocked(
+                        row,
+                        procedure_applicability_fingerprints=frozenset(
+                            context.procedure_applicability_fingerprints
+                        ),
+                    ):
+                        complete = False
+                        break
+                    scopes, evidence_ids, evidence_hash = (
+                        await self._cognitive_recall_lineage_unlocked(
+                            str(row["memory_id"]), int(row["revision"])
+                        )
+                    )
+                    if not evidence_ids or (
+                        plan.task_scope_ids and not set(scopes) & set(plan.task_scope_ids)
+                    ):
+                        complete = False
+                        break
+                    denied = (
+                        await self._resolve_suppression_unlocked(
+                            SuppressionCandidate(
+                                principal.actor_id, memory_id=str(row["memory_id"])
+                            ),
+                            OrdinaryMemoryPurpose.RECALL,
+                        )
+                    ).denied
+                    for evidence_id in evidence_ids:
+                        denied = denied or (
+                            await self._resolve_suppression_unlocked(
+                                SuppressionCandidate(principal.actor_id, evidence_id=evidence_id),
+                                OrdinaryMemoryPurpose.RECALL,
+                            )
+                        ).denied
+                    payload, source_time = await self._cognitive_public_payload_unlocked(row)
+                    time_bounds = await self._cognitive_recall_time_bounds_unlocked(row)
+                    time_requested = (
+                        plan.earliest_occurred_at is not None
+                        or plan.latest_occurred_at is not None
+                    )
+                    if time_requested and time_bounds is None:
+                        complete = False
+                        break
+                    if time_bounds is not None:
+                        time_start, time_end, source_time = time_bounds
+                    else:
+                        time_start = time_end = source_time
+                    attrs = tuple(json.loads(str(row["information_attributes_json"])))
+                    payload_text = canonical_json(payload).casefold()
+                    query_terms = tuple(
+                        term
+                        for term in re.findall(
+                            r"[\w\u3400-\u9fff]+", plan.query.casefold()
+                        )
+                        if term
+                    )
+                    lexical_score = sum(payload_text.count(term) for term in query_terms)
+                    query_match = lexical_score > 0
+                    entity_match = bool(plan.entity_constraints) and (
+                        self._cognitive_typed_entity_match(
+                            str(row["memory_type"]), payload, plan.entity_constraints
+                        )
+                    )
+                    if plan.entity_constraints and not entity_match:
+                        complete = False
+                        break
+                    if (
+                        plan.earliest_occurred_at is not None
+                        and time_end < plan.earliest_occurred_at
+                    ) or (
+                        plan.latest_occurred_at is not None
+                        and time_start > plan.latest_occurred_at
+                    ):
+                        complete = False
+                        break
+                    if (
+                        denied
+                        or not self._candidate_disclosure_allowed(
+                            plan.disclosure_context,
+                            str(row["effective_privacy_class"]),
+                            attrs,
+                        )
+                    ):
+                        complete = False
+                        break
+                    lane_names: list[str] = []
+                    if query_match and any(
+                        mode.value == "full_text" for mode in plan.retrieval_modes
+                    ):
+                        lane_names.append("full_text")
+                        group_lane_scores["full_text"] = max(
+                            group_lane_scores.get("full_text", 0.0),
+                            float(lexical_score),
+                        )
+                    if entity_match:
+                        lane_names.append("entity")
+                        group_lane_scores["entity"] = 1.0
+                    if plan.task_scope_ids and set(scopes) & set(plan.task_scope_ids):
+                        lane_names.append("task_scope")
+                        scope_score = float(len(set(scopes) & set(plan.task_scope_ids)))
+                        if context.active_task_scope_id in scopes:
+                            scope_score += 1.0
+                        group_lane_scores["task_scope"] = max(
+                            group_lane_scores.get("task_scope", 0.0), scope_score
+                        )
+                    if (
+                        plan.earliest_occurred_at is not None
+                        or plan.latest_occurred_at is not None
+                    ):
+                        lane_names.append("temporal")
+                        anchor = plan.latest_occurred_at or plan.earliest_occurred_at or now
+                        temporal_score = 1.0 / (1.0 + abs(source_time - anchor))
+                        group_lane_scores["temporal"] = max(
+                            group_lane_scores.get("temporal", 0.0), temporal_score
+                        )
+                    group_has_requested_lane = group_has_requested_lane or bool(lane_names)
+                    group_source_time = max(group_source_time, source_time)
+                    members.append(
+                        RecallCandidate(
+                            "cognitive_memory",
+                            str(row["memory_id"]),
+                            int(row["revision"]),
+                            str(row["memory_type"]),
+                            payload,
+                            str(row["content_hash"]),
+                            str(row["effective_privacy_class"]),
+                            tuple(sorted(set(attrs))),
+                            evidence_hash,
+                            scopes,
+                            context.active_task_scope_id,
+                            source_time,
+                            (
+                                context.expires_at
+                                if row["valid_to"] is None
+                                else min(context.expires_at, float(row["valid_to"]))
+                            ),
+                            tuple((lane, 1) for lane in lane_names),
+                        )
+                    )
+                if complete and len(members) == 2 and group_has_requested_lane:
+                    found.append(
+                        (
+                            RecallConfirmationCandidate(
+                            str(group["group_id"]),
+                            str(group["group_hash"]),
+                            tuple(members),
+                            ),
+                            str(member_rows[0]["memory_type"]),
+                            group_lane_scores,
+                            group_source_time,
+                        )
+                    )
+        lane_cap_items = min(128, max(32, 8 * plan.budget.max_items))
+        lane_cap_groups = max(1, lane_cap_items // 2)
+        lane_ranks: dict[str, dict[str, int]] = {}
+        for memory_type in sorted({item[1] for item in found}):
+            for lane in ("full_text", "entity", "task_scope", "temporal"):
+                lane_items = [
+                    item
+                    for item in found
+                    if item[1] == memory_type and lane in item[2]
+                ]
+                lane_items.sort(
+                    key=lambda item: (
+                        -item[2][lane],
+                        -item[3],
+                        item[0].conflict_group_id,
+                    )
+                )
+                lane_ranks.setdefault(lane, {}).update(
+                    {
+                        item[0].conflict_group_id: rank
+                        for rank, item in enumerate(
+                            lane_items[:lane_cap_groups], start=1
+                        )
+                    }
+                )
+        weights = {
+            "full_text": 0.30,
+            "entity": 0.15,
+            "task_scope": 0.10,
+            "temporal": 0.05,
+        }
+        ranked = sorted(
+            (
+                item
+                for item in found
+                if any(
+                    item[0].conflict_group_id in ranks
+                    for ranks in lane_ranks.values()
+                )
+            ),
+            key=lambda item: (
+                -round(
+                    sum(
+                        weights[lane] / (60 + ranks[item[0].conflict_group_id])
+                        for lane, ranks in lane_ranks.items()
+                        if item[0].conflict_group_id in ranks
+                    ),
+                    12,
+                ),
+                -sum(
+                    item[0].conflict_group_id in ranks
+                    for ranks in lane_ranks.values()
+                ),
+                -item[3],
+                item[0].conflict_group_id,
+            ),
+        )
+        per_type_count: dict[str, int] = {}
+        bounded: list[RecallConfirmationCandidate] = []
+        for candidate, memory_type, _scores, _source_time in ranked:
+            if per_type_count.get(memory_type, 0) + 2 > 128:
+                continue
+            bounded.append(candidate)
+            per_type_count[memory_type] = per_type_count.get(memory_type, 0) + 2
+        return tuple(bounded)
+
+    async def _admit_typed_recall_request(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        context: RecallContext,
+        plan: RecallPlan,
+        request_digest: str,
+        now: float,
+    ) -> tuple[TypedRecallExecution | None, str, str]:
+        from simple_harness.runtime import RecallDecisionV4, TypedRecallResultV1
+
+        from simple_harness_memory.core.recall import TypedRecallExecution
+
+        assert self._db is not None
+        async with self._write_lock:
+            await self._db.execute("BEGIN IMMEDIATE")
+            committed = False
+            try:
+                await self._ensure_typed_recall_principal_unlocked(principal, now)
+                await self._ensure_recall_authority_unlocked(principal.actor_id, now)
+                async with self._db.execute(
+                    "SELECT * FROM typed_recall_requests WHERE principal_id=? "
+                    "AND idempotency_key=?",
+                    (principal.actor_id, plan.idempotency_key),
+                ) as cursor:
+                    request_row = await cursor.fetchone()
+                if request_row is not None:
+                    if str(request_row["request_hash"]) != request_digest:
+                        raise MemoryIdempotencyConflict("IDEMPOTENCY_CONFLICT")
+                    async with self._db.execute(
+                        "SELECT * FROM typed_recall_terminals WHERE request_id=?",
+                        (request_row["request_id"],),
+                    ) as cursor:
+                        terminal = await cursor.fetchone()
+                    if terminal is not None:
+                        if str(terminal["terminal_kind"]) == "deadline_exceeded":
+                            raise TimeoutError("DEADLINE_EXCEEDED")
+                        async with self._db.execute(
+                            "SELECT decision_json FROM typed_recall_decisions "
+                            "WHERE decision_id=?",
+                            (terminal["decision_id"],),
+                        ) as cursor:
+                            decision_row = await cursor.fetchone()
+                        async with self._db.execute(
+                            "SELECT result_json FROM typed_recall_results WHERE result_id=?",
+                            (terminal["result_id"],),
+                        ) as cursor:
+                            result_row = await cursor.fetchone()
+                        if decision_row is None or result_row is None:
+                            raise MemoryCorruptionError("typed recall terminal body missing")
+                        decision_json = json.loads(str(decision_row[0]))
+                        result_json = json.loads(str(result_row[0]))
+                        if not isinstance(decision_json, dict) or not isinstance(result_json, dict):
+                            raise MemoryCorruptionError("typed recall terminal body invalid")
+                        decision = RecallDecisionV4.from_json(decision_json)
+                        result = TypedRecallResultV1.from_json(result_json)
+                        result.validate_decision(decision)
+                        await self._db.execute("COMMIT")
+                        committed = True
+                        return (
+                            TypedRecallExecution(
+                                decision,
+                                result,
+                                False,
+                                0,
+                                True,
+                                tuple(json.loads(str(terminal["unsupported_capabilities_json"]))),
+                                tuple(json.loads(str(terminal["degradation_codes_json"]))),
+                            ),
+                            str(request_row["request_id"]),
+                            str(terminal["attempt_id"]),
+                        )
+                    if now >= float(request_row["deadline_at"]):
+                        async with self._db.execute(
+                            "SELECT attempt_id FROM typed_recall_attempts WHERE request_id=? "
+                            "ORDER BY attempt_ordinal DESC LIMIT 1",
+                            (request_row["request_id"],),
+                        ) as cursor:
+                            attempt = await cursor.fetchone()
+                        if attempt is None:
+                            raise MemoryCorruptionError("typed recall attempt missing")
+                        await self._insert_typed_recall_timeout_unlocked(
+                            str(request_row["request_id"]), str(attempt[0]), now
+                        )
+                        await self._db.execute("COMMIT")
+                        committed = True
+                        raise TimeoutError("DEADLINE_EXCEEDED")
+                    request_id = str(request_row["request_id"])
+                    async with self._db.execute(
+                        "SELECT COALESCE(MAX(attempt_ordinal),0)+1 FROM typed_recall_attempts "
+                        "WHERE request_id=?",
+                        (request_id,),
+                    ) as cursor:
+                        ordinal_row = await cursor.fetchone()
+                    assert ordinal_row is not None
+                    attempt_ordinal = int(ordinal_row[0])
+                else:
+                    request_id = _stable_id(
+                        "typed-recall-request", principal.actor_id, plan.idempotency_key
+                    )
+                    request_json = canonical_json(
+                        {
+                            "schema_version": 1,
+                            "principal_id": principal.actor_id,
+                            "context": context.to_json(),
+                            "plan": plan.to_json(),
+                        }
+                    )
+                    await self._db.execute(
+                        "INSERT INTO typed_recall_requests(request_id,principal_id,"
+                        "idempotency_key,request_hash,request_json,deadline_at,created_at) "
+                        "VALUES(?,?,?,?,?,?,?)",
+                        (
+                            request_id,
+                            principal.actor_id,
+                            plan.idempotency_key,
+                            request_digest,
+                            request_json,
+                            now + plan.budget.deadline_ms / 1000,
+                            now,
+                        ),
+                    )
+                    self._fault("typed_recall.after_request")
+                    attempt_ordinal = 1
+                attempt_id = _stable_id(
+                    "typed-recall-attempt", request_id, str(attempt_ordinal)
+                )
+                attempt_json: dict[str, JsonValue] = {
+                    "request_id": request_id,
+                    "attempt_id": attempt_id,
+                    "attempt_ordinal": attempt_ordinal,
+                    "started_at": now,
+                }
+                await self._db.execute(
+                    "INSERT INTO typed_recall_attempts(attempt_id,request_id,attempt_ordinal,"
+                    "started_at,attempt_hash) VALUES(?,?,?,?,?)",
+                    (
+                        attempt_id,
+                        request_id,
+                        attempt_ordinal,
+                        now,
+                        hashlib.sha256(canonical_json(attempt_json).encode()).hexdigest(),
+                    ),
+                )
+                self._fault("typed_recall.after_attempt")
+                await self._db.execute("COMMIT")
+                committed = True
+                return None, request_id, attempt_id
+            finally:
+                if not committed:
+                    with suppress(Exception):
+                        await self._db.execute("ROLLBACK")
+
+    async def _collect_typed_recall_candidates(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        context: RecallContext,
+        plan: RecallPlan,
+        now: float,
+        deadline_monotonic: float,
+    ) -> tuple[RecallCandidate, ...]:
+        from simple_harness_memory.core.recall import RecallCandidate
+        from simple_harness_memory.core.suppression import (
+            OrdinaryMemoryPurpose,
+            SuppressionCandidate,
+        )
+
+        assert self._db is not None
+        requested_types = tuple(item.value for item in plan.requested_memory_types)
+        candidates: list[RecallCandidate] = []
+        lane_scores: dict[tuple[tuple[object, ...], str], float] = {}
+        async with self._write_lock:
+            if time.monotonic() >= deadline_monotonic:
+                raise TimeoutError
+            placeholders = ",".join("?" for _ in requested_types)
+            if requested_types:
+                async with self._db.execute(
+                    "SELECT r.*,h.memory_type AS memory_type FROM cognitive_memory_heads h "
+                    "JOIN cognitive_memory_revisions r "
+                    "ON r.memory_id=h.memory_id AND r.revision=h.current_revision "
+                    f"WHERE h.principal_id=? AND h.memory_type IN ({placeholders}) "
+                    "AND (r.valid_from IS NULL OR r.valid_from<=?) "
+                    "AND (r.valid_to IS NULL OR ?<r.valid_to) "
+                    "ORDER BY h.memory_type,h.memory_id",
+                    (principal.actor_id, *requested_types, now, now),
+                ) as cursor:
+                    rows = tuple(await cursor.fetchall())
+            else:
+                rows = ()
+            for row in rows:
+                if time.monotonic() >= deadline_monotonic:
+                    raise TimeoutError
+                if not self._cognitive_recall_state_allowed(row):
+                    continue
+                if not await self._cognitive_recall_type_authority_allowed_unlocked(
+                    row,
+                    procedure_applicability_fingerprints=frozenset(
+                        context.procedure_applicability_fingerprints
+                    ),
+                ):
+                    continue
+                scopes, evidence_ids, evidence_hash = await self._cognitive_recall_lineage_unlocked(
+                    str(row["memory_id"]), int(row["revision"])
+                )
+                if plan.task_scope_ids and not set(scopes) & set(plan.task_scope_ids):
+                    continue
+                suppressed = (
+                    await self._resolve_suppression_unlocked(
+                        SuppressionCandidate(
+                            principal.actor_id, memory_id=str(row["memory_id"])
+                        ),
+                        OrdinaryMemoryPurpose.RECALL,
+                    )
+                ).denied
+                if not suppressed:
+                    for evidence_id in evidence_ids:
+                        if (
+                            await self._resolve_suppression_unlocked(
+                                SuppressionCandidate(principal.actor_id, evidence_id=evidence_id),
+                                OrdinaryMemoryPurpose.RECALL,
+                            )
+                        ).denied:
+                            suppressed = True
+                            break
+                if suppressed:
+                    continue
+                payload, source_time = await self._cognitive_public_payload_unlocked(row)
+                time_bounds = await self._cognitive_recall_time_bounds_unlocked(row)
+                time_requested = (
+                    plan.earliest_occurred_at is not None
+                    or plan.latest_occurred_at is not None
+                )
+                if time_requested and time_bounds is None:
+                    continue
+                if time_bounds is not None:
+                    time_start, time_end, source_time = time_bounds
+                else:
+                    time_start = time_end = source_time
+                attrs = tuple(json.loads(str(row["information_attributes_json"])))
+                payload_text = canonical_json(payload).casefold()
+                entity_match = self._cognitive_typed_entity_match(
+                    str(row["memory_type"]), payload, plan.entity_constraints
+                )
+                if plan.entity_constraints and not entity_match:
+                    continue
+                if (
+                    plan.earliest_occurred_at is not None
+                    and time_end < plan.earliest_occurred_at
+                ) or (
+                    plan.latest_occurred_at is not None
+                    and time_start > plan.latest_occurred_at
+                ):
+                    continue
+                if not self._candidate_disclosure_allowed(
+                    plan.disclosure_context,
+                    str(row["effective_privacy_class"]),
+                    attrs,
+                ):
+                    continue
+                lane_values: list[tuple[str, float]] = []
+                query_terms = tuple(
+                    term
+                    for term in re.findall(r"[\w\u3400-\u9fff]+", plan.query.casefold())
+                    if term
+                )
+                lexical_score = sum(payload_text.count(term) for term in query_terms)
+                if (
+                    any(mode.value == "full_text" for mode in plan.retrieval_modes)
+                    and lexical_score
+                ):
+                    lane_values.append(("full_text", float(lexical_score)))
+                entity_score = int(entity_match)
+                if entity_score:
+                    lane_values.append(("entity", float(entity_score)))
+                if plan.task_scope_ids and set(scopes) & set(plan.task_scope_ids):
+                    scope_score = len(set(scopes) & set(plan.task_scope_ids))
+                    if context.active_task_scope_id in scopes:
+                        scope_score += 1
+                    lane_values.append(("task_scope", float(scope_score)))
+                if plan.earliest_occurred_at is not None or plan.latest_occurred_at is not None:
+                    anchor = plan.latest_occurred_at or plan.earliest_occurred_at or now
+                    lane_values.append(
+                        ("temporal", 1.0 / (1.0 + abs(source_time - anchor)))
+                    )
+                if not lane_values:
+                    continue
+                candidate = RecallCandidate(
+                        source_kind="cognitive_memory",
+                        source_ref=str(row["memory_id"]),
+                        source_revision=int(row["revision"]),
+                        memory_type=str(row["memory_type"]),
+                        public_payload=payload,
+                        source_content_hash=str(row["content_hash"]),
+                        effective_privacy_class=str(row["effective_privacy_class"]),
+                        information_attributes=tuple(sorted(set(attrs))),
+                        evidence_manifest_hash=evidence_hash,
+                        source_task_scope_ids=scopes,
+                        active_task_scope_id=context.active_task_scope_id,
+                        source_time=source_time,
+                        authority_expires_at=(
+                            context.expires_at
+                            if row["valid_to"] is None
+                            else min(context.expires_at, float(row["valid_to"]))
+                        ),
+                        lane_ranks=tuple((name, 1) for name, _score in lane_values),
+                )
+                candidates.append(candidate)
+                lane_scores.update(
+                    {
+                        (candidate.exact_key, lane): score
+                        for lane, score in lane_values
+                    }
+                )
+        # Assign deterministic per-lane ranks after every eligibility gate.
+        ranked_lanes: dict[str, dict[tuple[object, ...], int]] = {}
+        lane_cap = min(128, max(32, 8 * plan.budget.max_items))
+        for lane in ("full_text", "entity", "task_scope", "temporal"):
+            if time.monotonic() >= deadline_monotonic:
+                raise TimeoutError
+            for memory_type in requested_types:
+                lane_items = [
+                    item
+                    for item in candidates
+                    if item.memory_type == memory_type and lane in dict(item.lane_ranks)
+                ]
+                lane_items.sort(
+                    key=lambda item: (
+                        -lane_scores[(item.exact_key, lane)],
+                        item.exact_key,
+                    )
+                )
+                ranked_lanes.setdefault(lane, {}).update(
+                    {
+                        item.exact_key: rank
+                        for rank, item in enumerate(lane_items[:lane_cap], start=1)
+                    }
+                )
+        normalized = tuple(
+            RecallCandidate(
+                source_kind=item.source_kind,
+                source_ref=item.source_ref,
+                source_revision=item.source_revision,
+                memory_type=item.memory_type,
+                public_payload=item.public_payload,
+                source_content_hash=item.source_content_hash,
+                effective_privacy_class=item.effective_privacy_class,
+                information_attributes=item.information_attributes,
+                evidence_manifest_hash=item.evidence_manifest_hash,
+                source_task_scope_ids=item.source_task_scope_ids,
+                active_task_scope_id=item.active_task_scope_id,
+                source_time=item.source_time,
+                authority_expires_at=item.authority_expires_at,
+                lane_ranks=tuple(
+                    (lane, ranks[item.exact_key])
+                    for lane, ranks in ranked_lanes.items()
+                    if item.exact_key in ranks
+                ),
+            )
+            for item in candidates
+            if any(item.exact_key in ranks for ranks in ranked_lanes.values())
+        )
+        by_type: dict[str | None, list[RecallCandidate]] = {}
+        for item in normalized:
+            by_type.setdefault(item.memory_type, []).append(item)
+        bounded: list[RecallCandidate] = []
+        from simple_harness_memory.core.recall import rank_candidates
+
+        for memory_type in sorted(by_type, key=lambda item: "" if item is None else item):
+            bounded.extend(rank_candidates(tuple(by_type[memory_type]))[:128])
+        return tuple(bounded)
+
+    async def _cognitive_recall_lineage_unlocked(
+        self, memory_id: str, revision: int
+    ) -> tuple[tuple[str, ...], tuple[str, ...], str]:
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT task_scope_id,evidence_id FROM cognitive_revision_task_scope_origins "
+            "WHERE memory_id=? AND revision=? ORDER BY task_scope_id,registration_id",
+            (memory_id, revision),
+        ) as cursor:
+            origin_rows = tuple(await cursor.fetchall())
+        async with self._db.execute(
+            "SELECT evidence_id,span_id,quote_hash FROM cognitive_evidence_spans "
+            "WHERE memory_id=? AND revision=? ORDER BY ordinal",
+            (memory_id, revision),
+        ) as cursor:
+            evidence_rows = tuple(await cursor.fetchall())
+        scopes = tuple(dict.fromkeys(str(row[0]) for row in origin_rows))
+        evidence_ids = tuple(dict.fromkeys(str(row[0]) for row in evidence_rows))
+        manifest = cast(JsonValue, sorted({str(row[0]) for row in evidence_rows}))
+        return scopes, evidence_ids, hashlib.sha256(canonical_json(manifest).encode()).hexdigest()
+
+    @staticmethod
+    def _cognitive_typed_entity_match(
+        memory_type: str,
+        payload: Mapping[str, JsonValue],
+        constraints: tuple[str, ...],
+    ) -> bool:
+        if not constraints:
+            return False
+        typed_values: list[str] = []
+        if memory_type == "episode":
+            participants = payload.get("participants")
+            if isinstance(participants, list):
+                typed_values.extend(str(item) for item in participants)
+        elif memory_type == "semantic":
+            typed_values.append(str(payload.get("subject_entity", "")))
+            object_value = payload.get("object_value")
+            if isinstance(object_value, str):
+                typed_values.append(object_value)
+            elif isinstance(object_value, dict):
+                for key in ("entity_id", "entity_ref"):
+                    entity_value = object_value.get(key)
+                    if isinstance(entity_value, str):
+                        typed_values.append(entity_value)
+        elif memory_type == "procedure":
+            applicability = payload.get("applicability")
+            if isinstance(applicability, list):
+                typed_values.extend(str(item) for item in applicability)
+        else:
+            trigger = payload.get("trigger")
+            if isinstance(trigger, dict):
+                authority_ref = trigger.get("event_authority_ref")
+                if isinstance(authority_ref, str):
+                    typed_values.append(authority_ref)
+        normalized = {item.casefold() for item in typed_values}
+        return any(item.casefold() in normalized for item in constraints)
+
+    async def _cognitive_recall_time_bounds_unlocked(
+        self, row: aiosqlite.Row
+    ) -> tuple[float, float, float] | None:
+        assert self._db is not None
+        memory_type = str(row["memory_type"])
+        memory_id = str(row["memory_id"])
+        revision = int(row["revision"])
+        if memory_type == "episode":
+            async with self._db.execute(
+                "SELECT occurred_start,occurred_end FROM episode_records "
+                "WHERE memory_id=? AND revision=?",
+                (memory_id, revision),
+            ) as cursor:
+                typed = await cursor.fetchone()
+            if typed is None:
+                return None
+            start = float(typed[0])
+            end = start if typed[1] is None else float(typed[1])
+            return start, end, start
+        if memory_type == "semantic":
+            anchor = float(row["created_at"])
+            start = anchor if row["valid_from"] is None else float(row["valid_from"])
+            end = float("inf") if row["valid_to"] is None else float(row["valid_to"])
+            return start, end, anchor
+        if memory_type == "procedure":
+            async with self._db.execute(
+                "SELECT MAX(source_time) FROM ("
+                "SELECT occurred_at AS source_time FROM procedure_observations "
+                "WHERE memory_id=? AND procedure_revision<=? AND attributable=1 "
+                "UNION ALL SELECT e.created_at AS source_time "
+                "FROM cognitive_evidence_spans s JOIN evidence_envelopes e "
+                "ON e.evidence_id=s.evidence_id WHERE s.memory_id=? AND s.revision=?"
+                ")",
+                (memory_id, revision, memory_id, revision),
+            ) as cursor:
+                typed = await cursor.fetchone()
+            if typed is None or typed[0] is None:
+                return None
+            anchor = float(typed[0])
+            return anchor, anchor, anchor
+        async with self._db.execute(
+            "SELECT due_at FROM prospective_records WHERE memory_id=? AND revision=?",
+            (memory_id, revision),
+        ) as cursor:
+            typed = await cursor.fetchone()
+        if typed is None:
+            return None
+        if typed[0] is not None and str(row["lifecycle_state"]) in {"pending", "rescheduled"}:
+            anchor = float(typed[0])
+            return anchor, anchor, anchor
+        async with self._db.execute(
+            "SELECT MAX(decided_at) FROM prospective_signal_decisions "
+            "WHERE memory_id=? AND committed_revision<=?",
+            (memory_id, revision),
+        ) as cursor:
+            transition = await cursor.fetchone()
+        if transition is None or transition[0] is None:
+            return None
+        anchor = float(transition[0])
+        return anchor, anchor, anchor
+
+    async def _cognitive_recall_type_authority_allowed_unlocked(
+        self,
+        row: aiosqlite.Row,
+        *,
+        procedure_applicability_fingerprints: frozenset[str],
+    ) -> bool:
+        """Fail closed on type-specific current runtime authorities."""
+
+        from simple_harness_memory.core.lifecycle_results import (
+            UNBOUND_PROCEDURE_APPLICABILITY,
+        )
+
+        assert self._db is not None
+        memory_type = str(row["memory_type"])
+        if memory_type == "procedure":
+            async with self._db.execute(
+                "SELECT applicability_fingerprint FROM procedure_records "
+                "WHERE memory_id=? AND revision=?",
+                (row["memory_id"], row["revision"]),
+            ) as cursor:
+                procedure = await cursor.fetchone()
+            return bool(
+                procedure is not None
+                and str(procedure[0]) != UNBOUND_PROCEDURE_APPLICABILITY
+                and str(procedure[0]) in procedure_applicability_fingerprints
+            )
+        if memory_type != "prospective":
+            return True
+        async with self._db.execute(
+            "SELECT trigger_json FROM prospective_records "
+            "WHERE memory_id=? AND revision=?",
+            (row["memory_id"], row["revision"]),
+        ) as cursor:
+            prospective = await cursor.fetchone()
+        if prospective is None:
+            return False
+        _trigger, trigger_hash = self._decode_prospective_trigger(
+            str(prospective["trigger_json"])
+        )
+        if str(row["lifecycle_state"]) in {"triggered", "in_progress"}:
+            async with self._db.execute(
+                "SELECT 1 FROM prospective_signal_decisions d "
+                "JOIN prospective_trigger_events e ON e.consumption_id=d.consumption_id "
+                "WHERE d.memory_id=? AND d.committed_revision<=? "
+                "AND d.transition_to IN ('triggered','in_progress') "
+                "AND e.trigger_fingerprint=? AND e.outcome='matched' "
+                "ORDER BY d.committed_revision DESC LIMIT 1",
+                (row["memory_id"], row["revision"], trigger_hash),
+            ) as cursor:
+                return await cursor.fetchone() is not None
+        async with self._db.execute(
+            "SELECT state,trigger_hash FROM prospective_scheduler_registrations "
+            "WHERE memory_id=? AND prospective_revision=? "
+            "ORDER BY occurred_at DESC,registration_revision DESC LIMIT 1",
+            (row["memory_id"], row["revision"]),
+        ) as cursor:
+            registration = await cursor.fetchone()
+        return bool(
+            registration is not None
+            and str(registration["state"]) == "accepted"
+            and str(registration["trigger_hash"]) == trigger_hash
+        )
+
+    async def _cognitive_public_payload_unlocked(
+        self, row: aiosqlite.Row
+    ) -> tuple[dict[str, JsonValue], float]:
+        assert self._db is not None
+        memory_id = str(row["memory_id"])
+        revision = int(row["revision"])
+        memory_type = str(row["memory_type"])
+        table_by_type = {
+            "episode": "episode_records",
+            "semantic": "semantic_claims",
+            "procedure": "procedure_records",
+            "prospective": "prospective_records",
+        }
+        async with self._db.execute(
+            f"SELECT * FROM {table_by_type[memory_type]} WHERE memory_id=? AND revision=?",
+            (memory_id, revision),
+        ) as cursor:
+            payload_row = await cursor.fetchone()
+        if payload_row is None:
+            raise MemoryCorruptionError("typed recall payload missing")
+        if memory_type == "episode":
+            return (
+                {
+                    "title": str(payload_row["title"]),
+                    "participants": json.loads(str(payload_row["participants_json"])),
+                    "goals": json.loads(str(payload_row["goals_json"])),
+                    "actions": json.loads(str(payload_row["actions_json"])),
+                    "results": json.loads(str(payload_row["results_json"])),
+                    "impacts": json.loads(str(payload_row["impacts_json"])),
+                    "occurred_start": float(payload_row["occurred_start"]),
+                    "occurred_end": payload_row["occurred_end"],
+                },
+                float(payload_row["occurred_start"]),
+            )
+        if memory_type == "semantic":
+            return (
+                {
+                    "subject_entity": str(payload_row["subject_entity"]),
+                    "predicate": str(payload_row["predicate"]),
+                    "object_value": json.loads(str(payload_row["object_json"])),
+                    "qualifiers": json.loads(str(payload_row["qualifiers_json"])),
+                },
+                float(row["created_at"]),
+            )
+        if memory_type == "procedure":
+            return (
+                {
+                    "name": str(payload_row["name"]),
+                    "applicability": json.loads(str(payload_row["applicability_json"])),
+                    "steps": json.loads(str(payload_row["steps_json"])),
+                    "effective_risk": str(payload_row["risk_level"]),
+                },
+                float(row["created_at"]),
+            )
+        return (
+            {
+                "action": str(payload_row["action_text"]),
+                "trigger": json.loads(str(payload_row["trigger_json"])),
+            },
+            float(payload_row["due_at"] or row["created_at"]),
+        )
+
+    @staticmethod
+    def _cognitive_recall_state_allowed(
+        row: aiosqlite.Row, *, allow_contested: bool = False
+    ) -> bool:
+        lifecycle = {
+            "episode": {"active", "amended"},
+            "semantic": {"active"},
+            "procedure": {"active", "reinforced"},
+            "prospective": {"pending", "triggered", "in_progress", "rescheduled"},
+        }
+        memory_type = str(row["memory_type"])
+        allowed_conflicts = {"uncontested", "resolved"}
+        if allow_contested:
+            allowed_conflicts.add("contested")
+        if str(row["lifecycle_state"]) not in lifecycle[memory_type] or str(
+            row["conflict_status"]
+        ) not in allowed_conflicts:
+            return False
+        epistemic = str(row["epistemic_status"])
+        verification = str(row["verification_state"])
+        if memory_type in {"episode", "semantic"}:
+            return (epistemic, verification) in {
+                ("explicit_user", "source_bound"),
+                ("explicit_user", "user_confirmed"),
+                ("verified_external", "source_verified"),
+                ("observed_behavior", "source_verified"),
+                ("observed_behavior", "repeated_observation"),
+            }
+        if memory_type == "procedure":
+            return (epistemic, verification) in {
+                ("explicit_user", "source_bound"),
+                ("explicit_user", "user_confirmed"),
+                ("observed_behavior", "repeated_observation"),
+            }
+        return epistemic == "explicit_user" and verification in {
+            "source_bound",
+            "user_confirmed",
+        }
+
+    @staticmethod
+    def _cognitive_recall_valid_at(row: aiosqlite.Row, now: float) -> bool:
+        return (row["valid_from"] is None or float(row["valid_from"]) <= now) and (
+            row["valid_to"] is None or now < float(row["valid_to"])
+        )
+
+    @staticmethod
+    def _ordinary_recall_disclosure_allowed(disclosure: DisclosureContext) -> bool:
+        return (
+            disclosure.recipient.value in {"user_self", "household", "task_collaborator"}
+            and disclosure.purpose.value
+            in {"task_execution", "personalization", "task_resume", "user_review"}
+            and disclosure.trust.value == "trusted_authority"
+            and disclosure.generation.value == "current"
+        )
+
+    @staticmethod
+    def _candidate_disclosure_allowed(
+        disclosure: DisclosureContext, privacy: str, attributes: tuple[str, ...]
+    ) -> bool:
+        recipient = disclosure.recipient.value
+        purpose = disclosure.purpose.value
+        if recipient == "user_self":
+            return purpose in {
+                "task_execution",
+                "personalization",
+                "task_resume",
+                "user_review",
+            } and privacy in {"public", "personal", "sensitive"}
+        sensitive = {"identity", "relationship", "family", "health", "location", "financial"}
+        return (
+            recipient in {"household", "task_collaborator"}
+            and purpose in {"task_execution", "task_resume"}
+            and privacy == "public"
+            and not sensitive.intersection(attributes)
+        )
+
+    async def _ensure_typed_recall_principal_unlocked(
+        self, principal: MemoryPrincipal, now: float
+    ) -> None:
+        assert self._db is not None
+        await self._db.execute(
+            "INSERT INTO principals(principal_id,deployment_id,household_id,actor_id,created_at) "
+            "VALUES(?,?,?,?,?) ON CONFLICT(principal_id) DO NOTHING",
+            (
+                principal.actor_id,
+                principal.deployment_id,
+                principal.household_id,
+                principal.actor_id,
+                now,
+            ),
+        )
+        await self._authorize_short_horizon_principal_unlocked(principal)
+
+    async def _ensure_recall_authority_unlocked(self, principal_id: str, now: float) -> None:
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT 1 FROM recall_authority_heads WHERE principal_id=?", (principal_id,)
+        ) as cursor:
+            if await cursor.fetchone() is not None:
+                return
+        event_id = _stable_id("recall-authority-event", principal_id, "1")
+        payload: dict[str, JsonValue] = {
+            "event_id": event_id,
+            "principal_id": principal_id,
+            "previous_epoch": 0,
+            "authority_epoch": 1,
+            "event_kind": "initialized",
+            "source_ref_hash": hashlib.sha256(b"fresh-v6").hexdigest(),
+            "policy_hash": _RECALL_POLICY_HASH,
+            "created_at": now,
+        }
+        event_hash = hashlib.sha256(canonical_json(payload).encode()).hexdigest()
+        await self._db.execute(
+            "INSERT INTO recall_authority_events(event_id,principal_id,previous_epoch,"
+            "authority_epoch,event_kind,source_ref_hash,policy_hash,event_json,event_hash,"
+            "created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (
+                event_id,
+                principal_id,
+                0,
+                1,
+                "initialized",
+                payload["source_ref_hash"],
+                _RECALL_POLICY_HASH,
+                canonical_json(payload),
+                event_hash,
+                now,
+            ),
+        )
+        await self._db.execute(
+            "INSERT INTO recall_authority_heads(principal_id,authority_epoch,policy_hash,"
+            "updated_at) VALUES(?,?,?,?)",
+            (principal_id, 1, _RECALL_POLICY_HASH, now),
+        )
+
+    async def _recall_authority_unlocked(self, principal_id: str) -> tuple[int, str]:
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT authority_epoch,policy_hash FROM recall_authority_heads "
+            "WHERE principal_id=?",
+            (principal_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            raise MemoryCorruptionError("recall authority head missing")
+        return int(row[0]), str(row[1])
+
+    async def _advance_recall_authority_unlocked(
+        self,
+        principal_id: str,
+        *,
+        event_kind: str,
+        source_ref: str,
+        now: float,
+    ) -> tuple[int, str]:
+        """Append one immutable authority event and CAS the mutable head in one tx."""
+
+        assert self._db is not None
+        await self._ensure_recall_authority_unlocked(principal_id, now)
+        previous_epoch, previous_policy_hash = await self._recall_authority_unlocked(
+            principal_id
+        )
+        authority_epoch = previous_epoch + 1
+        event_id = _stable_id(
+            "recall-authority-event", principal_id, str(authority_epoch), source_ref
+        )
+        payload: dict[str, JsonValue] = {
+            "event_id": event_id,
+            "principal_id": principal_id,
+            "previous_epoch": previous_epoch,
+            "authority_epoch": authority_epoch,
+            "event_kind": event_kind,
+            "source_ref_hash": _opaque_hash(source_ref),
+            "policy_hash": _RECALL_POLICY_HASH,
+            "previous_policy_hash": previous_policy_hash,
+            "created_at": now,
+        }
+        event_json = canonical_json(payload)
+        event_hash = hashlib.sha256(event_json.encode()).hexdigest()
+        await self._db.execute(
+            "INSERT INTO recall_authority_events(event_id,principal_id,previous_epoch,"
+            "authority_epoch,event_kind,source_ref_hash,policy_hash,event_json,event_hash,"
+            "created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (
+                event_id,
+                principal_id,
+                previous_epoch,
+                authority_epoch,
+                event_kind,
+                payload["source_ref_hash"],
+                _RECALL_POLICY_HASH,
+                event_json,
+                event_hash,
+                now,
+            ),
+        )
+        cursor = await self._db.execute(
+            "UPDATE recall_authority_heads SET authority_epoch=?,policy_hash=?,updated_at=? "
+            "WHERE principal_id=? AND authority_epoch=? AND policy_hash=?",
+            (
+                authority_epoch,
+                _RECALL_POLICY_HASH,
+                now,
+                principal_id,
+                previous_epoch,
+                previous_policy_hash,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise MemoryWriterConflict("recall_authority_head_cas_conflict")
+        return authority_epoch, _RECALL_POLICY_HASH
+
+    async def _persist_typed_recall_terminal_unlocked(
+        self,
+        *,
+        request_id: str,
+        attempt_id: str,
+        execution: TypedRecallExecution,
+        terminal_kind: str,
+        now: float,
+        deadline_monotonic: float,
+    ) -> None:
+        assert self._db is not None
+        await self._db.execute("BEGIN IMMEDIATE")
+        committed = False
+        try:
+            if time.monotonic() >= deadline_monotonic:
+                await self._insert_typed_recall_timeout_unlocked(
+                    request_id, attempt_id, now
+                )
+                await self._db.execute("COMMIT")
+                committed = True
+                raise TimeoutError("DEADLINE_EXCEEDED")
+            decision = execution.decision
+            result = execution.result
+            await self._db.execute(
+                "INSERT INTO typed_recall_decisions(decision_id,request_id,decision_json,"
+                "decision_hash,created_at) VALUES(?,?,?,?,?)",
+                (
+                    decision.decision_id,
+                    request_id,
+                    canonical_json(decision.to_json()),
+                    decision.decision_hash,
+                    now,
+                ),
+            )
+            self._fault("typed_recall.after_decision_header")
+            flat_decision_items = list(decision.selected_items)
+            flat_decision_items.extend(
+                member for group in decision.confirmation_groups for member in group.members
+            )
+            for ordinal, item in enumerate(flat_decision_items, start=1):
+                await self._db.execute(
+                    "INSERT INTO typed_recall_decision_items(decision_id,ordinal,item_id,"
+                    "item_kind,item_json,item_hash) VALUES(?,?,?,?,?,?)",
+                    (
+                        decision.decision_id,
+                        ordinal,
+                        item.item_id,
+                        item.item_kind.value,
+                        canonical_json(item.to_json()),
+                        item.item_hash,
+                    ),
+                )
+                self._fault("typed_recall.after_decision_item")
+            await self._db.execute(
+                "INSERT INTO typed_recall_results(result_id,request_id,decision_id,"
+                "authority_epoch,policy_hash,result_json,result_hash,authority_expires_at,"
+                "created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                (
+                    result.result_id,
+                    request_id,
+                    decision.decision_id,
+                    result.authority_epoch,
+                    result.policy_hash,
+                    canonical_json(result.to_json()),
+                    result.result_hash,
+                    result.authority_expires_at,
+                    now,
+                ),
+            )
+            self._fault("typed_recall.after_result_header")
+            for ordinal, item in enumerate(result.items, start=1):
+                await self._db.execute(
+                    "INSERT INTO typed_recall_result_items(result_id,ordinal,item_id,"
+                    "result_item_json,result_item_hash) VALUES(?,?,?,?,?)",
+                    (
+                        result.result_id,
+                        ordinal,
+                        item.selected_item.item_id,
+                        canonical_json(item.to_json()),
+                        item.result_item_hash,
+                    ),
+                )
+                self._fault("typed_recall.after_result_item")
+            for group_ordinal, typed_group in enumerate(
+                result.confirmation_groups, start=1
+            ):
+                await self._db.execute(
+                    "INSERT INTO typed_recall_confirmation_groups(result_id,ordinal,"
+                    "group_id,group_json,group_hash) VALUES(?,?,?,?,?)",
+                    (
+                        result.result_id,
+                        group_ordinal,
+                        typed_group.group.conflict_group_id,
+                        canonical_json(typed_group.to_json()),
+                        typed_group.result_group_hash,
+                    ),
+                )
+                for member_ordinal, typed_member in enumerate(typed_group.members, start=1):
+                    await self._db.execute(
+                        "INSERT INTO typed_recall_confirmation_members(result_id,"
+                        "group_ordinal,member_ordinal,item_id,member_json,member_hash) "
+                        "VALUES(?,?,?,?,?,?)",
+                        (
+                            result.result_id,
+                            group_ordinal,
+                            member_ordinal,
+                            typed_member.member.item_id,
+                            canonical_json(typed_member.to_json()),
+                            typed_member.result_member_hash,
+                        ),
+                    )
+                    self._fault("typed_recall.after_result_item")
+            terminal_json: dict[str, JsonValue] = {
+                "request_id": request_id,
+                "attempt_id": attempt_id,
+                "terminal_kind": terminal_kind,
+                "decision_id": decision.decision_id,
+                "decision_hash": decision.decision_hash,
+                "result_id": result.result_id,
+                "result_hash": result.result_hash,
+                "candidate_query_started": execution.candidate_query_started,
+                "candidate_query_count": execution.candidate_query_count,
+                "unsupported_capabilities": list(execution.unsupported_capabilities),
+                "degradation_codes": list(execution.degradation_codes),
+                "created_at": now,
+            }
+            terminal_hash = hashlib.sha256(canonical_json(terminal_json).encode()).hexdigest()
+            await self._db.execute(
+                "INSERT INTO typed_recall_terminals(request_id,attempt_id,terminal_kind,"
+                "decision_id,decision_hash,result_id,result_hash,candidate_query_started,"
+                "candidate_query_count,"
+                "unsupported_capabilities_json,degradation_codes_json,terminal_json,"
+                "terminal_hash,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    request_id,
+                    attempt_id,
+                    terminal_kind,
+                    decision.decision_id,
+                    decision.decision_hash,
+                    result.result_id,
+                    result.result_hash,
+                    int(execution.candidate_query_started),
+                    execution.candidate_query_count,
+                    canonical_json(list(execution.unsupported_capabilities)),
+                    canonical_json(list(execution.degradation_codes)),
+                    canonical_json(terminal_json),
+                    terminal_hash,
+                    now,
+                ),
+            )
+            self._fault("typed_recall.after_terminal")
+            self._fault("typed_recall.before_commit")
+            if time.monotonic() >= deadline_monotonic:
+                await self._db.execute("ROLLBACK")
+                await self._db.execute("BEGIN IMMEDIATE")
+                await self._insert_typed_recall_timeout_unlocked(
+                    request_id, attempt_id, now
+                )
+                await self._db.execute("COMMIT")
+                committed = True
+                raise TimeoutError("DEADLINE_EXCEEDED")
+            await self._db.execute("COMMIT")
+            committed = True
+            self._fault("typed_recall.after_commit")
+        finally:
+            if not committed:
+                with suppress(Exception):
+                    await self._db.execute("ROLLBACK")
+
+    async def _persist_typed_recall_timeout(
+        self, *, request_id: str, attempt_id: str, now: float
+    ) -> None:
+        assert self._db is not None
+        async with self._write_lock:
+            await self._db.execute("BEGIN IMMEDIATE")
+            committed = False
+            try:
+                await self._insert_typed_recall_timeout_unlocked(request_id, attempt_id, now)
+                await self._db.execute("COMMIT")
+                committed = True
+            finally:
+                if not committed:
+                    with suppress(Exception):
+                        await self._db.execute("ROLLBACK")
+
+    async def _insert_typed_recall_timeout_unlocked(
+        self, request_id: str, attempt_id: str, now: float
+    ) -> None:
+        assert self._db is not None
+        terminal_json: dict[str, JsonValue] = {
+            "request_id": request_id,
+            "attempt_id": attempt_id,
+            "terminal_kind": "deadline_exceeded",
+            "candidate_query_started": False,
+            "candidate_query_count": 0,
+            "unsupported_capabilities": [],
+            "degradation_codes": [],
+            "created_at": now,
+        }
+        await self._db.execute(
+            "INSERT INTO typed_recall_terminals(request_id,attempt_id,terminal_kind,"
+            "decision_id,decision_hash,result_id,result_hash,candidate_query_started,"
+            "candidate_query_count,"
+            "unsupported_capabilities_json,degradation_codes_json,terminal_json,terminal_hash,"
+            "created_at) VALUES(?,?,\'deadline_exceeded\',NULL,NULL,NULL,NULL,0,0,?,?,?,?,?)",
+            (
+                request_id,
+                attempt_id,
+                "[]",
+                "[]",
+                canonical_json(terminal_json),
+                hashlib.sha256(canonical_json(terminal_json).encode()).hexdigest(),
+                now,
+            ),
+        )
 
     async def record_procedure_observation(
         self,
@@ -2175,7 +4619,7 @@ class SQLiteHumanMemoryBackend:
         if type(reference) is not ProcedureObservationAuthorityRef:
             raise TypeError("reference must use ProcedureObservationAuthorityRef")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         scope.authorize(principal)
         try:
             replay = await self._read_procedure_result_unlocked(
@@ -2512,6 +4956,12 @@ class SQLiteHumanMemoryBackend:
                     before_commit = _timestamp(self._now())
                     if before_commit >= authority.expires_at:
                         raise MemoryValidationError("procedure_observation_authority_expired")
+                    await self._advance_recall_authority_unlocked(
+                        principal.actor_id,
+                        event_kind="procedure_changed",
+                        source_ref=result.result_id,
+                        now=consumed_at,
+                    )
                     self._fault("procedure.before_commit")
                     await self._db.execute("COMMIT")
                     committed = True
@@ -2566,7 +5016,7 @@ class SQLiteHumanMemoryBackend:
         if type(reference) is not ProspectiveSignalAuthorityRef:
             raise TypeError("reference must use ProspectiveSignalAuthorityRef")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         scope.authorize(principal)
         try:
             replay = await self._read_prospective_result_unlocked(
@@ -2859,6 +5309,12 @@ class SQLiteHumanMemoryBackend:
                     self._fault("prospective.after_decision")
                     if _timestamp(self._now()) >= authority.expires_at:
                         raise MemoryValidationError("prospective_signal_authority_expired")
+                    await self._advance_recall_authority_unlocked(
+                        principal.actor_id,
+                        event_kind="prospective_changed",
+                        source_ref=result.result_id,
+                        now=consumed_at,
+                    )
                     self._fault("prospective.before_commit")
                     await self._db.execute("COMMIT")
                     committed = True
@@ -2935,7 +5391,7 @@ class SQLiteHumanMemoryBackend:
         if type(plan) is not MemoryMutationPlan:
             raise TypeError("plan must use MemoryMutationPlan")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         async with self._write_lock:
             try:
                 scope.authorize(principal)
@@ -4097,6 +6553,13 @@ class SQLiteHumanMemoryBackend:
                 )
                 await self._insert_mutation_apply_result_unlocked(plan, apply_result)
                 self._fault("mutation.after_outbox")
+                if plan.outcome is MemoryMutationPlanOutcome.MUTATE:
+                    await self._advance_recall_authority_unlocked(
+                        principal.actor_id,
+                        event_kind="cognitive_memory_changed",
+                        source_ref=receipt.receipt_id,
+                        now=committed_at,
+                    )
                 self._fault("mutation.before_commit")
                 await self._db.execute("COMMIT")
                 committed = True
@@ -4152,7 +6615,7 @@ class SQLiteHumanMemoryBackend:
         if type(receipt_ref) is not MemoryMutationApplyReceiptRef:
             raise TypeError("receipt_ref must use MemoryMutationApplyReceiptRef")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         async with self._db.execute(
             "SELECT * FROM memory_mutation_receipts WHERE receipt_id=?",
             (receipt_ref.receipt_id,),
@@ -6463,7 +8926,7 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("config must use MemoryJobWorkerConfig")
         _audit_identifier(worker_id, "worker_id")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
             self._fault("job.claim.after_begin")
@@ -6890,7 +9353,7 @@ class SQLiteHumanMemoryBackend:
         ):
             raise TypeError("claim and envelope must use analysis protocol types")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         if self._db.in_transaction:
             raise MemoryWriterConflict("analysis_authority_called_inside_transaction")
         if (
@@ -6980,7 +9443,7 @@ class SQLiteHumanMemoryBackend:
         ):
             raise TypeError("claim, envelope, and application must use analysis types")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         async with self._write_lock:
             now = _timestamp(self._now())
             if not await self._analysis_claim_is_current_unlocked(claim, now):
@@ -8282,7 +10745,7 @@ class SQLiteHumanMemoryBackend:
             reasoning_refs,
         )
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
             committed = False
@@ -8652,7 +11115,7 @@ class SQLiteHumanMemoryBackend:
         if cursor is not None and type(cursor) is not AuditTraceCursor:
             raise TypeError("cursor must use AuditTraceCursor")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         mode = "sealed" if access_receipt is not None else "ordinary"
         query_hash = hashlib.sha256(
             canonical_json({"schema_version": 1, "mode": mode, "query": query.to_json()}).encode()
@@ -9054,7 +11517,7 @@ class SQLiteHumanMemoryBackend:
         if type(decision) is not SealedAuditAccessDecision:
             raise TypeError("decision must use SealedAuditAccessDecision")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         now = _timestamp(self._now())
         if decision.issued_at > now:
             raise SealedAuditAccessDenied("sealed_audit_decision_not_yet_valid")
@@ -9140,7 +11603,7 @@ class SQLiteHumanMemoryBackend:
         if not isinstance(evidence_id, str) or not evidence_id.strip() or "\x00" in evidence_id:
             raise MemoryValidationError("evidence_id_invalid")
         if self._db is None or self._receipt is None:
-            raise RuntimeError("human-memory v5 backend is not initialized")
+            raise RuntimeError("human-memory v6 backend is not initialized")
         denial: str | None = None
         record: IngestedEvidenceRecord | None = None
         async with self._write_lock:
@@ -9727,7 +12190,7 @@ class SQLiteHumanMemoryBackend:
 
         async with self._short_horizon_recall_lifecycle_lock:
             if self._short_horizon_closing or self._db is None or self._receipt is None:
-                raise RuntimeError("human-memory v5 backend is not initialized")
+                raise RuntimeError("human-memory v6 backend is not initialized")
             self._short_horizon_active_recalls += 1
             self._short_horizon_recall_idle.clear()
 
@@ -9847,10 +12310,10 @@ class SQLiteHumanMemoryBackend:
         async with self._db.execute("PRAGMA integrity_check") as cursor:
             integrity = await cursor.fetchone()
         if integrity is None or str(integrity[0]) != "ok":
-            raise MemoryCorruptionError("human-memory v5 integrity check failed")
+            raise MemoryCorruptionError("human-memory v6 integrity check failed")
         async with self._db.execute("PRAGMA foreign_key_check") as cursor:
             if await cursor.fetchone() is not None:
-                raise MemoryCorruptionError("human-memory v5 foreign key check failed")
+                raise MemoryCorruptionError("human-memory v6 foreign key check failed")
         async with self._db.execute(
             "SELECT 1 FROM cognitive_memory_heads h "
             "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
@@ -9864,6 +12327,404 @@ class SQLiteHumanMemoryBackend:
         await self._validate_cognitive_conflict_integrity_unlocked()
         await self._validate_short_horizon_integrity_unlocked()
         await self._validate_lifecycle_integrity_unlocked()
+        await self._validate_typed_recall_integrity_unlocked()
+
+    async def _validate_typed_recall_integrity_unlocked(self) -> None:
+        """Recompute every typed Recall hash and ordered body projection on reopen."""
+
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT (SELECT COUNT(*) FROM typed_recall_requests) + "
+            "(SELECT COUNT(*) FROM recall_context_use_receipts) + "
+            "(SELECT COUNT(*) FROM recall_authority_events)"
+        ) as cursor:
+            populated = await cursor.fetchone()
+        if populated is None or int(populated[0]) == 0:
+            return
+
+        from simple_harness.runtime import (
+            RecallContext,
+            RecallContextUseAuthorizationRequestV1,
+            RecallContextUseReceiptV1,
+            RecallDecisionV4,
+            RecallPlan,
+            TypedRecallResultV1,
+        )
+
+        from simple_harness_memory.core.recall import request_hash
+
+        async with self._db.execute(
+            "SELECT * FROM recall_authority_events ORDER BY principal_id,authority_epoch"
+        ) as cursor:
+            events = tuple(await cursor.fetchall())
+        latest: dict[str, tuple[int, str]] = {}
+        for event in events:
+            raw = str(event["event_json"])
+            payload = json.loads(raw)
+            if (
+                not isinstance(payload, dict)
+                or hashlib.sha256(canonical_json(payload).encode()).hexdigest()
+                != str(event["event_hash"])
+                or canonical_json(payload) != raw
+                or payload.get("event_id") != event["event_id"]
+                or payload.get("principal_id") != event["principal_id"]
+                or payload.get("previous_epoch") != event["previous_epoch"]
+                or payload.get("authority_epoch") != event["authority_epoch"]
+                or payload.get("event_kind") != event["event_kind"]
+                or payload.get("source_ref_hash") != event["source_ref_hash"]
+                or payload.get("policy_hash") != event["policy_hash"]
+                or payload.get("created_at") != event["created_at"]
+                or (
+                    int(event["previous_epoch"]) > 0
+                    and payload.get("previous_policy_hash")
+                    != latest.get(str(event["principal_id"]), (0, ""))[1]
+                )
+            ):
+                raise MemoryCorruptionError("typed recall authority event differs")
+            principal_id = str(event["principal_id"])
+            expected_previous = latest.get(principal_id, (0, ""))[0]
+            if int(event["previous_epoch"]) != expected_previous:
+                raise MemoryCorruptionError("typed recall authority chain differs")
+            latest[principal_id] = (
+                int(event["authority_epoch"]),
+                str(event["policy_hash"]),
+            )
+        async with self._db.execute("SELECT * FROM recall_authority_heads") as cursor:
+            heads = tuple(await cursor.fetchall())
+        if any(
+            latest.get(str(row["principal_id"]))
+            != (int(row["authority_epoch"]), str(row["policy_hash"]))
+            for row in heads
+        ) or set(latest) != {str(row["principal_id"]) for row in heads}:
+            raise MemoryCorruptionError("typed recall authority head differs")
+
+        async with self._db.execute("SELECT * FROM typed_recall_requests") as cursor:
+            requests = tuple(await cursor.fetchall())
+        requests_by_id = {str(row["request_id"]): row for row in requests}
+        request_bindings: dict[str, tuple[RecallContext, RecallPlan]] = {}
+        for row in requests:
+            raw = str(row["request_json"])
+            payload = json.loads(raw)
+            if not isinstance(payload, dict) or canonical_json(payload) != raw:
+                raise MemoryCorruptionError("typed recall request body differs")
+            context_raw = payload.get("context")
+            plan_raw = payload.get("plan")
+            if not isinstance(context_raw, dict) or not isinstance(plan_raw, dict):
+                raise MemoryCorruptionError("typed recall request binding missing")
+            context = RecallContext.from_json(context_raw)
+            plan = RecallPlan.from_json(plan_raw)
+            if (
+                payload.get("principal_id") != row["principal_id"]
+                or plan.idempotency_key != row["idempotency_key"]
+                or row["request_id"]
+                != _stable_id(
+                    "typed-recall-request",
+                    str(row["principal_id"]),
+                    str(row["idempotency_key"]),
+                )
+                or float(row["deadline_at"])
+                != float(row["created_at"]) + plan.budget.deadline_ms / 1_000
+                or request_hash(
+                    principal_id=str(row["principal_id"]), context=context, plan=plan
+                )
+                != row["request_hash"]
+            ):
+                raise MemoryCorruptionError("typed recall request hash differs")
+            request_bindings[str(row["request_id"])] = (context, plan)
+        async with self._db.execute("SELECT * FROM typed_recall_attempts") as cursor:
+            attempts = tuple(await cursor.fetchall())
+        attempt_requests: dict[str, str] = {}
+        for row in attempts:
+            attempt_payload: dict[str, JsonValue] = {
+                "request_id": str(row["request_id"]),
+                "attempt_id": str(row["attempt_id"]),
+                "attempt_ordinal": int(row["attempt_ordinal"]),
+                "started_at": float(row["started_at"]),
+            }
+            if (
+                str(row["request_id"]) not in requests_by_id
+                or row["attempt_id"]
+                != _stable_id(
+                    "typed-recall-attempt",
+                    str(row["request_id"]),
+                    str(row["attempt_ordinal"]),
+                )
+                or hashlib.sha256(canonical_json(attempt_payload).encode()).hexdigest()
+                != row["attempt_hash"]
+            ):
+                raise MemoryCorruptionError("typed recall attempt hash differs")
+            attempt_requests[str(row["attempt_id"])] = str(row["request_id"])
+
+        async with self._db.execute("SELECT * FROM typed_recall_decisions") as cursor:
+            decision_rows = tuple(await cursor.fetchall())
+        decisions: dict[str, RecallDecisionV4] = {}
+        decision_requests: dict[str, str] = {}
+        for row in decision_rows:
+            raw = str(row["decision_json"])
+            payload = json.loads(raw)
+            if not isinstance(payload, dict) or canonical_json(payload) != raw:
+                raise MemoryCorruptionError("typed recall decision body differs")
+            decision = RecallDecisionV4.from_json(payload)
+            request_row = requests_by_id.get(str(row["request_id"]))
+            binding = request_bindings.get(str(row["request_id"]))
+            if (
+                request_row is None
+                or binding is None
+                or decision.decision_id != row["decision_id"]
+                or decision.decision_hash != row["decision_hash"]
+                or decision.decided_at != row["created_at"]
+            ):
+                raise MemoryCorruptionError("typed recall decision hash differs")
+            try:
+                decision.validate_bindings(
+                    binding[0], binding[1], current_time=decision.decided_at
+                )
+            except (TypeError, ValueError) as exc:
+                raise MemoryCorruptionError("typed recall decision binding differs") from exc
+            async with self._db.execute(
+                "SELECT * FROM typed_recall_decision_items WHERE decision_id=? "
+                "ORDER BY ordinal",
+                (decision.decision_id,),
+            ) as cursor:
+                item_rows = tuple(await cursor.fetchall())
+            expected_items = (*decision.selected_items, *(
+                member for group in decision.confirmation_groups for member in group.members
+            ))
+            if len(item_rows) != len(expected_items):
+                raise MemoryCorruptionError("typed recall decision items differ")
+            for ordinal, (item_row, item) in enumerate(
+                zip(item_rows, expected_items, strict=True), start=1
+            ):
+                if (
+                    int(item_row["ordinal"]) != ordinal
+                    or item_row["item_id"] != item.item_id
+                    or item_row["item_kind"] != item.item_kind.value
+                    or item_row["item_hash"] != item.item_hash
+                    or str(item_row["item_json"]) != canonical_json(item.to_json())
+                ):
+                    raise MemoryCorruptionError("typed recall decision item hash differs")
+            decisions[decision.decision_id] = decision
+            decision_requests[decision.decision_id] = str(row["request_id"])
+
+        async with self._db.execute("SELECT * FROM typed_recall_results") as cursor:
+            result_rows = tuple(await cursor.fetchall())
+        results: dict[str, TypedRecallResultV1] = {}
+        for row in result_rows:
+            raw = str(row["result_json"])
+            payload = json.loads(raw)
+            if not isinstance(payload, dict) or canonical_json(payload) != raw:
+                raise MemoryCorruptionError("typed recall result body differs")
+            result = TypedRecallResultV1.from_json(payload)
+            decision = decisions.get(result.decision_id)
+            if (
+                decision is None
+                or result.result_id != row["result_id"]
+                or result.decision_id != row["decision_id"]
+                or str(row["request_id"])
+                != decision_requests.get(result.decision_id)
+                or result.result_hash != row["result_hash"]
+                or result.authority_epoch != row["authority_epoch"]
+                or result.policy_hash != row["policy_hash"]
+                or result.authority_expires_at != row["authority_expires_at"]
+                or result.evaluated_at != row["created_at"]
+            ):
+                raise MemoryCorruptionError("typed recall result hash differs")
+            result.validate_decision(decision)
+            async with self._db.execute(
+                "SELECT * FROM typed_recall_result_items WHERE result_id=? ORDER BY ordinal",
+                (result.result_id,),
+            ) as cursor:
+                item_rows = tuple(await cursor.fetchall())
+            if len(item_rows) != len(result.items):
+                raise MemoryCorruptionError("typed recall result items differ")
+            for ordinal, (item_row, item) in enumerate(
+                zip(item_rows, result.items, strict=True), start=1
+            ):
+                if (
+                    int(item_row["ordinal"]) != ordinal
+                    or item_row["item_id"] != item.selected_item.item_id
+                    or item_row["result_item_hash"] != item.result_item_hash
+                    or str(item_row["result_item_json"]) != canonical_json(item.to_json())
+                ):
+                    raise MemoryCorruptionError("typed recall result item hash differs")
+            for ordinal, group in enumerate(result.confirmation_groups, start=1):
+                async with self._db.execute(
+                    "SELECT * FROM typed_recall_confirmation_groups WHERE result_id=? "
+                    "AND ordinal=?",
+                    (result.result_id, ordinal),
+                ) as cursor:
+                    group_row = await cursor.fetchone()
+                if (
+                    group_row is None
+                    or group_row["group_id"] != group.group.conflict_group_id
+                    or group_row["group_hash"] != group.result_group_hash
+                    or str(group_row["group_json"]) != canonical_json(group.to_json())
+                ):
+                    raise MemoryCorruptionError("typed recall confirmation group differs")
+                async with self._db.execute(
+                    "SELECT * FROM typed_recall_confirmation_members WHERE result_id=? "
+                    "AND group_ordinal=? ORDER BY member_ordinal",
+                    (result.result_id, ordinal),
+                ) as cursor:
+                    member_rows = tuple(await cursor.fetchall())
+                if len(member_rows) != len(group.members):
+                    raise MemoryCorruptionError("typed recall confirmation members differ")
+                for member_ordinal, (member_row, member) in enumerate(
+                    zip(member_rows, group.members, strict=True), start=1
+                ):
+                    if (
+                        int(member_row["member_ordinal"]) != member_ordinal
+                        or member_row["item_id"] != member.member.item_id
+                        or member_row["member_hash"] != member.result_member_hash
+                        or str(member_row["member_json"])
+                        != canonical_json(member.to_json())
+                    ):
+                        raise MemoryCorruptionError(
+                            "typed recall confirmation member differs"
+                        )
+            async with self._db.execute(
+                "SELECT COUNT(*),COALESCE(MIN(ordinal),0),COALESCE(MAX(ordinal),0) "
+                "FROM typed_recall_confirmation_groups WHERE result_id=?",
+                (result.result_id,),
+            ) as cursor:
+                group_count_row = await cursor.fetchone()
+            assert group_count_row is not None
+            expected_group_count = len(result.confirmation_groups)
+            if (
+                int(group_count_row[0]) != expected_group_count
+                or (
+                    expected_group_count > 0
+                    and (int(group_count_row[1]), int(group_count_row[2]))
+                    != (1, expected_group_count)
+                )
+            ):
+                raise MemoryCorruptionError("typed recall confirmation cardinality differs")
+            results[result.result_id] = result
+
+        async with self._db.execute("SELECT * FROM typed_recall_terminals") as cursor:
+            terminals = tuple(await cursor.fetchall())
+        for row in terminals:
+            raw = str(row["terminal_json"])
+            payload = json.loads(raw)
+            if (
+                not isinstance(payload, dict)
+                or canonical_json(payload) != raw
+                or hashlib.sha256(raw.encode()).hexdigest() != row["terminal_hash"]
+                or payload.get("request_id") != row["request_id"]
+                or payload.get("attempt_id") != row["attempt_id"]
+                or payload.get("terminal_kind") != row["terminal_kind"]
+                or str(row["request_id"]) not in requests_by_id
+                or attempt_requests.get(str(row["attempt_id"])) != row["request_id"]
+                or payload.get("decision_id") != row["decision_id"]
+                or payload.get("decision_hash") != row["decision_hash"]
+                or payload.get("result_id") != row["result_id"]
+                or payload.get("result_hash") != row["result_hash"]
+                or payload.get("created_at") != row["created_at"]
+                or payload.get("candidate_query_started")
+                != bool(row["candidate_query_started"])
+                or payload.get("candidate_query_count") != row["candidate_query_count"]
+                or payload.get("unsupported_capabilities")
+                != json.loads(str(row["unsupported_capabilities_json"]))
+                or payload.get("degradation_codes")
+                != json.loads(str(row["degradation_codes_json"]))
+            ):
+                raise MemoryCorruptionError("typed recall terminal hash differs")
+            if row["result_id"] is not None:
+                result = results.get(str(row["result_id"]))
+                decision = decisions.get(str(row["decision_id"]))
+                if (
+                    result is None
+                    or decision is None
+                    or result.decision_id != decision.decision_id
+                    or decision_requests.get(decision.decision_id) != row["request_id"]
+                    or payload.get("decision_id") != row["decision_id"]
+                    or payload.get("decision_hash") != decision.decision_hash
+                    or payload.get("result_id") != row["result_id"]
+                    or payload.get("result_hash") != result.result_hash
+                    or row["created_at"] != decision.decided_at
+                    or row["created_at"] != result.evaluated_at
+                ):
+                    raise MemoryCorruptionError("typed recall terminal result missing")
+            elif any(
+                row[column] is not None
+                for column in ("decision_id", "decision_hash", "result_hash")
+            ):
+                raise MemoryCorruptionError("typed recall terminal null result differs")
+
+        async with self._db.execute("SELECT * FROM recall_context_use_receipts") as cursor:
+            receipt_rows = tuple(await cursor.fetchall())
+        for row in receipt_rows:
+            request_payload = json.loads(str(row["request_json"]))
+            receipt_payload = json.loads(str(row["receipt_json"]))
+            if not isinstance(request_payload, dict) or not isinstance(receipt_payload, dict):
+                raise MemoryCorruptionError("recall context-use body differs")
+            if (
+                canonical_json(request_payload) != str(row["request_json"])
+                or canonical_json(receipt_payload) != str(row["receipt_json"])
+            ):
+                raise MemoryCorruptionError("recall context-use canonical body differs")
+            request = RecallContextUseAuthorizationRequestV1.from_json(request_payload)
+            receipt = RecallContextUseReceiptV1.from_json(receipt_payload)
+            receipt.validate_request(request)
+            decision = decisions.get(request.decision_id)
+            result = results.get(request.result_id)
+            expected_bindings: dict[str, str] = {}
+            if result is not None:
+                expected_bindings.update(
+                    {
+                        item.selected_item.item_id: item.result_item_hash
+                        for item in result.items
+                    }
+                )
+                expected_bindings.update(
+                    {
+                        member.member.item_id: member.result_member_hash
+                        for group in result.confirmation_groups
+                        for member in group.members
+                    }
+                )
+            requested_item_ids = {binding.item_id for binding in request.item_bindings}
+            incomplete_confirmation = bool(
+                result is not None
+                and any(
+                    bool(
+                        requested_item_ids
+                        & {member.member.item_id for member in group.members}
+                    )
+                    and not {
+                        member.member.item_id for member in group.members
+                    }.issubset(requested_item_ids)
+                    for group in result.confirmation_groups
+                )
+            )
+            if (
+                request.request_hash != row["request_hash"]
+                or receipt.receipt_hash != row["receipt_hash"]
+                or receipt.authority_epoch != row["authority_epoch"]
+                or receipt.policy_hash != row["policy_hash"]
+                or receipt.authorized_at != row["authorized_at"]
+                or receipt.expires_at != row["expires_at"]
+                or receipt.receipt_id != row["receipt_id"]
+                or receipt.provider_attempt_id != row["provider_attempt_id"]
+                or receipt.subject != row["principal_id"]
+                or decision is None
+                or result is None
+                or request.decision_hash != decision.decision_hash
+                or request.result_hash != result.result_hash
+                or result.decision_id != decision.decision_id
+                or requests_by_id[
+                    decision_requests[decision.decision_id]
+                ]["principal_id"]
+                != row["principal_id"]
+                or request.subject != decision.subject
+                or request.run_id != decision.run_id
+                or incomplete_confirmation
+                or any(
+                    expected_bindings.get(binding.item_id) != binding.item_hash
+                    for binding in request.item_bindings
+                )
+            ):
+                raise MemoryCorruptionError("recall context-use hash differs")
 
     async def _validate_cognitive_conflict_integrity_unlocked(self) -> None:
         assert self._db is not None

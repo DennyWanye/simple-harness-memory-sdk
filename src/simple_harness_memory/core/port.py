@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from simple_harness.runtime import (
     DisclosureContext,
@@ -11,7 +11,17 @@ from simple_harness.runtime import (
     MemoryMutationPlan,
     ProcedureObservationAuthorityRef,
     ProspectiveSignalAuthorityRef,
+    RecallContext,
+    RecallPlan,
 )
+
+if TYPE_CHECKING:
+    from simple_harness.runtime import (
+        RecallContextUseAuthorizationRequestV1,
+        RecallContextUseReceiptV1,
+        RecallResultPageRequestV1,
+        RecallResultPageV1,
+    )
 
 from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
 from simple_harness_memory.core.lifecycle_results import (
@@ -26,6 +36,7 @@ from simple_harness_memory.core.models import (
     MemoryApplyResult,
     Message,
 )
+from simple_harness_memory.core.recall import TypedRecallExecution
 from simple_harness_memory.core.short_horizon import (
     ShortHorizonGenerationBuildResult,
     ShortHorizonProjectionBuildResult,
@@ -317,3 +328,27 @@ class CognitiveMemoryBackend(Protocol):
     async def cleanup_short_horizon(
         self, *, principal: MemoryPrincipal, now: float | None = None
     ) -> int: ...
+
+    async def execute_typed_recall(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        context: RecallContext,
+        plan: RecallPlan,
+        now: float | None = None,
+    ) -> TypedRecallExecution: ...
+
+    async def page_typed_recall_result(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        request: RecallResultPageRequestV1,
+    ) -> RecallResultPageV1: ...
+
+    async def authorize_recall_context_use(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        request: RecallContextUseAuthorizationRequestV1,
+        now: float | None = None,
+    ) -> RecallContextUseReceiptV1: ...

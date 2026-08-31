@@ -8,7 +8,8 @@ from simple_harness_memory.core.models import (
     MemoryApplyResult,
     Message,
 )
-from simple_harness_memory.core.port import MemoryBackend
+from simple_harness_memory.core.port import CognitiveMemoryBackend, MemoryBackend
+from simple_harness_memory.core.recall import TypedRecallExecution
 from simple_harness_memory.core.short_horizon import (
     ShortHorizonDegradationCode,
     ShortHorizonGenerationBuildResult,
@@ -21,6 +22,8 @@ from simple_harness_memory.core.twin import DigitalTwin
 __all__ = [
     "MemoryManager",
     "MemoryBackend",
+    "CognitiveMemoryBackend",
+    "TypedRecallExecution",
     "Message",
     "Fact",
     "Hit",

@@ -37,8 +37,15 @@ if TYPE_CHECKING:
         MemoryRecallRequest,
         MemoryRecallResult,
         MemoryReleaseRequest,
+        RecallContext,
+        RecallContextUseAuthorizationRequestV1,
+        RecallContextUseReceiptV1,
+        RecallPlan,
+        RecallResultPageRequestV1,
+        RecallResultPageV1,
     )
 
+    from simple_harness_memory.core.recall import TypedRecallExecution
     from simple_harness_memory.core.short_horizon import (
         ShortHorizonGenerationBuildResult,
         ShortHorizonProjectionBuildResult,
@@ -115,6 +122,36 @@ class MemoryManager:
             deadline_ms=deadline_ms,
             now=now,
         )
+
+    async def execute_typed_recall(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        context: RecallContext,
+        plan: RecallPlan,
+        now: float | None = None,
+    ) -> TypedRecallExecution:
+        operation = getattr(self._backend, "execute_typed_recall")
+        return await operation(principal=principal, context=context, plan=plan, now=now)
+
+    async def page_typed_recall_result(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        request: RecallResultPageRequestV1,
+    ) -> RecallResultPageV1:
+        operation = getattr(self._backend, "page_typed_recall_result")
+        return await operation(principal=principal, request=request)
+
+    async def authorize_recall_context_use(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        request: RecallContextUseAuthorizationRequestV1,
+        now: float | None = None,
+    ) -> RecallContextUseReceiptV1:
+        operation = getattr(self._backend, "authorize_recall_context_use")
+        return await operation(principal=principal, request=request, now=now)
 
     async def rebuild_short_horizon_projection(
         self, *, principal: MemoryPrincipal, now: float | None = None

@@ -1,8 +1,9 @@
 # ARCHITECTURE 索引
 
 本目录是 simple-harness-memory-sdk 的当前架构事实源。当前 **0.6.0 source candidate**
-新增 fresh `human-memory-v1` schema v5 的 immutable evidence、append-only suppression/audit、durable analysis
-四阶段 authority，以及四类认知记录的 strict mutation/classification/action-authority 事务底座，并精确依赖
+新增 fresh `human-memory-v1` schema v6 的 immutable evidence、append-only suppression/audit、durable analysis
+四阶段 authority、四类认知记录的 strict mutation/classification/action-authority 事务底座，以及 strict v4 typed
+RecallPlan 执行与最终使用 authority，并精确依赖
 Harness `>=0.7,<0.8`。0.6 不再默认实例化 regex fact
 extractor，不导出物理会话删除 API；旧 v4 Message/Fact 类型和私有 storage seam 仅作兼容读及
 回归 fixture，不是新 Human Memory 的 authority。候选版本尚未 tag/push/publish。
@@ -11,9 +12,9 @@ extractor，不导出物理会话删除 API；旧 v4 Message/Fact 类型和私�
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 包结构、分层、本地后端与召回/认知/世界对象的生产边界 |
 
-Human Memory Program 当前闭合到 S3 Task 4：五天 Short-Horizon 已具备 Host-authorized pointer-only projection、
-repository-owned generation/cache、同一 eligibility universe 多路召回，以及调用入口起算的 hard deadline 与可审计
-timeout terminal state。它不包含 Typed RecallPlan、graph projection 或 Host/UI 接线；这些仍明确标为未实现，避免把
-计划能力误写成生产事实。
+Human Memory Program 当前闭合到 S3 Task 5：长期认知与五天 Short-Horizon 统一进入 typed recall eligibility、
+disclosure、lane-cap/weighted-RRF、去重和 provider-visible budget；durable request/attempt/decision/result/terminal
+ledger 支持 exact replay、reopen hash rebuild、atomic confirmation、result-bound page-in 与 final current-use fence。
+Digital-twin graph projection 与 Host/UI 接线仍未实现。
 
 <!-- last-updated: 2026-08-31 -->

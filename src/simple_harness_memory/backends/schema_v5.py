@@ -7,7 +7,7 @@ import json
 import sqlite3
 from dataclasses import dataclass, field
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 SCHEMA_EPOCH = "human-memory-v1"
 
 DDL = """
@@ -18,7 +18,7 @@ CREATE TABLE schema_meta (
 CREATE TABLE initialization_receipts (
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
     receipt_id TEXT NOT NULL UNIQUE,
-    schema_version INTEGER NOT NULL CHECK (schema_version = 5),
+    schema_version INTEGER NOT NULL CHECK (schema_version = 6),
     schema_epoch TEXT NOT NULL CHECK (schema_epoch = 'human-memory-v1'),
     schema_checksum TEXT NOT NULL,
     created_at REAL NOT NULL CHECK (created_at >= 0),
@@ -1490,6 +1490,209 @@ BEGIN SELECT RAISE(ABORT, 'immutable recall decision item'); END;
 CREATE TRIGGER recall_decision_items_immutable_delete
 BEFORE DELETE ON recall_decision_items
 BEGIN SELECT RAISE(ABORT, 'immutable recall decision item'); END;
+CREATE TABLE recall_authority_heads (
+    principal_id TEXT PRIMARY KEY REFERENCES principals(principal_id),
+    authority_epoch INTEGER NOT NULL CHECK (authority_epoch >= 1),
+    policy_hash TEXT NOT NULL,
+    updated_at REAL NOT NULL CHECK (updated_at >= 0)
+);
+CREATE TABLE recall_authority_events (
+    event_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    previous_epoch INTEGER NOT NULL CHECK (previous_epoch >= 0),
+    authority_epoch INTEGER NOT NULL CHECK (authority_epoch >= 1),
+    event_kind TEXT NOT NULL,
+    source_ref_hash TEXT NOT NULL,
+    policy_hash TEXT NOT NULL,
+    event_json BLOB NOT NULL,
+    event_hash TEXT NOT NULL UNIQUE,
+    created_at REAL NOT NULL CHECK (created_at >= 0),
+    UNIQUE (principal_id, authority_epoch),
+    CHECK (
+        authority_epoch = previous_epoch + 1
+    )
+);
+CREATE TRIGGER recall_authority_events_immutable_update
+BEFORE UPDATE ON recall_authority_events
+BEGIN SELECT RAISE(ABORT, 'immutable recall authority event'); END;
+CREATE TRIGGER recall_authority_events_immutable_delete
+BEFORE DELETE ON recall_authority_events
+BEGIN SELECT RAISE(ABORT, 'immutable recall authority event'); END;
+CREATE TABLE typed_recall_requests (
+    request_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    idempotency_key TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    request_json BLOB NOT NULL,
+    deadline_at REAL NOT NULL CHECK (deadline_at >= 0),
+    created_at REAL NOT NULL CHECK (created_at >= 0),
+    UNIQUE (principal_id, idempotency_key)
+);
+CREATE TABLE typed_recall_attempts (
+    attempt_id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL REFERENCES typed_recall_requests(request_id),
+    attempt_ordinal INTEGER NOT NULL CHECK (attempt_ordinal >= 1),
+    started_at REAL NOT NULL CHECK (started_at >= 0),
+    attempt_hash TEXT NOT NULL UNIQUE,
+    UNIQUE (request_id, attempt_ordinal)
+);
+CREATE TABLE typed_recall_decisions (
+    decision_id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL UNIQUE REFERENCES typed_recall_requests(request_id),
+    decision_json BLOB NOT NULL,
+    decision_hash TEXT NOT NULL UNIQUE,
+    created_at REAL NOT NULL CHECK (created_at >= 0)
+);
+CREATE TABLE typed_recall_decision_items (
+    decision_id TEXT NOT NULL REFERENCES typed_recall_decisions(decision_id),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 1),
+    item_id TEXT NOT NULL,
+    item_kind TEXT NOT NULL CHECK (item_kind IN ('selected', 'confirmation_member')),
+    item_json BLOB NOT NULL,
+    item_hash TEXT NOT NULL,
+    PRIMARY KEY (decision_id, ordinal, item_id),
+    UNIQUE (decision_id, item_id)
+);
+CREATE TABLE typed_recall_results (
+    result_id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL UNIQUE REFERENCES typed_recall_requests(request_id),
+    decision_id TEXT NOT NULL UNIQUE REFERENCES typed_recall_decisions(decision_id),
+    authority_epoch INTEGER NOT NULL CHECK (authority_epoch >= 1),
+    policy_hash TEXT NOT NULL,
+    result_json BLOB NOT NULL,
+    result_hash TEXT NOT NULL UNIQUE,
+    authority_expires_at REAL NOT NULL CHECK (authority_expires_at >= 0),
+    created_at REAL NOT NULL CHECK (created_at >= 0)
+);
+CREATE TABLE typed_recall_result_items (
+    result_id TEXT NOT NULL REFERENCES typed_recall_results(result_id),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 1),
+    item_id TEXT NOT NULL,
+    result_item_json BLOB NOT NULL,
+    result_item_hash TEXT NOT NULL,
+    PRIMARY KEY (result_id, ordinal),
+    UNIQUE (result_id, item_id)
+);
+CREATE TABLE typed_recall_confirmation_groups (
+    result_id TEXT NOT NULL REFERENCES typed_recall_results(result_id),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 1),
+    group_id TEXT NOT NULL,
+    group_json BLOB NOT NULL,
+    group_hash TEXT NOT NULL,
+    PRIMARY KEY (result_id, ordinal),
+    UNIQUE (result_id, group_id)
+);
+CREATE TABLE typed_recall_confirmation_members (
+    result_id TEXT NOT NULL,
+    group_ordinal INTEGER NOT NULL CHECK (group_ordinal >= 1),
+    member_ordinal INTEGER NOT NULL CHECK (member_ordinal >= 1),
+    item_id TEXT NOT NULL,
+    member_json BLOB NOT NULL,
+    member_hash TEXT NOT NULL,
+    PRIMARY KEY (result_id, group_ordinal, member_ordinal),
+    UNIQUE (result_id, item_id),
+    FOREIGN KEY (result_id, group_ordinal)
+        REFERENCES typed_recall_confirmation_groups(result_id, ordinal)
+);
+CREATE TABLE typed_recall_terminals (
+    request_id TEXT PRIMARY KEY REFERENCES typed_recall_requests(request_id),
+    attempt_id TEXT NOT NULL REFERENCES typed_recall_attempts(attempt_id),
+    terminal_kind TEXT NOT NULL CHECK (
+        terminal_kind IN ('completed', 'rejected', 'deadline_exceeded')
+    ),
+    decision_id TEXT REFERENCES typed_recall_decisions(decision_id),
+    decision_hash TEXT,
+    result_id TEXT REFERENCES typed_recall_results(result_id),
+    result_hash TEXT,
+    candidate_query_started INTEGER NOT NULL CHECK (candidate_query_started IN (0, 1)),
+    candidate_query_count INTEGER NOT NULL CHECK (candidate_query_count >= 0),
+    unsupported_capabilities_json BLOB NOT NULL,
+    degradation_codes_json BLOB NOT NULL,
+    terminal_json BLOB NOT NULL,
+    terminal_hash TEXT NOT NULL UNIQUE,
+    created_at REAL NOT NULL CHECK (created_at >= 0),
+    CHECK (
+        (terminal_kind = 'deadline_exceeded' AND decision_id IS NULL
+            AND decision_hash IS NULL AND result_id IS NULL AND result_hash IS NULL)
+        OR (terminal_kind <> 'deadline_exceeded'
+            AND decision_id IS NOT NULL AND decision_hash IS NOT NULL
+            AND result_id IS NOT NULL AND result_hash IS NOT NULL)
+    )
+);
+CREATE TABLE recall_context_use_receipts (
+    receipt_id TEXT PRIMARY KEY,
+    principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+    provider_attempt_id TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    request_json BLOB NOT NULL,
+    receipt_json BLOB NOT NULL,
+    receipt_hash TEXT NOT NULL UNIQUE,
+    authority_epoch INTEGER NOT NULL CHECK (authority_epoch >= 1),
+    policy_hash TEXT NOT NULL,
+    authorized_at REAL NOT NULL CHECK (authorized_at >= 0),
+    expires_at REAL NOT NULL CHECK (expires_at > authorized_at),
+    UNIQUE (principal_id, provider_attempt_id)
+);
+CREATE TRIGGER typed_recall_requests_immutable_update
+BEFORE UPDATE ON typed_recall_requests
+BEGIN SELECT RAISE(ABORT, 'immutable typed recall request'); END;
+CREATE TRIGGER typed_recall_requests_immutable_delete
+BEFORE DELETE ON typed_recall_requests
+BEGIN SELECT RAISE(ABORT, 'immutable typed recall request'); END;
+CREATE TRIGGER typed_recall_attempts_immutable_update
+BEFORE UPDATE ON typed_recall_attempts
+BEGIN SELECT RAISE(ABORT, 'immutable typed recall attempt'); END;
+CREATE TRIGGER typed_recall_attempts_immutable_delete
+BEFORE DELETE ON typed_recall_attempts
+BEGIN SELECT RAISE(ABORT, 'immutable typed recall attempt'); END;
+CREATE TRIGGER typed_recall_decisions_immutable_update
+BEFORE UPDATE ON typed_recall_decisions
+BEGIN SELECT RAISE(ABORT, 'immutable typed recall decision'); END;
+CREATE TRIGGER typed_recall_decisions_immutable_delete
+BEFORE DELETE ON typed_recall_decisions
+BEGIN SELECT RAISE(ABORT, 'immutable typed recall decision'); END;
+CREATE TRIGGER typed_recall_decision_items_immutable_update
+BEFORE UPDATE ON typed_recall_decision_items
+BEGIN SELECT RAISE(ABORT, 'immutable typed recall decision item'); END;
+CREATE TRIGGER typed_recall_decision_items_immutable_delete
+BEFORE DELETE ON typed_recall_decision_items
+BEGIN SELECT RAISE(ABORT, 'immutable typed recall decision item'); END;
+CREATE TRIGGER typed_recall_results_immutable_update
+BEFORE UPDATE ON typed_recall_results
+BEGIN SELECT RAISE(ABORT, 'immutable typed recall result'); END;
+CREATE TRIGGER typed_recall_results_immutable_delete
+BEFORE DELETE ON typed_recall_results
+BEGIN SELECT RAISE(ABORT, 'immutable typed recall result'); END;
+CREATE TRIGGER typed_recall_result_items_immutable_update
+BEFORE UPDATE ON typed_recall_result_items
+BEGIN SELECT RAISE(ABORT, 'immutable typed recall result item'); END;
+CREATE TRIGGER typed_recall_result_items_immutable_delete
+BEFORE DELETE ON typed_recall_result_items
+BEGIN SELECT RAISE(ABORT, 'immutable typed recall result item'); END;
+CREATE TRIGGER typed_recall_confirmation_groups_immutable_update
+BEFORE UPDATE ON typed_recall_confirmation_groups
+BEGIN SELECT RAISE(ABORT, 'immutable typed recall confirmation group'); END;
+CREATE TRIGGER typed_recall_confirmation_groups_immutable_delete
+BEFORE DELETE ON typed_recall_confirmation_groups
+BEGIN SELECT RAISE(ABORT, 'immutable typed recall confirmation group'); END;
+CREATE TRIGGER typed_recall_confirmation_members_immutable_update
+BEFORE UPDATE ON typed_recall_confirmation_members
+BEGIN SELECT RAISE(ABORT, 'immutable typed recall confirmation member'); END;
+CREATE TRIGGER typed_recall_confirmation_members_immutable_delete
+BEFORE DELETE ON typed_recall_confirmation_members
+BEGIN SELECT RAISE(ABORT, 'immutable typed recall confirmation member'); END;
+CREATE TRIGGER typed_recall_terminals_immutable_update
+BEFORE UPDATE ON typed_recall_terminals
+BEGIN SELECT RAISE(ABORT, 'immutable typed recall terminal'); END;
+CREATE TRIGGER typed_recall_terminals_immutable_delete
+BEFORE DELETE ON typed_recall_terminals
+BEGIN SELECT RAISE(ABORT, 'immutable typed recall terminal'); END;
+CREATE TRIGGER recall_context_use_receipts_immutable_update
+BEFORE UPDATE ON recall_context_use_receipts
+BEGIN SELECT RAISE(ABORT, 'immutable recall context use receipt'); END;
+CREATE TRIGGER recall_context_use_receipts_immutable_delete
+BEFORE DELETE ON recall_context_use_receipts
+BEGIN SELECT RAISE(ABORT, 'immutable recall context use receipt'); END;
 """
 
 
@@ -1503,7 +1706,7 @@ def ddl_statements(script: str = DDL) -> tuple[str, ...]:
             statements.append(candidate)
             buffer.clear()
     if "".join(buffer).strip():
-        raise ValueError("schema v5 DDL is incomplete")
+        raise ValueError("schema v6 DDL is incomplete")
     return tuple(statements)
 
 
@@ -1584,6 +1787,18 @@ REQUIRED_TABLES = frozenset(
         "short_horizon_audit",
         "recall_decisions",
         "recall_decision_items",
+        "recall_authority_heads",
+        "recall_authority_events",
+        "typed_recall_requests",
+        "typed_recall_attempts",
+        "typed_recall_decisions",
+        "typed_recall_decision_items",
+        "typed_recall_results",
+        "typed_recall_result_items",
+        "typed_recall_confirmation_groups",
+        "typed_recall_confirmation_members",
+        "typed_recall_terminals",
+        "recall_context_use_receipts",
     }
 )
 

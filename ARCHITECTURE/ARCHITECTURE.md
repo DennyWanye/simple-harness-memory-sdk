@@ -3,14 +3,14 @@
 # ARCHITECTURE — simple-harness-memory-sdk（v0.6.0 candidate）
 
 > 最后更新：2026-08-31
-> 当前事实：Human Memory V0/S1/S2 与 S3 Task 1/2/3/4 已闭合；S3 Task 5—7、Host/UI 接线与最终 candidate
+> 当前事实：Human Memory V0/S1/S2 与 S3 Task 1/2/3/4/5 已闭合；S3 Task 6—7、Host/UI 接线与最终 candidate
 > packaging 尚未完成。旧 Agent Memory v1 能力仍保留，但不是新认知 mutation 的 authority。
 
 ## Human Memory Program 当前边界（2026-08-31）
 
 以下是 0.6 candidate 的已验证生产边界：
 
-- fresh `human-memory-v1` schema v5 保存不可覆盖的原始 evidence、conversation registration、suppression、
+- fresh `human-memory-v1` schema v6 保存不可覆盖的原始 evidence、conversation registration、suppression、
   durable analysis，以及 Episode、Semantic、Procedure、Prospective 四类 typed revision/head/relation。Working
   Memory 仍只存在于运行 Context，不建立长期存储表。
 - `MemoryMutationPlan` 只接受 Harness mutation schema v4；四类 payload、生命周期、epistemic/conflict/
@@ -42,12 +42,23 @@
 - 兼容 `Fact` 的 `category` 只作标签，`decay_rate` 为显式 neutral 值；category 不再决定保留周期，
   `daily_decay()` 也不再按 category 自动遗忘 Fact。
 - public `MemoryManager`、`MemoryBackend` 与 `BaseMemoryBackend` 不存在会话物理删除方法。
-- 新认知召回 pipeline 尚未接入公开 manager/port；旧召回仍只接受 query text、personal/family scopes 与统一
-  结果 payload，尚无完整 `RecallPlan`、认知类型、
-  recipient/purpose、epistemic/conflict/expiry 或跨 TaskScope 命中审计。
+- public `MemoryManager`/port 已提供 strict v4 `execute_typed_recall`、result-bound
+  `page_typed_recall_result` 与 `authorize_recall_context_use`。Memory-owned v6 ledger 原子保存 request/attempt、
+  decision/items、content-bearing result/items/confirmation groups 与 terminal；exact replay 不再查询 candidate，
+  reopen 重算 canonical body/hash/cardinality/cross-row binding。
+- typed recall 对 Episode/Semantic/Procedure/Prospective 与 Short-Horizon 统一执行 current-head/lifecycle、
+  epistemic×verification、half-open validity、suppression、type-specific runtime authority、recipient/purpose/privacy/
+  sensitive-attribute disclosure 和 typed selector gate。候选按每 source/type/lane cap 后进入 weighted RRF、严格去重
+  与 whole-item budget；cognitive vector 不可用只记录 durable degradation，不伪装 unsupported。
+- contested cognitive memory 只以完整、恰好二成员 confirmation group 出现。Harness strict v4 明确要求
+  `NEEDS_USER_CONFIRMATION` decision/result 只携带 confirmation groups、不得混入 ordinary selected items；因此同一
+  invocation 一旦选择 confirmation group，返回 confirmation-only 是 Host wire invariant。
+- durable result 只是审计/分页能力，不自动授权模型 Context。每个 provider attempt 必须经 final current-use fence
+  重验 epoch/policy、run/turn/context、current head/group、expiry/classification/disclosure/suppression 与 Procedure/
+  Prospective authority，并取得 immutable exact-replay receipt。
 - `DigitalTwin` 仍是 Fact 聚合对象和 JSON 快照；没有展示专用的可追溯 graph projection，也没有
   “不得进入 Agent Context/召回/动作”的机器边界。
-- 本 program 不迁移旧内容数据；schema v5 必须 fresh 初始化，旧数据库由 loader 稳定拒绝。
+- 本 program 不迁移旧内容数据；schema v6 必须 fresh 初始化，旧数据库由 loader 稳定拒绝。
 
 ## 分层
 
@@ -89,10 +100,11 @@ src/simple_harness_memory/
   返回 degraded/closed schema 而不影响业务。禁止查询 content、result_payload、fact value、embedding、
   文件 path 或 exception repr；recent error codes 最多 20 项，age clamp 为非负值。
 
-## Fresh schema v4 与 identity/scope
+## Fresh schema v6 与 identity/scope
 
-- SQLite 接受 fresh v4/checksum；v3、缺 meta 或未知 checksum 漂移均 `MemorySchemaIncompatible`。仅已知
-  早期v4 recall snapshot全局键通过checksum-gated事务修复，不执行内容迁移或删除。
+- SQLite 只接受 fresh v6/checksum；旧版本、缺 meta 或未知 checksum 漂移均
+  `MemorySchemaIncompatible`，不执行内容迁移或删除。历史文件名 `schema_v5.py`/`sqlite_v5.py` 仅为内部路径兼容，
+  initialization receipt、probe 与 runtime 错误均声明 v6。
 - sessions/messages/facts/recall snapshots/receipts/jobs/erasure state 全链路保存
   deployment/household/actor/session/scope_kind/scope_owner；sessions主键为deployment+session，turn receipt
   主键为deployment+turn，允许不同deployment复用外部ID；同一deployment内的household/actor/session

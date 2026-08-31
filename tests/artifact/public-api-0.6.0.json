@@ -27,6 +27,7 @@
   ],
   "root": [
     "BoundedRecallResult",
+    "CognitiveMemoryBackend",
     "DigitalTwin",
     "ExportPage",
     "Fact",
@@ -51,6 +52,7 @@
     "ShortHorizonProjectionBuildResult",
     "ShortHorizonRecallHit",
     "ShortHorizonRecallResult",
+    "TypedRecallExecution",
     "WorldModelPort"
   ],
   "migrations": [
