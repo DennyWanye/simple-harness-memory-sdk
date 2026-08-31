@@ -486,11 +486,11 @@ CREATE TABLE cognitive_memory_revisions (
     information_attributes_json BLOB NOT NULL,
     content_json BLOB NOT NULL,
     content_hash TEXT NOT NULL,
-    valid_from REAL NOT NULL CHECK (valid_from >= 0),
+    valid_from REAL CHECK (valid_from IS NULL OR valid_from >= 0),
     valid_to REAL,
     created_at REAL NOT NULL CHECK (created_at >= 0),
     PRIMARY KEY (memory_id, revision),
-    CHECK (valid_to IS NULL OR valid_to >= valid_from)
+    CHECK (valid_to IS NULL OR valid_from IS NULL OR valid_to >= valid_from)
 );
 CREATE INDEX cognitive_memory_revision_lookup
     ON cognitive_memory_revisions(memory_id, revision, lifecycle_state);

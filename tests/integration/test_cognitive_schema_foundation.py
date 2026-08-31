@@ -22,6 +22,11 @@ def _columns(connection: sqlite3.Connection, table: str) -> set[str]:
     return {str(row[1]) for row in connection.execute(f"PRAGMA table_info({table})")}
 
 
+def _column_not_null(connection: sqlite3.Connection, table: str, column: str) -> bool:
+    rows = connection.execute(f"PRAGMA table_info({table})")
+    return bool(next(row[3] for row in rows if row[1] == column))
+
+
 def test_cognitive_schema_has_independent_apply_head_and_privacy_dimensions(
     connection: sqlite3.Connection,
 ) -> None:
@@ -34,6 +39,9 @@ def test_cognitive_schema_has_independent_apply_head_and_privacy_dimensions(
         "effective_privacy_class",
         "information_attributes_json",
     } <= _columns(connection, "cognitive_memory_revisions")
+    assert not _column_not_null(
+        connection, "cognitive_memory_revisions", "valid_from"
+    ), "Harness ValidTimeInterval permits an unknown start"
     connection.execute(
         "INSERT INTO principals VALUES(?,?,?,?,?)",
         ("principal-1", "deployment-1", "household-1", "actor-1", 1.0),
