@@ -2,7 +2,7 @@
 
 <!-- plan-status: finalized -->
 
-> 状态：APPROVED / EXECUTION IN PROGRESS — V0/S1/S2 与 S3 Task 1/2 complete；RecallDecision v3、EvidenceItemAuthority v3 classification 与 MemoryActionAuthority v2 已闭合；machine `a2-003` resolved
+> 状态：APPROVED / EXECUTION IN PROGRESS — V0/S1/S2 与 S3 Task 1/2/3 complete；RecallDecision v3、EvidenceItemAuthority v3 classification、MemoryActionAuthority v2 与 Procedure/Prospective Host authority consumer 已闭合；machine `a2-003` resolved
 > 行为策略：`preserve-approved`  
 > 唯一真相：`acceptance.md` + `assurance-contract.json`  
 > 实施仓库：`simple-harness-sdk` → `simple-harness-memory-sdk` → `simple_harness`

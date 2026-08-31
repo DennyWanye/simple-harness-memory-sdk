@@ -3,7 +3,7 @@
 # ARCHITECTURE — simple-harness-memory-sdk（v0.6.0 candidate）
 
 > 最后更新：2026-08-31
-> 当前事实：Human Memory V0/S1/S2 与 S3 Task 1/2 已闭合；S3 Task 3—7、Host/UI 接线与最终 candidate
+> 当前事实：Human Memory V0/S1/S2 与 S3 Task 1/2/3 已闭合；S3 Task 4—7、Host/UI 接线与最终 candidate
 > packaging 尚未完成。旧 Agent Memory v1 能力仍保留，但不是新认知 mutation 的 authority。
 
 ## Human Memory Program 当前边界（2026-08-31）
@@ -23,6 +23,16 @@
   内以 `(issuer_ref, nonce)` 和 `replay_identity` 双唯一锁定；exact idempotent receipt replay不重复消费。
 - CONTEST 不是 action-authority 旁路：target payload、lifecycle、epistemic、verification 与 valid-time 必须完全
   不变，只允许 conflict flag 进入 CONTESTED；否则原子拒绝。
+- Procedure observation 只接受 Host `ProcedureObservationAuthorityRef`。Memory exact resolve 后按 logical
+  qualification epoch、v2 applicability、hazard、90-day distinct TaskScope/terminal receipt 重算资格；低风险且无
+  hazard 的 attributable success 才能按 1/2/3 阶段推进，失败、漂移、高风险与非 attributable observation 不得
+  绕过状态机。首次 applicability/hazard 绑定产生新 immutable revision，不原地改写。
+- Prospective signal 只接受 Host `ProspectiveSignalAuthorityRef`。Memory 验证 exact trigger、scheduler registration、
+  occurrence/receipt、revision/lifecycle 与 outbox 后原子应用 trigger/reschedule/cancel/expire；Memory 只产生 durable
+  registration/invalidation command，不拥有 clock，也不执行 action。
+- 两类 lifecycle consumer 持久化 full authority consumption、observation/event、decision、typed result、rejection
+  与 outbox chain；open/close 全库校验，exact replay 只校当前 consumption chain。cognitive head/revision 额外持久化
+  deployment、household、actor 与 scope，跨部署同 actor 的 stolen ref fail closed。
 - evidence classification 由 Memory policy、全部 Host `EvidenceItemAuthority` floor、target 与 proposal 做单调
   privacy max / attribute union。classification、action consumption、mutation decision、receipt 与 apply result
   都是不可变 hash-bound 审计链；close→tamper→reopen resolver fail closed。
@@ -201,11 +211,14 @@ src/simple_harness_memory/
 
 ## 验证状态
 
-- Human Memory S3 Task 1/2 candidate：Harness exact HEAD `baaefac2`（Mutation v4 / Action Authority v2）；
-  Memory 全仓 `758 passed, 9 skipped`，Ruff 全绿，mypy `107 source files` 全绿，`git diff --check` 通过。
+- Human Memory S3 Task 1/2/3 candidate：Task 1/2 保持 Harness `baaefac2` Mutation/Action authority 闭环；
+  Task 3 使用 exact Harness authority HEAD `a553cf3`，Memory commits `31ffb15` + `3e45194`。Memory 全仓
+  `844 passed, 9 skipped`，Ruff 全绿，mypy `57 source files` 全绿，`git diff --check` 通过。
   独立 mutation/classification/action-authority closure audit 为 P0/P1/P2=0；focused `105 passed`，覆盖 missing/
   invalid/expired/lookup-miss/clock-rollback/replay、CONTEST 旁路、late fault 原子回滚、principal attribution 与
-  receipt/ledger/decision corruption close→tamper→reopen。该证据只关闭 S3 Task 1/2，不代表 S3 整体完成。
+  receipt/ledger/decision corruption close→tamper→reopen。Task 3 focused `30 passed`，覆盖 Procedure qualification
+  epoch/rolling window/first bind/CAS/fault/tamper 与 Prospective ACK/trigger/invalidation/expire/stale/replay/outbox/
+  audit-chain；该证据只关闭 S3 Task 1—3，不代表 S3 整体完成。
 
 - 0.6.0 Task 6 source audit：冻结 Harness 0.7 下全仓 `493 passed, 8 skipped`；Ruff、项目 mypy
   `97 source files`、3 个发布脚本 strict mypy 与 REUSE 全绿。非最终 dirty-tree wheel/sdist 通过 Twine，

@@ -3,7 +3,7 @@
 > Release unit：S3（Memory SDK）  
 > 高风险子系统：认知状态机、检索资格/排序、派生投影（3）  
 > 覆盖：HM-AC-2/4/5/6/7/8
-> 执行状态：Task 1/2 COMPLETE（Memory `e5ce4b8`，Harness exact `baaefac2`）；classification/action authority、receipt corruption、CONTEST 与 replay/clock 边界独立审计 CLOSED；Task 3—7 pending
+> 执行状态：Task 1/2/3 COMPLETE（Memory Task 3 `31ffb15` + `3e45194`，Harness exact authority `a553cf3`）；classification/action authority、Procedure qualification 与 Prospective scheduler-signal repository 已闭合；Task 4—7 pending
 
 ## 交付边界
 
@@ -59,6 +59,12 @@ Memory 只以 RecallDecision/ContextFragment 表达，不建长期表。数字�
 - 验证：五类 LLM 载荷变异、无 evidence/inference-as-fact、混合 batch 部分非法时全计划或逐操作既定原子策略。
 
 ### Task 3 — Procedure 与 Prospective 一等规则 [HM-AC-5]
+
+状态：COMPLETE。Memory 仅消费 ref-only Host authority；Procedure 使用 logical qualification epoch、v2
+applicability/hazard 与 rolling-90-day distinct evidence；Prospective 仅持久化 registration/invalidation outbox，
+不启动 clock、不执行 action。两条链均保存 immutable consumption/event/decision/result/rejection audit，并在
+replay/open/close 做 rooted exact-chain 校验。验证命令与结果同步记录在本仓 `ARCHITECTURE/ARCHITECTURE.md`
+的“验证状态”。
 
 - explicit “以后都这样”可直接 active（只代表记忆状态，不授予执行权限）。观察的低风险可逆程序：1 个成功 terminal
   Run 为 draft，2 个不同 TaskScope/terminal receipt 为 eligible，3 个不同 TaskScope 在 rolling 90 days 且相同 procedure
