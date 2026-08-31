@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import time
 from collections.abc import Mapping
@@ -12,7 +13,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from simple_harness.contracts import FrozenJsonValue, JsonValue, fingerprint_json
+from simple_harness.contracts import FrozenJsonValue, JsonValue, canonical_json, fingerprint_json
 from simple_harness.runtime import (
     EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION,
     EVIDENCE_NORMALIZATION_IDENTITY_UTF8_V1,
@@ -284,6 +285,13 @@ async def test_pointer_only_projection_and_repository_owned_generation_reopen(
     assert audit["details"]["candidate_count"] == 2
     assert len(audit["details"]["eligible"]) == 2
     assert len(audit["details"]["vector_lane"]) == 2
+    attempt_audit_id = audit["details"]["attempt_audit_id"]
+    assert isinstance(attempt_audit_id, str)
+    async with backend.connection.execute(
+        "SELECT event_kind FROM short_horizon_audit WHERE audit_id=?", (attempt_audit_id,)
+    ) as cursor:
+        attempt = await cursor.fetchone()
+    assert attempt is not None and str(attempt[0]) == "recall_started"
     assert "Project alpha note" not in str(audit)
     assert "secret-never-index" not in str(audit)
     with pytest.raises(MemoryOwnershipConflict):
@@ -418,7 +426,7 @@ async def test_stale_generation_and_slow_query_embedding_degrade_without_stale_r
 
 
 @pytest.mark.asyncio
-async def test_slow_eligibility_gate_returns_by_deadline_with_durable_start_audit(
+async def test_slow_eligibility_gate_returns_by_deadline_with_durable_terminal_audit(
     tmp_path: Path,
 ) -> None:
     pairs = tuple(_registration(index) for index in range(1, 13))
@@ -441,14 +449,18 @@ async def test_slow_eligibility_gate_returns_by_deadline_with_durable_start_audi
     assert time.monotonic() - started < 0.25
     assert result.hits == ()
     assert result.degradation_code is ShortHorizonDegradationCode.DEADLINE_EXCEEDED
+    await asyncio.sleep(0.05)
     async with backend.connection.execute(
-        "SELECT event_kind,audit_json FROM short_horizon_audit WHERE audit_id=?",
-        (result.audit_id,),
+        "SELECT event_kind,audit_json FROM short_horizon_audit "
+        "WHERE audit_id=? OR json_extract(audit_json, '$.details.attempt_audit_id')=? "
+        "ORDER BY event_kind",
+        (result.audit_id, result.audit_id),
     ) as cursor:
-        row = await cursor.fetchone()
-    assert row is not None
-    assert tuple(row)[0] == "recall_started"
-    assert json.loads(str(tuple(row)[1]))["details"]["gate_outcome"] == "in_progress"
+        rows = tuple(await cursor.fetchall())
+    assert [str(row[0]) for row in rows] == ["recall_started", "recall_terminal"]
+    terminal = json.loads(str(rows[1][1]))
+    assert terminal["details"]["attempt_audit_id"] == result.audit_id
+    assert terminal["details"]["gate_outcome"] == "deadline_exceeded"
     await backend.close()
 
 
@@ -473,13 +485,169 @@ async def test_slow_attempt_audit_never_extends_public_deadline(tmp_path: Path) 
     assert time.monotonic() - started < 0.25
     assert result.hits == ()
     assert result.degradation_code is ShortHorizonDegradationCode.DEADLINE_EXCEEDED
-    await asyncio.sleep(0.12)
+    await asyncio.sleep(0.25)
     async with backend.connection.execute(
-        "SELECT event_kind FROM short_horizon_audit WHERE audit_id=?",
-        (result.audit_id,),
+        "SELECT event_kind FROM short_horizon_audit "
+        "WHERE audit_id=? OR json_extract(audit_json, '$.details.attempt_audit_id')=? "
+        "ORDER BY event_kind",
+        (result.audit_id, result.audit_id),
     ) as cursor:
-        row = await cursor.fetchone()
-    assert row is not None and str(row[0]) == "recall_started"
+        rows = tuple(await cursor.fetchall())
+    assert [str(row[0]) for row in rows] == ["recall_started", "recall_terminal"]
+    await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_close_drains_timeout_audits_before_releasing_sqlite(tmp_path: Path) -> None:
+    pairs = tuple(_registration(index) for index in range(1, 13))
+    path = tmp_path / "close-drains-timeout-audit.db"
+    backend = await _backend(path, pairs)
+    original = backend._append_short_horizon_audit_unlocked
+
+    async def slow_audit(*args: object, **kwargs: object) -> str:
+        await asyncio.sleep(0.2)
+        return await original(*args, **kwargs)
+
+    backend._append_short_horizon_audit_unlocked = slow_audit  # type: ignore[method-assign]
+    result = await backend.recall_short_horizon(
+        principal=PRINCIPAL,
+        query="Project",
+        disclosure_context=_disclosure(),
+        deadline_ms=30,
+    )
+    assert result.degradation_code is ShortHorizonDegradationCode.DEADLINE_EXCEEDED
+    await backend.close()
+
+    reopened = SQLiteHumanMemoryBackend(
+        path, now=lambda: NOW, short_horizon_embedder=HashEmbedder(32)
+    )
+    await reopened.initialize()
+    async with reopened.connection.execute(
+        "SELECT event_kind FROM short_horizon_audit "
+        "WHERE audit_id=? OR json_extract(audit_json, '$.details.attempt_audit_id')=? "
+        "ORDER BY event_kind",
+        (result.audit_id, result.audit_id),
+    ) as cursor:
+        rows = tuple(await cursor.fetchall())
+    assert [str(row[0]) for row in rows] == ["recall_started", "recall_terminal"]
+    await reopened.close()
+
+
+@pytest.mark.asyncio
+async def test_close_rejects_new_short_horizon_recall_before_it_can_schedule_audit(
+    tmp_path: Path,
+) -> None:
+    pairs = tuple(_registration(index) for index in range(1, 13))
+    backend = await _backend(tmp_path / "close-recall-lifecycle.db", pairs)
+    original_validate = backend._validate_integrity
+    validation_entered = asyncio.Event()
+    release_validation = asyncio.Event()
+
+    async def paused_validate() -> None:
+        validation_entered.set()
+        await release_validation.wait()
+        await original_validate()
+
+    backend._validate_integrity = paused_validate  # type: ignore[method-assign]
+    close_task = asyncio.create_task(backend.close())
+    await validation_entered.wait()
+    recall_task = asyncio.create_task(
+        backend.recall_short_horizon(
+            principal=PRINCIPAL,
+            query="Project",
+            disclosure_context=_disclosure(),
+            deadline_ms=30,
+        )
+    )
+    with pytest.raises(RuntimeError, match="not initialized"):
+        await recall_task
+    release_validation.set()
+    await close_task
+
+
+@pytest.mark.asyncio
+async def test_same_backend_instance_reopens_after_close(tmp_path: Path) -> None:
+    pairs = tuple(_registration(index) for index in range(1, 13))
+    backend = await _backend(tmp_path / "same-instance-reopen.db", pairs)
+    await backend.close()
+    await backend.initialize()
+    await backend.rebuild_short_horizon_projection(principal=PRINCIPAL)
+    result = await backend.recall_short_horizon(
+        principal=PRINCIPAL,
+        query="Project",
+        disclosure_context=_disclosure(),
+    )
+    assert result.hits
+    await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_recall_queueing_counts_against_the_public_deadline(
+    tmp_path: Path,
+) -> None:
+    pairs = tuple(_registration(index) for index in range(1, 13))
+    backend = await _backend(tmp_path / "concurrent-recall-deadline.db", pairs)
+    await backend.rebuild_short_horizon_projection(principal=PRINCIPAL)
+    original_gate = backend._resolve_suppression_unlocked
+
+    async def slow_gate(*args: object, **kwargs: object) -> object:
+        await asyncio.sleep(0.2)
+        return await original_gate(*args, **kwargs)
+
+    backend._resolve_suppression_unlocked = slow_gate  # type: ignore[method-assign]
+    first = asyncio.create_task(
+        backend.recall_short_horizon(
+            principal=PRINCIPAL,
+            query="Project",
+            disclosure_context=_disclosure(),
+            deadline_ms=500,
+        )
+    )
+    await asyncio.sleep(0.02)
+    started = time.monotonic()
+    second = await backend.recall_short_horizon(
+        principal=PRINCIPAL,
+        query="Project",
+        disclosure_context=_disclosure(),
+        deadline_ms=30,
+    )
+    assert time.monotonic() - started < 0.10
+    assert second.hits == ()
+    assert second.degradation_code is ShortHorizonDegradationCode.DEADLINE_EXCEEDED
+    await first
+    await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_attempt_audit_and_eligibility_share_one_absolute_deadline(
+    tmp_path: Path,
+) -> None:
+    pairs = tuple(_registration(index) for index in range(1, 13))
+    backend = await _backend(tmp_path / "shared-deadline.db", pairs)
+    await backend.rebuild_short_horizon_projection(principal=PRINCIPAL)
+    original_audit = backend._append_short_horizon_audit_unlocked
+    original_gate = backend._resolve_suppression_unlocked
+
+    async def delayed_audit(*args: object, **kwargs: object) -> str:
+        await asyncio.sleep(0.020)
+        return await original_audit(*args, **kwargs)
+
+    async def delayed_gate(*args: object, **kwargs: object) -> object:
+        await asyncio.sleep(0.020)
+        return await original_gate(*args, **kwargs)
+
+    backend._append_short_horizon_audit_unlocked = delayed_audit  # type: ignore[method-assign]
+    backend._resolve_suppression_unlocked = delayed_gate  # type: ignore[method-assign]
+    started = time.monotonic()
+    result = await backend.recall_short_horizon(
+        principal=PRINCIPAL,
+        query="Project",
+        disclosure_context=_disclosure(),
+        deadline_ms=30,
+    )
+    assert time.monotonic() - started < 0.10
+    assert result.hits == ()
+    assert result.degradation_code is ShortHorizonDegradationCode.DEADLINE_EXCEEDED
     await backend.close()
 
 
@@ -555,23 +723,54 @@ async def test_close_fails_closed_on_projection_or_vector_tamper(tmp_path: Path)
     with pytest.raises(MemoryCorruptionError, match="vectors are invalid"):
         await legal_dimension.close()
 
+    audit_link = await _backend(tmp_path / "audit-link-tamper.db", pairs)
+    await audit_link.rebuild_short_horizon_projection(principal=PRINCIPAL)
+    await audit_link.recall_short_horizon(
+        principal=PRINCIPAL,
+        query="Project",
+        disclosure_context=_disclosure(),
+    )
+    async with audit_link.connection.execute(
+        "SELECT audit_id,audit_json FROM short_horizon_audit WHERE event_kind='recall'"
+    ) as cursor:
+        audit_row = await cursor.fetchone()
+    assert audit_row is not None
+    audit = json.loads(str(audit_row[1]))
+    audit["details"]["attempt_audit_id"] = "short-audit:forged"
+    forged_json = canonical_json(cast(JsonValue, audit))
+    await audit_link.connection.execute("DROP TRIGGER short_horizon_audit_immutable_update")
+    await audit_link.connection.execute(
+        "UPDATE short_horizon_audit SET audit_json=?,audit_hash=? WHERE audit_id=?",
+        (
+            forged_json,
+            hashlib.sha256(forged_json.encode()).hexdigest(),
+            str(audit_row[0]),
+        ),
+    )
+    with pytest.raises(MemoryCorruptionError, match="recall audit lineage differs"):
+        await audit_link.close()
+
 
 @pytest.mark.asyncio
-async def test_mixed_causal_group_metadata_is_rejected_and_audited(tmp_path: Path) -> None:
+async def test_forged_routing_metadata_is_rejected_and_audited(tmp_path: Path) -> None:
     pairs = tuple(_registration(index) for index in range(1, 13))
     backend = await _backend(tmp_path / "mixed-group.db", pairs)
     await backend.connection.execute(
         "DROP TRIGGER conversation_evidence_registrations_immutable_update"
     )
     await backend.connection.execute(
-        "UPDATE conversation_evidence_registrations SET causal_group_id='group-1', "
-        "item_ordinal=2,group_item_count=2 WHERE registration_id='registration-2'"
+        "UPDATE conversation_evidence_registrations SET causal_group_id='forged-group', "
+        "causal_group_sequence=999 WHERE registration_id='registration-2'"
     )
-    with pytest.raises(MemoryCorruptionError, match="causal group metadata differs"):
+    with pytest.raises(MemoryCorruptionError, match="metadata binding differs"):
         await backend.rebuild_short_horizon_projection(principal=PRINCIPAL)
     async with backend.connection.execute(
         "SELECT audit_json FROM short_horizon_audit WHERE event_kind='projection_rejected'"
     ) as cursor:
         row = await cursor.fetchone()
     assert row is not None
-    assert json.loads(str(row[0]))["details"]["reason_code"] == "causal_group_metadata_inconsistent"
+    assert (
+        json.loads(str(row[0]))["details"]["reason_code"] == "registration_metadata_binding_differs"
+    )
+    with pytest.raises(MemoryCorruptionError, match="metadata binding differs"):
+        await backend.close()

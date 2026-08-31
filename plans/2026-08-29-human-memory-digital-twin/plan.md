@@ -2,7 +2,7 @@
 
 <!-- plan-status: finalized -->
 
-> 状态：APPROVED / EXECUTION IN PROGRESS — V0/S1/S2 与 S3 Task 1/2/3 complete；RecallDecision v3、EvidenceItemAuthority v3 classification、MemoryActionAuthority v2、Procedure/Prospective consumer 已闭合。五天 Short-Horizon repository 正在处理独立审查 P1 后复审；machine `a2-004` resolved，Task 4 冻结后继续 Task 5—7
+> 状态：APPROVED / EXECUTION IN PROGRESS — V0/S1/S2 与 S3 Task 1—4 complete；RecallDecision v3、EvidenceItemAuthority v3 classification、MemoryActionAuthority v2、Procedure/Prospective consumer 已闭合。五天 Short-Horizon repository 已完成独立审查 P0/P1/P2=0；machine `a2-004` resolved，继续 Task 5—7
 > 行为策略：`preserve-approved`  
 > 唯一真相：`acceptance.md` + `assurance-contract.json`  
 > 实施仓库：`simple-harness-sdk` → `simple-harness-memory-sdk` → `simple_harness`

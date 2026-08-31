@@ -3,7 +3,7 @@
 > Release unit：S3（Memory SDK）  
 > 高风险子系统：认知状态机、检索资格/排序、派生投影（3）  
 > 覆盖：HM-AC-2/4/5/6/7/8
-> 执行状态：Task 1/2/3 COMPLETE（Memory Task 3 `31ffb15` + `3e45194`；Harness exact authority `aa45a51`）。Task 4 `a32a837` 终审发现 total deadline、projection replacement audit、FTS/vector integrity 与 causal-group completeness P1，当前 remediation 后待复审；machine `a2-004` resolved；Task 4 冻结后继续 Task 5—7
+> 执行状态：Task 1—4 COMPLETE（Memory Task 3 `31ffb15` + `3e45194`；Harness exact authority `aa45a51`）。Task 4 remediation 已完成五轮独立复审 P0/P1/P2=0；machine `a2-004` resolved；真实 quality gate 仍 `NOT_RUN/BLOCKED`；继续 Task 5—7
 
 ## 交付边界
 
@@ -83,8 +83,11 @@ repository 私有持有并从 durable rows 重建。Host v3 registration 的唯�
 authority 是索引资格根；无授权 registration 永久保存但不索引。完整 eligibility universe 先经过 identity、
 disclosure、time、privacy/classification 与 suppression，随后 FTS、entity-time、vector 独立排序并融合；stale/cold/
 deadline 只降级当前 universe，且 audit 保存 gate counts、hashed refs/content hashes、lane/selection scores 与 generation
-manifest。五天清理只删除派生 chunk/vector/FTS。Focused `10 passed`、S3 回归 `481 passed`、全仓
-`855 passed, 8 skipped`；真实 200-query semantic quality gate 仍归 S3 最终验收，未在本 Task 宣称 PASS。
+manifest。五天清理只删除派生 chunk/vector/FTS。调用 deadline 从公开入口开始计时，覆盖并发 write/audit 排队；
+timeout 产生关联的 `recall_started` 与 `recall_terminal`，close 先拒绝新 recall、等待已接纳调用并 drain 审计。Host
+metadata routing fields 回绑至签名 registration；FTS mirror/vector hash、dimension、causal metadata 与 audit lineage
+均在 close/reopen 时 fail-closed。Focused `17 passed`、全仓 `864 passed, 8 skipped`；真实 200-query semantic quality
+gate 仍归 S3 最终验收，未在本 Task 宣称 PASS。
 
 - `a2-005` 用户批准的修正架构：active generation/cache 只能由 Memory repository 从 durable DB snapshot
   加载并核验，公开入口不得接受调用方指定 generation 或 cache；permission/status/time/suppression 先形成完整

@@ -230,9 +230,13 @@ src/simple_harness_memory/
   epoch/rolling window/first bind/CAS/fault/tamper 与 Prospective ACK/trigger/invalidation/expire/stale/replay/outbox/
   audit-chain；该证据只关闭 S3 Task 1—3，不代表 S3 整体完成。
 
-- Human Memory S3 Task 4：`a32a837` 的独立终审发现 total deadline、projection replacement audit、FTS/vector
-  integrity 与 causal-group completeness 四项 P1；remediation 正在实施，Task 4 不得宣称闭合。真实 200-query
-  semantic quality corpus、Typed RecallPlan、graph 与 Host/UI 同样仍未完成。
+- Human Memory S3 Task 4：短期对话索引已完成 remediation 并经五轮独立复审 P0/P1/P2=0。它以 Host v3
+  pointer-only registration 构建五天、最近十组之外的可重建 projection；repository 私有 generation/cache；FTS、
+  entity-time、vector 在同一完整资格 universe 上融合。入口起算的 absolute deadline 覆盖 audit/write 排队；每次
+  timeout 都具有关联的 `recall_started` / `recall_terminal` 审计，close 会拒绝新调用、等待已接纳调用并 drain 审计。
+  相关 tamper、immediate close/reopen、close-vs-recall、concurrent queue deadline 均 fail-closed。focused `17 passed`，
+  全仓 `864 passed, 8 skipped`。真实 200-query semantic quality corpus 仍为 `NOT_RUN/BLOCKED`；Typed RecallPlan、
+  graph 与 Host/UI 仍未完成。
 
 - 0.6.0 Task 6 source audit：冻结 Harness 0.7 下全仓 `493 passed, 8 skipped`；Ruff、项目 mypy
   `97 source files`、3 个发布脚本 strict mypy 与 REUSE 全绿。非最终 dirty-tree wheel/sdist 通过 Twine，

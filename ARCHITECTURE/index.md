@@ -11,9 +11,9 @@ extractor，不导出物理会话删除 API；旧 v4 Message/Fact 类型和私�
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 包结构、分层、本地后端与召回/认知/世界对象的生产边界 |
 
-Human Memory Program 当前闭合到 S3 Task 1/2/3；Task 4 五天 Short-Horizon 的 Host-authorized pointer-only
-projection、repository-owned generation/cache 与 eligibility-universe 多路召回正在完成独立审查后的完整性与
-deadline remediation，尚未冻结为闭合态。Typed RecallPlan、graph projection 和 Host/UI 接线仍明确标为未实现，
-避免把计划能力误写成生产事实。
+Human Memory Program 当前闭合到 S3 Task 4：五天 Short-Horizon 已具备 Host-authorized pointer-only projection、
+repository-owned generation/cache、同一 eligibility universe 多路召回，以及调用入口起算的 hard deadline 与可审计
+timeout terminal state。它不包含 Typed RecallPlan、graph projection 或 Host/UI 接线；这些仍明确标为未实现，避免把
+计划能力误写成生产事实。
 
 <!-- last-updated: 2026-08-31 -->

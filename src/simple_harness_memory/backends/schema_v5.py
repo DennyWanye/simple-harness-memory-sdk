@@ -1332,7 +1332,7 @@ CREATE TABLE short_horizon_audit (
     event_kind TEXT NOT NULL CHECK (
         event_kind IN (
             'projection_rebuilt', 'projection_rejected', 'generation_activated',
-            'recall_started', 'recall', 'cleanup'
+            'recall_started', 'recall', 'recall_terminal', 'cleanup'
         )
     ),
     disclosure_context_hash TEXT,

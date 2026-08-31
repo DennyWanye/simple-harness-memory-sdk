@@ -266,6 +266,11 @@ class SQLiteHumanMemoryBackend:
         self._writer_lock_file: Any | None = None
         self._initialize_lock = asyncio.Lock()
         self._write_lock = asyncio.Lock()
+        self._short_horizon_recall_lifecycle_lock = asyncio.Lock()
+        self._short_horizon_recall_idle = asyncio.Event()
+        self._short_horizon_recall_idle.set()
+        self._short_horizon_active_recalls = 0
+        self._short_horizon_closing = False
         self._admission_lock = asyncio.Lock()
         self._authority_registration_lock = threading.Lock()
         self._delivery_admissions: dict[int, _DeliveryAdmissionState] = {}
@@ -286,6 +291,7 @@ class SQLiteHumanMemoryBackend:
         self._prospective_signal_authority = prospective_signal_authority
         self._short_horizon_embedder = short_horizon_embedder
         self._short_horizon_cache: object | None = None
+        self._short_horizon_audit_tasks: set[asyncio.Task[str]] = set()
         self._analysis_delivery_authority_registration: object | None = None
         if analysis_delivery_authority is not None:
             verify = getattr(analysis_delivery_authority, "verify_analysis_delivery", None)
@@ -386,6 +392,7 @@ class SQLiteHumanMemoryBackend:
                 self._audit_cursor_hmac_key = await self._read_audit_cursor_hmac_key()
                 verify_sqlite_path(self._secure_path)
                 self._receipt = receipt
+                self._short_horizon_closing = False
                 return receipt
             except BaseException:
                 await self._close_after_failure()
@@ -393,7 +400,11 @@ class SQLiteHumanMemoryBackend:
 
     async def close(self) -> None:
         async with self._initialize_lock:
+            async with self._short_horizon_recall_lifecycle_lock:
+                self._short_horizon_closing = True
+            await self._short_horizon_recall_idle.wait()
             try:
+                await self._drain_short_horizon_audit_tasks()
                 if self._db is not None:
                     await self._validate_integrity()
             finally:
@@ -403,6 +414,7 @@ class SQLiteHumanMemoryBackend:
                 self._receipt = None
                 self._audit_cursor_hmac_key = None
                 self._short_horizon_cache = None
+                self._short_horizon_audit_tasks.clear()
                 async with self._admission_lock:
                     self._delivery_admissions.clear()
                 self._release_writer_lease()
@@ -1156,6 +1168,17 @@ class SQLiteHumanMemoryBackend:
                 (principal.actor_id,),
             ) as cursor:
                 rows = tuple(await cursor.fetchall())
+            try:
+                for row in rows:
+                    self._assert_short_horizon_registration_metadata_binding(row)
+            except MemoryCorruptionError:
+                await self._append_short_horizon_audit_transaction(
+                    principal_id=principal.actor_id,
+                    event_kind="projection_rejected",
+                    details={"reason_code": "registration_metadata_binding_differs"},
+                    created_at=effective_now,
+                )
+                raise
             groups: dict[tuple[str, str, str], list[aiosqlite.Row]] = {}
             for row in rows:
                 groups.setdefault(
@@ -1280,9 +1303,7 @@ class SQLiteHumanMemoryBackend:
                         JsonValue,
                         [
                             {
-                                "registration_id_hash": _opaque_hash(
-                                    str(row["registration_id"])
-                                ),
+                                "registration_id_hash": _opaque_hash(str(row["registration_id"])),
                                 "registration_hash": str(row["registration_hash"]),
                             }
                             for row in rows
@@ -1320,9 +1341,7 @@ class SQLiteHumanMemoryBackend:
                     (principal.actor_id,),
                 )
                 for projection_item in projection:
-                    projection_items = cast(
-                        tuple[aiosqlite.Row, ...], projection_item["items"]
-                    )
+                    projection_items = cast(tuple[aiosqlite.Row, ...], projection_item["items"])
                     first = projection_items[0]
                     await self._db.execute(
                         "INSERT INTO short_horizon_chunks(chunk_id,principal_id,subject,"
@@ -1342,37 +1361,38 @@ class SQLiteHumanMemoryBackend:
                                 cast(JsonValue, [str(row["role"]) for row in projection_items])
                             ),
                             canonical_json(
-                                cast(JsonValue, sorted(
-                                    {
-                                        str(row["task_scope_id"])
-                                        for row in projection_items
-                                        if row["task_scope_id"] is not None
-                                    }
-                                ))
-                            ),
-                            canonical_json(
-                                cast(JsonValue, sorted(
-                                    {
-                                        value
-                                        for row in projection_items
-                                        for value in json.loads(str(row["entities_json"]))
-                                    }
-                                ))
+                                cast(
+                                    JsonValue,
+                                    sorted(
+                                        {
+                                            str(row["task_scope_id"])
+                                            for row in projection_items
+                                            if row["task_scope_id"] is not None
+                                        }
+                                    ),
+                                )
                             ),
                             canonical_json(
                                 cast(
                                     JsonValue,
-                                    [
-                                        str(row["evidence_source_ref"])
-                                        for row in projection_items
-                                    ],
+                                    sorted(
+                                        {
+                                            value
+                                            for row in projection_items
+                                            for value in json.loads(str(row["entities_json"]))
+                                        }
+                                    ),
+                                )
+                            ),
+                            canonical_json(
+                                cast(
+                                    JsonValue,
+                                    [str(row["evidence_source_ref"]) for row in projection_items],
                                 )
                             ),
                             projection_item["privacy"],
                             canonical_json(cast(JsonValue, projection_item["attributes"])),
-                            canonical_json(
-                                cast(JsonValue, projection_item["classification_refs"])
-                            ),
+                            canonical_json(cast(JsonValue, projection_item["classification_refs"])),
                             projection_item["content"],
                             projection_item["content_hash"],
                             projection_item["occurred_at"],
@@ -1580,12 +1600,49 @@ class SQLiteHumanMemoryBackend:
         deadline_ms: int = 2_000,
         now: float | None = None,
     ) -> ShortHorizonRecallResult:
-        """Return before the caller deadline, retaining a durable start audit on timeout.
+        """Account the caller deadline from entry, including queueing for write work."""
 
-        The preflight audit is deliberately committed before the bounded work.  If a
-        slow eligibility authority or SQLite operation exhausts the budget, the
-        completion audit is cancelled atomically and this durable start record is
-        the authoritative explanation for the empty, degraded result.
+        from simple_harness_memory.core.short_horizon import SHORT_HORIZON_HARD_DEADLINE_MS
+
+        if (
+            isinstance(deadline_ms, bool)
+            or not isinstance(deadline_ms, int)
+            or not 1 <= deadline_ms <= SHORT_HORIZON_HARD_DEADLINE_MS
+        ):
+            raise MemoryLimitError("short_horizon_deadline_invalid")
+        started = time.monotonic()
+        await self._begin_short_horizon_recall()
+        try:
+            return await self._recall_short_horizon_lifecycle_locked(
+                principal=principal,
+                query=query,
+                disclosure_context=disclosure_context,
+                limit=limit,
+                deadline_ms=deadline_ms,
+                now=now,
+                started=started,
+                deadline=started + deadline_ms / 1_000,
+            )
+        finally:
+            await self._finish_short_horizon_recall()
+
+    async def _recall_short_horizon_lifecycle_locked(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        query: str,
+        disclosure_context: DisclosureContext,
+        limit: int = 10,
+        deadline_ms: int = 2_000,
+        now: float | None = None,
+        started: float,
+        deadline: float,
+    ) -> ShortHorizonRecallResult:
+        """Return before one absolute caller deadline with a durable audit trail.
+
+        A committed ``recall_started`` record explains an in-flight request. If
+        the caller deadline wins, a detached terminal audit is queued, links back
+        to that start record, and never delays the caller.
         """
 
         from simple_harness.runtime import DisclosureContext
@@ -1614,8 +1671,6 @@ class SQLiteHumanMemoryBackend:
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v5 backend is not initialized")
 
-        started = time.monotonic()
-        deadline = started + deadline_ms / 1_000
         effective_now = _timestamp(self._now() if now is None else now)
         started_audit_id = f"short-audit:{uuid4().hex}"
         attempt_task = asyncio.create_task(
@@ -1628,13 +1683,21 @@ class SQLiteHumanMemoryBackend:
                 created_at=effective_now,
             )
         )
-        attempt_task.add_done_callback(self._consume_short_horizon_attempt_task)
+        self._track_short_horizon_audit_task(attempt_task)
         try:
             await asyncio.wait_for(
                 asyncio.shield(attempt_task),
                 timeout=max(0.0, deadline - time.monotonic()),
             )
         except TimeoutError:
+            self._schedule_short_horizon_recall_terminal(
+                principal=principal,
+                attempt_audit_id=started_audit_id,
+                disclosure_context_hash=disclosure_context.context_hash,
+                query_hash=hashlib.sha256(query.encode()).hexdigest(),
+                deadline_ms=deadline_ms,
+                created_at=effective_now,
+            )
             return ShortHorizonRecallResult(
                 (),
                 started_audit_id,
@@ -1646,6 +1709,9 @@ class SQLiteHumanMemoryBackend:
                 ShortHorizonDegradationCode.DEADLINE_EXCEEDED,
             )
         try:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError
             return await asyncio.wait_for(
                 self._recall_short_horizon_after_start(
                     principal=principal,
@@ -1656,10 +1722,19 @@ class SQLiteHumanMemoryBackend:
                     now=effective_now,
                     started=started,
                     deadline=deadline,
+                    attempt_audit_id=started_audit_id,
                 ),
-                timeout=deadline_ms / 1_000,
+                timeout=remaining,
             )
         except TimeoutError:
+            self._schedule_short_horizon_recall_terminal(
+                principal=principal,
+                attempt_audit_id=started_audit_id,
+                disclosure_context_hash=disclosure_context.context_hash,
+                query_hash=hashlib.sha256(query.encode()).hexdigest(),
+                deadline_ms=deadline_ms,
+                created_at=effective_now,
+            )
             return ShortHorizonRecallResult(
                 (),
                 started_audit_id,
@@ -1682,6 +1757,7 @@ class SQLiteHumanMemoryBackend:
         now: float | None = None,
         started: float,
         deadline: float,
+        attempt_audit_id: str,
     ) -> ShortHorizonRecallResult:
         """Recall from one gated universe; generation and cache stay repository-private."""
 
@@ -1752,6 +1828,7 @@ class SQLiteHumanMemoryBackend:
                         "vector_lane": [],
                         "selected": [],
                         "gate_outcome": "disclosure_rejected",
+                        "attempt_audit_id": attempt_audit_id,
                     },
                     created_at=effective_now,
                 )
@@ -1988,14 +2065,10 @@ class SQLiteHumanMemoryBackend:
                         for rank, ref in enumerate(ranked_refs, start=1)
                     ],
                     "active_generation_id_hash": (
-                        None
-                        if active_generation_id is None
-                        else _opaque_hash(active_generation_id)
+                        None if active_generation_id is None else _opaque_hash(active_generation_id)
                     ),
                     "used_generation_id_hash": (
-                        None
-                        if used_generation_id is None
-                        else _opaque_hash(used_generation_id)
+                        None if used_generation_id is None else _opaque_hash(used_generation_id)
                     ),
                     "lineage_id_hash": (
                         None if active_lineage_id is None else _opaque_hash(active_lineage_id)
@@ -2003,6 +2076,7 @@ class SQLiteHumanMemoryBackend:
                     "manifest_hash": current_manifest,
                     "deadline_ms": deadline_ms,
                     "elapsed_ms": max(0.0, (time.monotonic() - started) * 1_000),
+                    "attempt_audit_id": attempt_audit_id,
                 },
                 created_at=effective_now,
             )
@@ -9138,6 +9212,43 @@ class SQLiteHumanMemoryBackend:
             raise MemoryCorruptionError("short horizon causal group contains duplicates")
         return ordinals == set(range(1, expected[4] + 1))
 
+    @staticmethod
+    def _assert_short_horizon_registration_metadata_binding(row: aiosqlite.Row) -> None:
+        """Bind projection-routing columns back to immutable Host metadata."""
+
+        from simple_harness.runtime import ConversationEvidenceMetadata
+
+        try:
+            raw_metadata = json.loads(str(row["metadata_json"]))
+            if not isinstance(raw_metadata, dict):
+                raise ValueError("metadata must be an object")
+            metadata = ConversationEvidenceMetadata.from_json(raw_metadata)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise MemoryCorruptionError("conversation registration metadata is invalid") from exc
+        expected_tool_link = (
+            None
+            if metadata.tool_causal_link is None
+            else canonical_json(metadata.tool_causal_link.to_json())
+        )
+        if (
+            str(row["principal_id"]) != metadata.subject
+            or str(row["run_id"]) != metadata.run_id
+            or str(row["subject"]) != metadata.subject
+            or str(row["conversation_id"]) != metadata.conversation_id
+            or str(row["primary_conversation_id"]) != metadata.primary_conversation_id
+            or str(row["causal_group_id"]) != metadata.causal_group_id
+            or int(row["causal_group_sequence"]) != metadata.causal_group_sequence
+            or int(row["item_ordinal"]) != metadata.item_ordinal
+            or int(row["group_item_count"]) != metadata.group_item_count
+            or str(row["ordered_group_manifest_hash"]) != metadata.ordered_group_manifest_hash
+            or str(row["role"]) != metadata.role.value
+            or float(row["occurred_at"]) != metadata.occurred_at
+            or row["task_scope_id"] != metadata.task_scope_id
+            or str(row["tool_causal_link_json"] or "") != (expected_tool_link or "")
+            or str(row["entities_json"]) != canonical_json(list(metadata.entities))
+        ):
+            raise MemoryCorruptionError("conversation registration metadata binding differs")
+
     async def _current_short_horizon_manifest_hash_unlocked(self) -> str:
         assert self._db is not None
         async with self._db.execute(
@@ -9201,17 +9312,12 @@ class SQLiteHumanMemoryBackend:
                 for vector in vectors
             ):
                 raise ValueError("active short horizon vector values are invalid")
-            vector_rows = tuple(
-                (str(row["chunk_id"]), str(row["embedding_hash"])) for row in rows
-            )
-            if (
-                any(
-                    hashlib.sha256(bytes(row["embedding"])).hexdigest()
-                    != str(row["embedding_hash"])
-                    for row in rows
-                )
-                or self._short_horizon_vector_manifest_hash(vector_rows)
-                != str(generation["vector_manifest_hash"])
+            vector_rows = tuple((str(row["chunk_id"]), str(row["embedding_hash"])) for row in rows)
+            if any(
+                hashlib.sha256(bytes(row["embedding"])).hexdigest() != str(row["embedding_hash"])
+                for row in rows
+            ) or self._short_horizon_vector_manifest_hash(vector_rows) != str(
+                generation["vector_manifest_hash"]
             ):
                 raise ValueError("active short horizon vector hashes are invalid")
             self._short_horizon_cache = _ExactVectorGenerationCache(
@@ -9268,12 +9374,85 @@ class SQLiteHumanMemoryBackend:
                 created_at=created_at,
             )
 
-    @staticmethod
-    def _consume_short_horizon_attempt_task(task: asyncio.Task[str]) -> None:
-        """Observe a late best-effort attempt audit without delaying recall callers."""
+    def _schedule_short_horizon_recall_terminal(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        attempt_audit_id: str,
+        disclosure_context_hash: str,
+        query_hash: str,
+        deadline_ms: int,
+        created_at: float,
+    ) -> None:
+        """Queue a terminal audit for a caller-timed-out recall without blocking it."""
 
-        with suppress(asyncio.CancelledError, Exception):
-            task.result()
+        terminal_task = asyncio.create_task(
+            self._record_short_horizon_recall_terminal(
+                principal=principal,
+                attempt_audit_id=attempt_audit_id,
+                disclosure_context_hash=disclosure_context_hash,
+                query_hash=query_hash,
+                deadline_ms=deadline_ms,
+                created_at=created_at,
+            )
+        )
+        self._track_short_horizon_audit_task(terminal_task)
+
+    async def _record_short_horizon_recall_terminal(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        attempt_audit_id: str,
+        disclosure_context_hash: str,
+        query_hash: str,
+        deadline_ms: int,
+        created_at: float,
+    ) -> str:
+        async with self._write_lock:
+            await self._authorize_short_horizon_principal_unlocked(principal)
+            return await self._append_short_horizon_audit_transaction(
+                principal_id=principal.actor_id,
+                event_kind="recall_terminal",
+                disclosure_context_hash=disclosure_context_hash,
+                query_hash=query_hash,
+                degradation_code="DEADLINE_EXCEEDED",
+                details={
+                    "attempt_audit_id": attempt_audit_id,
+                    "deadline_ms": deadline_ms,
+                    "gate_outcome": "deadline_exceeded",
+                },
+                created_at=created_at,
+            )
+
+    async def _begin_short_horizon_recall(self) -> None:
+        """Admit one recall before close can snapshot its audit obligations."""
+
+        async with self._short_horizon_recall_lifecycle_lock:
+            if self._short_horizon_closing or self._db is None or self._receipt is None:
+                raise RuntimeError("human-memory v5 backend is not initialized")
+            self._short_horizon_active_recalls += 1
+            self._short_horizon_recall_idle.clear()
+
+    async def _finish_short_horizon_recall(self) -> None:
+        async with self._short_horizon_recall_lifecycle_lock:
+            if self._short_horizon_active_recalls < 1:
+                raise AssertionError("short horizon recall lifecycle underflow")
+            self._short_horizon_active_recalls -= 1
+            if self._short_horizon_active_recalls == 0:
+                self._short_horizon_recall_idle.set()
+
+    def _track_short_horizon_audit_task(self, task: asyncio.Task[str]) -> None:
+        """Keep detached audit work alive until close can verify its durable result."""
+
+        self._short_horizon_audit_tasks.add(task)
+        task.add_done_callback(self._short_horizon_audit_tasks.discard)
+
+    async def _drain_short_horizon_audit_tasks(self) -> None:
+        """Persist every returned-call audit before releasing the SQLite connection."""
+
+        while self._short_horizon_audit_tasks:
+            tasks = tuple(self._short_horizon_audit_tasks)
+            await asyncio.gather(*tasks)
 
     async def _append_short_horizon_audit_transaction(self, **kwargs: object) -> str:
         assert self._db is not None
@@ -9441,6 +9620,7 @@ class SQLiteHumanMemoryBackend:
                 raise MemoryCorruptionError(
                     "conversation registration authority is invalid"
                 ) from exc
+            self._assert_short_horizon_registration_metadata_binding(row)
             if (
                 metadata.metadata_hash != str(row["metadata_hash"])
                 or metadata_receipt.receipt_hash != str(row["metadata_receipt_hash"])
@@ -9641,8 +9821,7 @@ class SQLiteHumanMemoryBackend:
                 or str(chunk["public_text"]) != content
                 or str(chunk["content_hash"]) != content_hash
                 or str(chunk["effective_privacy_class"]) != privacy
-                or int(chunk["causal_group_sequence"])
-                != int(items[0]["causal_group_sequence"])
+                or int(chunk["causal_group_sequence"]) != int(items[0]["causal_group_sequence"])
                 or canonical_array(chunk["roles_json"], "chunk roles") != roles
                 or canonical_array(chunk["task_scope_ids_json"], "chunk task scopes")
                 != task_scope_ids
@@ -9659,8 +9838,7 @@ class SQLiteHumanMemoryBackend:
                 or float(chunk["expires_at"]) != occurred_at + SHORT_HORIZON_RETENTION_SECONDS
                 or any(
                     str(row["chunk_evidence_id"]) != str(row["evidence_id"])
-                    or str(row["chunk_evidence_envelope_hash"])
-                    != str(row["envelope_hash"])
+                    or str(row["chunk_evidence_envelope_hash"]) != str(row["envelope_hash"])
                     for row in items
                 )
             ):
@@ -9670,8 +9848,10 @@ class SQLiteHumanMemoryBackend:
             "SELECT * FROM short_horizon_audit ORDER BY audit_id"
         ) as cursor:
             audits = tuple(await cursor.fetchall())
+        parsed_audits: dict[str, dict[str, object]] = {}
         for row in audits:
             audit = canonical_object(row["audit_json"], "short horizon audit")
+            parsed_audits[str(row["audit_id"])] = audit
             details = audit.get("details")
             if (
                 hashlib.sha256(str(row["audit_json"]).encode()).hexdigest()
@@ -9683,8 +9863,7 @@ class SQLiteHumanMemoryBackend:
                 or audit.get("fts_count") != row["fts_count"]
                 or audit.get("entity_time_count") != row["entity_time_count"]
                 or audit.get("vector_count") != row["vector_count"]
-                or audit.get("disclosure_context_hash")
-                != row["disclosure_context_hash"]
+                or audit.get("disclosure_context_hash") != row["disclosure_context_hash"]
                 or audit.get("query_hash") != row["query_hash"]
                 or audit.get("generation_id") != row["generation_id"]
                 or audit.get("generation_state") != row["generation_state"]
@@ -9699,13 +9878,37 @@ class SQLiteHumanMemoryBackend:
                 or not isinstance(details.get("fts_lane"), list)
                 or len(details["fts_lane"]) != int(row["fts_count"])
                 or not isinstance(details.get("entity_time_lane"), list)
-                or len(details["entity_time_lane"])
-                != int(row["entity_time_count"])
+                or len(details["entity_time_lane"]) != int(row["entity_time_count"])
                 or not isinstance(details.get("vector_lane"), list)
                 or len(details["vector_lane"]) != int(row["vector_count"])
                 or not isinstance(details.get("selected"), list)
             ):
                 raise MemoryCorruptionError("short horizon recall audit differs")
+        for row in audits:
+            event_kind = str(row["event_kind"])
+            if event_kind not in {"recall", "recall_terminal"}:
+                continue
+            details = parsed_audits[str(row["audit_id"])]["details"]
+            assert isinstance(details, dict)
+            attempt_audit_id = details.get("attempt_audit_id")
+            attempt = (
+                None
+                if not isinstance(attempt_audit_id, str)
+                else parsed_audits.get(attempt_audit_id)
+            )
+            if (
+                attempt is None
+                or attempt.get("event_kind") != "recall_started"
+                or attempt.get("principal_id") != row["principal_id"]
+                or attempt.get("query_hash") != row["query_hash"]
+                or attempt.get("disclosure_context_hash") != row["disclosure_context_hash"]
+            ):
+                raise MemoryCorruptionError("short horizon recall audit lineage differs")
+            if event_kind == "recall_terminal" and (
+                details.get("gate_outcome") != "deadline_exceeded"
+                or row["degradation_code"] != "DEADLINE_EXCEEDED"
+            ):
+                raise MemoryCorruptionError("short horizon terminal audit differs")
         await self._load_short_horizon_cache_unlocked()
 
     @staticmethod
