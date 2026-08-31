@@ -170,3 +170,15 @@ ruff/scoped mypy/diff/clean-state PASS；独立审计先发现 deny count side-c
 suppression 可被 revise 绕过、operation ID 作用域错误，以及 Harness authority 未携带 Host/evidence classification
 floor。其中 classification owner 缺失是协议 P0；用户已批准 `EvidenceItemAuthority v3`，分类 enum 移至中立协议模块，
 EvidenceSpanRef 保持不变，Memory 必须执行 policy ∨ evidence authority ∨ target ∨ proposal 的单调 join并保留审计输入。
+
+`a2-005` 的 Host classification 子项已在 Harness source
+`0c5a6c4d4291d080a4f19f571251fc97f1a2fb8c` 闭合：`EvidenceItemAuthority` 使用公开 schema v3，强制
+privacy floor、canonical attributes 与 classification authority ref；typed external authority 与 epistemic/evidence matrix
+同时冻结。clean commit 全仓 `1645 passed, 2 skipped`，ruff/scoped mypy PASS，独立 closure audit P0/P1/P2=0；仍未
+tag/publish，最终 wheel 要等 S3 consumer 闭合后重建。
+
+`a2-006`（machine gate event `a2-003`）action-authority 回炉：S3 repository 独立审查实证，模型控制的
+`EvidenceSpanRef.support_kind` 可把普通 authenticated user assertion 重标为 correction，继而取得 SUPPRESS/SUPERSEDE
+权限；当前 Host `EvidenceItemAuthority v3` 只绑定 item/actor/provenance/classification，不证明用户授权了哪个记忆动作。
+这不是 SQLite validator 能从开放自然语言确定性补出的事实。S1-T7 与 S3-T2 的 action-authority 线已暂停，等待用户
+批准 Host-owned、target/revision/action/expiry/replay-bound authority 及自然语言确认语义；不得用正则或继续信任模型标签绕过。

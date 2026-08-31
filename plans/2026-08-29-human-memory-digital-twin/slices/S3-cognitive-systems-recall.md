@@ -3,6 +3,7 @@
 > Release unit：S3（Memory SDK）  
 > 高风险子系统：认知状态机、检索资格/排序、派生投影（3）  
 > 覆盖：HM-AC-2/4/5/6/7/8
+> 执行状态：Task 1/2 repository candidate 已完成首轮实现但独立审查 BLOCKED；machine `a2-003` action-authority 等待用户定案，receipt corruption/P1 整改可继续；未提交业务 candidate
 
 ## 交付边界
 
@@ -43,6 +44,9 @@ Memory 只以 RecallDecision/ContextFragment 表达，不建长期表。数字�
   epistemic 限制、suppression、状态转换和 idempotency。
 - epistemic/status/kind 均是不可信提案：只有 exact verified evidence authority 可赋予 explicit user、external verification、
   observed behavior、correction/forget 权限；UNKNOWN/LLM inference 永远不能借自报状态进入 active/supersede/suppress。
+- `EvidenceSpanRef.support_kind` 本身仍是模型提案，不能授予 correction/forget/supersede/suppress。相关动作必须额外取得
+  Host-owned、绑定 exact subject/action/target revision/evidence/expiry/replay identity 的 action authority；普通 assertion
+  重标 correction 必须拒绝。自然语言路径是否增加显式确认由 `a2-006` 用户定案，定案前该能力不得提交。
 - effective classification 必须单调合并 Memory policy、全部 Host-signed evidence item floors、target revision 和 proposal，
   且同事务持久化各 authority/hash 与最终 decision；任何 classification authority 缺失整批拒绝。
 - 确定性代码不宣称证明开放自然语言 entailment：普通模型规范化 claim 保持 candidate/unverified；exact explicit-user

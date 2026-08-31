@@ -2,7 +2,7 @@
 
 <!-- plan-status: finalized -->
 
-> 状态：APPROVED / EXECUTION IN PROGRESS — V0/S1/S2 complete；RecallDecision v3 closed；EvidenceItemAuthority v3 A2 in progress；S3 repository audit blocked pending closure
+> 状态：APPROVED / EXECUTION IN PROGRESS — V0/S1/S2 complete；RecallDecision v3 与 EvidenceItemAuthority v3 classification 已闭合；machine `a2-003` action-authority owner 缺失，S1-T7/S3-T2 暂停等待用户定案
 > 行为策略：`preserve-approved`  
 > 唯一真相：`acceptance.md` + `assurance-contract.json`  
 > 实施仓库：`simple-harness-sdk` → `simple-harness-memory-sdk` → `simple_harness`
