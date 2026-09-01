@@ -1,24 +1,118 @@
 {
-  "schema_version": "1.0",
-  "mode": "code-audit-remediation-review",
-  "candidate_commit": "24f86694",
-  "base_commit": "04a5a649109db4bede8a22bb2e4f6df2b481eed9",
-  "auditor_engine": "opus",
-  "executor_engine": "claude-fable-5",
-  "verdict": "PASS",
-  "findings": [
-    {"id": "audit-hm-runtime-generation-fence", "severity": "P1", "status": "resolved", "type": "code", "summary": "SDK_START/SDK_CONTROL/TOOL 三边界最终 current-generation admission 全部接线；四元组绑定至全部 frozen authority；ProductEffectExecutor 经 ForegroundEffectAdmissionGate 接入 ForegroundQueueStore.authorize_effect；production 装配真实（main.py 单例 gate 同时接 executor 与 runtime）", "ac_ids": ["HM-AC-3", "HM-AC-8"], "scenario_ids": [], "required_retest": true},
-    {"id": "audit-hm-control-delivery", "severity": "P1", "status": "resolved", "type": "code", "summary": "durable control commit 后 after_control 即时唤醒；_pump_controls 在 terminal 观察期间持续送达（1s poll 兜底）；pause ACK 后 record_pause_outcome 推进 PAUSED；STOP/CANCEL 保持不同信号身份（sdk-stop:/sdk-cancel:）与不同 Host 终态（resolve_host_terminal），completed/failed 恒随 SDK 证据", "ac_ids": ["HM-AC-3", "HM-AC-8"], "scenario_ids": [], "required_retest": true},
-    {"id": "audit-hm-composition-drift", "severity": "P2", "status": "open", "type": "code", "summary": "foreground composition 与旧 chat ingress 双构造路径漂移（范围外沿用）", "ac_ids": ["HM-AC-3"], "scenario_ids": [], "required_retest": false},
-    {"id": "audit-hm-effect-gate-volatile-registry", "severity": "P2", "status": "open", "type": "code", "summary": "effect gate 为进程内易失注册表、仅按 sdk_run_id、未注册放行；建议改按 durable foreground_run_sdk_bindings 正向判定 fail-closed", "ac_ids": ["HM-AC-3"], "scenario_ids": [], "required_retest": false},
-    {"id": "audit-hm-pump-exception-swallow", "severity": "P2", "status": "open", "type": "code", "summary": "泵期非白名单异常被降级为 audit 行；观察前内联 _deliver_controls 仍 fail-closed", "ac_ids": ["HM-AC-8"], "scenario_ids": [], "required_retest": false},
-    {"id": "audit-hm-paused-run-has-no-production-resume", "severity": "P2", "status": "open", "type": "code", "summary": "PAUSED 首次生产可达但无 resume 控制；PAUSED 后 tool dispatch fail-closed 报错", "ac_ids": ["HM-AC-3"], "scenario_ids": [], "required_retest": false},
-    {"id": "audit-hm-control-before-start-liveness", "severity": "P2", "status": "open", "type": "code", "summary": "CLAIMED 期 control 后 SDK_START 被拒且无终态路径（既有 liveness 缺口，本次 fence 使其更安全但未闭合）", "ac_ids": ["HM-AC-8"], "scenario_ids": [], "required_retest": false}
-  ],
-  "verification_rerun_by_auditor": {
-    "focused_runtime_pytest": "12 passed",
-    "execution_and_tool_adapters_pytest": "118 passed",
-    "ruff_delta_vs_main": "no new findings"
+ "schema_version": "1.0",
+ "mode": "code-audit-remediation-review",
+ "candidate_commit": "24f86694",
+ "base_commit": "04a5a649109db4bede8a22bb2e4f6df2b481eed9",
+ "auditor_engine": "opus",
+ "executor_engine": "claude-fable-5",
+ "verdict": "PASS",
+ "findings": [
+  {
+   "id": "audit-hm-runtime-generation-fence",
+   "severity": "P1",
+   "status": "resolved",
+   "type": "code",
+   "summary": "SDK_START/SDK_CONTROL/TOOL 三边界最终 current-generation admission 全部接线；四元组绑定至全部 frozen authority；ProductEffectExecutor 经 ForegroundEffectAdmissionGate 接入 ForegroundQueueStore.authorize_effect；production 装配真实（main.py 单例 gate 同时接 executor 与 runtime）",
+   "ac_ids": [
+    "HM-AC-3",
+    "HM-AC-8"
+   ],
+   "scenario_ids": [],
+   "required_retest": true
   },
-  "note": "Full report_markdown retained in orchestrating session transcript; findings above are the machine ledger obligations. P2 items are non-blocking and recorded for future increments."
+  {
+   "id": "audit-hm-control-delivery",
+   "severity": "P1",
+   "status": "resolved",
+   "type": "code",
+   "summary": "durable control commit 后 after_control 即时唤醒；_pump_controls 在 terminal 观察期间持续送达（1s poll 兜底）；pause ACK 后 record_pause_outcome 推进 PAUSED；STOP/CANCEL 保持不同信号身份（sdk-stop:/sdk-cancel:）与不同 Host 终态（resolve_host_terminal），completed/failed 恒随 SDK 证据",
+   "ac_ids": [
+    "HM-AC-3",
+    "HM-AC-8"
+   ],
+   "scenario_ids": [],
+   "required_retest": true
+  },
+  {
+   "id": "audit-hm-composition-drift",
+   "severity": "P2",
+   "status": "open",
+   "type": "code",
+   "summary": "foreground composition 与旧 chat ingress 双构造路径漂移（范围外沿用）",
+   "ac_ids": [
+    "HM-AC-3"
+   ],
+   "scenario_ids": [],
+   "required_retest": false
+  },
+  {
+   "id": "audit-hm-effect-gate-volatile-registry",
+   "severity": "P2",
+   "status": "open",
+   "type": "code",
+   "summary": "effect gate 为进程内易失注册表、仅按 sdk_run_id、未注册放行；建议改按 durable foreground_run_sdk_bindings 正向判定 fail-closed",
+   "ac_ids": [
+    "HM-AC-3"
+   ],
+   "scenario_ids": [],
+   "required_retest": false
+  },
+  {
+   "id": "audit-hm-pump-exception-swallow",
+   "severity": "P2",
+   "status": "open",
+   "type": "code",
+   "summary": "泵期非白名单异常被降级为 audit 行；观察前内联 _deliver_controls 仍 fail-closed",
+   "ac_ids": [
+    "HM-AC-8"
+   ],
+   "scenario_ids": [],
+   "required_retest": false
+  },
+  {
+   "id": "audit-hm-paused-run-has-no-production-resume",
+   "severity": "P2",
+   "status": "open",
+   "type": "code",
+   "summary": "PAUSED 首次生产可达但无 resume 控制；PAUSED 后 tool dispatch fail-closed 报错",
+   "ac_ids": [
+    "HM-AC-3"
+   ],
+   "scenario_ids": [],
+   "required_retest": false
+  },
+  {
+   "id": "audit-hm-control-before-start-liveness",
+   "severity": "P2",
+   "status": "open",
+   "type": "code",
+   "summary": "CLAIMED 期 control 后 SDK_START 被拒且无终态路径（既有 liveness 缺口，本次 fence 使其更安全但未闭合）",
+   "ac_ids": [
+    "HM-AC-8"
+   ],
+   "scenario_ids": [],
+   "required_retest": false
+  },
+  {
+   "id": "audit-hm-cancel-delivery-positive-untested",
+   "severity": "P2",
+   "status": "open",
+   "type": "testcase",
+   "summary": "cancel 即时送达无 live 正向单测（pause/stop 已覆盖；CANCEL 仅有终态纯函数断言与否定式竞态覆盖）。2026-09-01 full-audit round-1 补稳定 ID，对应 PROJECT_STATUS 已述第 6 条 P2。",
+   "ac_ids": [
+    "HM-AC-3",
+    "HM-AC-8"
+   ],
+   "scenario_ids": [
+    "S4-FIFO"
+   ],
+   "required_retest": false
+  }
+ ],
+ "verification_rerun_by_auditor": {
+  "focused_runtime_pytest": "12 passed",
+  "execution_and_tool_adapters_pytest": "118 passed",
+  "ruff_delta_vs_main": "no new findings"
+ },
+ "note": "Full report_markdown retained in orchestrating session transcript; findings above are the machine ledger obligations. P2 items are non-blocking and recorded for future increments. Amended 2026-09-01: stable ID added for the 6th P2 (cancel live-delivery positive test) enumerated in PROJECT_STATUS."
 }

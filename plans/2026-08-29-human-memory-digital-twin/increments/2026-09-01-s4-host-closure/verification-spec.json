@@ -65,7 +65,7 @@
       ],
       "testcase_revisions": {
         "TC-HM-02": 3,
-        "TC-HM-11": 4
+        "TC-HM-11": 5
       },
       "gate_type": "positive-value",
       "input_class": "deterministic-typed-100k-cold-resume",
@@ -81,8 +81,8 @@
       ],
       "oracle_pins": {
         "fixture_revision": 1,
-        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34",
-        "value_runner_sha256": "77bcfc39d4f02cc758e45cf909210935548e59827669211b126f967718a69051",
+        "fixture_sha256": "ce72ae32f6dce9f2554d2c6e40b01c4f1310f576161cb01fc27844ca519128ae",
+        "value_runner_sha256": "277d2e03efcfaa33b013eca8abdc857cd813d3a8432e1c6e65929cb5760873ec",
         "runner_common_sha256": "b5d1ac909d2092851d6876d47bb457923499f4bfd528169f4cf039610caff4da"
       },
       "evidence_contract": {
@@ -105,7 +105,12 @@
           "exact_scope_opened",
           "resume_package_bounded",
           "wrong_task_canary_zero",
-          "fifo_preserved_after_restart"
+          "fifo_preserved_after_restart",
+          "unique_sdk_start",
+          "host_sdk_one_to_one",
+          "terminal_then_next",
+          "routed_task_host_initial",
+          "session_db_reads_zero"
         ]
       }
     },
@@ -134,7 +139,7 @@
       ],
       "oracle_pins": {
         "fixture_revision": 1,
-        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34"
+        "fixture_sha256": "ce72ae32f6dce9f2554d2c6e40b01c4f1310f576161cb01fc27844ca519128ae"
       },
       "evidence_contract": {
         "producer_types": [
@@ -167,7 +172,7 @@
         "TC-HM-11"
       ],
       "testcase_revisions": {
-        "TC-HM-11": 4
+        "TC-HM-11": 5
       },
       "gate_type": "negative-safety",
       "input_class": "durable-fifo-control-duplicate-restart",
@@ -185,7 +190,7 @@
       ],
       "oracle_pins": {
         "fixture_revision": 1,
-        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34"
+        "fixture_sha256": "ce72ae32f6dce9f2554d2c6e40b01c4f1310f576161cb01fc27844ca519128ae"
       },
       "evidence_contract": {
         "producer_types": [
@@ -218,7 +223,7 @@
         "TC-HM-14"
       ],
       "testcase_revisions": {
-        "TC-HM-14": 2
+        "TC-HM-14": 3
       },
       "gate_type": "negative-safety",
       "input_class": "fresh-host-primary-epoch-api",
@@ -235,8 +240,8 @@
       ],
       "oracle_pins": {
         "fixture_revision": 1,
-        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34",
-        "api_runner_sha256": "c82688c94fbcba7e5d86787e2aeac1e6ffbd86046a8423e58d08c156c6567e54",
+        "fixture_sha256": "ce72ae32f6dce9f2554d2c6e40b01c4f1310f576161cb01fc27844ca519128ae",
+        "api_runner_sha256": "e7ee9188b02c8e2c2918e92978bc95e1fc8f392010778fbc2ecad385d8367b23",
         "runner_common_sha256": "b5d1ac909d2092851d6876d47bb457923499f4bfd528169f4cf039610caff4da"
       },
       "evidence_contract": {
@@ -269,7 +274,7 @@
         "TC-HM-14"
       ],
       "testcase_revisions": {
-        "TC-HM-14": 2
+        "TC-HM-14": 3
       },
       "gate_type": "negative-safety",
       "input_class": "raw-integrity-fence-drain-wal-export",
@@ -287,7 +292,7 @@
       ],
       "oracle_pins": {
         "fixture_revision": 1,
-        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34"
+        "fixture_sha256": "ce72ae32f6dce9f2554d2c6e40b01c4f1310f576161cb01fc27844ca519128ae"
       },
       "evidence_contract": {
         "producer_types": [
@@ -339,7 +344,7 @@
       ],
       "oracle_pins": {
         "fixture_revision": 1,
-        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34"
+        "fixture_sha256": "ce72ae32f6dce9f2554d2c6e40b01c4f1310f576161cb01fc27844ca519128ae"
       },
       "evidence_contract": {
         "producer_types": [
@@ -370,7 +375,7 @@
         "TC-HM-14"
       ],
       "testcase_revisions": {
-        "TC-HM-14": 2
+        "TC-HM-14": 3
       },
       "gate_type": "negative-safety",
       "input_class": "host-critical-affected-full-regression",
@@ -382,8 +387,8 @@
       "impact_paths": [],
       "oracle_pins": {
         "fixture_revision": 1,
-        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34",
-        "api_runner_sha256": "c82688c94fbcba7e5d86787e2aeac1e6ffbd86046a8423e58d08c156c6567e54",
+        "fixture_sha256": "ce72ae32f6dce9f2554d2c6e40b01c4f1310f576161cb01fc27844ca519128ae",
+        "api_runner_sha256": "e7ee9188b02c8e2c2918e92978bc95e1fc8f392010778fbc2ecad385d8367b23",
         "runner_common_sha256": "b5d1ac909d2092851d6876d47bb457923499f4bfd528169f4cf039610caff4da"
       },
       "evidence_contract": {
@@ -438,7 +443,7 @@
       "parent_program": "human-memory-digital-twin",
       "scope_hash": "fd4957c85b3693b8f5a6e056bde7ec492849d57e2f8a44f70d130d419c3c3523",
       "must_ac_count": 6,
-      "task_count": 7,
+      "task_count": 8,
       "plan_lines": 128,
       "high_risk_subsystems": 3,
       "concurrent_layer_kinds": 3
@@ -446,9 +451,9 @@
     "testcase_revision_pins": {
       "TC-HM-02": 3,
       "TC-HM-09": 4,
-      "TC-HM-11": 4,
+      "TC-HM-11": 5,
       "TC-HM-12": 4,
-      "TC-HM-14": 2
+      "TC-HM-14": 3
     },
     "s4_host_oracle_pins": {
       "fixture": {
