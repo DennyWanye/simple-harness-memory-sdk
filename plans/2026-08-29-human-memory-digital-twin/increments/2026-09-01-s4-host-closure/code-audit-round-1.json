@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "mode": "code-audit",
+  "candidate_commit": "27e7d804",
+  "verdict": "FAIL",
+  "completion": {
+    "completed_must_acceptance": 2,
+    "must_acceptance_total": 6,
+    "percent": 33
+  },
+  "findings": [
+    {
+      "id": "audit-main-resume-public-dereference",
+      "severity": "P0",
+      "status": "open",
+      "type": "code",
+      "summary": "Production exact-open exposed an EVIDENCE root but no bounded public group/page dereference API; the verification facade assembled all 100000 events in one response.",
+      "ac_ids": ["HM-AC-6", "HM-AC-7"],
+      "required_retest": true
+    },
+    {
+      "id": "audit-production-composition-ports",
+      "severity": "P1",
+      "status": "open",
+      "type": "code",
+      "summary": "Production lifespan registered the factory but not real binding, recovery, and foreground scheduler ports, so fixture-only ports masked unavailable production operations.",
+      "ac_ids": ["HM-AC-3", "HM-AC-8"],
+      "required_retest": true
+    },
+    {
+      "id": "audit-recovery-fake-quiescence",
+      "severity": "P1",
+      "status": "open",
+      "type": "code",
+      "summary": "Recovery drain_or_park enumerated IDs but hard-coded gap_count=0 without durable item parking, lease revocation, or worker watermark acknowledgement.",
+      "ac_ids": ["HM-AC-8"],
+      "required_retest": true
+    }
+  ],
+  "plan_layer_defect": false,
+  "phase4_evidence_considered": false,
+  "note": "This is a Phase 3 code-audit. Testcase, scenario, root-run, and terminal evidence are intentionally not counted yet."
+}

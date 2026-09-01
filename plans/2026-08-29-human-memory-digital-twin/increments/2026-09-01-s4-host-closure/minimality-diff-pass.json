@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "mode": "diff-review",
+  "baseline_commit": "eb22e4e4",
+  "candidate_commit": "27e7d804",
+  "verdict": "LEAN",
+  "reviewer_findings": [
+    {
+      "id": "min-1",
+      "target": "backend/deskpet/execution/__init__.py",
+      "decision": "rejected",
+      "reason": "The file is the package initializer for the explicitly packaged deskpet.execution namespace; deleting it risks wheel/package discovery for no acceptance value. Its exports were sorted instead."
+    },
+    {
+      "id": "min-2",
+      "target": "backend/context.py and backend/main.py",
+      "decision": "applied",
+      "reason": "Removed the unread duplicate human_memory_composition ServiceContext publication; HumanMemoryHostServiceFactory.startup remains the single frozen composition authority."
+    },
+    {
+      "id": "min-3",
+      "target": "backend/deskpet/memory/human_memory_service.py",
+      "decision": "applied",
+      "reason": "Reused task_scope.protocol.canonical_json for the raw integrity manifest and removed the duplicate serializer."
+    },
+    {
+      "id": "min-4",
+      "target": "backend/deskpet/memory/s4_value_adapter.py",
+      "decision": "applied",
+      "reason": "Removed verification fallbacks for missing bulk seed and recovery implementations; the frozen adapter now fails closed on missing production dependencies."
+    }
+  ],
+  "applied_commit": "27e7d804",
+  "assurance_lowered": false,
+  "frozen_oracle_changed": false
+}
