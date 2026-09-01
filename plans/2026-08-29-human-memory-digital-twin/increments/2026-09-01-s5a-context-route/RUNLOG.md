@@ -69,3 +69,17 @@
 - continuation 收敛：32_000 硬编码 → effective_input_budget(32768)+同一 planner（双真相消除）；截断/丢组打日志。
 - usage 校准（冻结 pass 规则 actual≤effective，禁 underestimate）：真实 provider 车道重跑 PASS（worst prompt_tokens ≤ 25396）。
 - 回归 396 passed；模块 mypy 干净；里程碑 deterministic/real 双车道在新装配下仍 PASS（小上下文零裁剪 ⇒ 行为保持）。
+
+## Task 5 完成（2026-09-01，memory-sdk 6fac9ba + Host 949ee980/3414aa45/1415b95b）
+- HumanMemoryV7Runtime：v7 认知库首次接入 Host 组合（fresh-only human_memory_v7.db，短时域向量车道确定性降级）；reconcile 谓词 = matched ∧ live/presentable ∧ 资格（privacy public/personal）∧ 非 suppressed ∧ key∉presented set（suppression 资格门实现中发现缺口——inbox 契约补 suppressed 标志，wheel 重出 a51ca4c6…，两次 clean build 字节一致，pin/manifest/superseded 全链同步）。
+- no_recall 门：sink 前置 mandatory reconcile（pending→NoRecallBlockedError 稳定拒绝，reconcile 失败=拒绝方向 fail-closed）；authority prepare_snapshot 注入合资格 pending 摘要（bounded、host_authority 元数据）进 protected 分区。
+- **Required 负测试（真 v7 + 生产注入路径）**：mutation plan 建 prospective intent → apply_prospective_signal(REGISTRATION_ACCEPTED→TIME_DUE) 产真实 matched occurrence → no_recall 被拒 + durable 零记录 + 摘要进 snapshot；suppression 对照（manager.suppress memory-scope）→ 不阻塞；Host presented membership 写入 → 门开。实现过程证实 raw seed 不可行、EXPIRED/INVALIDATED 信号受 scheduler-liveness/ack 约束——suppression 是正确的非 presentable 对照轴（记 challenge ledger 补充证据）。
+- memory_standalone 车道：route 工具接 typed_recall（Host 构造 DisclosureContext/RecallPlan，FULL_TEXT 模式）→ 二审（privacy+payload hash 去重）→ MEMORY_STANDALONE receipt 带 recall_refs + fragments 返回同 Run；真 v7 语义记忆召回实测命中。
+- 回归 393 passed；enable_facts/auto-extraction 0.6 迁移与 epoch 门控（前一 commit）一并生效。
+
+## Task 6 完成（2026-09-01，Host commit 462e5445）
+- deterministic 验收矩阵 9 lane 全绿：六步五路序列（同一 durable state 六个 run：direct→memory(降级拒)→无 active 拒→resume→continue(承 durable cursor)→闲聊 no_recall，cursor 不被闲聊污染）；A/B canary 零混入（B 目标带 canary，ResumePackage 车道无泄漏）；20+turn/1MiB tool/中途 kill-replay（崩溃于 turn6 → 重放只跑 6..11、快照 1..11 三 hash、大载荷永不裸传、因果对完整）；twin-influence-zero（静态 import/源码 + payload 重放）；载荷变异（非法 route/超长 query/重复 effect 幂等）fail-closed；cutover 演练四件套（v44→45 前向、旧 runtime future reject、presented 表存在且恒空、schema 缺失 stable fail）。
+- 真实 provider 矩阵 3/3：resume 同 Run continuation、**单 invocation no-recall（1 次调用、零工具、durable no_recall）**、direct 路由 tool commit——三路正向达成（S5A-S1/S2/S3 真实面）。
+- human-epoch 组合冒烟：v45 state db 下 stack build 注册三个 Product authority + v7 runtime；44 库 human epoch → stable fail。
+- 捕获并修复 Task 4 真 bug：摘要化 tool Message 经 dataclasses.replace 因 frozen metadata 校验崩——显式重建 Message（kill-replay 矩阵首轮即抓）。
+- 聚焦回归 413 passed；干净全量 pytest 后台执行中。

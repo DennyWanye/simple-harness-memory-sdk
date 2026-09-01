@@ -759,8 +759,6 @@ class SQLiteHumanMemoryBackend:
         Host's.
         """
 
-        import json as _json
-
         from simple_harness_memory.core.identity import MemoryPrincipal
         from simple_harness_memory.core.occurrence import (
             OccurrenceInboxEntryV1,
@@ -826,7 +824,7 @@ class SQLiteHumanMemoryBackend:
                 action_text=str(row["action_text"]),
                 effective_privacy_class=str(row["effective_privacy_class"]),
                 information_attributes=tuple(
-                    _json.loads(row["information_attributes_json"])
+                    json.loads(row["information_attributes_json"])
                 ),
                 content_hash=str(row["content_hash"]),
                 suppressed=row["suppression_state"] == "directive",
@@ -848,8 +846,6 @@ class SQLiteHumanMemoryBackend:
         limit: int = 100,
     ):
         """Read-only durable outbox projection; never claims or settles rows."""
-
-        import json as _json
 
         from simple_harness_memory.core.identity import MemoryPrincipal
         from simple_harness_memory.core.occurrence import OutboxEntryV1, OutboxPageV1
@@ -884,7 +880,7 @@ class SQLiteHumanMemoryBackend:
         for row in rows:
             payload = None
             try:
-                decoded = _json.loads(row["payload"])
+                decoded = json.loads(row["payload"])
                 if isinstance(decoded, dict):
                     payload = decoded
             except (TypeError, ValueError):
