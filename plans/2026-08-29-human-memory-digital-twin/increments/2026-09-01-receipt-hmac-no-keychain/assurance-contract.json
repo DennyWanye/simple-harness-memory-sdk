@@ -1,0 +1,21 @@
+{
+  "profile": "standard",
+  "acceptance_ids": ["RH-AC-1"],
+  "protected_assets": [
+    {"id": "ASSET-NO-KEYCHAIN-PROMPT", "description": "receipt HMAC 路径不得再访问或触发 deskpet.receipt_hmac 系统钥匙串"},
+    {"id": "ASSET-RECEIPT-INTEGRITY", "description": "ToolReceipt HMAC key 的稳定性和防篡改语义"}
+  ],
+  "trusted_assumptions": [
+    {"id": "TRUST-LOCAL-HOST", "description": "本地用户账户、OS 文件权限与应用私有 userdata 目录可信"}
+  ],
+  "in_scope_failures": [
+    {"id": "FAIL-RECEIPT-KEY", "description": "移除钥匙串后 key 重启漂移、并发暴露半写 key、生成多个 key、权限过宽或把旧不可验证 receipt 冒充可信"},
+    {"id": "FAIL-WIRING", "description": "生产旁路仍 import/call keyring 或使用 deskpet.receipt_hmac service"}
+  ],
+  "in_scope_adversaries": [],
+  "out_of_scope_conditions": [
+    {"id": "OOS-PROVIDER-KEYCHAIN", "description": "Provider/API 登录凭据的独立 Keychain 使用不在本增量"},
+    {"id": "OOS-EXISTING-ENTRY", "description": "不查询、不迁移、不删除已经存在的 deskpet.receipt_hmac 钥匙串条目"}
+  ],
+  "maximum_acceptable_impact": "允许 receipt HMAC key 改为应用私有文件；不得再访问 receipt 钥匙串，也不得破坏已有 ToolReceipt 签名/验签链。"
+}
