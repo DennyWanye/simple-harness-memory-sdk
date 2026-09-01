@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0",
+  "mode": "code-audit-remediation",
+  "candidate_commit": "e212fb9060449bb2e5d1e44a118eb0024b1862f2",
+  "verdict": "BLOCKED_PLAN_DEFECT",
+  "completion": {
+    "resolved_round_1_findings": 2,
+    "round_1_findings_total": 3,
+    "open_code_findings": 0,
+    "open_plan_layer_findings": 1
+  },
+  "findings": [
+    {
+      "id": "audit-main-resume-public-dereference",
+      "severity": "P0",
+      "status": "resolved",
+      "type": "code",
+      "resolution": "Production service now returns a bounded EVIDENCE root and exposes subject-, scope-, source-, group-, and chain-bound group/page traversal over the content-addressed block DAG. Cursor tamper, wrong authority, stale source, group-integrity failure, cold restart, oversized Unicode, and complete 100000-event traversal are covered.",
+      "commit": "132b8d3479b27ae921d011570a68f801fd246a9f",
+      "ac_ids": ["HM-AC-6", "HM-AC-7"]
+    },
+    {
+      "id": "audit-recovery-fake-quiescence",
+      "severity": "P1",
+      "status": "resolved",
+      "type": "code",
+      "resolution": "v43 adds an immutable per-work-item recovery ledger, durable drain proof, exact parking identity, lease owner/generation revocation, worker parked recognition, and full re-scan/recalculation before quiescence. Forged summaries, omissions, stale generations, unknown gaps, races, faults, and restart fail closed without deleting raw rows.",
+      "commit": "43c035f7a6a99cab6086f8f293bd9e99ea647a45",
+      "ac_ids": ["HM-AC-8"]
+    },
+    {
+      "id": "audit-production-composition-ports",
+      "severity": "P1",
+      "status": "open",
+      "type": "plan-layer-defect",
+      "summary": "The frozen S4 plan requires a queued primary turn to actually start one Runtime 0.7 root Run, while also excluding the S5-owned context, provider, tool, and execution-authority composition required to construct that start safely. Existing production code has a durable FIFO reducer but no valid scheduler execution seam; fixture ports cannot close this requirement.",
+      "ac_ids": ["HM-AC-3", "HM-AC-8"],
+      "a2_event_id": "a2-001",
+      "requires_user_scope_decision": true
+    }
+  ],
+  "verification": {
+    "integrated_related_pytest": "95 passed",
+    "post_static_fix_pytest": "33 passed",
+    "new_s4_source_ruff": "PASS",
+    "new_s4_source_mypy": "PASS: 13 source files",
+    "frozen_value_runner": {
+      "status": "PASS",
+      "event_count": 100000,
+      "result_sha256": "b370091266e2bcbde567ce111cf4380e0caadd3935cc095feee8a9d892aba6d5"
+    },
+    "critical_affected_api_runner": {
+      "status": "PASS",
+      "result_sha256": "0dc39fbfa5074bad963d3a9873aa8904fd0cf39876e0615c27981c76173643a5"
+    }
+  },
+  "phase4_evidence_considered": false,
+  "note": "The two independent code defects are closed on one clean integrated Host commit. Phase 3 cannot be declared complete and Phase 4 cannot start until the S4/S5 scope contradiction is explicitly resolved and the plan is rewound through challenge and acceptance review."
+}
