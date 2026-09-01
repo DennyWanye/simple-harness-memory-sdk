@@ -25,7 +25,7 @@
       "min_root_runs": 1,
       "cold_start": true,
       "expected_run_created": true,
-      "impact_paths": ["/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/task_scope/**", "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/execution/foreground_queue.py", "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/human_memory_service.py"],
+      "impact_paths": ["/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/task_scope/**", "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/execution/foreground_queue.py", "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/memory/human_memory_service.py"],
       "oracle_pins": {
         "fixture_revision": 1,
         "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34",
@@ -98,7 +98,7 @@
       "min_root_runs": 1,
       "cold_start": true,
       "expected_run_created": false,
-      "impact_paths": ["/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/human_memory_service.py", "/Users/denny/projects/simple_harness-memory-plan/backend/main.py", "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/memory/migrator.py", "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/memory/schema.py"],
+      "impact_paths": ["/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/memory/human_memory_service.py", "/Users/denny/projects/simple_harness-memory-plan/backend/main.py", "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/memory/migrator.py", "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/memory/schema.py"],
       "oracle_pins": {
         "fixture_revision": 1,
         "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34",
@@ -148,7 +148,7 @@
       "min_root_runs": 1,
       "cold_start": false,
       "expected_run_created": true,
-      "impact_paths": ["/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/task_scope/search.py", "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/execution/foreground_queue.py", "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/human_memory_service.py"],
+      "impact_paths": ["/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/task_scope/search.py", "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/execution/foreground_queue.py", "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/memory/human_memory_service.py"],
       "oracle_pins": {"fixture_revision": 1, "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34"},
       "evidence_contract": {
         "producer_types": ["gate-exec", "runtime-probe"],
