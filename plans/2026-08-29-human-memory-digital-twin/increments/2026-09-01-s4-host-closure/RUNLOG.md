@@ -2,19 +2,30 @@
 
 日期：2026-09-01（Asia/Shanghai）；本文件只记录命令、状态、代码/产物哈希和门禁结论，不包含原始 evidence。
 
-## 最终状态（2026-09-01 第二轮 session，P1 整改闭合）
+## 最终状态（2026-09-01 第三轮：review 修复后重认证）
 
 **SHIPPABLE。** `finalize` exit 0；GATE RECEIPT
-`b57eadd5c501b30295c57f866c98e9caee9449016e3b35a7ad3130772221263d`
-（gate run `r2-p1-closure`，run-20260901-153005，位于 Host 仓
-`plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/r2-p1-closure/`）。
+`dbaeaae7e9a7f6a90ec7b65611f2e229d9f441e74b1541286a9a94d710543572`
+（同一 gate run `r2-p1-closure`；此前 receipt `b57eadd5…` 因 review 修复而 stale，属正常重认证）。
 
 | 项 | 值 |
 |---|---|
-| TESTED HEAD（Host） | `5b731364`（候选代码 `56d99a21`，docs 提交不改行为字节；基线 main `04a5a649`，分支 `fix/human-memory-runtime-p1-closure`） |
-| SDK | 0.7.1 candidate `f5fe0dc7`；wheel SHA `4d5d2b7ba5c2…` |
-| memory-sdk | 验证资产提交 `7cb2994` 起 |
-| 执行/审计引擎 | executor=claude-fable-5；auditor=opus（独立） |
+| TESTED HEAD（Host） | `c9f73349`（候选代码 `70b08da9`，docs/receipt 提交不改行为字节；上一候选 `56d99a21`，基线 main `04a5a649`） |
+| 审计轮次 | full-audit round-2 PASS（候选 56d99a21，receipt b57eadd5）→ 8 角度 code review 9 项 CONFIRMED → 3 项修复 → round-3 FAIL（抓到 archive 证据复制自旧目录的 P1）→ 整改 → round-4 PASS（6/6 MUST AC） |
+
+## Review 修复轮（候选 70b08da9）
+
+- 修复 1：`SdkRunBindingRegistry`/`SdkRunToolAuthorityRegistry.mark_terminal` 白名单补 `stopped`——此前用户 STOP 在 terminal 落账后必然 ValueError 杀 driver 并泄漏 binding/tool-scope pin。
+- 修复 2：`_EFFECT_BOUNDARY_ALLOWED_STATES[TOOL]` 扩为全部非终态活动态——原 {RUNNING} 会把控制过渡期 tool dispatch 经 SDK kernel 兜底打成 FAILED run；stale generation/终态 fence 经审计确认未削弱（_validate_lease_tx 先行）。
+- 修复 3：`_deliver_controls` 逐信号处理 supersession 竞态（ack 处 signal_superseded、pause outcome 处 state_transition_invalid → skip-and-continue），泵退出集收窄为三个租约丢失/终态码——原实现 pause→stop 升级会永久杀泵、live STOP 静默丢失。
+- 新增 5 测试（执行套件 66 passed；fifo 通道 41 passed）；cancel 即时送达正向测试闭合 P2 `audit-hm-cancel-delivery-positive-untested`。
+- 全量复测（候选 70b08da9、全新 gate-3 artifact 目录）：archive/execution value、9/9 faults、22-case smoke、route smoke、聚焦套件全 PASS；full pytest `6223 passed / 6 failed`（失败集合 md5 与前轮完全一致，全部既有）；ruff/mypy delta 为空。
+
+## 教训（已入 retro，防复发）
+
+1. runner artifact 目录必须一次一用：复用会因残留 `sdk-runtime` durable 状态阻塞 scheduler（三次瞬态假红均源于此）。
+2. **artifact 复制必须以 lane log 声明的 result 路径做 sha 对照后再 attach**（round-3 P1 根因：入账脚本从 gate-1 旧目录复制 archive result；建议下个增量把该对照做成 fail-closed 自动检查）。
+3. ARCHITECTURE 等叙述文档不在 impact_paths 内会触发 fail-closed 全量复测——继任 run 编译 manifest 时应为文档路径单列分类。
 
 ## 本轮完成步骤
 

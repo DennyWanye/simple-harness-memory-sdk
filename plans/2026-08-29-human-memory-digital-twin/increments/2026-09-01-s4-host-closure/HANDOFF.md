@@ -8,9 +8,9 @@ S4 Host TaskScope + Runtime Execution Closure（Task 5–8 + A2 批准的最小 
 composition）已完成 plan-test 全流程：两个 open P1 整改闭合、独立 code-audit round-3 与
 full-audit round-2（opus）均 PASS（6/6 MUST AC，无 open P0/P1），机器门 `finalize` exit 0。
 
-- GATE RECEIPT：`b57eadd5c501b30295c57f866c98e9caee9449016e3b35a7ad3130772221263d`
+- GATE RECEIPT：`dbaeaae7e9a7f6a90ec7b65611f2e229d9f441e74b1541286a9a94d710543572`（review 修复后重认证；上一枚 `b57eadd5…` 已 stale）
 - gate run：Host 仓 `plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/r2-p1-closure/`
-- 交付分支：`fix/human-memory-runtime-p1-closure`（HEAD `5b731364`；候选代码 `56d99a21`；基线 main `04a5a649`）
+- 交付分支：`fix/human-memory-runtime-p1-closure`（HEAD `c9f73349`；候选代码 `70b08da9`——review 修复：stopped 终态白名单 / TOOL fence 状态集 / supersession 竞态；基线 main `04a5a649`）
 - **合并/push/tag 不在本增量范围**，由用户决策。
 
 ## 远程代码身份
