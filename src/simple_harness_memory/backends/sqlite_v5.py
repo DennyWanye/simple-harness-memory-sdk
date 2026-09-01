@@ -791,7 +791,13 @@ class SQLiteHumanMemoryBackend:
                 "e.prospective_revision,e.trigger_fingerprint,e.event_ref,"
                 "e.signal_kind,e.outcome,e.reason_code,e.occurred_at,e.event_hash,"
                 "r.lifecycle_state,r.effective_privacy_class,"
-                "r.information_attributes_json,r.content_hash,p.action_text "
+                "r.information_attributes_json,r.content_hash,p.action_text,"
+                "(SELECT s.event_kind FROM suppression_directives s "
+                "JOIN suppression_targets st ON st.directive_id=s.directive_id "
+                "WHERE st.target_ref=e.memory_id AND s.scope_kind='memory' "
+                "AND s.principal_id=e.principal_id "
+                "ORDER BY s.effective_at DESC,s.directive_id DESC LIMIT 1) "
+                "AS suppression_state "
                 "FROM prospective_trigger_events e "
                 "JOIN cognitive_memory_heads h ON h.memory_id=e.memory_id "
                 "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
@@ -823,6 +829,7 @@ class SQLiteHumanMemoryBackend:
                     _json.loads(row["information_attributes_json"])
                 ),
                 content_hash=str(row["content_hash"]),
+                suppressed=row["suppression_state"] == "directive",
             )
             for row in rows
         )

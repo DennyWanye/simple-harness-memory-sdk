@@ -172,3 +172,30 @@ async def test_v7_facade_rejects_development_embedder(tmp_path: Path) -> None:
         allow_development_embedder=True,
     )
     await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_inbox_marks_suppressed_memories(tmp_path: Path) -> None:
+    from simple_harness_memory.core.suppression import (
+        SuppressionRequest,
+        SuppressionScopeKind,
+    )
+
+    backend, memory_id, _applied = await _matched_occurrence(tmp_path)
+    try:
+        await backend.suppress(
+            SuppressionRequest(
+                request_id="suppress-1",
+                subject="actor-1",
+                scope_kind=SuppressionScopeKind.MEMORY,
+                scope_ref=memory_id,
+                reason_code="user_requested_forgetting",
+                requested_at=50.0,
+            ),
+            principal=_principal(),
+        )
+        page = await backend.read_occurrence_inbox(principal=_principal())
+        matched = [e for e in page.entries if e.outcome == "matched"]
+        assert matched and all(e.suppressed for e in matched)
+    finally:
+        await backend.close()

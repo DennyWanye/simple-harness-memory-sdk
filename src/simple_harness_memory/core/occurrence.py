@@ -56,6 +56,7 @@ class OccurrenceInboxEntryV1:
     effective_privacy_class: str
     information_attributes: tuple[str, ...]
     content_hash: str
+    suppressed: bool = False
     schema_version: int = 1
 
     def __post_init__(self) -> None:
@@ -109,6 +110,7 @@ class OccurrenceInboxEntryV1:
             "effective_privacy_class": self.effective_privacy_class,
             "information_attributes": list(self.information_attributes),
             "content_hash": self.content_hash,
+            "suppressed": self.suppressed,
         }
 
 

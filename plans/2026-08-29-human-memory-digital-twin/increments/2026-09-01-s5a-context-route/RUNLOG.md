@@ -52,3 +52,20 @@
 - **真实车道 PASS**（tests/sdk_adapters/test_s5a_milestone_real_provider.py，marker real_provider 默认跳过）：gpt-5.6-luna 3 turn 完成 "继续以前的 A"——task_scope_search("A")→context_route(resume_existing, exact task_scope_id, 且模型主动 pin expected_source_hash)→用 exact ResumePackage 回答（进度/取消原因/下一步全部准确）；route receipt 四元组==binding head；3 turn snapshot receipt 三 hash 相等；durable resume_existing decision。usage 4.7k/5.2k/8.5k tokens。原始 transcript 只进 ignored .local-test-evidence/s5a-real-provider/。
 - 失败教训（第一轮 max_turns）：CJK FTS 分词——标题 "任务A-季度报告" 中 "任务A" 为单 token，查询 "A" 零命中致模型循环搜索；种子改空格分隔 latin token（"季度报告 A"）后全查询命中。**这是 S5b 语料/检索质量门的真实前置发现**（自然中文标题需要分词器或 trigram 支持，记入 S5b backlog）。
 - DoD 第 1 条车道解除 BLOCKED。里程碑（deterministic + 真实）双 PASS。
+
+## Task 3 完成（2026-09-01，memory-sdk commit 1cae806 + Host pin 待全量绿后提交）
+- Memory 0.6 消费面：core/occurrence.py（OccurrenceInboxEntryV1/PageV1、OutboxEntryV1/PageV1，冻结形状含 (occurred_at,event_id) 排序键在形内 + 当前 head lifecycle_state + summary 资格字段）；backend read_occurrence_inbox/read_outbox（principal fail-closed 拒绝未知主体、分页 anchor、纯只读）；manager 透传；包根导出 jobs 三符号 + occurrence 四类型；public-api-0.6.0.json 快照同步；v7 facade development-embedder 守卫（hash/mock 默认拒绝，allow_development_embedder 显式豁免）；uv.sources 修复。
+- Consumer contract 测试 4 个：注入面 = 真 apply_prospective_signal + 注入 resolver（S5A-BR-F3 裁决兑现）；memory 全量 1070 passed + 4 new。
+- Wheel：uv build --no-sources 两次 clean build 字节一致 sha256=82844d8677e35df7428f13b4282aef57c043f868a1707c8cd75f3527b9bf8c05；Host vendor + candidate manifest + sdk_candidate 三常量 pin 0.6.0；verify_memory_candidate PASS；wrong-hash fail-closed 新测试；superseded 集合收编 0.5.2 hash；0.6.0 移除 legacy auto_extract_facts kwarg 的消费者随迁（仅测试面）。Host 聚焦回归 380 passed；全量 pytest 后台跑。
+
+## Task 4 前半（模块层，2026-09-01）
+- causal_groups.py：user 起/assistant 终/tool 配对、最近 10 完整组 + open_run 尾组不裁、大 tool result→typed summary+exact page_ref（raw 留 evidence 可 page-in）。
+- context_partitions.py：冻结常量内嵌 + 测试逐字节 pin metric-formulas.json（oracle 防漂移）；reserve {4k:1024,8k:2048,32k:4096}、margin=max(256,10%)、effective=window-reserve-margin；分区 caps；冻结裁剪顺序 attachments→long_term 至一项→short_horizon→最老完整组；protected/current/open 组永不裁；仍超 → ContextBudgetExceeded fail-closed（禁 underestimate）。budget_window 把任意 provider 窗口映射到冻结档（向下取，安全方向）。
+- 7 个黑盒测试全绿（含常量 pin、配对不拆链、10 组保留、大结果摘要、裁剪顺序、protected 超载 fail-closed）。
+- 决策：authority 集成时窗口取 start context_metadata.budget.context_window，缺失时保守落最小档 4096（只会过度裁剪，不会超窗）；continuation 32k 硬编码收敛为 effective_input_budget(32768)+同一 planner。集成编辑待全量 pytest 结束（避免运行中改被测文件）。
+
+## Task 4 完成（2026-09-01，Host commit 追加）
+- authority per-turn 装配：protected 前缀（system+memory 块）不动，会话尾按因果组重排/裁剪（≤10 完整组+open 尾组、大 tool result 摘要+page_ref 落回 Message、超预算裁最老完整组、无窗口回落最小档 4096——只会过度裁剪不会超窗）；source_revisions 携带 causal_groups/trimmed_groups/budget_tier 装配事实。
+- continuation 收敛：32_000 硬编码 → effective_input_budget(32768)+同一 planner（双真相消除）；截断/丢组打日志。
+- usage 校准（冻结 pass 规则 actual≤effective，禁 underestimate）：真实 provider 车道重跑 PASS（worst prompt_tokens ≤ 25396）。
+- 回归 396 passed；模块 mypy 干净；里程碑 deterministic/real 双车道在新装配下仍 PASS（小上下文零裁剪 ⇒ 行为保持）。
