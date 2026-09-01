@@ -187,7 +187,7 @@
     }
   ],
   "manifest": {
-    "repo_root": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan",
+    "repo_root": "/Users/denny/projects/simple_harness-memory-plan",
     "source_request_text": "好的，请你继续按照最新的plan-test skill流程继续处理",
     "flow_tier": {
       "value": "FULL",
