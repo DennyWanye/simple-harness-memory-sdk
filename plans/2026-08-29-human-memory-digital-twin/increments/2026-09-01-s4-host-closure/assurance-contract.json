@@ -6,32 +6,37 @@
     {"id": "ASSET-TASK-CONTINUITY", "description": "TaskScope 六视图、checkpoint、ResumePackage 与 exact open 的完整恢复能力"},
     {"id": "ASSET-FOREGROUND-RUN-ORDER", "description": "同一 subject 单 foreground Run、普通 turn FIFO 与即时 control 顺序"},
     {"id": "ASSET-TASK-SEARCH-AUTHORITY", "description": "permission-first candidate search 与 exact open 不扩大 binding、cursor 或 tool authority"},
+    {"id": "ASSET-RUNTIME-ADMISSION", "description": "claimed foreground turn、冻结 execution request、唯一 SDK start 与 host/sdk Run 一对一身份"},
     {"id": "ASSET-AUDIT-LINEAGE", "description": "projection/search/run/recovery 的 immutable receipt、hash 与可导出 lineage"}
   ],
   "trusted_assumptions": [
     {"id": "TRUST-LOCAL-HOST", "description": "本地开发者账户、OS/kernel 与系统绝对路径程序可信"},
     {"id": "TRUST-AUTH-CONTEXT", "description": "Host 已认证 subject identity 可信，candidate/search payload 不可信"},
-    {"id": "TRUST-FRESH-DATA-DIR", "description": "S4 原型只在全新 userdata 初始化，不迁移旧 Session 数据"}
+    {"id": "TRUST-FRESH-DATA-DIR", "description": "S4 原型只在全新 userdata 初始化，不迁移旧 Session 数据"},
+    {"id": "TRUST-PRODUCT-RUNTIME", "description": "已发布 Harness SDK Runtime、Host 已配置 Provider registry 与经 Host 构造的 Tool authorities 可信；请求 payload 不可信"}
   ],
   "in_scope_failures": [
     {"id": "FAIL-DATA-LOSS", "description": "projection、search、recovery、drain 或旧 CRUD 物理删除/覆盖原始记录"},
     {"id": "FAIL-TASK-RESUME-LOSS", "description": "有界阅读视图或分页丢失 canonical facts、evidence refs、取消原因或 next action"},
     {"id": "FAIL-TASK-SEARCH-AUTHORITY", "description": "wrong-principal 或错误候选被直接打开、切 cursor 或授予 workspace authority"},
     {"id": "FAIL-FOREGROUND-RUN-CONCURRENCY", "description": "同一 subject 出现第二个 active foreground Run、FIFO 丢失/乱序或 control 被排队"},
+    {"id": "FAIL-RUNTIME-AUTHORITY-DRIFT", "description": "queued payload 或 stale worker 选择 subject、scope、workspace、Provider、Tool、Context、mode 或 generation，或一个 host Run 启动/绑定多个 SDK Run"},
+    {"id": "FAIL-RUNTIME-ORPHAN", "description": "prepare/start/bind/terminal 边界崩溃后重复启动、遗失既有 SDK Run、伪造 RUNNING/terminal 或无法继续最老 turn"},
     {"id": "FAIL-PRIMARY-STREAM-SPLIT", "description": "fresh init、legacy/future epoch 或旧 Session CRUD 产生第二条 writable primary authority"},
     {"id": "FAIL-READ-VIEW-GROWTH", "description": "README/STATUS/Resume/page 无界增长或重建 hash 漂移"},
     {"id": "FAIL-PROTOCOL-REPLAY", "description": "duplicate delivery、lost ACK 或 schema/version 漂移产生重复状态变化"}
   ],
   "in_scope_adversaries": [
     {"id": "ADV-SEARCH-INPUT", "description": "把搜索 query、snippet 与 candidate metadata 视为可能畸形或污染的输入"},
-    {"id": "ADV-DUPLICATE-DELIVERY", "description": "把进程重启、lost ACK 与重复请求视为常见故障输入"}
+    {"id": "ADV-DUPLICATE-DELIVERY", "description": "把进程重启、lost ACK 与重复请求视为常见故障输入"},
+    {"id": "ADV-STALE-SCHEDULER", "description": "把过期 owner/generation、重复 wake 与 prepare/start/bind/terminal 重放视为常见故障输入"}
   ],
   "out_of_scope_conditions": [
     {"id": "OOS-COMPROMISED-HOST", "description": "宿主 OS、开发者账户或进程已被攻陷"},
     {"id": "OOS-LEGACY-DATA", "description": "旧数据库、旧 Session 的迁移、导入或 UI 展示"},
-    {"id": "OOS-S5-CONTEXT", "description": "主模型路由、Memory recall、五天短时域与动态 Context assembler"},
+    {"id": "OOS-S5-CONTEXT", "description": "主模型 TaskScope route/RecallPlan、Memory recall、五天短时域、动态 Memory Context assembler 与 semantic closure；不含本 slice 已批准的最小 Runtime execution composition"},
     {"id": "OOS-S6-UI", "description": "单主对话 UI、TaskScope Inspector、图谱 UI 与真人桌面 E2E"},
     {"id": "OOS-MULTI-AGENT-RUN", "description": "多个 foreground Run、subagent 或跨 Run 结果合并"}
   ],
-  "maximum_acceptable_impact": "派生 projection/search 可以暂时不可用并重建；canonical raw evidence、TaskScope 和 Run/FIFO 事实不得丢失或被旧入口改写。"
+  "maximum_acceptable_impact": "派生 projection/search 可以暂时不可用并重建；一次 foreground start 可以 fail-closed 并等待同一 durable Run 恢复。canonical raw evidence、TaskScope、Run/FIFO/execution preparation 事实不得丢失或被旧入口改写；不得重复启动 SDK Run 或执行未授权 tool effect。"
 }

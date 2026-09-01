@@ -1,0 +1,14 @@
+{
+  "mode": "plan-review",
+  "verdict": "ALREADY_MINIMAL",
+  "findings": [],
+  "protected_scope": [
+    "initial route wire and checkpoint recovery",
+    "inert draft to atomic claim to generation-bound authority",
+    "Session-independent foreground runtime ports",
+    "v44 execution audit permanent retention",
+    "Manual two-stage and Auto current-Run workspace binding",
+    "multi-root project effect fail-closed boundary",
+    "exact candidate wheel identity oracle"
+  ]
+}

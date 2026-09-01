@@ -1,0 +1,174 @@
+{
+  "review_mode": "consolidated",
+  "coverage": {
+    "acceptance_coverage": true,
+    "data_flow_and_persistence": true,
+    "entry_and_trust_chain": true,
+    "failure_and_recovery": true,
+    "identity_permissions_concurrency_cleanup": true,
+    "release_and_rollback": true,
+    "tests_and_evidence": true,
+    "trusted_boundary_stop": true
+  },
+  "findings": [
+    {
+      "id": "value-smoke-requires-not-yet-built-fifo",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-3"],
+      "assurance_contract_ids": ["FAIL-FOREGROUND-RUN-CONCURRENCY"],
+      "evidence": "Still resolved: durable FIFO remains before the expanded execution value milestone.",
+      "status": "resolved",
+      "root_cause": "The original task graph omitted a value prerequisite."
+    },
+    {
+      "id": "projection-version-omits-event-checkpoint-change-identity",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-6", "HM-AC-7", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-TASK-RESUME-LOSS", "FAIL-READ-VIEW-GROWTH", "FAIL-PROTOCOL-REPLAY"],
+      "evidence": "Still resolved by the composite projection source identity and same-transaction source-change/outbox contract.",
+      "status": "resolved",
+      "root_cause": "Canonical revision alone omitted independent event/checkpoint changes."
+    },
+    {
+      "id": "evidence-page-cardinality-byte-bound-unproven",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-6", "HM-AC-7"],
+      "assurance_contract_ids": ["FAIL-TASK-RESUME-LOSS", "FAIL-READ-VIEW-GROWTH"],
+      "evidence": "Still resolved by stable 500-event logical groups backed by bounded content-addressed physical blocks.",
+      "status": "resolved",
+      "root_cause": "The original representation conflated logical count and physical byte bounds."
+    },
+    {
+      "id": "fresh-epoch-startup-dispatch-undefined",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-1", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-PRIMARY-STREAM-SPLIT", "FAIL-PROTOCOL-REPLAY"],
+      "evidence": "Still resolved by the single pre-writable FRESH/HUMAN_RESUME/LEGACY/INVALID/FUTURE dispatcher.",
+      "status": "resolved",
+      "root_cause": "Startup mode was not atomically selected before writable openers."
+    },
+    {
+      "id": "public-facade-subject-authority-contract-undefined",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-1", "HM-AC-3", "HM-AC-4"],
+      "assurance_contract_ids": ["FAIL-TASK-SEARCH-AUTHORITY", "FAIL-PRIMARY-STREAM-SPLIT", "FAIL-FOREGROUND-RUN-CONCURRENCY"],
+      "evidence": "Still resolved by the frozen facade authority matrix and Host-derived subject/object lineage.",
+      "status": "resolved",
+      "root_cause": "The original facade did not separate payload selectors from Host authority."
+    },
+    {
+      "id": "foreground-control-state-machine-not-closed",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-3", "HM-AC-7", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-FOREGROUND-RUN-CONCURRENCY", "FAIL-PROTOCOL-REPLAY"],
+      "evidence": "Still resolved by the durable turn/Run reducers, control precedence, generation fencing and one-to-one SDK binding; A2 only adds the execution composition below them.",
+      "status": "resolved",
+      "root_cause": "The original plan lacked an executable durable reducer."
+    },
+    {
+      "id": "recovery-fence-lacks-write-quiescence-boundary",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-1", "HM-AC-7", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-DATA-LOSS", "FAIL-PROTOCOL-REPLAY"],
+      "evidence": "Still resolved by the durable fence, transaction writer check, worker ack/watermark and FULL checkpoint contract; the new finding only requires adding v44 writers.",
+      "status": "resolved",
+      "root_cause": "The original recovery path lacked a transaction-level quiescence boundary."
+    },
+    {
+      "id": "required-host-recovery-oracle-omitted",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-1", "HM-AC-7", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-DATA-LOSS", "FAIL-PROTOCOL-REPLAY"],
+      "evidence": "Still resolved by TC-HM-14 and the structured required scenario mapping; A2 requires extending, not replacing, that oracle.",
+      "status": "resolved",
+      "root_cause": "The original testcase set omitted the Host recovery/integration lane."
+    },
+    {
+      "id": "raw-integrity-manifest-comparison-ambiguous",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["HM-AC-1", "HM-AC-7", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-DATA-LOSS"],
+      "evidence": "Still resolved by the A/B/C/D taxonomy and typed per-row leaf comparison; A2 requires classifying v44 tables within it.",
+      "status": "resolved",
+      "root_cause": "The original manifest lacked a delta-aware table taxonomy."
+    },
+    {
+      "id": "initial-route-wire-recovery-contract-under-specified",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "patch-induced",
+      "violated_acceptance_ids": ["HM-AC-3", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-RUNTIME-AUTHORITY-DRIFT", "FAIL-RUNTIME-ORPHAN", "FAIL-PROTOCOL-REPLAY"],
+      "evidence": "The draft adds an initial ContextRouteReceipt to RunStart/StartSnapshot but does not distinguish Host-initial provenance from context-tool raw-call/effect provenance, assign an ordinary start wire version, or define existing-checkpoint conflicts.",
+      "status": "open",
+      "root_cause": "A2 added a new SDK start authority without freezing its wire, provenance and checkpoint recovery contract.",
+      "why_not_found_in_round_one": "The initial routed SDK start contract was out of scope before A2."
+    },
+    {
+      "id": "preclaim-runtime-authority-not-lease-bound",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "patch-induced",
+      "violated_acceptance_ids": ["HM-AC-3", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-RUNTIME-AUTHORITY-DRIFT", "FAIL-RUNTIME-ORPHAN", "FAIL-FOREGROUND-RUN-CONCURRENCY"],
+      "evidence": "The draft prepares Context/Provider/Tool authority before claim_next creates host_run_id, owner, generation and lease, allowing a losing scheduler to retain executable authority.",
+      "status": "open",
+      "root_cause": "The plan does not separate an inert pre-claim draft from generation-bound post-claim authority.",
+      "why_not_found_in_round_one": "Real Provider/Tool preparation and SDK admission entered scope only through A2."
+    },
+    {
+      "id": "runtime-authority-still-coupled-to-legacy-session",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "patch-induced",
+      "violated_acceptance_ids": ["HM-AC-1", "HM-AC-3", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-PRIMARY-STREAM-SPLIT", "FAIL-RUNTIME-AUTHORITY-DRIFT"],
+      "evidence": "The draft says to reuse provider/context/tool seams, but the current provider and context helpers require SessionDB and legacy session history; no replacement typed source ports are frozen.",
+      "status": "open",
+      "root_cause": "The desired canonical primary/TaskScope source boundary is stated negatively but not expressed as constructor-bound ports.",
+      "why_not_found_in_round_one": "Foreground Context/Provider/Tool composition was previously deferred to S5."
+    },
+    {
+      "id": "v44-execution-audit-not-explicitly-classified-by-recovery",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "patch-induced",
+      "violated_acceptance_ids": ["HM-AC-1", "HM-AC-7", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-DATA-LOSS", "FAIL-RUNTIME-ORPHAN", "FAIL-PROTOCOL-REPLAY"],
+      "evidence": "v44 adds immutable execution audit rows, but the recovery writer registry, A/B/C/D taxonomy, fence triggers and export allowlist do not enumerate them.",
+      "status": "open",
+      "root_cause": "The A2 schema was appended after the v39-v43 recovery taxonomy had converged.",
+      "why_not_found_in_round_one": "v44 did not exist in the earlier scope."
+    },
+    {
+      "id": "candidate-wheel-pin-and-cross-version-oracle-not-fully-frozen",
+      "severity": "P2",
+      "scope_relation": "in-scope",
+      "origin": "patch-induced",
+      "violated_acceptance_ids": ["HM-AC-3", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-PROTOCOL-REPLAY", "FAIL-RUNTIME-ORPHAN"],
+      "evidence": "The draft requests an exact candidate wheel but does not freeze Host pin files, installed module origin, public contract identity, or old/new compatibility oracles.",
+      "status": "open",
+      "root_cause": "A cross-repository candidate dependency needs a post-build identity contract, not only a source change.",
+      "why_not_found_in_round_one": "The prior plan consumed released SDK 0.7.0 and had no candidate protocol."
+    }
+  ]
+}

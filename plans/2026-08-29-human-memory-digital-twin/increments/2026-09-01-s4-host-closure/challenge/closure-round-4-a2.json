@@ -1,0 +1,70 @@
+{
+  "review_mode": "diff",
+  "coverage": {
+    "acceptance_coverage": true,
+    "data_flow_and_persistence": true,
+    "entry_and_trust_chain": true,
+    "failure_and_recovery": true,
+    "identity_permissions_concurrency_cleanup": true,
+    "release_and_rollback": true,
+    "tests_and_evidence": true,
+    "trusted_boundary_stop": true
+  },
+  "findings": [
+    {
+      "id": "initial-route-wire-recovery-contract-under-specified",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "patch-induced",
+      "violated_acceptance_ids": ["HM-AC-3", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-RUNTIME-AUTHORITY-DRIFT", "FAIL-RUNTIME-ORPHAN", "FAIL-PROTOCOL-REPLAY"],
+      "evidence": "Resolved in plan.md solution and Task 6: ContextRouteReceipt v3 freezes origin-specific provenance; ordinary StartSnapshot v7 and checkpoint v6 carry exact route JSON/hash; schema 1-6 remains UNROUTED; checkpoint conflicts fail closed with an explicit compatibility/tamper matrix.",
+      "status": "resolved",
+      "root_cause": "A2 added a new SDK start authority without freezing its wire, provenance and checkpoint recovery contract."
+    },
+    {
+      "id": "preclaim-runtime-authority-not-lease-bound",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "patch-induced",
+      "violated_acceptance_ids": ["HM-AC-3", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-RUNTIME-AUTHORITY-DRIFT", "FAIL-RUNTIME-ORPHAN", "FAIL-FOREGROUND-RUN-CONCURRENCY"],
+      "evidence": "Resolved in Task 3/6: pre-claim produces only an inert canonical draft; claim atomically CAS-binds candidate and draft hash while creating host_run/owner/generation/lease; executable authorities are built only from read_claimed_execution and are generation-bound. Negative concurrency/crash tests are frozen.",
+      "status": "resolved",
+      "root_cause": "The plan did not separate an inert pre-claim draft from generation-bound post-claim authority."
+    },
+    {
+      "id": "runtime-authority-still-coupled-to-legacy-session",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "patch-induced",
+      "violated_acceptance_ids": ["HM-AC-1", "HM-AC-3", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-PRIMARY-STREAM-SPLIT", "FAIL-RUNTIME-AUTHORITY-DRIFT"],
+      "evidence": "Resolved in Task 6 through ForegroundProviderAuthorityPort, ForegroundContextPreparationPort and ForegroundToolAuthorityPort. Their source facts are explicitly canonical and SessionDB is forbidden; execution_session_id is protocol identity only. A composition test makes all SessionDB reads raise.",
+      "status": "resolved",
+      "root_cause": "The desired canonical primary/TaskScope source boundary was stated negatively but not expressed as constructor-bound ports."
+    },
+    {
+      "id": "v44-execution-audit-not-explicitly-classified-by-recovery",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "patch-induced",
+      "violated_acceptance_ids": ["HM-AC-1", "HM-AC-7", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-DATA-LOSS", "FAIL-RUNTIME-ORPHAN", "FAIL-PROTOCOL-REPLAY"],
+      "evidence": "Resolved in Task 5: every v44 writer and table is explicitly classified A/B/C/D and added to fence triggers, quiescence/watermarks, typed-leaf manifests and emergency export. Unknown tables/columns fail closed.",
+      "status": "resolved",
+      "root_cause": "The A2 schema was appended after the v39-v43 recovery taxonomy had converged."
+    },
+    {
+      "id": "candidate-wheel-pin-and-cross-version-oracle-not-fully-frozen",
+      "severity": "P2",
+      "scope_relation": "in-scope",
+      "origin": "patch-induced",
+      "violated_acceptance_ids": ["HM-AC-3", "HM-AC-8"],
+      "assurance_contract_ids": ["FAIL-PROTOCOL-REPLAY", "FAIL-RUNTIME-ORPHAN"],
+      "evidence": "Resolved in Task 8: source commit, wheel filename/version/SHA, installed distribution/module origin and public contract manifest are frozen; Host pin files form an identity commit; old 0.7.0/wrong hash fails closed and public-package fresh/duplicate/restart tests are required.",
+      "status": "resolved",
+      "root_cause": "A cross-repository candidate dependency needs a post-build identity contract, not only a source change."
+    }
+  ]
+}
