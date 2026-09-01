@@ -1,0 +1,470 @@
+{
+  "acceptance_file": "/Users/taiwan/PROJECTS/SimplaHarness/simple-harness-memory-sdk/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s5a-context-route/acceptance.md",
+  "active_run_required": true,
+  "applicability": {
+    "cold_start": {
+      "decided_by": "agent",
+      "rationale": "fresh userdata 冷启动是验收口径之一",
+      "value": true
+    },
+    "input_sensitive": {
+      "decided_by": "agent",
+      "rationale": "context_route 消费模型载荷与用户自然语言",
+      "value": true
+    },
+    "llm_payload_driven": {
+      "decided_by": "agent",
+      "rationale": "route/recall 结构化载荷驱动 Host 状态机",
+      "value": true
+    },
+    "stateful_init": {
+      "decided_by": "agent",
+      "rationale": "v45 durable ledger 新持久化状态 + fresh 冷启动",
+      "value": true
+    }
+  },
+  "compiled_manifest": {
+    "case_sets": {
+      "full": [
+        "S5A-REG-FULL",
+        "S5A-S1-REAL-NO-RECALL",
+        "S5A-S2-REAL-RESUME",
+        "S5A-S3-DETERMINISTIC-FIVE-ROUTE",
+        "S5A-S4-PAYLOAD-MUTATIONS",
+        "S5A-S5-SNAPSHOT-KILL-REPLAY",
+        "S5A-S6-COMPOSITION-CUTOVER"
+      ]
+    },
+    "input_hashes": {
+      "acceptance": "fa5f50030f6cd8f5dc63c2ec586baf421b64e40083687baca2dbf4ae825f98bd",
+      "assurance_contract": "32e86ba7846932bd7a68a9a73a27702b5d5d083f6559f8353ad70ee36bf3e35c",
+      "reuse_report": "242683113e953867d3440bb8522f906a2aed4b6640ce8e36831d26043f97cf04",
+      "testcase_inventory": "ec4db2bee511989fc0f8a5c925535238092ddbf66a1355cbfc8cdc50e7bde1f8",
+      "verification_spec": "79cd7c16f76f085ad9fe5065c3517a96b8c734ec4465bc72b02c439a8dd377b5"
+    },
+    "input_paths": {
+      "acceptance": "/Users/taiwan/PROJECTS/SimplaHarness/simple-harness-memory-sdk/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s5a-context-route/acceptance.md",
+      "assurance_contract": "/Users/taiwan/PROJECTS/SimplaHarness/simple-harness-memory-sdk/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s5a-context-route/assurance-contract.json",
+      "reuse_report": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/testcase/human-memory-program/s5a-context-route-reuse-report.json",
+      "testcase_inventory": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/testcase/index.json",
+      "verification_spec": "/Users/taiwan/PROJECTS/SimplaHarness/simple-harness-memory-sdk/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s5a-context-route/verification-spec.json"
+    },
+    "seal_sha256": "3f78ef0fc338955ef19e8e6566ee0500bd28b11440616b26a1c0a2457b357d05",
+    "selected_testcase_ids": [
+      "TC-HM-01",
+      "TC-HM-02",
+      "TC-HM-10",
+      "TC-HM-11",
+      "TC-HM-13"
+    ],
+    "tool_version": "1.5.0"
+  },
+  "flow_tier": {
+    "decided_by": "agent",
+    "rationale": "新 Host 公开工具面 + durable v45 authority ledger + 跨仓 wheel 升级 + 真实 provider 链，高外部性",
+    "value": "FULL"
+  },
+  "machine_gate": {
+    "rationale": "FULL + 高外部性（durable authority + 真实 provider + 跨仓 pin）",
+    "value": true
+  },
+  "repo_root": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness",
+  "scenarios": [
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "single_invocation",
+          "zero_tool_calls",
+          "durable_no_recall_decision",
+          "route_state_standalone"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/sdk_adapters/**",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/human_memory_v7.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/migrator.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/migrations/037_context_route_ledger_v45.sql",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/tests/sdk_adapters/**",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple-harness-memory-sdk/src/**"
+      ],
+      "input_class": "real-provider-single-invocation",
+      "manual_required": false,
+      "min_root_runs": 2,
+      "oracle_pins": {
+        "memory_wheel_sha256": "62a3f63cadd7796b1e86e57a9dce2bffc773b3da2ef3e78ba5002fea50f822ff",
+        "metric_formulas_sha256": "27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a",
+        "tc_hm_01_sha256": "73c2aad5f68c1a4fe7e1e15158cab2aad262975858d7bdceb9bfdddb905d6e2c",
+        "tc_hm_02_sha256": "c4b6371c2c712d1dacda9129f7636bd61fc8fe1af46d869db18a926db7ad927a",
+        "tc_hm_10_sha256": "eb4e606c34529d1c83a855d613b1e959169378a491fc5038062550d3fb4ad86a",
+        "tc_hm_11_sha256": "73d6afcec22d1a65f01d8308130981e49829f161c01651c90dfa5ee03809bd29"
+      },
+      "required": true,
+      "scenario_id": "S5A-S1-REAL-NO-RECALL",
+      "testcase_ids": [
+        "TC-HM-01"
+      ],
+      "testcase_revisions": {
+        "TC-HM-01": 1
+      },
+      "ui": false
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "search_then_exact_open",
+          "route_receipt_binding_quadruple",
+          "resume_package_in_final_payload",
+          "snapshot_three_hash_equal",
+          "usage_within_effective_budget"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/sdk_adapters/**",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/human_memory_v7.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/migrator.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/migrations/037_context_route_ledger_v45.sql",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/tests/sdk_adapters/**",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple-harness-memory-sdk/src/**"
+      ],
+      "input_class": "real-provider-resume-continuation",
+      "manual_required": false,
+      "min_root_runs": 2,
+      "oracle_pins": {
+        "memory_wheel_sha256": "62a3f63cadd7796b1e86e57a9dce2bffc773b3da2ef3e78ba5002fea50f822ff",
+        "metric_formulas_sha256": "27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a",
+        "tc_hm_01_sha256": "73c2aad5f68c1a4fe7e1e15158cab2aad262975858d7bdceb9bfdddb905d6e2c",
+        "tc_hm_02_sha256": "c4b6371c2c712d1dacda9129f7636bd61fc8fe1af46d869db18a926db7ad927a",
+        "tc_hm_10_sha256": "eb4e606c34529d1c83a855d613b1e959169378a491fc5038062550d3fb4ad86a",
+        "tc_hm_11_sha256": "73d6afcec22d1a65f01d8308130981e49829f161c01651c90dfa5ee03809bd29"
+      },
+      "required": true,
+      "scenario_id": "S5A-S2-REAL-RESUME",
+      "testcase_ids": [
+        "TC-HM-02",
+        "TC-HM-10"
+      ],
+      "testcase_revisions": {
+        "TC-HM-02": 3,
+        "TC-HM-10": 2
+      },
+      "ui": false
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "five_routes_adjudicated",
+          "active_cursor_not_polluted",
+          "durable_decisions_ledger",
+          "real_provider_four_positive_routes"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/sdk_adapters/**",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/human_memory_v7.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/migrator.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/migrations/037_context_route_ledger_v45.sql",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/tests/sdk_adapters/**",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple-harness-memory-sdk/src/**"
+      ],
+      "input_class": "deterministic-six-step-matrix",
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "memory_wheel_sha256": "62a3f63cadd7796b1e86e57a9dce2bffc773b3da2ef3e78ba5002fea50f822ff",
+        "metric_formulas_sha256": "27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a",
+        "tc_hm_01_sha256": "73c2aad5f68c1a4fe7e1e15158cab2aad262975858d7bdceb9bfdddb905d6e2c",
+        "tc_hm_02_sha256": "c4b6371c2c712d1dacda9129f7636bd61fc8fe1af46d869db18a926db7ad927a",
+        "tc_hm_10_sha256": "eb4e606c34529d1c83a855d613b1e959169378a491fc5038062550d3fb4ad86a",
+        "tc_hm_11_sha256": "73d6afcec22d1a65f01d8308130981e49829f161c01651c90dfa5ee03809bd29"
+      },
+      "required": true,
+      "scenario_id": "S5A-S3-DETERMINISTIC-FIVE-ROUTE",
+      "testcase_ids": [
+        "TC-HM-10"
+      ],
+      "testcase_revisions": {
+        "TC-HM-10": 2
+      },
+      "ui": false
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "invalid_route_fail_closed",
+          "oversize_query_fail_closed",
+          "duplicate_effect_idempotent",
+          "no_half_state"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/sdk_adapters/**",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/human_memory_v7.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/migrator.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/migrations/037_context_route_ledger_v45.sql",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/tests/sdk_adapters/**",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple-harness-memory-sdk/src/**"
+      ],
+      "input_class": "route-payload-five-mutations",
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "memory_wheel_sha256": "62a3f63cadd7796b1e86e57a9dce2bffc773b3da2ef3e78ba5002fea50f822ff",
+        "metric_formulas_sha256": "27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a",
+        "tc_hm_01_sha256": "73c2aad5f68c1a4fe7e1e15158cab2aad262975858d7bdceb9bfdddb905d6e2c",
+        "tc_hm_02_sha256": "c4b6371c2c712d1dacda9129f7636bd61fc8fe1af46d869db18a926db7ad927a",
+        "tc_hm_10_sha256": "eb4e606c34529d1c83a855d613b1e959169378a491fc5038062550d3fb4ad86a",
+        "tc_hm_11_sha256": "73d6afcec22d1a65f01d8308130981e49829f161c01651c90dfa5ee03809bd29"
+      },
+      "required": true,
+      "scenario_id": "S5A-S4-PAYLOAD-MUTATIONS",
+      "testcase_ids": [
+        "TC-HM-10"
+      ],
+      "testcase_revisions": {
+        "TC-HM-10": 2
+      },
+      "ui": false
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "snapshot_revisions_monotonic",
+          "three_hash_equal_all_turns",
+          "no_completed_turn_reinvoked",
+          "large_result_typed_summary_only",
+          "twin_influence_zero"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/sdk_adapters/**",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/human_memory_v7.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/migrator.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/migrations/037_context_route_ledger_v45.sql",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/tests/sdk_adapters/**",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple-harness-memory-sdk/src/**"
+      ],
+      "input_class": "twenty-turn-large-tool-kill-replay",
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "memory_wheel_sha256": "62a3f63cadd7796b1e86e57a9dce2bffc773b3da2ef3e78ba5002fea50f822ff",
+        "metric_formulas_sha256": "27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a",
+        "tc_hm_01_sha256": "73c2aad5f68c1a4fe7e1e15158cab2aad262975858d7bdceb9bfdddb905d6e2c",
+        "tc_hm_02_sha256": "c4b6371c2c712d1dacda9129f7636bd61fc8fe1af46d869db18a926db7ad927a",
+        "tc_hm_10_sha256": "eb4e606c34529d1c83a855d613b1e959169378a491fc5038062550d3fb4ad86a",
+        "tc_hm_11_sha256": "73d6afcec22d1a65f01d8308130981e49829f161c01651c90dfa5ee03809bd29"
+      },
+      "required": true,
+      "scenario_id": "S5A-S5-SNAPSHOT-KILL-REPLAY",
+      "testcase_ids": [
+        "TC-HM-11"
+      ],
+      "testcase_revisions": {
+        "TC-HM-11": 5
+      },
+      "ui": false
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "three_authorities_registered",
+          "stale_schema_stable_fail",
+          "v44_forward_migration",
+          "old_runtime_rejects_v45",
+          "presented_table_exists_empty"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": false,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/sdk_adapters/**",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/human_memory_v7.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/migrator.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/migrations/037_context_route_ledger_v45.sql",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/tests/sdk_adapters/**",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple-harness-memory-sdk/src/**"
+      ],
+      "input_class": "human-epoch-composition-and-cutover",
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "memory_wheel_sha256": "62a3f63cadd7796b1e86e57a9dce2bffc773b3da2ef3e78ba5002fea50f822ff",
+        "metric_formulas_sha256": "27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a",
+        "tc_hm_01_sha256": "73c2aad5f68c1a4fe7e1e15158cab2aad262975858d7bdceb9bfdddb905d6e2c",
+        "tc_hm_02_sha256": "c4b6371c2c712d1dacda9129f7636bd61fc8fe1af46d869db18a926db7ad927a",
+        "tc_hm_10_sha256": "eb4e606c34529d1c83a855d613b1e959169378a491fc5038062550d3fb4ad86a",
+        "tc_hm_11_sha256": "73d6afcec22d1a65f01d8308130981e49829f161c01651c90dfa5ee03809bd29"
+      },
+      "required": true,
+      "scenario_id": "S5A-S6-COMPOSITION-CUTOVER",
+      "testcase_ids": [
+        "TC-HM-11"
+      ],
+      "testcase_revisions": {
+        "TC-HM-11": 5
+      },
+      "ui": false
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "host_full_pytest_at_baseline",
+          "memory_full_suite_green",
+          "changed_surface_static_clean"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": false,
+      "gate_type": "regression",
+      "impact_paths": [
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/sdk_adapters/**",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/human_memory_v7.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/migrator.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/migrations/037_context_route_ledger_v45.sql",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/main.py",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/tests/sdk_adapters/**",
+        "/Users/taiwan/PROJECTS/SimplaHarness/simple-harness-memory-sdk/src/**"
+      ],
+      "input_class": "full-backend-and-memory-suites",
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "memory_wheel_sha256": "62a3f63cadd7796b1e86e57a9dce2bffc773b3da2ef3e78ba5002fea50f822ff",
+        "metric_formulas_sha256": "27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a",
+        "tc_hm_01_sha256": "73c2aad5f68c1a4fe7e1e15158cab2aad262975858d7bdceb9bfdddb905d6e2c",
+        "tc_hm_02_sha256": "c4b6371c2c712d1dacda9129f7636bd61fc8fe1af46d869db18a926db7ad927a",
+        "tc_hm_10_sha256": "eb4e606c34529d1c83a855d613b1e959169378a491fc5038062550d3fb4ad86a",
+        "tc_hm_11_sha256": "73d6afcec22d1a65f01d8308130981e49829f161c01651c90dfa5ee03809bd29"
+      },
+      "required": true,
+      "scenario_id": "S5A-REG-FULL",
+      "testcase_ids": [
+        "TC-HM-11",
+        "TC-HM-13"
+      ],
+      "testcase_revisions": {
+        "TC-HM-11": 5,
+        "TC-HM-13": 1
+      },
+      "ui": false
+    }
+  ],
+  "source_request_text": "好，请你继续（S5a 增量：Host 动态 Context、五路 context_route、同 Run continuation；用户批准 acceptance+plan 后执行）",
+  "structured_audit_required": true,
+  "testcase_files": [
+    "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/testcase/human-memory-program/TC-HM-01-no-recall.md",
+    "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/testcase/human-memory-program/TC-HM-02-task-resume.md",
+    "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/testcase/human-memory-program/TC-HM-10-routing-resume.md",
+    "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/testcase/human-memory-program/TC-HM-11-single-run-context.md",
+    "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/testcase/human-memory-program/TC-HM-13-typed-recall-result.md"
+  ]
+}

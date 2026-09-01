@@ -83,3 +83,20 @@
 - human-epoch 组合冒烟：v45 state db 下 stack build 注册三个 Product authority + v7 runtime；44 库 human epoch → stable fail。
 - 捕获并修复 Task 4 真 bug：摘要化 tool Message 经 dataclasses.replace 因 frozen metadata 校验崩——显式重建 Message（kill-replay 矩阵首轮即抓）。
 - 聚焦回归 413 passed；干净全量 pytest 后台执行中。
+
+## 完成度审计 round-1（code-audit）FAIL → 回炉完成（2026-09-01，Host commit ceeb4e02/1e2a7209，memory-sdk eda44026）
+- 审计判定：主要矛盾（AC-1+AC-2）方案+代码层已解决；3 P1 + 5 P2 → FAIL（小量级回炉）。
+- P1 修复：①AC-3 生产 per-turn 装配接冻结纪律（trim_causal_groups 共享例程上生产路径 + protected caps + 裁尽仍超 → ContextBudgetExceeded fail-closed；估算器统一为 chat lane 公式单源，消除 㐀 起点漂移的 underestimate 面）；②AC-5 双通道落地（v7 绑生产 embedder getter+hash/mock 守卫；execute_typed_recall+recall_short_horizon 双 lane，fragments 补 bytes/tokens/lane，短时域 hit 按 privacy 资格+content_hash 去重投影）；③AC-1 真实 continue_active 车道补齐——真实 provider 现为**四路正向**（resume/no-recall 单调用/direct/continue），前文"三路正向达成"表述系口径误差，以本条为准。
+- P2 修复：leading cut residue 组不再伪装完整组（planner 丢弃+计数）；loop 级 reconcile 全接线组合测试（pending 摘要进 payload + 终局稳定 NoRecallBlockedError）；ruff 误扫 315 个无关文件的 churn 已从提交剥离。
+- P2 处置（口径/后置）：task_execution root_resolver——生产 catalog 零 PROJECT_EFFECT 工具（审计确证真空安全 fail-closed），root 签发接线列入 S5b Task 5 前置义务，不在本增量伪造；llm_runtime.json 明文 key 系产品既有设计面 + 用户明示"本地配置好不要重复输入"，将于机器门以 record-decision 绑定用户批准原话入账；spec pins/机器门 = phase-4 本体。
+- 最小化审查（LEAN，9 findings）全部应用（min-1..9），其中 min-1/min-5 与审计 P1① 同根因互证。
+- 真实矩阵 4/4 重跑 PASS（continue 车道首轮失败根因=harness 路由提示未教 continue_active，修订提示+durable 断言化解随机性脆断）。
+
+## 完成度审计 round-2/round-3（2026-09-01）
+- round-2 FAIL：上轮 5 修复全部核实为真修（含独立复现验证），3 项 deferred 定位判合理；**新抓 1 P1**：窗口 authority 形状只有测试 harness 在写（budget.context_window），生产 chat 写标量、foreground 只有 run_binding——生产恒落 4096 最小档，叠加新 fail-closed 后实测可误杀 3000 字 persona 的正常 run（"双真相"以新形式复活，plan 层集成契约缺陷）。
+- 修复（Host e24da150）：_resolve_window_tokens 三来源解析（budget→标量→run_binding.context_window）+ 生产形状端到端回归测试（200k 标量形状 persona 完整保留）。
+- round-3 PASS（code-audit 口径 7/7 必须 AC 前半链 100%，无 open P0/P1）：窗口修复独立复测通过（含 0/False 穿透、负值钳制、浮点截断边界探针）；顺带抓到我一处**不实完成声称**——estimator 第三副本收编实为 silent no-op replace（字面字符 vs \u 转义未匹配），已真修并以本条勘误（教训：sed/replace 式修改必须用变更后验证而非脚本自报，与 S4 "artifact 复制 sha 对照"同根因）。
+- 遗留在案义务：spec pins→phase-4 已完成（verification-spec.json 定稿 9cbebf29）；credential record-decision→机器门；root_resolver→S5b Task 5 前置。
+
+## 事故自报（2026-09-02 00:42）
+- 链式 shell 命令构造失误将 `rm -rf` 误执行，删除了 memory-sdk 增量目录下的 r1-s5a 草稿 gate run（violates 不删除旧 gate run 纪律）。r1 系 repo-external 布置错误的草稿轮（activate-run 拒绝外部目录），未 finalize、无 receipt；其全部车道在 r2（Host 仓内、最终代码态）重录，真实 provider transcripts 原件仍在 .local-test-evidence——无唯一性证据损失。教训：含 rm 的清理命令必须单独执行且先 ls 确认，不进 && / ; 链（与 stash 事故同根因，已并入 retro）。

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0（S5a 消费面定稿，2026-09-02）
+
+- 包根导出 jobs 消费符号（`DurableMemoryJobRunner`/`MemoryJobWorkerConfig`/`WorkerRunOutcome`）。
+- 新增只读 occurrence inbox / outbox 投影（`OccurrenceInboxEntryV1/PageV1`、`OutboxEntryV1/PageV1`）：
+  `(occurred_at, event_id)` 排序键在形内、当前 head lifecycle_state、suppressed 标志（memory-scope
+  suppression 指令联查）、principal fail-closed；Host reconcile 门的冻结 consumer contract。
+- `build_human_memory_v7` 拒绝 hash/mock embedder（`allow_development_embedder` 显式豁免）。
+- 修复 `[tool.uv.sources]` 路径；候选 wheel 双 clean build 字节一致
+  sha256=62a3f63cadd7796b1e86e57a9dce2bffc773b3da2ef3e78ba5002fea50f822ff。
+
 ## [0.6.0] - 2026-08-30
 
 ### Human Memory foundation

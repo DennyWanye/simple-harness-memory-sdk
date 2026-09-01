@@ -2,6 +2,15 @@
 
 > 最后更新：2026-09-01
 
+## 2026-09-02 S5a：0.6 消费面定稿 + Host 生产接入
+
+- Host `feat/human-memory-s5a-context-route` 完成 S5a：v7 认知库首次生产组合（HumanMemoryV7Runtime），
+  typed recall + short-horizon 双 lane 消费，occurrence inbox reconcile 成为 no_recall 硬门。
+- 本仓交付：inbox/outbox 只读投影（含 suppressed 标志）、jobs 包根导出、v7 embedder 生产守卫、
+  uv.sources 修复；1071 测试全绿；wheel 62a3f63c…（Host vendor exact pin + candidate manifest）。
+- S5b 待办：registration outbox 消费/settled 状态机（presented cursor 由 Host v45 持有）、
+  PROJECT_EFFECT root 签发接线（Host 侧）、WeMM 快照上传 COS。
+
 ## Human Memory Program
 
 | Slice | 状态 | 当前生产事实 |
