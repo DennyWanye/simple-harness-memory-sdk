@@ -35,6 +35,10 @@ def _capture_context(case_id: str, result: dict[str, Any], context: dict[str, An
         context["primary_ref"] = payload.get("primary_ref") or payload.get("ref")
     elif case_id == "api-scope-create":
         context["scope_a_ref"] = payload.get("scope_ref") or payload.get("ref")
+    elif case_id == "api-binding-propose":
+        context["challenge_ref"] = payload.get("challenge_ref")
+    elif case_id == "api-execution-running":
+        context["sdk_run_id"] = payload.get("sdk_run_id")
 
 
 def run(fixture: dict[str, Any], adapter: Any, adapter_identity: dict[str, str], artifact_dir: Path) -> dict[str, Any]:
@@ -44,7 +48,17 @@ def run(fixture: dict[str, Any], adapter: Any, adapter_identity: dict[str, str],
         "scope_a": fixture["task_scopes"]["a"],
         "search_query": fixture["search"]["query"],
     }
-    expect_ok(invoke(adapter, "host.reset_fresh", {"data_format": fixture["data_format"]["supported"]}), "host.reset_fresh")
+    expect_ok(
+        invoke(
+            adapter,
+            "host.reset_fresh",
+            {
+                "data_format": fixture["data_format"]["supported"],
+                "scenario": "critical-affected-api-smoke",
+            },
+        ),
+        "host.reset_fresh",
+    )
     results = []
     for case in fixture["critical_affected_api"]:
         request = resolve_placeholders(case["request"], context)

@@ -75,7 +75,19 @@ def run(fixture: dict[str, Any], adapter: Any, adapter_identity: dict[str, str],
     scope_b = fixture["task_scopes"]["b"]
     limits = fixture["limits"]
 
-    reset = expect_ok(invoke(adapter, "host.reset_fresh", {"data_format": fixture["data_format"]["supported"]}), "host.reset_fresh")
+    reset = expect_ok(
+        invoke(
+            adapter,
+            "host.reset_fresh",
+            {
+                "data_format": fixture["data_format"]["supported"],
+                # Archive/durability oracle: queued turns must survive cold
+                # restart untouched, so the foreground scheduler stays held.
+                "scheduler": "held",
+            },
+        ),
+        "host.reset_fresh",
+    )
     create_a = _payload(expect_ok(invoke(adapter, "task_scope.create", {"subject": subject, "scope": scope_a}), "task_scope.create:A"))
     create_b = _payload(expect_ok(invoke(adapter, "task_scope.create", {"subject": subject, "scope": scope_b}), "task_scope.create:B"))
     scope_a_ref = create_a.get("scope_ref") or create_a.get("ref")
