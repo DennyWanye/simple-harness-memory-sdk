@@ -1,0 +1,463 @@
+{
+  "acceptance_file": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/acceptance.md",
+  "active_run_required": true,
+  "applicability": {
+    "input_sensitive": {
+      "decided_by": "user",
+      "rationale": "S4 验证冻结 typed DTO、容量上限和确定性 Host 状态机，自然语言路由质量属 S5/S6",
+      "value": false
+    },
+    "llm_payload_driven": {
+      "decided_by": "user",
+      "rationale": "S4 不新增 LLM 输出解析，所有验证输入都是预冻结 deterministic fixture 与公开 Host API",
+      "value": false
+    },
+    "stateful_init": {
+      "decided_by": "user",
+      "rationale": "fresh human-memory-v1、projection/search/Run/FIFO/recovery 持久化状态以及冷重启是 S4 核心验收面",
+      "value": true
+    }
+  },
+  "auditor_engine": "independent-codex-agent",
+  "compiled_manifest": {
+    "case_sets": {
+      "full": [
+        "S4-AUTHORITY",
+        "S4-DATA-RECOVERY",
+        "S4-FIFO",
+        "S4-INTEGRATION",
+        "S4-REGRESSION",
+        "S4-VALUE-100K",
+        "S4-VIEWS"
+      ]
+    },
+    "input_hashes": {
+      "acceptance": "fd4957c85b3693b8f5a6e056bde7ec492849d57e2f8a44f70d130d419c3c3523",
+      "assurance_contract": "624bd31f159480b274d84ead7bb1fa0a5df522a7d10f4718d6826687d6863fd8",
+      "reuse_report": "e9f2f093aaa19a6a45701f71559a41ce0e782ebb46af8087c2248b3692ea1afe",
+      "testcase_inventory": "828e6550f10c50275bca88235803c0548dc70a6a774a2d3eb28f0421f6fd0c33",
+      "verification_spec": "860cefe63e004dce18440a785e389405d4f4c6616141755a1426a5eb331771e5"
+    },
+    "input_paths": {
+      "acceptance": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/acceptance.md",
+      "assurance_contract": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/assurance-contract.json",
+      "reuse_report": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/testcase-reuse-report.json",
+      "testcase_inventory": "/Users/denny/projects/simple_harness-memory-plan/testcase/index.json",
+      "verification_spec": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification-spec.json"
+    },
+    "seal_sha256": "de88d1b3b430cca92bff701ac39197b4d6c619d0690be801644246b0f6d22756",
+    "selected_testcase_ids": [
+      "TC-HM-02",
+      "TC-HM-09",
+      "TC-HM-11",
+      "TC-HM-12",
+      "TC-HM-14"
+    ],
+    "tool_version": "1.5.0"
+  },
+  "executor_engine": "codex",
+  "flow_tier": {
+    "decided_by": "user",
+    "rationale": "S4 新增 Host 公开入口、fresh 持久化状态、permission-first search、单 foreground Run/FIFO 和故障恢复门",
+    "value": "FULL"
+  },
+  "impact_map_source": "S4 plan file-impact inventory only; implementation and diff were not inspected",
+  "release_unit": {
+    "concurrent_layer_kinds": 3,
+    "high_risk_subsystems": 3,
+    "must_ac_count": 6,
+    "parent_program": "human-memory-digital-twin",
+    "plan_lines": 128,
+    "scope_hash": "fd4957c85b3693b8f5a6e056bde7ec492849d57e2f8a44f70d130d419c3c3523",
+    "slice_id": "S4-HOST-TASKSCOPE-CLOSURE",
+    "task_count": 7
+  },
+  "repo_root": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan",
+  "s4_host_oracle_pins": {
+    "critical_affected_api_runner": {
+      "path": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/runners/run_s4_critical_affected_api_smoke.py",
+      "sha256": "c82688c94fbcba7e5d86787e2aeac1e6ffbd86046a8423e58d08c156c6567e54"
+    },
+    "fixture": {
+      "path": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/fixtures/s4-host-closure-v1.json",
+      "sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34"
+    },
+    "runner_common": {
+      "path": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/runners/s4_runner_common.py",
+      "sha256": "b5d1ac909d2092851d6876d47bb457923499f4bfd528169f4cf039610caff4da"
+    },
+    "value_runner": {
+      "path": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/runners/run_s4_value_smoke.py",
+      "sha256": "77bcfc39d4f02cc758e45cf909210935548e59827669211b126f967718a69051"
+    }
+  },
+  "scenarios": [
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "fresh_data_dir",
+          "event_count_100000",
+          "exact_scope_opened",
+          "resume_package_bounded",
+          "wrong_task_canary_zero",
+          "fifo_preserved_after_restart"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/task_scope/**",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/execution/foreground_queue.py",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/human_memory_service.py"
+      ],
+      "input_class": "deterministic-typed-100k-cold-resume",
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "fixture_revision": 1,
+        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34",
+        "runner_common_sha256": "b5d1ac909d2092851d6876d47bb457923499f4bfd528169f4cf039610caff4da",
+        "value_runner_sha256": "77bcfc39d4f02cc758e45cf909210935548e59827669211b126f967718a69051"
+      },
+      "required": true,
+      "scenario_id": "S4-VALUE-100K",
+      "testcase_ids": [
+        "TC-HM-02",
+        "TC-HM-11"
+      ],
+      "testcase_revisions": {
+        "TC-HM-02": 3,
+        "TC-HM-11": 4
+      },
+      "ui": false
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "recovered_state",
+          "six_views_within_limits",
+          "evidence_pages_cover_all_events",
+          "stable_page_refs",
+          "rebuild_byte_identical",
+          "checkpoint_drift_reported"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": false,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/task_scope/projections.py",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/memory/migrations/031_task_scope_projections_v39.sql"
+      ],
+      "input_class": "deterministic-bounded-view-rebuild",
+      "lanes": [
+        "temporal-fault"
+      ],
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "fixture_revision": 1,
+        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34"
+      },
+      "required": true,
+      "scenario_id": "S4-VIEWS",
+      "testcase_ids": [
+        "TC-HM-12"
+      ],
+      "testcase_revisions": {
+        "TC-HM-12": 4
+      },
+      "ui": false
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "recovered_state",
+          "single_foreground_run",
+          "fifo_sequence_preserved",
+          "control_overtook_queue",
+          "duplicate_delivery_deduplicated",
+          "restart_no_double_start"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/execution/foreground_queue.py",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/memory/migrations/033_foreground_queue_v41.sql"
+      ],
+      "input_class": "durable-fifo-control-duplicate-restart",
+      "lanes": [
+        "temporal-fault"
+      ],
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "fixture_revision": 1,
+        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34"
+      },
+      "required": true,
+      "scenario_id": "S4-FIFO",
+      "testcase_ids": [
+        "TC-HM-11"
+      ],
+      "testcase_revisions": {
+        "TC-HM-11": 4
+      },
+      "ui": false
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "fresh_human_memory_v1_enabled",
+          "single_writable_primary",
+          "legacy_epoch_rejected",
+          "future_epoch_rejected",
+          "legacy_crud_primary_rejected",
+          "emergency_export_available"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": false,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/human_memory_service.py",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/main.py",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/memory/migrator.py",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/memory/schema.py"
+      ],
+      "input_class": "fresh-host-primary-epoch-api",
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "api_runner_sha256": "c82688c94fbcba7e5d86787e2aeac1e6ffbd86046a8423e58d08c156c6567e54",
+        "fixture_revision": 1,
+        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34",
+        "runner_common_sha256": "b5d1ac909d2092851d6876d47bb457923499f4bfd528169f4cf039610caff4da"
+      },
+      "required": true,
+      "scenario_id": "S4-INTEGRATION",
+      "testcase_ids": [
+        "TC-HM-14"
+      ],
+      "testcase_revisions": {
+        "TC-HM-14": 2
+      },
+      "ui": false
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "recovered_state",
+          "raw_row_count_preserved",
+          "raw_content_hash_preserved",
+          "ingress_fenced",
+          "outbox_drained_or_parked",
+          "wal_checkpoint_receipted",
+          "emergency_export_byte_identical"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": false,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/execution/recovery_fence.py",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/memory/migrations/034_human_memory_recovery_v42.sql"
+      ],
+      "input_class": "raw-integrity-fence-drain-wal-export",
+      "lanes": [
+        "temporal-fault"
+      ],
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "fixture_revision": 1,
+        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34"
+      },
+      "required": true,
+      "scenario_id": "S4-DATA-RECOVERY",
+      "testcase_ids": [
+        "TC-HM-14"
+      ],
+      "testcase_revisions": {
+        "TC-HM-14": 2
+      },
+      "ui": false
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "wrong_principal_denied",
+          "candidate_search_authority_unchanged",
+          "search_poison_not_authority",
+          "second_foreground_run_rejected",
+          "durable_auto_snapshot_authoritative"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/task_scope/search.py",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/execution/foreground_queue.py",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/human_memory_service.py"
+      ],
+      "input_class": "wrong-principal-search-poison-concurrency",
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "fixture_revision": 1,
+        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34"
+      },
+      "required": true,
+      "scenario_id": "S4-AUTHORITY",
+      "testcase_ids": [
+        "TC-HM-02",
+        "TC-HM-09"
+      ],
+      "testcase_revisions": {
+        "TC-HM-02": 3,
+        "TC-HM-09": 4
+      },
+      "ui": false
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "critical_affected_api_smoke",
+          "host_full_pytest",
+          "changed_surface_mypy",
+          "changed_surface_ruff"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "negative-safety",
+      "impact_paths": [],
+      "input_class": "host-critical-affected-full-regression",
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "api_runner_sha256": "c82688c94fbcba7e5d86787e2aeac1e6ffbd86046a8423e58d08c156c6567e54",
+        "fixture_revision": 1,
+        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34",
+        "runner_common_sha256": "b5d1ac909d2092851d6876d47bb457923499f4bfd528169f4cf039610caff4da"
+      },
+      "required": true,
+      "scenario_id": "S4-REGRESSION",
+      "testcase_ids": [
+        "TC-HM-14"
+      ],
+      "testcase_revisions": {
+        "TC-HM-14": 2
+      },
+      "ui": false
+    }
+  ],
+  "source_request_text": "好的，请你继续按照最新的plan-test skill流程继续处理",
+  "structured_audit_required": true,
+  "testcase_files": [
+    "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-02-task-resume.md",
+    "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-09-taskscope-bindings.md",
+    "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-11-single-run-context.md",
+    "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-12-digital-twin-views.md",
+    "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-14-host-closure-recovery.md"
+  ],
+  "testcase_revision_pins": {
+    "TC-HM-02": 3,
+    "TC-HM-09": 4,
+    "TC-HM-11": 4,
+    "TC-HM-12": 4,
+    "TC-HM-14": 2
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "cluster_id": "cluster-projection-versioning-and-bounds",
+  "parent_finding_ids": [
+    "projection-version-omits-event-checkpoint-change-identity",
+    "evidence-page-cardinality-byte-bound-unproven"
+  ],
+  "specialty": "data-state",
+  "findings": [
+    {
+      "id": "projection-version-omits-event-checkpoint-change-identity",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-6",
+        "HM-AC-7",
+        "HM-AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-TASK-RESUME-LOSS",
+        "FAIL-READ-VIEW-GROWTH",
+        "FAIL-PROTOCOL-REPLAY"
+      ],
+      "evidence": "migration 028 lines 120-163 keys checkpoints, projection revisions/cache/outbox by canonical_revision and enforces UNIQUE(task_scope_id,canonical_revision). store.py lines 143-196 append a Host event and advance only head.event_watermark without creating a canonical revision or projection outbox; lines 300-352 append a checkpoint at an existing canonical revision without projection invalidation; lines 354-390 rebuild/write projection from state_json alone. The increment plan lines 63-69 instead requires views from canonical revision, events, steps, evidence refs, bindings and checkpoints, while TC-HM-12 S4-1/S4-4 requires event/checkpoint-sensitive immutable historical revisions and byte-identical rebuild. Therefore two different source states can currently share the same projection identity.",
+      "status": "open",
+      "root_cause": "canonical_revision is only the mutation-reduced state revision, not a complete projection-source identity. The plan must define an executable v39 TaskScopeProjectionSourceV1 identity containing task_scope_id, monotonic projection_source_sequence, canonical_revision+state_hash, event_watermark+event_prefix_root where each event leaf commits the event row and ordered step/evidence-link hashes, checkpoint_sequence+checkpoint_set_root, binding_set_revision+binding_receipt_hash, and renderer_contract_version; source_identity_hash is the canonical hash of that tuple. Every source-changing writer—create scope/mutation, append_host_event, ExecutionEvidence ingress, checkpoint commit and binding-set commit—must append a source-change ledger row plus projection outbox row in the same SQLite transaction as its authority write. The outbox may audibly coalesce only contiguous source sequences, recording covered_from/covered_through; explicit checkpoint/projection requests must materialize their exact source identity. Projection revision/page IDs must bind source_identity_hash and renderer version, not canonical_revision alone. Exact replay returns the original receipt; any component change creates a new immutable source/projection revision even when canonical_revision is unchanged; old revisions stay queryable; latest is only a rebuildable pointer; a renderer change creates a new contract-version derivative and never overwrites old bytes."
+    },
+    {
+      "id": "evidence-page-cardinality-byte-bound-unproven",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-6",
+        "HM-AC-7"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-TASK-RESUME-LOSS",
+        "FAIL-READ-VIEW-GROWTH"
+      ],
+      "evidence": "The frozen AC and plan require both EVIDENCE 500 events/page and every page <=32 KiB, plus complete recovery of all canonical fields/refs. TC-HM-12 lines 88-92 repeats this and explicitly includes Unicode and oversized fields. Static arithmetic gives only 32768/500 = 65.536 bytes per event including framing. migration 028 lines 24-35 already has a 64-character payload_hash per event before event_id, source_event_id, kinds, reason, timestamps, payload JSON, steps or evidence refs; store.py permits source_event_id up to 512 characters and does not impose a 32 KiB event-payload ceiling. Thus a physical page containing 500 complete events cannot satisfy the byte cap, and a single oversized event can exceed it alone. TC-HM-14 covers recovery/raw manifests but supplies no page-layout oracle that resolves this contradiction.",
+      "status": "open",
+      "root_cause": "The plan conflates a logical 500-event grouping rule with one physical <=32 KiB serialization unit. Preserve the AC by defining one logical EvidencePageGroup per consecutive 500-event range, backed by indirection: a bounded group manifest commits scope/source identity, group index, exact sequence range/count, before/after event roots, group content root and a root block ref; adaptive content-addressed index/leaf blocks are each <=32 KiB. Event descriptors commit every canonical field plus ordered step/evidence refs; oversized canonical JSON/scalars are represented by ordered byte chunks, each <=32 KiB, so exact UTF-8 bytes remain recoverable. Use a bounded Merkle/B-tree page index so the six-view top level contains only a fixed root ref rather than all groups. Stable IDs bind source_identity_hash, logical group index, physical block path and content hash. Reconstruction must traverse and verify group count/range/root, block hashes and exact field/ref coverage. The oracle must separately assert 500 events per logical group, every physical manifest/index/leaf/chunk <=32 KiB, fixed-size top-level roots, and byte-exact recovery for maximum-length Unicode/payload/ref fixtures; requiring 500 full events in one physical page remains structurally impossible."
+    }
+  ],
+  "cross_cluster_refs": [],
+  "conclusion": {
+    "status": "refined",
+    "summary": "Both parent findings are confirmed. Projection versioning needs a composite, transactionally emitted source identity with explicit immutable-history rules; canonical_revision alone cannot observe event, checkpoint or binding changes. The 500-event and 32 KiB requirements are compatible only when 500 denotes a logical page group and physical storage uses bounded hashed indirection/chunking. Without these plan-level definitions, HM-AC-6/7 cannot be implemented or decisively tested."
+  }
+}

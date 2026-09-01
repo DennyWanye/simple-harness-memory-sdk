@@ -1,0 +1,21 @@
+{
+  "verdict": "LEAN",
+  "findings": [
+    {
+      "id": "min-1",
+      "tag": "delete",
+      "target": "plan.md §方案选择与取舍 / Task 2 embedding locator 可插拔接口",
+      "current": "本增量明确只使用 permission-first SQLite FTS5，但仍计划为未来 embedding locator 保留可插拔接口。",
+      "replacement": "删除未被本次 AC 或 risk 使用的 embedding locator interface/hook/factory；v40 的 TaskScopeSearchService 直接实现冻结的 FTS5 candidate search/open 合约。未来若用户批准向量检索，再以新 acceptance 增加扩展点。",
+      "preserves_acceptance": [
+        "HM-AC-4",
+        "HM-AC-6",
+        "HM-AC-7"
+      ],
+      "risk_impact": "none; permission-first filtering, bounded candidate results, exact open, immutable receipts and FTS-unavailable fail-closed behavior remain unchanged",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    }
+  ]
+}

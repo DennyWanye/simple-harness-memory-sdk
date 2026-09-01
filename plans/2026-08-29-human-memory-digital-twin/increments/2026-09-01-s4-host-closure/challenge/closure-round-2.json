@@ -1,0 +1,163 @@
+{
+  "review_mode": "diff",
+  "findings": [
+    {
+      "id": "value-smoke-requires-not-yet-built-fifo",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-3"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-FOREGROUND-RUN-CONCURRENCY"
+      ],
+      "evidence": "Resolved by current plan.md:6-7 and 85-111. Task 3 now implements the durable FIFO reducer before Task 4, and Task 4 is the value gate. The Task 4 smoke explicitly creates queued turns through the typed facade, cold-restarts, and checks FIFO together with the 100k candidate-search-to-exact-open recovery result; expensive recovery/full-regression/finalize work remains prohibited until that smoke passes.",
+      "status": "resolved",
+      "root_cause": "The task dependency graph excludes a frozen prerequisite from the value milestone, so Task 3 cannot execute the approved minimum validation action or legitimately open the expensive-test gate."
+    },
+    {
+      "id": "projection-version-omits-event-checkpoint-change-identity",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-6",
+        "HM-AC-7",
+        "HM-AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-TASK-RESUME-LOSS",
+        "FAIL-READ-VIEW-GROWTH",
+        "FAIL-PROTOCOL-REPLAY"
+      ],
+      "evidence": "Resolved by current plan.md:18-20, 30, 62 and 68-75. TaskScopeProjectionSourceV1 now binds scope, monotonic source sequence, canonical revision/state hash, event watermark/prefix root including event/step/evidence-link hashes, checkpoint sequence/set root, binding revision/receipt hash, renderer contract version and total source hash. Every listed source producer must append source-change plus projection outbox in the same authority transaction; coalescing records the covered sequence range, exact historical requests materialize the exact source, old sources remain queryable, and producer crash/lost-ACK/coalescing/rebuild cases are required tests. The synthesis conflict is closed using canonical P0 severity rather than the specialist's lower P1.",
+      "status": "resolved",
+      "root_cause": "The plan treats semantic canonical revision as the complete projection source version even though append-only events and checkpoints advance independently; the producer and schema lack a composite immutable input identity and outbox trigger for those changes."
+    },
+    {
+      "id": "evidence-page-cardinality-byte-bound-unproven",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-6",
+        "HM-AC-7"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-TASK-RESUME-LOSS",
+        "FAIL-READ-VIEW-GROWTH"
+      ],
+      "evidence": "Resolved by current plan.md:63 and 70-75. Five hundred events is now a stable logical group rather than one physical page. Content-addressed group manifest/index/leaf/chunk blocks are each bounded to 32 KiB; oversized payload bytes are recursively chunked without changing group boundaries; stable IDs bind scope/source/group/block/content hashes; all canonical fields and refs remain byte-recoverable. Required verification covers Unicode, a single oversized event, a 500-event group spanning multiple blocks, 1k/10k/100k limits and byte-identical rebuild.",
+      "status": "resolved",
+      "root_cause": "The plan copies mutually constraining count, completeness, and byte limits without proving a representation that can satisfy all three, leaving the core paging contract structurally non-executable."
+    },
+    {
+      "id": "fresh-epoch-startup-dispatch-undefined",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-1",
+        "HM-AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-PRIMARY-STREAM-SPLIT",
+        "FAIL-PROTOCOL-REPLAY"
+      ],
+      "evidence": "Resolved by current plan.md:29 and 95-99. A single decision-lock owner now classifies FRESH, HUMAN_RESUME, LEGACY, INVALID or FUTURE before every writable state.db opener, initialize_state_db(), SessionDB.initialize(), MemoryManager/provider/worker/API or backup. FRESH is restricted to the approved prototype lane and an absent/zero-byte/valid empty-v0 database and is durably claimed by the human initializer through v42; HUMAN_RESUME validates marker/checksum and resumes the exact v0..v42 chain; LEGACY stays in explicit legacy composition with stable human endpoint rejection; INVALID/FUTURE fail before business writes, reset, backup or recovery. Every consumer receives the frozen composition mode and cannot redispatch independently.",
+      "status": "resolved",
+      "root_cause": "The production composition task names both startup modes but does not define the atomic empty/fresh/legacy/future decision point before the existing legacy initializer mutates the database."
+    },
+    {
+      "id": "public-facade-subject-authority-contract-undefined",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-1",
+        "HM-AC-3",
+        "HM-AC-4"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-TASK-SEARCH-AUTHORITY",
+        "FAIL-PRIMARY-STREAM-SPLIT",
+        "FAIL-FOREGROUND-RUN-CONCURRENCY"
+      ],
+      "evidence": "Resolved by current plan.md:99-108 and 124-130. The facade derives subject from the trusted Host auth snapshot and forbids payload authority over subject, allowed scope IDs, mode, binding/context revisions or worker role. The frozen operation matrix assigns payload selectors versus Host-derived primary/scope/evidence/run/binding/checkpoint lineage, applies canonical ownership/permission before search ranking, keeps exact open authority-neutral, derives Auto binding from the current foreground generation, keeps claim/settle internal, and makes recovery/export constructor-bound Host lifecycle operations. Task 6 enumerates every facade method and requires pre-store stable rejection for wrong subject/primary/scope/evidence/run/binding lineage. Its shared legacy guard covers project/session creation, direct SessionDB creation, chat remap/switch, rename and delete at both ingress and final mutation boundaries, preserving human_memory_primary_authority_immutable before reads, writes, remaps, cancellation or success events.",
+      "status": "resolved",
+      "root_cause": "The plan relies on a facade name to close trust boundaries but does not specify which values are Host-derived versus untrusted payloads or the cross-object subject/TaskScope/evidence/Run checks required before calling reusable stores."
+    },
+    {
+      "id": "foreground-control-state-machine-not-closed",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-3",
+        "HM-AC-7",
+        "HM-AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-FOREGROUND-RUN-CONCURRENCY",
+        "FAIL-PROTOCOL-REPLAY"
+      ],
+      "evidence": "Resolved by current plan.md:61 and 85-93. Host owns admission/FIFO/control/lease/current-Run snapshots while the published SDK remains the only Agent execution engine; host_run_id binds idempotently one-to-one to sdk_run_id and timeout/unknown cannot start a replacement. The plan freezes queued-turn and Run reducers, terminal immutability, CANCEL > STOP > PAUSE, stronger-control supersession, terminal-first and control-first race semantics, pause slot retention, resume generation advancement, signal-outbox durability, lease identity/generation fencing, stale-owner read-only behavior, same-Run restart recovery, background namespace exclusion and a per-subject nonterminal unique constraint. Verification covers duplicate/lost ACK and every transaction boundary, control/terminal races, stale generations, lease expiry, background rejection, SDK binding and Auto snapshot lineage. Canonical primary AC/contract bindings are retained despite the specialist's differing binding set.",
+      "status": "resolved",
+      "root_cause": "Schema nouns and happy-path ordering are specified without the transition and replay contract that determines whether a durable control is terminal, superseded, re-applied after restart, or permits the next FIFO turn."
+    },
+    {
+      "id": "recovery-fence-lacks-write-quiescence-boundary",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-1",
+        "HM-AC-7",
+        "HM-AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-DATA-LOSS",
+        "FAIL-PROTOCOL-REPLAY"
+      ],
+      "evidence": "Resolved by current plan.md:30 and 113-122. Recovery now has a durable OPEN→CLOSING→QUIESCED→SEALED→OPEN generation state machine with FAILED_CLOSED recovery. Every canonical writer must BEGIN IMMEDIATE and check the fence in the same transaction before its first mutation; the close coordinator obtains the writer lock and commits CLOSING/cutoff after earlier writers, while exact allowlist triggers catch unregistered writers. The registry explicitly covers primary/evidence, TaskScope producers, provisioning, binding and foreground queue/control/terminal. Cutoff outboxes and worker leases require acknowledgements and gap receipts before QUIESCED. FULL WAL checkpoint runs under the closed fence and recovery mutex in autocommit and requires a nonempty busy=0, log_frames=checkpointed_frames result; unknown/busy/gap states remain FAILED_CLOSED. Barrier races, unregistered SQL, worker ack/park/replay, generations and fault/restart are explicit tests.",
+      "status": "resolved",
+      "root_cause": "The recovery design fences new requests but lacks a transaction-level writer barrier and consistent snapshot boundary covering all canonical writers before WAL and integrity attestation."
+    },
+    {
+      "id": "required-host-recovery-oracle-omitted",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-1",
+        "HM-AC-7",
+        "HM-AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-DATA-LOSS",
+        "FAIL-PROTOCOL-REPLAY"
+      ],
+      "evidence": "Resolved by current plan.md:132-138 and verification-spec.json. Task 7 now explicitly adds and versions TC-HM-14 as the recovery/integration Host lane and freezes inventory, reuse and verification-spec hashes. The structured verification spec contains all seven approved obligations and pins TC-HM-14 revision 2 to required S4-INTEGRATION, S4-DATA-RECOVERY and S4-REGRESSION scenarios, including fresh epoch/primary/legacy CRUD/export, fence/drain/WAL/raw integrity and critical/affected/full regression evidence contracts. The unchanged plan summary at line 12 is superseded by the executable Task 7 instruction and structured required scenario mapping rather than omitting TC-HM-14 from delivery.",
+      "status": "resolved",
+      "root_cause": "The plan's testcase reuse inventory was frozen before the Host closure/recovery oracle produced by the parallel validation track was incorporated."
+    },
+    {
+      "id": "raw-integrity-manifest-comparison-ambiguous",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-1",
+        "HM-AC-7",
+        "HM-AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-DATA-LOSS"
+      ],
+      "evidence": "Resolved by current plan.md:119-122 and 136. The manifest uses an exact schema allowlist and separates A protected immutable authority rows, B CAS-only coordination, C legal immutable recovery/audit deltas and D disposable derived state. At the fence cutoff M0 records schema/typed-column hashes, primary-key-sorted counts and typed row-leaf roots for each A table; post-check proves each preexisting key and leaf unchanged rather than relying on aggregate equality. B uses referential/CAS invariants, C reports delta count/root separately, D uses rebuild oracles, and unknown protected tables/columns fail closed. Emergency export is derived from the SEALED snapshot with explicit A/B/C inclusion, D/legacy/auth/config/private-provider exclusion, deterministic typed serialization, content-addressed chunks and a non-self-referential artifact receipt. Canonical primary assurance binding remains FAIL-DATA-LOSS although the specialist additionally discussed replay risk.",
+      "status": "resolved",
+      "root_cause": "The integrity test lacks a canonical table taxonomy and delta-aware comparison rule, so its claimed raw-data invariant is not deterministic."
+    }
+  ]
+}

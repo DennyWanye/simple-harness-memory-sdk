@@ -1,0 +1,116 @@
+{
+  "schema_version": "1.0",
+  "status": "draft-pre-execution",
+  "inventory": {
+    "testcase_dir": "/Users/denny/projects/simple_harness-memory-plan/testcase",
+    "index": "/Users/denny/projects/simple_harness-memory-plan/testcase/index.json",
+    "validated_testcase_count": 147,
+    "historical_pass_inherited": false
+  },
+  "required_obligations": [
+    "HM-S4-TO-VALUE",
+    "HM-S4-TO-VIEWS",
+    "HM-S4-TO-FIFO",
+    "HM-S4-TO-INTEGRATION",
+    "HM-S4-TO-DATA",
+    "HM-S4-TO-AUTHORITY",
+    "HM-S4-TO-REGRESSION"
+  ],
+  "candidate_review": [
+    {
+      "testcase_id": "TC-HM-02",
+      "reviewed_revision": 1,
+      "resulting_revision": 3,
+      "conclusion": "Existing distant-task candidate/exact-open oracle is the closest value asset; extend it with a typed public Host lane, 100k events, cache rebuild, cold restart, authority-state invariance, and bounded ResumePackage checks."
+    },
+    {
+      "testcase_id": "TC-HM-09",
+      "reviewed_revision": 3,
+      "resulting_revision": 4,
+      "conclusion": "Existing immutable binding/effect-authority oracle remains valid; extend it with wrong-principal search, candidate-only non-mutation, single foreground Run rejection, and durable Auto snapshot facts."
+    },
+    {
+      "testcase_id": "TC-HM-10",
+      "reviewed_revision": 1,
+      "resulting_revision": 2,
+      "conclusion": "Its natural-language five-way routing is S5/S6 scope. Record an explicit non-gating S4 boundary and do not duplicate the required search/open assertions already carried by TC-HM-02."
+    },
+    {
+      "testcase_id": "TC-HM-11",
+      "reviewed_revision": 3,
+      "resulting_revision": 4,
+      "conclusion": "Existing one-foreground-Run/FIFO oracle is reusable after isolating a deterministic Host lane from S5 Context/closure/provider assertions and adding duplicate/lost-ACK/restart boundaries."
+    },
+    {
+      "testcase_id": "TC-HM-12",
+      "reviewed_revision": 3,
+      "resulting_revision": 4,
+      "conclusion": "Existing six-view steps are reusable after adding a graph-independent public Host lane for 1k/10k/100k limits, stable paging, byte-identical rebuild, drift, and projection fault replay."
+    }
+  ],
+  "decisions": [
+    {
+      "obligation_id": "HM-S4-TO-VALUE",
+      "decision": "reuse-with-extension",
+      "candidates": ["TC-HM-02", "TC-HM-11"],
+      "selected_testcases": ["TC-HM-02", "TC-HM-11"],
+      "selected_revisions": {"TC-HM-02": 3, "TC-HM-11": 4},
+      "reason": "TC-HM-02 proves 100k candidate-to-exact-open bounded recovery, while the non-overlapping TC-HM-11 Host lane proves queued-turn continuity in the same value journey.",
+      "historical_pass_inherited": false
+    },
+    {
+      "obligation_id": "HM-S4-TO-VIEWS",
+      "decision": "reuse-with-extension",
+      "candidates": ["TC-HM-12"],
+      "selected_testcases": ["TC-HM-12"],
+      "selected_revisions": {"TC-HM-12": 4},
+      "reason": "The existing six-view oracle is retained, but its required S4 lane is made graph/UI independent and adds exact size, page, rebuild, drift, and replay expectations.",
+      "historical_pass_inherited": false
+    },
+    {
+      "obligation_id": "HM-S4-TO-FIFO",
+      "decision": "reuse-with-extension",
+      "candidates": ["TC-HM-11"],
+      "selected_testcases": ["TC-HM-11"],
+      "selected_revisions": {"TC-HM-11": 4},
+      "reason": "The existing foreground Run case already owns FIFO/control semantics; the extension separates deterministic Host behavior from out-of-scope Context and provider behavior.",
+      "historical_pass_inherited": false
+    },
+    {
+      "obligation_id": "HM-S4-TO-INTEGRATION",
+      "decision": "create-new",
+      "candidates": ["TC-HM-02", "TC-HM-09", "TC-HM-10", "TC-HM-11", "TC-HM-12"],
+      "selected_testcases": ["TC-HM-14"],
+      "selected_revisions": {"TC-HM-14": 2},
+      "reason": "None of the reviewed cases covers fresh Host composition, the single writable primary, legacy/future epoch rejection, old Session CRUD fences, and emergency export through public APIs. One minimal scripted case groups these coupled Host-closure behaviors without adding UI or model routing.",
+      "historical_pass_inherited": false
+    },
+    {
+      "obligation_id": "HM-S4-TO-DATA",
+      "decision": "create-new",
+      "candidates": ["TC-HM-02", "TC-HM-11", "TC-HM-12"],
+      "selected_testcases": ["TC-HM-14"],
+      "selected_revisions": {"TC-HM-14": 2},
+      "reason": "The reviewed cases contain rebuild or restart checks but no public raw-manifest invariant spanning CRUD rejection, ingress fence, drain-or-park, WAL checkpoint, replay, and export. TC-HM-14 adds that single missing Host recovery oracle.",
+      "historical_pass_inherited": false
+    },
+    {
+      "obligation_id": "HM-S4-TO-AUTHORITY",
+      "decision": "reuse-with-extension",
+      "candidates": ["TC-HM-02", "TC-HM-09", "TC-HM-10"],
+      "selected_testcases": ["TC-HM-02", "TC-HM-09"],
+      "selected_revisions": {"TC-HM-02": 3, "TC-HM-09": 4},
+      "reason": "TC-HM-02 owns permission-first candidate/exact-open behavior; TC-HM-09 adds the distinct binding/Run authority invariant. TC-HM-10 is not selected because its S4-relevant search/open portion would duplicate TC-HM-02 and its remaining route behavior is out of scope.",
+      "historical_pass_inherited": false
+    },
+    {
+      "obligation_id": "HM-S4-TO-REGRESSION",
+      "decision": "create-new",
+      "candidates": ["TC-HM-02", "TC-HM-09", "TC-HM-10", "TC-HM-11", "TC-HM-12"],
+      "selected_testcases": ["TC-HM-14"],
+      "selected_revisions": {"TC-HM-14": 2},
+      "reason": "The existing cases are feature or UI journeys and do not define one-per-entrypoint critical plus affected public API smoke for the new Host composition. TC-HM-14 adds only that missing scripted surface and leaves full pytest, static checks, and execution evidence to the verification run.",
+      "historical_pass_inherited": false
+    }
+  ]
+}

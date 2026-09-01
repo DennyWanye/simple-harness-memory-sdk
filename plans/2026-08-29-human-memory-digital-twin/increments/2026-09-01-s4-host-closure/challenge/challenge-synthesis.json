@@ -1,0 +1,274 @@
+{
+  "source_cluster_ids": [
+    "cluster-projection-versioning-and-bounds",
+    "cluster-entry-trust-composition",
+    "cluster-foreground-run-state-machine",
+    "cluster-recovery-integrity"
+  ],
+  "canonical_findings": [
+    {
+      "id": "value-smoke-requires-not-yet-built-fifo",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-3"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-FOREGROUND-RUN-CONCURRENCY"
+      ],
+      "evidence": "acceptance.md:10-11 and 49-53 freeze queued turns/FIFO into the minimum value action and HM-S4-TO-VALUE. plan.md:5-7 repeats queued turns but declares Task 3 as the value gate and says only views/checkpoint/search/open precede it; plan.md:79-83 omits queued turns, while v41 queue/FIFO is first implemented in Task 4 at plan.md:85-91.",
+      "status": "open",
+      "root_cause": "The task dependency graph excludes a frozen prerequisite from the value milestone, so Task 3 cannot execute the approved minimum validation action or legitimately open the expensive-test gate."
+    },
+    {
+      "id": "projection-version-omits-event-checkpoint-change-identity",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-6",
+        "HM-AC-7",
+        "HM-AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-TASK-RESUME-LOSS",
+        "FAIL-READ-VIEW-GROWTH",
+        "FAIL-PROTOCOL-REPLAY"
+      ],
+      "evidence": "plan.md:65-67 derives six views from canonical revision plus events/checkpoints but binds page identity only to scope/revision/kind/page-index/hash and lists no change to task_scope/store.py. Baseline backend/deskpet/task_scope/store.py:143-196 appends Host events by only advancing mutable task_scope_heads.event_watermark; lines 300-352 append checkpoints without a projection/search outbox; lines 373-390 emit projection/search outbox only from create/mutation. Migration 028 lines 132-174 makes projection revision/cache/outbox/search-outbox unique by task_scope_id + canonical_revision. Thus 100k events and a later checkpoint can leave canonical_revision unchanged and have no immutable projection generation to render or replay.",
+      "status": "open",
+      "root_cause": "The plan treats semantic canonical revision as the complete projection source version even though append-only events and checkpoints advance independently; the producer and schema lack a composite immutable input identity and outbox trigger for those changes."
+    },
+    {
+      "id": "evidence-page-cardinality-byte-bound-unproven",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-6",
+        "HM-AC-7"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-TASK-RESUME-LOSS",
+        "FAIL-READ-VIEW-GROWTH"
+      ],
+      "evidence": "acceptance.md:34 simultaneously requires every page <=32 KiB, exactly 500 events per EVIDENCE page, and recovery of every canonical field/ref. plan.md:65-69 repeats those limits but defines neither a frozen page wire schema nor an indirection/overflow rule or size spike. Five hundred 64-character hashes alone consume 32,000 bytes before event IDs, ordering, kinds, JSON framing, content refs, or page metadata.",
+      "status": "open",
+      "root_cause": "The plan copies mutually constraining count, completeness, and byte limits without proving a representation that can satisfy all three, leaving the core paging contract structurally non-executable."
+    },
+    {
+      "id": "fresh-epoch-startup-dispatch-undefined",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-1",
+        "HM-AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-PRIMARY-STREAM-SPLIT",
+        "FAIL-PROTOCOL-REPLAY"
+      ],
+      "evidence": "plan.md:40 and 100-106 says a fresh prototype data dir defaults to the new service while a legacy epoch follows a separate path, but gives no pre-migration dispatch algorithm or lifecycle ordering. Baseline backend/main.py:3025-3038 unconditionally runs initialize_state_db(_state_db_path), which advances a fresh database through the legacy v34 path before SessionDB startup; only the opt-in human-memory initializer can durably claim an empty database for the v35+ epoch.",
+      "status": "open",
+      "root_cause": "The production composition task names both startup modes but does not define the atomic empty/fresh/legacy/future decision point before the existing legacy initializer mutates the database."
+    },
+    {
+      "id": "public-facade-subject-authority-contract-undefined",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-1",
+        "HM-AC-3",
+        "HM-AC-4"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-TASK-SEARCH-AUTHORITY",
+        "FAIL-PRIMARY-STREAM-SPLIT",
+        "FAIL-FOREGROUND-RUN-CONCURRENCY"
+      ],
+      "evidence": "plan.md:38,48-50 and 71-77 introduces public Host APIs and an authenticated subject but leaves endpoint DTOs, the trusted subject derivation, allowed-scope derivation, and per-operation lineage checks unspecified; plan.md:88 only says enqueue_turn validates a primary evidence ref. Baseline CanonicalTaskScopeStore.create_task_scope accepts caller-provided subject, append_host_event has no subject parameter (store.py:90-96,143-152), and _verify_refs_tx checks only evidence ID/hash rather than subject ownership (store.py:407-410). The facade therefore needs an explicit authority contract for every create/append/mutate/open/binding/queue/control call.",
+      "status": "open",
+      "root_cause": "The plan relies on a facade name to close trust boundaries but does not specify which values are Host-derived versus untrusted payloads or the cross-object subject/TaskScope/evidence/Run checks required before calling reusable stores."
+    },
+    {
+      "id": "foreground-control-state-machine-not-closed",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-3",
+        "HM-AC-7",
+        "HM-AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-FOREGROUND-RUN-CONCURRENCY",
+        "FAIL-PROTOCOL-REPLAY"
+      ],
+      "evidence": "plan.md:87-91 lists active/running uniqueness, pause/stop/cancel receipts, signaling, terminal settlement, leases and restart, but supplies no frozen Run/turn/control state transition table, control precedence, idempotency identity, paused-Run ownership rule, durable control replay rule, or lease-generation fence. TC-HM-11 S4-2/S4-3 requires pause followed by stop/cancel, rejection of a second foreground owner, and crash recovery on both sides of claim and terminal receipt.",
+      "status": "open",
+      "root_cause": "Schema nouns and happy-path ordering are specified without the transition and replay contract that determines whether a durable control is terminal, superseded, re-applied after restart, or permits the next FIFO turn."
+    },
+    {
+      "id": "recovery-fence-lacks-write-quiescence-boundary",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-1",
+        "HM-AC-7",
+        "HM-AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-DATA-LOSS",
+        "FAIL-PROTOCOL-REPLAY"
+      ],
+      "evidence": "plan.md:93-98 orders close ingress -> drain/park outboxes -> wal_checkpoint(FULL) -> manifest, but does not define how already-admitted store transactions are drained, how direct reusable-store writers observe the fence, or which generation is rechecked at commit. Baseline CanonicalTaskScopeStore methods independently open SQLite connections and begin their own IMMEDIATE transactions, so a facade precheck alone cannot prevent an in-flight append from committing during checkpoint/manifest computation.",
+      "status": "open",
+      "root_cause": "The recovery design fences new requests but lacks a transaction-level writer barrier and consistent snapshot boundary covering all canonical writers before WAL and integrity attestation."
+    },
+    {
+      "id": "required-host-recovery-oracle-omitted",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-1",
+        "HM-AC-7",
+        "HM-AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-DATA-LOSS",
+        "FAIL-PROTOCOL-REPLAY"
+      ],
+      "evidence": "plan.md:12 and 108-112 freezes reuse to TC-HM-02/09/10/11/12. The current testcase candidate TC-HM-14-host-closure-recovery.md:1-14 is the only testcase directly bound to HM-S4-TO-INTEGRATION, HM-S4-TO-DATA and HM-S4-TO-REGRESSION, and lines 27-36 define the public-only fresh composition, four legacy CRUD fences, drain/park/WAL/export, raw-integrity and affected-API oracle. Omitting it leaves three of the seven required obligations without the named reusable required testcase that already exists in the validation track.",
+      "status": "open",
+      "root_cause": "The plan's testcase reuse inventory was frozen before the Host closure/recovery oracle produced by the parallel validation track was incorporated."
+    },
+    {
+      "id": "raw-integrity-manifest-comparison-ambiguous",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-1",
+        "HM-AC-7",
+        "HM-AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-DATA-LOSS"
+      ],
+      "evidence": "plan.md:95-98 and 112 calls for raw row-count/content-hash manifests and pre/post comparison but never freezes the raw-versus-derived table inventory or distinguishes immutable old-row equality from legitimate append-only recovery/control receipts. TC-HM-14:30-35 explicitly expects new receipts to append while existing raw rows remain unchanged. A whole-table equality oracle would reject correct recovery; a monotonic-count-only oracle could miss mutation of existing rows.",
+      "status": "open",
+      "root_cause": "The integrity test lacks a canonical table taxonomy and delta-aware comparison rule, so its claimed raw-data invariant is not deterministic."
+    }
+  ],
+  "resolved_finding_ids": [],
+  "open_finding_ids": [
+    "value-smoke-requires-not-yet-built-fifo",
+    "projection-version-omits-event-checkpoint-change-identity",
+    "evidence-page-cardinality-byte-bound-unproven",
+    "fresh-epoch-startup-dispatch-undefined",
+    "public-facade-subject-authority-contract-undefined",
+    "foreground-control-state-machine-not-closed",
+    "recovery-fence-lacks-write-quiescence-boundary",
+    "required-host-recovery-oracle-omitted",
+    "raw-integrity-manifest-comparison-ambiguous"
+  ],
+  "decisions": [
+    {
+      "canonical_finding_id": "value-smoke-requires-not-yet-built-fifo",
+      "source_finding_ids": [
+        "value-smoke-requires-not-yet-built-fifo"
+      ],
+      "action": "plan-change",
+      "rationale": "已批准的 value oracle 包含 queued turns/FIFO；将 durable FIFO 与 typed facade 设为 Task 4 smoke 的直接依赖。"
+    },
+    {
+      "canonical_finding_id": "projection-version-omits-event-checkpoint-change-identity",
+      "source_finding_ids": [
+        "projection-version-omits-event-checkpoint-change-identity"
+      ],
+      "action": "plan-change",
+      "rationale": "canonical revision 不能表达 event/checkpoint/binding 变化；加入事务内 source-change ledger/outbox 与 composite source hash。"
+    },
+    {
+      "canonical_finding_id": "evidence-page-cardinality-byte-bound-unproven",
+      "source_finding_ids": [
+        "evidence-page-cardinality-byte-bound-unproven"
+      ],
+      "action": "plan-change",
+      "rationale": "500 条只能是 logical group；采用每个 physical manifest/index/leaf/chunk 不超过 32 KiB 的内容寻址结构。"
+    },
+    {
+      "canonical_finding_id": "fresh-epoch-startup-dispatch-undefined",
+      "source_finding_ids": [
+        "fresh-epoch-startup-dispatch-undefined"
+      ],
+      "action": "plan-change",
+      "rationale": "在任何 writable opener 前冻结 FRESH/HUMAN_RESUME/LEGACY/INVALID/FUTURE 单一分派与 initializer owner。"
+    },
+    {
+      "canonical_finding_id": "public-facade-subject-authority-contract-undefined",
+      "source_finding_ids": [
+        "public-facade-subject-authority-contract-undefined"
+      ],
+      "action": "plan-change",
+      "rationale": "Host 派生 subject/allowed set，并冻结 primary/scope/evidence/run/binding/context 的逐操作 lineage matrix。"
+    },
+    {
+      "canonical_finding_id": "foreground-control-state-machine-not-closed",
+      "source_finding_ids": [
+        "foreground-control-state-machine-not-closed"
+      ],
+      "action": "plan-change",
+      "rationale": "冻结 queue/Run reducer、CANCEL>STOP>PAUSE、generation fencing、SDK one-to-one admission 与 background exclusion。"
+    },
+    {
+      "canonical_finding_id": "recovery-fence-lacks-write-quiescence-boundary",
+      "source_finding_ids": [
+        "recovery-fence-lacks-write-quiescence-boundary"
+      ],
+      "action": "plan-change",
+      "rationale": "以 BEGIN IMMEDIATE 内 fence check、durable generation/state、完整 writer registry/trigger 与 worker ack 建立线性化 quiescence。"
+    },
+    {
+      "canonical_finding_id": "required-host-recovery-oracle-omitted",
+      "source_finding_ids": [
+        "required-host-recovery-oracle-omitted"
+      ],
+      "action": "plan-change",
+      "rationale": "将 TC-HM-14 纳入 required testcase/inventory/spec，覆盖 integration/data/regression obligations。"
+    },
+    {
+      "canonical_finding_id": "raw-integrity-manifest-comparison-ambiguous",
+      "source_finding_ids": [
+        "raw-integrity-manifest-comparison-ambiguous"
+      ],
+      "action": "plan-change",
+      "rationale": "冻结 A/B/C/D table taxonomy，逐 preexisting row leaf 验证并分开记录合法 recovery delta 与 derived rebuild。"
+    }
+  ],
+  "conflicts": [
+    {
+      "canonical_finding_id": "projection-version-omits-event-checkpoint-change-identity",
+      "resolution": "Primary severity P0 is retained through closure because the old identity made the approved historical projection contract structurally non-executable; specialist P1 does not lower the canonical gate."
+    },
+    {
+      "canonical_finding_id": "foreground-control-state-machine-not-closed",
+      "resolution": "Merge primary HM-AC-7 receipt requirement with specialist HM-AC-3/HM-AC-8 transition detail; no contract scope change."
+    }
+  ],
+  "required_spikes": [],
+  "plan_actions": [
+    "Move the value milestone after FIFO and typed Host facade prerequisites.",
+    "Add TaskScopeProjectionSourceV1 and bounded logical-group/physical-block representation.",
+    "Freeze startup epoch dispatcher and Host-derived facade authority matrix.",
+    "Freeze foreground queue/Run/control/lease reducer and SDK execution boundary.",
+    "Freeze transaction-linearized recovery fence, A/B/C/D integrity manifest and emergency export allowlist.",
+    "Add TC-HM-14 to the required S4 oracle set."
+  ],
+  "scope_change_proposals": []
+}

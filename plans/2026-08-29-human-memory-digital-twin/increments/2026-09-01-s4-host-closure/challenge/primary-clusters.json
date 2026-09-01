@@ -1,0 +1,111 @@
+{
+  "primary_contradiction": {
+    "id": "pc-long-term-task-resume",
+    "summary": "The accepted core contradiction is a single, value-first question: whether a distant TaskScope can be recovered correctly and within fixed bounds from canonical Host facts. Its current minimum validation is not executable because queued turns are frozen into that action while the plan schedules FIFO implementation after the value milestone.",
+    "acceptance_ids": [
+      "HM-AC-3",
+      "HM-AC-4",
+      "HM-AC-6",
+      "HM-AC-7"
+    ]
+  },
+  "challenge_clusters": [
+    {
+      "cluster_id": "cluster-value-gate-order",
+      "parent_finding_ids": [
+        "value-smoke-requires-not-yet-built-fifo"
+      ],
+      "specialty": "architecture",
+      "question": "Which tasks are direct prerequisites of the exact frozen minimum value action, and where must the value milestone sit in that dependency graph?",
+      "required_evidence": [
+        "acceptance minimum-validation text",
+        "HM-S4-TO-VALUE oracle",
+        "task dependency graph including queued turns"
+      ],
+      "specialist_required": false
+    },
+    {
+      "cluster_id": "cluster-projection-versioning-and-bounds",
+      "parent_finding_ids": [
+        "projection-version-omits-event-checkpoint-change-identity",
+        "evidence-page-cardinality-byte-bound-unproven"
+      ],
+      "specialty": "data-state",
+      "question": "What immutable source identity and bounded page representation can cover independently appended events, checkpoints, evidence refs and canonical revisions while preserving byte-identical rebuild and historical reads?",
+      "required_evidence": [
+        "v36 projection and outbox keys",
+        "event and checkpoint producer transactions",
+        "proposed composite projection identity",
+        "500-event minimal and worst-case encoded-size spike",
+        "old-revision replay matrix"
+      ],
+      "specialist_required": true
+    },
+    {
+      "cluster_id": "cluster-entry-trust-composition",
+      "parent_finding_ids": [
+        "fresh-epoch-startup-dispatch-undefined",
+        "public-facade-subject-authority-contract-undefined"
+      ],
+      "specialty": "architecture",
+      "question": "What exact pre-migration startup dispatch and authenticated public-facade contract selects fresh versus legacy/future epochs and binds every operation to Host-derived subject and durable object lineage?",
+      "required_evidence": [
+        "backend main lifespan ordering",
+        "empty and legacy database classification",
+        "LocalAuthSnapshot subject derivation",
+        "public request and response DTO inventory",
+        "subject TaskScope evidence Run binding matrix",
+        "legacy CRUD entrypoint inventory"
+      ],
+      "specialist_required": true
+    },
+    {
+      "cluster_id": "cluster-foreground-run-state-machine",
+      "parent_finding_ids": [
+        "foreground-control-state-machine-not-closed"
+      ],
+      "specialty": "data-state",
+      "question": "What durable Run, queued-turn, lease and control transition system preserves one foreground owner, immediate control, FIFO and idempotent restart across every claim and terminal crash boundary?",
+      "required_evidence": [
+        "complete state and transition table",
+        "pause stop cancel precedence",
+        "idempotency and lost-ACK keys",
+        "lease generation and recovery rules",
+        "TC-HM-11 S4 crash-boundary mapping"
+      ],
+      "specialist_required": true
+    },
+    {
+      "cluster_id": "cluster-recovery-integrity",
+      "parent_finding_ids": [
+        "recovery-fence-lacks-write-quiescence-boundary",
+        "raw-integrity-manifest-comparison-ambiguous"
+      ],
+      "specialty": "failure-recovery",
+      "question": "How does recovery establish a transaction-level no-new-writes boundary and compute a delta-aware integrity/export manifest that distinguishes protected immutable rows, legitimate append-only receipts and derived caches?",
+      "required_evidence": [
+        "all canonical writer entrypoints",
+        "fence generation and in-flight writer drain protocol",
+        "SQLite checkpoint and consistent snapshot semantics",
+        "raw and derived table allowlists",
+        "old-row equality plus append-delta oracle",
+        "busy checkpoint and crash restart traces"
+      ],
+      "specialist_required": true
+    },
+    {
+      "cluster_id": "cluster-required-host-oracle",
+      "parent_finding_ids": [
+        "required-host-recovery-oracle-omitted"
+      ],
+      "specialty": "testability-evidence",
+      "question": "Which frozen testcase set provides required black-box coverage for all seven S4 obligations without importing S5 routing or S6 UI assertions?",
+      "required_evidence": [
+        "TC-HM-02/09/10/11/12 obligation bindings",
+        "TC-HM-14 obligation bindings and public-only oracle",
+        "verification-spec bidirectional AC and obligation mapping"
+      ],
+      "specialist_required": false
+    }
+  ]
+}

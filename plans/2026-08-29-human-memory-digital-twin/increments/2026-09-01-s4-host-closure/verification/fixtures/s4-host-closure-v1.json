@@ -1,0 +1,94 @@
+{
+  "schema_version": "1.0",
+  "fixture_id": "s4-host-closure-v1",
+  "subject": "subject-s4-owner",
+  "wrong_principal": "subject-s4-wrong",
+  "data_format": {
+    "supported": "human-memory-v1",
+    "legacy": "human-memory-v0",
+    "future": "human-memory-v999"
+  },
+  "task_scopes": {
+    "a": {
+      "fixture_key": "scope-a",
+      "title": "S4 closure alpha archive",
+      "goal": "Resume the exact alpha archive after a cold restart",
+      "event_count": 100000,
+      "canary": "S4_ALPHA_ONLY_9f2f7f0a",
+      "checkpoint": {
+        "repo": "/fixture/work/alpha",
+        "branch": "fixture/s4-alpha",
+        "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "dirty_manifest": ["notes/alpha.md"],
+        "files": ["notes/alpha.md", "tests/alpha.spec"],
+        "tests": ["alpha-value-smoke:pending"],
+        "artifacts": ["artifact-ref-alpha"],
+        "next_action": "re-run alpha value smoke"
+      }
+    },
+    "b": {
+      "fixture_key": "scope-b",
+      "title": "S4 closure alpha archival",
+      "goal": "Remain a similar but distinct candidate",
+      "event_count": 17,
+      "canary": "S4_BETA_MUST_NOT_APPEAR_86aa9c1f",
+      "poison_canary": "S4_UNTRUSTED_CANDIDATE_POISON_56b886e2"
+    }
+  },
+  "search": {
+    "query": "closure alpha archive",
+    "max_candidates": 8,
+    "oversize_query_bytes": 65536
+  },
+  "live_probe": {
+    "repo": "/fixture/work/alpha",
+    "branch": "fixture/s4-alpha-drifted",
+    "head": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "dirty_manifest": ["notes/alpha.md", "unexpected.tmp"]
+  },
+  "limits": {
+    "readme_bytes": 16384,
+    "status_bytes": 12288,
+    "resume_package_bytes": 24576,
+    "page_bytes": 32768,
+    "evidence_events_per_page": 500
+  },
+  "queue": {
+    "turns": [
+      {"delivery_key": "s4-q1", "text": "first durable turn"},
+      {"delivery_key": "s4-q2", "text": "second durable turn"},
+      {"delivery_key": "s4-q3", "text": "third durable turn"}
+    ],
+    "duplicate_delivery_key": "s4-q2",
+    "controls": ["pause", "stop", "cancel"]
+  },
+  "stable_errors": {
+    "primary_immutable": "human_memory_primary_authority_immutable",
+    "wrong_principal": "human_memory_permission_denied",
+    "legacy_epoch": "human_memory_legacy_epoch_unsupported",
+    "future_epoch": "human_memory_future_epoch_unsupported",
+    "second_foreground_run": "human_memory_foreground_run_already_active",
+    "ingress_closed": "human_memory_ingress_closed",
+    "fts_unavailable": "human_memory_search_unavailable"
+  },
+  "critical_affected_api": [
+    {"case_id": "api-primary-open", "operation": "primary.open", "request": {"subject": "$subject"}, "expect_ok": true, "requires_ref_or_receipt": true},
+    {"case_id": "api-primary-append", "operation": "primary.append", "request": {"subject": "$subject", "event": {"kind": "message", "text": "fixture-primary-event"}}, "expect_ok": true, "requires_ref_or_receipt": true},
+    {"case_id": "api-scope-create", "operation": "task_scope.create", "request": {"subject": "$subject", "scope": "$scope_a"}, "expect_ok": true, "requires_ref_or_receipt": true},
+    {"case_id": "api-scope-search", "operation": "task_scope.search", "request": {"subject": "$subject", "query": "$search_query"}, "expect_ok": true, "requires_ref_or_receipt": false},
+    {"case_id": "api-search-fts-unavailable", "operation": "task_scope.search", "request": {"subject": "$subject", "query": "$search_query", "public_fault": "fts-unavailable"}, "expect_ok": false, "expected_code": "human_memory_search_unavailable"},
+    {"case_id": "api-scope-open", "operation": "task_scope.open_exact", "request": {"subject": "$subject", "scope_ref": "$scope_a_ref"}, "expect_ok": true, "requires_ref_or_receipt": true},
+    {"case_id": "api-scope-mutate", "operation": "task_scope.mutate", "request": {"subject": "$subject", "scope_ref": "$scope_a_ref", "mutation": {"kind": "status", "value": "active"}}, "expect_ok": true, "requires_ref_or_receipt": true},
+    {"case_id": "api-binding-append", "operation": "binding.append", "request": {"subject": "$subject", "scope_ref": "$scope_a_ref", "root": "/fixture/work/alpha"}, "expect_ok": true, "requires_ref_or_receipt": true},
+    {"case_id": "api-queue-enqueue", "operation": "queue.enqueue", "request": {"subject": "$subject", "scope_ref": "$scope_a_ref", "delivery_key": "api-smoke-q"}, "expect_ok": true, "requires_ref_or_receipt": true},
+    {"case_id": "api-queue-control", "operation": "queue.control", "request": {"subject": "$subject", "control": "pause"}, "expect_ok": true, "requires_ref_or_receipt": true},
+    {"case_id": "api-audit-refs", "operation": "audit.refs", "request": {"subject": "$subject", "scope_ref": "$scope_a_ref"}, "expect_ok": true, "requires_ref_or_receipt": true},
+    {"case_id": "api-recovery-manifest", "operation": "recovery.manifest", "request": {"subject": "$subject"}, "expect_ok": true, "requires_ref_or_receipt": true},
+    {"case_id": "api-recovery-export", "operation": "recovery.emergency_export", "request": {"subject": "$subject"}, "expect_ok": true, "requires_ref_or_receipt": true},
+    {"case_id": "api-wrong-principal-open", "operation": "task_scope.open_exact", "request": {"subject": "$wrong_principal", "scope_ref": "$scope_a_ref"}, "expect_ok": false, "expected_code": "human_memory_permission_denied"},
+    {"case_id": "api-old-session-create-fence", "operation": "legacy_session.create", "request": {"target": "$primary_ref"}, "expect_ok": false, "expected_code": "human_memory_primary_authority_immutable"},
+    {"case_id": "api-old-session-switch-fence", "operation": "legacy_session.switch", "request": {"target": "$primary_ref"}, "expect_ok": false, "expected_code": "human_memory_primary_authority_immutable"},
+    {"case_id": "api-old-session-rename-fence", "operation": "legacy_session.rename", "request": {"target": "$primary_ref", "name": "forbidden"}, "expect_ok": false, "expected_code": "human_memory_primary_authority_immutable"},
+    {"case_id": "api-old-session-delete-fence", "operation": "legacy_session.delete", "request": {"target": "$primary_ref"}, "expect_ok": false, "expected_code": "human_memory_primary_authority_immutable"}
+  ]
+}

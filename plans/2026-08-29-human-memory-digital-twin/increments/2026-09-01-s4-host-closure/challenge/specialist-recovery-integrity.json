@@ -1,0 +1,51 @@
+{
+  "cluster_id": "cluster-recovery-integrity",
+  "parent_finding_ids": [
+    "recovery-fence-lacks-write-quiescence-boundary",
+    "raw-integrity-manifest-comparison-ambiguous"
+  ],
+  "specialty": "failure-recovery",
+  "findings": [
+    {
+      "id": "recovery-fence-lacks-write-quiescence-boundary",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-1",
+        "HM-AC-7",
+        "HM-AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-DATA-LOSS",
+        "FAIL-PROTOCOL-REPLAY"
+      ],
+      "evidence": "The current writers do not share an admission fence: human_memory_program.py lines 508-575 and 601-699, task_scope/store.py lines 90-350, and workspace_bindings.py lines 180-839 independently open SQLite connections and use BEGIN IMMEDIATE/commit. append_evidence even initializes the subject in a separate transaction before its evidence transaction. Closing only an HTTP/WS ingress cannot stop direct store, execution-ingress, provisioning, binding, queue or recovery writers. The required evidence path backend/deskpet/memory/evidence_ingress.py is absent, so the supplied writer inventory itself is not exhaustive. migrator.py lines 255-319 provides a legacy backup helper but it performs wal_checkpoint(TRUNCATE), copies the whole DB and prunes older backups; it is not the required recovery fence. main.py lines 12679-12787 exposes legacy list/delete/clear/export only and supplies neither write quiescence nor a sealed fresh-program export.",
+      "status": "open",
+      "root_cause": "Task 5 must freeze a DB-level linearization protocol, not only an API order. Add a durable fence singleton with generation and states OPEN→CLOSING→QUIESCED→SEALED→OPEN or FAILED_CLOSED. The coordinator starts BEGIN IMMEDIATE, CASes OPEN to CLOSING with a new generation/cutoff, then commits; acquiring the SQLite writer lock makes this commit occur after every writer transaction that started earlier. Every canonical writer must, after its own BEGIN IMMEDIATE and before its first mutation, read the same fence generation/state and reject unless OPEN; checking before BEGIN is racy. Add defense-in-depth triggers on the exact canonical/Run/FIFO table allowlist so an unregistered writer also receives a stable human_memory_ingress_fenced error. The writer registry must explicitly cover primary init/evidence, TaskScope host/execution/mutation/checkpoint, provisioning, binding, foreground queue/control/terminal and any later canonical writer. After CLOSING, only a constructor-bound recovery coordinator may append allowlisted drain/park/checkpoint/manifest/export audit receipts or mutate declared derived coordination tables. It drains or parks every outbox at or below the cutoff, revokes/awaits worker leases, records acknowledgements, and CASes QUIESCED. Under the same process recovery mutex, run PRAGMA wal_checkpoint(FULL) in autocommit mode and require a non-null result with busy=0 and log_frames=checkpointed_frames; busy readers/writers, a gap, or an unknown result leaves FAILED_CLOSED and produces no success manifest. Because checkpointing cannot be protected by an open write transaction, the durable fence plus complete writer checks and quiesced-worker acknowledgements must remain active across checkpoint and the subsequent BEGIN IMMEDIATE manifest snapshot. Reopen is legal only after the sealed manifest and requested export receipts commit; crash recovery resumes from the durable fence state/generation and never guesses that ingress is open."
+    },
+    {
+      "id": "raw-integrity-manifest-comparison-ambiguous",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-1",
+        "HM-AC-7",
+        "HM-AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-DATA-LOSS",
+        "FAIL-PROTOCOL-REPLAY"
+      ],
+      "evidence": "The plan says to compare row-count/content-hash before and after recovery while also permitting earlier in-flight writes to finish and requiring new drain/park/checkpoint/manifest/export receipts. A single whole-database count/hash therefore either falsely fails on legitimate append-only audit rows or falsely passes if it ignores which preexisting row changed. Existing stores contain immutable authority rows plus mutable heads/watermarks, and projection/search caches are explicitly disposable, so they cannot share one equality oracle. migrator.backup_db hashes SQLite file bytes after TRUNCATE and main.py memory_export includes only legacy sessions/turns plus a nondeterministic exported_at timestamp; neither defines a logical canonical-row manifest or the emergency-export privacy allowlist.",
+      "status": "open",
+      "root_cause": "Freeze an exact v42 table taxonomy in schema/plan, not a name-prefix heuristic: A=protected immutable authority rows (primary/init/sanitization/evidence; TaskScope events, steps, evidence links, mutation decisions/attempts, canonical revisions and checkpoints; provisioning/binding immutable rows; Run/FIFO/control/terminal facts); B=authority coordination rows allowed to change only by CAS (heads, watermarks, current binding head, queue/run lease heads); C=immutable derived/audit rows allowed during recovery (projection/page/search receipts, drain/park, WAL checkpoint, manifest and export receipts); D=disposable derived state (projection cache, FTS/index bodies, worker cursors or rebuildable leases explicitly declared disposable). The fence commit is the cutoff: all transactions that began before it have serialized and are included in baseline M0; no application canonical A row may be appended after it. M0 stores, per exact allowlisted table, schema/column-type hash, primary-key-sorted row count and a root over typed canonical row leaves. Post-recovery verification must prove every M0 primary key still exists with the identical leaf hash; it must not merely compare aggregate hashes. B rows use explicit referential/CAS invariants and must point to existing immutable rows. C may only append rows whose source fence generation/cutoff and parent receipt are valid; report their exact delta count/root separately. D is excluded from raw equality and is instead deleted/rebuilt with byte/hash or semantic index oracles. Unknown tables or columns in any protected namespace fail manifest creation closed. Emergency export must be generated from one SEALED manifest snapshot using an explicit allowlist of A, the current necessary B snapshot, and required C lineage; exclude D, FTS/cache bodies, legacy Session tables, authentication/configuration secrets and private provider payloads. Serialize table/column identities and typed values deterministically, sort by encoded primary key, chunk content-addressably, include format epoch, migration/checksum set, DB instance, fence generation/cutoff, per-table counts/roots and overall root. The export artifact binds the sealed manifest hash; its immutable receipt is appended afterward and binds artifact SHA-256/size without including itself in the artifact, avoiding self-reference. Do not reuse backup_db or the legacy memory_export endpoint."
+    }
+  ],
+  "cross_cluster_refs": [],
+  "conclusion": {
+    "status": "refined",
+    "summary": "Both parent findings are confirmed. A correct fence requires a durable generation, BEGIN IMMEDIATE linearization, in-transaction checks by every canonical writer, quiesced worker acknowledgements and strict FULL-checkpoint result validation. Integrity must compare the exact cutoff set of preexisting immutable rows while separately accounting for allowlisted recovery appends and mutable/derived state. Emergency export needs a sealed logical manifest and explicit privacy/table allowlist; existing backup/reset/export paths are unsuitable."
+  }
+}

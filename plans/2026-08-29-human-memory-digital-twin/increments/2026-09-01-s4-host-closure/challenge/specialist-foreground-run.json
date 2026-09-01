@@ -1,0 +1,201 @@
+{
+  "cluster_id": "cluster-foreground-run-state-machine",
+  "parent_finding_ids": [
+    "foreground-control-state-machine-not-closed"
+  ],
+  "specialty": "data-state",
+  "findings": [
+    {
+      "id": "foreground-control-state-machine-not-closed",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "HM-AC-3",
+        "HM-AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-FOREGROUND-RUN-CONCURRENCY",
+        "FAIL-PROTOCOL-REPLAY",
+        "FAIL-DATA-LOSS"
+      ],
+      "evidence": "S4 plan Task 4 only states a subject-unique active constraint, enqueue/claim, immediate controls and restart recovery, but does not freeze queued-turn states, Run states, legal transitions, control precedence, signal-delivery recovery, lease generation or the mapping to the existing SDK Run owner. TC-HM-11 S4-1..S4-4 asserts FIFO, immediate controls, restart and background-worker rejection but has no exact transition/result oracle. TC-HM-14 step 5 requires drain/park/replay but likewise does not define how a claimed or control-requested Run is recovered. Current ARCHITECTURE/ARCHITECTURE.md lines 358-362 and 425-480 states that the SDK Runtime owns execution identity/lifecycle and exposes start/signal/cancel; without a frozen one-to-one Host scheduling-to-SDK execution binding, implementing Task 4 can accidentally create a second Run owner.",
+      "status": "open",
+      "root_cause": "The plan specifies desired outcomes but not a durable reducer. It must define Host as the sole foreground admission/FIFO/current-Run-snapshot authority while retaining SDK Runtime as the sole Agent execution engine: one Host foreground_run row binds exactly once to one public SDK root-Run admission receipt/run_id, and only the foreground scheduler may invoke SDK start/signal/cancel. All state changes use append-only events plus CAS heads; no process-local Queue, boolean paused flag or caller-supplied worker_kind may grant authority."
+    }
+  ],
+  "cross_cluster_refs": [],
+  "required_state_machine": {
+    "authority_boundary": {
+      "host": "Owns durable primary turn admission, per-subject foreground slot, FIFO order, control intent, lease generation, frozen TaskScope/binding/context lineage and Auto-binding current-Run snapshot.",
+      "sdk_runtime": "Owns actual root Agent execution and emits authenticated admission, signal acknowledgement and terminal evidence. Host never implements a second ReAct loop or fabricates SDK terminal state.",
+      "binding": "A foreground claim creates one stable host_run_id. A successful public SDK start receipt atomically/idempotently binds one sdk_run_id to it; divergent sdk_run_id replay is rejected. Background SDK clients cannot create this binding."
+    },
+    "queued_turn_transitions": [
+      {
+        "from": "ABSENT",
+        "to": "QUEUED",
+        "trigger": "enqueue_turn",
+        "guards": "authenticated subject; exact durable primary evidence ref/hash; ingress open; idempotency key unused or exact replay",
+        "atomic_effect": "append queue receipt with subject, evidence ref/hash, monotonically allocated FIFO sequence and payload hash. Exact replay returns the original receipt; same key with changed payload is a conflict."
+      },
+      {
+        "from": "QUEUED",
+        "to": "CLAIMED",
+        "trigger": "claim_next",
+        "guards": "row is the lowest unsettled subject sequence; no nonterminal foreground Run for subject; constructor-bound foreground claim authority; no recovery fence",
+        "atomic_effect": "create stable host_run_id in CLAIMED, freeze TaskScope/binding/context lineage, bind queued_turn_id, acquire lease generation 1 and occupy the subject foreground slot in one transaction."
+      },
+      {
+        "from": "CLAIMED",
+        "to": "SETTLED",
+        "trigger": "matching immutable Run terminal receipt",
+        "guards": "same host_run_id/queued_turn_id and accepted terminal evidence",
+        "atomic_effect": "append queue settlement and terminal receipt, close the foreground slot and make the next FIFO row eligible in one transaction. It never returns to QUEUED."
+      }
+    ],
+    "run_transitions": [
+      {
+        "from": "ABSENT",
+        "to": "CLAIMED",
+        "trigger": "successful queue claim",
+        "guards": "subject unique nonterminal index and queue-head CAS",
+        "effect": "stable Run identity, frozen lineage and lease generation 1 are committed before SDK start."
+      },
+      {
+        "from": "CLAIMED",
+        "to": "RUNNING",
+        "trigger": "public SDK admission/start receipt",
+        "guards": "exact host_run_id, queued_turn_id, sdk_run_id, request hash and current lease generation; one-time binding",
+        "effect": "append admission receipt. Lost ACK replay returns the same binding."
+      },
+      {
+        "from": "CLAIMED",
+        "to": "FAILED",
+        "trigger": "stable SDK admission rejection",
+        "guards": "authenticated final rejection, not timeout/unknown",
+        "effect": "append terminal failure and settle the queued turn. Timeout or unknown remains CLAIMED for reconciliation and must not create another Run."
+      },
+      {
+        "from": "RUNNING",
+        "to": "PAUSE_REQUESTED",
+        "trigger": "pause control commit",
+        "guards": "current run/generation; no stronger control or terminal",
+        "effect": "append control receipt and signal-outbox row atomically."
+      },
+      {
+        "from": "PAUSE_REQUESTED",
+        "to": "PAUSED",
+        "trigger": "exact SDK pause acknowledgement",
+        "guards": "ack binds control receipt, sdk_run_id and generation",
+        "effect": "append ack; retain subject foreground slot; stop new provider/effect admission."
+      },
+      {
+        "from": "PAUSE_REQUESTED",
+        "to": "RUNNING",
+        "trigger": "stable SDK pause rejection",
+        "guards": "rejection binds the exact control receipt",
+        "effect": "append failed-control outcome; do not claim another Run."
+      },
+      {
+        "from": "PAUSED",
+        "to": "RUNNING",
+        "trigger": "resume control acknowledgement",
+        "guards": "no STOP/CANCEL intent; exact paused Run; fresh lease generation",
+        "effect": "append resume receipt and reacquire execution lease with generation+1 while retaining host_run_id/sdk_run_id."
+      },
+      {
+        "from": "RUNNING|PAUSE_REQUESTED|PAUSED",
+        "to": "STOP_REQUESTED",
+        "trigger": "stop control commit",
+        "guards": "no CANCEL intent or terminal",
+        "effect": "append stronger control intent and signal-outbox row atomically; prohibit new normal provider/effect admission."
+      },
+      {
+        "from": "RUNNING|PAUSE_REQUESTED|PAUSED|STOP_REQUESTED",
+        "to": "CANCEL_REQUESTED",
+        "trigger": "cancel control commit",
+        "guards": "not terminal",
+        "effect": "append highest-priority intent and signal-outbox row atomically; prohibit new provider/effect admission."
+      },
+      {
+        "from": "RUNNING|PAUSE_REQUESTED|PAUSED",
+        "to": "COMPLETED|FAILED",
+        "trigger": "authenticated SDK terminal evidence",
+        "guards": "terminal gate/watermark complete; matching sdk_run_id and lineage",
+        "effect": "append immutable terminal and settle queue/foreground slot atomically."
+      },
+      {
+        "from": "STOP_REQUESTED",
+        "to": "STOPPED",
+        "trigger": "authenticated SDK stop terminal evidence",
+        "guards": "terminal evidence binds the stop signal/ack or its causal sequence",
+        "effect": "append immutable STOPPED terminal and settle queue."
+      },
+      {
+        "from": "CANCEL_REQUESTED",
+        "to": "CANCELLED",
+        "trigger": "authenticated SDK cancel terminal evidence",
+        "guards": "terminal evidence binds the cancel signal/ack or its causal sequence",
+        "effect": "append immutable CANCELLED terminal and settle queue."
+      },
+      {
+        "from": "STOP_REQUESTED|CANCEL_REQUESTED",
+        "to": "COMPLETED|FAILED",
+        "trigger": "racing authenticated SDK terminal evidence",
+        "guards": "evidence proves the execution terminal occurred before the stronger control took effect; otherwise contradictory terminal evidence fails closed and the slot remains occupied for recovery",
+        "effect": "record control outcome as terminal_raced and preserve the real terminal fact; never rewrite it as stopped/cancelled."
+      },
+      {
+        "from": "ANY_TERMINAL",
+        "to": "ANY_TERMINAL",
+        "trigger": "exact replay only",
+        "guards": "same terminal idempotency key and payload hash",
+        "effect": "return original receipt; divergent replay and every transition back to nonterminal are rejected."
+      }
+    ],
+    "control_precedence": {
+      "order": [
+        "CANCEL",
+        "STOP",
+        "PAUSE"
+      ],
+      "rules": [
+        "Controls are append-only intents, never ordinary FIFO turns.",
+        "A stronger control may supersede a weaker nonterminal intent; a weaker control after a stronger one returns a stable already_superseded receipt and cannot downgrade state.",
+        "Exact control replay returns the original receipt; same idempotency key with different run, generation, kind or payload is rejected.",
+        "The control transaction atomically writes control intent, reduced desired-control state and a durable signal outbox. Crash before physical SDK signal is recovered by redelivering the same signal identity.",
+        "A terminal receipt committed first makes later controls stable already_terminal no-ops. If a control commits first, terminal acceptance must use SDK causal evidence as specified in the transition table; Host must not invent a cancellation terminal.",
+        "Resume is legal only from PAUSED with no STOP/CANCEL intent. Pause never frees the foreground slot."
+      ]
+    },
+    "lease_and_restart_rules": [
+      "Lease identity is (host_run_id, owner_id, generation, expires_at). Generation starts at 1 and increments on ownership transfer, expired-lease reclaim or paused-run resume; heartbeat only extends expires_at and never changes generation.",
+      "Every start, signal acknowledgement, Run-state CAS, effect admission, terminal write and Auto-binding snapshot read must present the current generation. A stale owner may observe data but cannot mutate state or execute a new effect.",
+      "Lease expiry is not terminal and never requeues the turn or frees the per-subject slot. Recovery reclaims the same host_run_id/queued_turn_id with generation+1 after checking durable SDK state.",
+      "Crash before claim commit leaves the turn QUEUED. Crash after claim commit but before SDK admission leaves it CLAIMED and recovery reconciles/replays the same public start identity. Crash after SDK admission reclaims the same Run; it never starts a replacement Run.",
+      "A PAUSED Run remains PAUSED across restart and acquires no execution lease until explicit resume. STOP_REQUESTED/CANCEL_REQUESTED recovery redelivers or reconciles the exact control before any normal execution or next-turn claim.",
+      "Terminal receipt, queued-turn settlement, lease closure and foreground-slot release are one transaction. The next sequence may be claimed only after that transaction commits. Lost terminal ACK returns the existing receipt."
+    ],
+    "background_worker_exclusion": [
+      "Use separate worker/outbox lease tables or namespaces; projection, search and extraction workers never call the foreground claim API.",
+      "Foreground claim requires a constructor-bound Host authority object/receipt. Caller fields such as kind=foreground, metadata or model output cannot mint it.",
+      "Database constraints enforce one nonterminal foreground row per subject and require run_kind=foreground for every foreground lease/snapshot row. Worker identities are rejected before claim CAS.",
+      "Only the bound foreground scheduler can call the SDK root start/signal/cancel adapter. Background clients use separate SDK entrypoints and cannot bind an sdk_run_id to a queued turn.",
+      "Auto-binding current-Run reads only the subject’s nonterminal foreground row, exact current generation and frozen lineage; worker leases/jobs are excluded by schema and public DTO.",
+      "Worker completion may append objective evidence/outbox results but cannot mutate TaskScope semantics, settle a queued turn, release the foreground slot or authorize an Agent effect."
+    ]
+  },
+  "required_oracles": [
+    "Freeze the exact transition matrix and stable error/outcome codes in TC-HM-11 rather than asserting only final behavior.",
+    "Exercise every claim/admission/control/ack/terminal transaction boundary with crash-before, crash-after and lost-ACK replay.",
+    "Race pause/stop/cancel and terminal commits under barriers; verify CANCEL > STOP > PAUSE, terminal causal handling and no state downgrade.",
+    "Expire a lease while the old owner is still alive; prove generation fencing rejects its state/effect/terminal writes and recovery reuses the same Run.",
+    "Attempt foreground claim and Auto-binding snapshot creation from each background worker identity; require stable rejection and zero foreground-row mutation.",
+    "Verify public SDK admission/run identity is exactly one-to-one with the Host foreground row and that no Host code path executes a second Agent loop."
+  ],
+  "conclusion": {
+    "status": "refined",
+    "summary": "The parent finding is confirmed. The current plan and testcases state the desired FIFO/control outcomes but do not define a deterministic durable reducer or reconcile Host scheduling authority with the existing SDK execution owner. The state machine above is the minimum plan-level closure needed to make pause/stop/cancel races, lost ACK, lease recovery and background-worker exclusion executable and auditable without expanding S4 into S5 Context or multi-agent scope."
+  }
+}
