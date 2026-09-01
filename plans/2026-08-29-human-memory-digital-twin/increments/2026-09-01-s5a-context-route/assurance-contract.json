@@ -1,0 +1,41 @@
+{
+  "profile": "standard",
+  "acceptance_ids": ["S5A-AC-1", "S5A-AC-2", "S5A-AC-3", "S5A-AC-4", "S5A-AC-5", "S5A-AC-6", "S5A-AC-7"],
+  "protected_assets": [
+    {"id": "ASSET-CONTEXT-SNAPSHOT-AUDIT", "description": "每 Provider turn 的 immutable ContextSnapshot、revision 单调性与三方 payload hash 一致性"},
+    {"id": "ASSET-ROUTE-DECISION-LEDGER", "description": "route / no-recall / recall decision 的 durable ledger 与 receipt 血缘"},
+    {"id": "ASSET-RAW-EVIDENCE", "description": "原始证据 append-only（承接 program HM-AC-1，本增量不得因新链路引入删除/覆盖）"},
+    {"id": "ASSET-RECALL-ELIGIBILITY", "description": "recipient/purpose/suppression 资格门在候选、排序与 Context 进入前的双重生效"},
+    {"id": "ASSET-FOREGROUND-RUN-ORDER", "description": "S4 单 foreground Run/FIFO/generation fence 不被新 Context 链削弱"},
+    {"id": "ASSET-CREDENTIALS", "description": "provider APIKEY 只存进程内与 OS keychain，不进 DB/日志/证据/仓库文件"}
+  ],
+  "trusted_assumptions": [
+    {"id": "TRUST-LOCAL-HOST", "description": "本地开发者账户、OS/kernel 与系统绝对路径程序可信"},
+    {"id": "TRUST-SDK-WHEELS", "description": "exact 版本+SHA 锁定的 Harness 0.7.1 与 Memory 0.6.0 candidate wheel 可信"},
+    {"id": "TRUST-AUTH-CONTEXT", "description": "Host 已认证 subject identity 可信；LLM 输出与自然语言不可信"},
+    {"id": "TRUST-FRESH-DATA-DIR", "description": "S5a 验收使用全新 userdata，不迁移旧数据"}
+  ],
+  "in_scope_failures": [
+    {"id": "FAIL-ROUTE-AUTHORITY-DRIFT", "description": "模型载荷或旧链路让 route/scope/binding/recall 越过 Host 裁决，或 search 命中直接授权"},
+    {"id": "FAIL-SNAPSHOT-HASH-DRIFT", "description": "Host expected hash、Harness request fingerprint、adapter captured payload hash 三者不相等，或同 snapshot ID 换 payload"},
+    {"id": "FAIL-CAUSAL-GROUP-BREAK", "description": "裁剪破坏 tool call/result 因果对，或未终结 Run 被错误截断"},
+    {"id": "FAIL-BUDGET-UNDERESTIMATE", "description": "token 估算低估导致真实 provider 输入超 effective budget"},
+    {"id": "FAIL-PRIVACY-RECALL", "description": "recall 路径绕过 recipient/purpose/suppression 资格门进入 Context"},
+    {"id": "FAIL-LLM-PAYLOAD", "description": "context_route 载荷五类变异造成半状态、越权或非稳定错误"},
+    {"id": "FAIL-COMPOSITION-FALLBACK", "description": "缺 authority/store 时以 Noop/fake/metadata 静默降级启动"},
+    {"id": "FAIL-PROTOCOL-REPLAY", "description": "kill/replay 后重复 provider 调用、重复 route 决策或 snapshot 不可重放"}
+  ],
+  "in_scope_adversaries": [
+    {"id": "ADV-LLM-PAYLOAD", "description": "把主模型 route/recall 载荷视为可能乱序、重复、违约、超长或拒调的输入"},
+    {"id": "ADV-DUPLICATE-DELIVERY", "description": "进程重启、lost ACK 与重复请求"},
+    {"id": "ADV-AMBIGUOUS-NL", "description": "把用户自然语言视为可能含糊/误导的输入（歧义 resume、路径诱导）"}
+  ],
+  "out_of_scope_conditions": [
+    {"id": "OOS-COMPROMISED-HOST", "description": "宿主 OS/开发者账户已被攻陷"},
+    {"id": "OOS-S5B", "description": "effect gate、semantic closure、Memory analysis/Prospective scheduler、pre-admission audit（S5b）"},
+    {"id": "OOS-QUALITY-GATE", "description": "HM-AC-8 路由质量阈值门——外部人工语料 review 前置，本增量保持 NOT_RUN/BLOCKED"},
+    {"id": "OOS-S6-UI", "description": "完整 UI、图谱与真人桌面 program 级 E2E"},
+    {"id": "OOS-RELEASE", "description": "三仓 tag/push/publish 与分支合并"}
+  ],
+  "maximum_acceptable_impact": "路由错误只能产生保守回答或 clarification，不得越权召回或执行任何项目 effect；provider 不可用/超时 fail-closed 不留半状态；派生 Context 可拒绝或降级，原始证据与 S4 执行秩序不得受损。"
+}

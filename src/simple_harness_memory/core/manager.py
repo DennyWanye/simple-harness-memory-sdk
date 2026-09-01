@@ -272,6 +272,33 @@ class MemoryManager:
         operation = getattr(self._backend, "execute_typed_recall")
         return await operation(principal=principal, context=context, plan=plan, now=now)
 
+    async def read_occurrence_inbox(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        after: tuple[float, str] | None = None,
+        limit: int = 100,
+    ):
+        """Read-only prospective occurrence inbox (0.6 frozen consumer contract)."""
+
+        operation = getattr(self._backend, "read_occurrence_inbox")
+        return await operation(principal=principal, after=after, limit=limit)
+
+    async def read_outbox(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        states: tuple[str, ...] = ("pending",),
+        after: tuple[float, str] | None = None,
+        limit: int = 100,
+    ):
+        """Read-only durable outbox projection; consumers never claim rows."""
+
+        operation = getattr(self._backend, "read_outbox")
+        return await operation(
+            principal=principal, states=states, after=after, limit=limit
+        )
+
     async def page_typed_recall_result(
         self,
         *,
@@ -388,9 +415,19 @@ class MemoryManager:
         audit_access_authority: AuditAccessAuthorityPort | None = None,
         short_horizon_embedder: Any | None = None,
         world: WorldModelPort | None = None,
+        allow_development_embedder: bool = False,
     ) -> MemoryManager:
         """Build the fresh-only schema-v7 backend behind the complete public facade."""
 
+        if (
+            not allow_development_embedder
+            and getattr(short_horizon_embedder, "kind", None) in {"hash", "mock"}
+        ):
+            # Production composition must never run on deterministic test
+            # embeddings; tests opt in explicitly.
+            raise MemoryProductionConfigurationError(
+                "memory_development_embedder_forbidden"
+            )
         from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
 
         backend = SQLiteHumanMemoryBackend(

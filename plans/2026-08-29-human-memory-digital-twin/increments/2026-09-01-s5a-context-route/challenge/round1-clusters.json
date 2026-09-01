@@ -1,0 +1,126 @@
+{
+  "round": 1,
+  "source": "plan-primary-challenger (breadth, 2026-09-01)",
+  "findings_absorbed": {
+    "S5A-BR-F1": {
+      "severity": "P1",
+      "status": "resolved",
+      "resolution": "里程碑移至 Task 2 末；因果组/预算 assembler 后置为 Task 4（plan.md 任务清单重排）"
+    },
+    "S5A-BR-F2": {
+      "severity": "P1",
+      "status": "resolved",
+      "resolution": "Task 0 增 provider 配置检查点 + 连通性 smoke；DoD 增 BLOCKED 终态口径（acceptance DoD 条款）"
+    },
+    "S5A-BR-F3": {
+      "severity": "P1",
+      "status": "resolved-pending-specialist",
+      "resolution": "AC-4 重写：v45 occurrence presented-watermark 比对 + S5a 生产 inbox 恒空边界声明 + seed 负测试；v45 migration 增 watermark 表；specialist cluster 深挖 cursor authority"
+    },
+    "S5A-BR-F4": {
+      "severity": "P1",
+      "status": "resolved",
+      "resolution": "S5A-S5 场景增 twin-influence-zero 负测试（import/dependency/serialized-payload + snapshot 重放）"
+    },
+    "S5A-BR-F5": {
+      "severity": "P1",
+      "status": "resolved",
+      "resolution": "acceptance 非功能节增 slice cutover 义务；plan Task 6 增 cutover 子项（migration 前向、旧 runtime stable reject、回退演练、cutover receipt）"
+    },
+    "S5A-BR-F6": {
+      "severity": "P2-advisory",
+      "status": "resolved",
+      "resolution": "DisclosureContext 构造来源写入 acceptance（USER_SELF/TASK_EXECUTION，S4 enqueue_turn 样板）+ Task 0 核对项"
+    }
+  },
+  "clusters": [
+    {
+      "cluster_id": "S5A-CL-INBOX-RECONCILE",
+      "parent_finding_ids": [
+        "S5A-BR-F3"
+      ],
+      "specialist_required": true,
+      "question": "S5a 内 occurrence inbox 的清空/cursor authority 归属：Memory 0.6 只提供只读 inbox API，Host 只读比对 v45 presented-watermark 且不前移；则『inbox 为空（或全部已越过 watermark）才允许 no_recall』的谓词与只读契约如何同时成立？S5b 的 presented/settled 状态机如何无缝接管该 cursor 而不需要 v46 破坏性迁移或语义重释？",
+      "adjudication_draft": "Host 侧裁决草案：(1) reconcile 谓词 = `pending = {o in inbox | o.occurrence_id not in v45.presented_watermark}`；pending 非空 → 禁 no_recall，合资格 summary 进 snapshot；S5a 不写 watermark（生产 inbox 恒空，谓词恒真空成立，存在性由 seed 负测试证明）。(2) cursor authority 归 Host v45（Memory 仓无状态、只读），S5b settled 状态机 = 对同一 v45 表新增 presented_at/settled_at 列或伴随表，append-only 前移，无需重释 S5a 语义。(3) seed 负测试注入路径 = 直接写 Memory DB occurrence 行（绕过不存在的 producer），API 契约以此测试为 consumer contract。风险点待 specialist 核实：inbox 只读 API 的排序/幂等语义、occurrence_id 稳定性、v45 表设计是否足以让 S5b 无损接管。"
+    }
+  ],
+  "specialist_results": {
+    "S5A-CL-INBOX-RECONCILE": {
+      "status": "completed",
+      "conclusion": "refined",
+      "findings": [
+        {
+          "id": "S5A-BR-F3",
+          "severity": "P1",
+          "status": "resolved",
+          "resolution": "AC-4/Task 5 注入面改写为 apply_prospective_signal + 测试注入 signal authority resolver（raw seed 因 open 期 FK+审计链校验不可执行）"
+        },
+        {
+          "id": "S5A-DS-F1",
+          "severity": "P1",
+          "status": "resolved",
+          "resolution": "AC-4 谓词增 live/presentable ∧ 资格门项；不合资格 occurrence 不阻塞 no_recall；Task 3 inbox API 形状义务（lifecycle_state/eligibility 字段 + 稳定排序）写入 plan；Task 5 增 FORGOTTEN/suppressed 对照用例"
+        },
+        {
+          "id": "S5A-DS-F2",
+          "severity": "P2",
+          "status": "resolved",
+          "resolution": "watermark 正名为 per-occurrence presented set（occurrence_key membership）；v45 全列建表（presented_at/settled_at/settled_reason）S5a 零写入，S5b 纯数据接管零 v46 迁移"
+        }
+      ],
+      "cross_cluster_refs_handled": "cutover 测试需覆盖 presented 表存在但恒空形态（并入 Task 6 子项语义）；Task 3 consumer contract 覆盖 resolver fixture 路径与 API 形状（已写入 Task 3）"
+    }
+  },
+  "synthesis": "三 finding 全部采纳并回写 acceptance/plan（2026-09-01 第二轮修订）；无冲突裁决；无 required spike（specialist 结论全部基于 file:line 实据）。待 closure diff 复核。",
+  "closure_round_1": {
+    "review_mode": "diff",
+    "verified_closed": [
+      "S5A-BR-F1",
+      "S5A-BR-F2",
+      "S5A-BR-F3",
+      "S5A-BR-F4",
+      "S5A-BR-F5",
+      "S5A-BR-F6",
+      "S5A-DS-F1"
+    ],
+    "new_or_reopened": {
+      "S5A-CR-F1": {
+        "severity": "P1",
+        "status": "resolved",
+        "resolution": "里程碑口径收窄：五路只验 route 裁决+receipt 收敛（memory_standalone 标 BLOCKED-until-Task-5）；全五路 exact 终态挪 Task 6；Task 2–5 间 no_recall 中间态声明写入 plan 里程碑段"
+      },
+      "S5A-DS-F2": {
+        "severity": "P2",
+        "status": "resolved",
+        "resolution": "Task 1 术语改 per-occurrence membership；Task 6 与 acceptance cutover 增 presented 表存在且恒空断言"
+      },
+      "S5A-CR-F2": {
+        "severity": "P2",
+        "status": "resolved",
+        "resolution": "event_id 纳入冻结返回形状，排序键闭合于返回字段集"
+      },
+      "S5A-CR-F3": {
+        "severity": "P2",
+        "status": "resolved",
+        "resolution": "acceptance 非功能节增 program 102-103 显式收窄解释声明（随 acceptance 交用户批准）"
+      }
+    }
+  },
+  "closure_round_2": {
+    "review_mode": "diff",
+    "verified_closed": [
+      "S5A-CR-F1",
+      "S5A-DS-F2",
+      "S5A-CR-F2",
+      "S5A-CR-F3"
+    ],
+    "new": {
+      "S5A-CR-F4": {
+        "severity": "P2",
+        "status": "resolved",
+        "resolution": "plan.md 主要矛盾节旧编号残留『Task 3 末』改为『Task 2 末』（一行机械修正，主 agent 自验：grep 确认全文无其他旧位置引用）"
+      }
+    },
+    "convergence": "closure 后无 open in-scope P0/P1；primary coverage 完整、全部 P0/P1 已聚类、required specialist 完成、synthesis 覆盖 required cluster——CONVERGED（LEAN 路径，主 agent 对照清单核对，无机器 gate）"
+  }
+}

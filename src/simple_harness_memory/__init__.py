@@ -47,10 +47,21 @@ from simple_harness_memory.core.lifecycle_results import (
     ProcedureObservationApplyResult,
     ProspectiveSignalApplyResult,
 )
+from simple_harness_memory.core.jobs import (
+    DurableMemoryJobRunner,
+    MemoryJobWorkerConfig,
+    WorkerRunOutcome,
+)
 from simple_harness_memory.core.manager import (
     MemoryManager,
     build_human_memory_v6,
     build_human_memory_v7,
+)
+from simple_harness_memory.core.occurrence import (
+    OccurrenceInboxEntryV1,
+    OccurrenceInboxPageV1,
+    OutboxEntryV1,
+    OutboxPageV1,
 )
 from simple_harness_memory.core.models import (
     BoundedRecallResult,
@@ -115,6 +126,13 @@ __all__ = [
     "MemoryManager",
     "build_human_memory_v7",
     "build_human_memory_v6",
+    "DurableMemoryJobRunner",
+    "MemoryJobWorkerConfig",
+    "WorkerRunOutcome",
+    "OccurrenceInboxEntryV1",
+    "OccurrenceInboxPageV1",
+    "OutboxEntryV1",
+    "OutboxPageV1",
     "AuditAccessAuthorityPort",
     "AuditAccessAuthorityRefV1",
     "AuditAggregateMetricsV1",

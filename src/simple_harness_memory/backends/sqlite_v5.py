@@ -743,6 +743,165 @@ class SQLiteHumanMemoryBackend:
 
         return await self._visible_evidence_ids(subject, OrdinaryMemoryPurpose.PROJECTION)
 
+    async def read_occurrence_inbox(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        after: tuple[float, str] | None = None,
+        limit: int = 100,
+    ):
+        """Read-only prospective occurrence inbox (frozen 0.6 consumer contract).
+
+        Rows are ordered by ``(occurred_at, event_id)``; ``after`` resumes past
+        that anchor.  ``lifecycle_state`` reflects the target memory's CURRENT
+        head revision so callers can apply liveness gates without extra reads.
+        Never mutates any cursor: presentation/settlement authority is the
+        Host's.
+        """
+
+        import json as _json
+
+        from simple_harness_memory.core.identity import MemoryPrincipal
+        from simple_harness_memory.core.occurrence import (
+            OccurrenceInboxEntryV1,
+            OccurrenceInboxPageV1,
+        )
+
+        if type(principal) is not MemoryPrincipal:
+            raise TypeError("principal must use MemoryPrincipal")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise MemoryValidationError("occurrence_inbox_limit_invalid")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v7 backend is not initialized")
+        clauses = "e.principal_id=? AND h.deployment_id=? AND h.household_id=?"
+        params: list[object] = [
+            principal.actor_id,
+            principal.deployment_id,
+            principal.household_id,
+        ]
+        if after is not None:
+            occurred_at, event_id = after
+            clauses += " AND (e.occurred_at,e.event_id) > (?,?)"
+            params.extend((float(occurred_at), str(event_id)))
+        params.append(limit)
+        async with self._write_lock:
+            await self._authorize_short_horizon_principal_unlocked(principal)
+            async with self._db.execute(
+                "SELECT e.event_id,e.occurrence_key,e.memory_id,"
+                "e.prospective_revision,e.trigger_fingerprint,e.event_ref,"
+                "e.signal_kind,e.outcome,e.reason_code,e.occurred_at,e.event_hash,"
+                "r.lifecycle_state,r.effective_privacy_class,"
+                "r.information_attributes_json,r.content_hash,p.action_text "
+                "FROM prospective_trigger_events e "
+                "JOIN cognitive_memory_heads h ON h.memory_id=e.memory_id "
+                "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
+                "AND r.revision=h.current_revision "
+                "JOIN prospective_records p ON p.memory_id=e.memory_id "
+                "AND p.revision=e.prospective_revision "
+                f"WHERE {clauses} "
+                "ORDER BY e.occurred_at,e.event_id LIMIT ?",
+                tuple(params),
+            ) as cursor:
+                rows = tuple(await cursor.fetchall())
+        entries = tuple(
+            OccurrenceInboxEntryV1(
+                event_id=str(row["event_id"]),
+                occurrence_key=str(row["occurrence_key"]),
+                memory_id=str(row["memory_id"]),
+                prospective_revision=int(row["prospective_revision"]),
+                lifecycle_state=str(row["lifecycle_state"]),
+                outcome=str(row["outcome"]),
+                signal_kind=str(row["signal_kind"]),
+                reason_code=str(row["reason_code"]),
+                occurred_at=float(row["occurred_at"]),
+                event_hash=str(row["event_hash"]),
+                event_ref=str(row["event_ref"]),
+                trigger_fingerprint=str(row["trigger_fingerprint"]),
+                action_text=str(row["action_text"]),
+                effective_privacy_class=str(row["effective_privacy_class"]),
+                information_attributes=tuple(
+                    _json.loads(row["information_attributes_json"])
+                ),
+                content_hash=str(row["content_hash"]),
+            )
+            for row in rows
+        )
+        next_after = None
+        if len(entries) == limit:
+            tail = entries[-1]
+            next_after = (tail.occurred_at, tail.event_id)
+        return OccurrenceInboxPageV1(entries=entries, next_after=next_after)
+
+    async def read_outbox(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        states: tuple[str, ...] = ("pending",),
+        after: tuple[float, str] | None = None,
+        limit: int = 100,
+    ):
+        """Read-only durable outbox projection; never claims or settles rows."""
+
+        import json as _json
+
+        from simple_harness_memory.core.identity import MemoryPrincipal
+        from simple_harness_memory.core.occurrence import OutboxEntryV1, OutboxPageV1
+
+        if type(principal) is not MemoryPrincipal:
+            raise TypeError("principal must use MemoryPrincipal")
+        allowed = {"pending", "claimed", "applied", "dead_letter"}
+        wanted = tuple(str(item) for item in states)
+        if not wanted or not set(wanted) <= allowed:
+            raise MemoryValidationError("outbox_state_filter_invalid")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise MemoryValidationError("outbox_limit_invalid")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v7 backend is not initialized")
+        clauses = "principal_id=? AND state IN (%s)" % ",".join("?" * len(wanted))
+        params: list[object] = [principal.actor_id, *wanted]
+        if after is not None:
+            created_at, outbox_id = after
+            clauses += " AND (created_at,outbox_id) > (?,?)"
+            params.extend((float(created_at), str(outbox_id)))
+        params.append(limit)
+        async with self._write_lock:
+            await self._authorize_short_horizon_principal_unlocked(principal)
+            async with self._db.execute(
+                "SELECT outbox_id,topic,idempotency_key,state,payload,payload_hash,"
+                "attempt_count,next_attempt_at,created_at,updated_at FROM outbox "
+                f"WHERE {clauses} ORDER BY created_at,outbox_id LIMIT ?",
+                tuple(params),
+            ) as cursor:
+                rows = tuple(await cursor.fetchall())
+        entries = []
+        for row in rows:
+            payload = None
+            try:
+                decoded = _json.loads(row["payload"])
+                if isinstance(decoded, dict):
+                    payload = decoded
+            except (TypeError, ValueError):
+                payload = None
+            entries.append(
+                OutboxEntryV1(
+                    outbox_id=str(row["outbox_id"]),
+                    topic=str(row["topic"]),
+                    idempotency_key=str(row["idempotency_key"]),
+                    state=str(row["state"]),
+                    payload_hash=str(row["payload_hash"]),
+                    attempt_count=int(row["attempt_count"]),
+                    next_attempt_at=float(row["next_attempt_at"]),
+                    created_at=float(row["created_at"]),
+                    updated_at=float(row["updated_at"]),
+                    payload=payload,
+                )
+            )
+        next_after = None
+        if len(entries) == limit:
+            tail = entries[-1]
+            next_after = (tail.created_at, tail.outbox_id)
+        return OutboxPageV1(entries=tuple(entries), next_after=next_after)
+
     async def get_twin_graph_view(self, *, principal: MemoryPrincipal) -> TwinGraphView:
         """Return a suppression-first, display-only graph over canonical memory rows."""
 

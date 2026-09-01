@@ -53,7 +53,7 @@ dev = [
 ]
 
 [tool.uv.sources]
-simple-harness-sdk = { path = "../simple-harness-sdk-memory-program" }
+simple-harness-sdk = { path = "../simple-harness-sdk" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/simple_harness_memory"]
