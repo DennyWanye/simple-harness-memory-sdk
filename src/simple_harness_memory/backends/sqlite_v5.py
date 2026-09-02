@@ -11656,7 +11656,12 @@ class SQLiteHumanMemoryBackend:
                     != application.receipt.receipt_hash
                 ):
                     raise MemoryWriterConflict("analysis_audit_not_durable")
-                stored_decisions = await self._read_decisions(application.invocation_id)
+                stored_decisions = await self._read_decisions(
+                    application.invocation_id,
+                    operation_order=tuple(
+                        item.operation_id for item in canonical_application.decisions
+                    ),
+                )
                 if stored_decisions != canonical_application.decisions:
                     raise MemoryWriterConflict("analysis_audit_decisions_differ")
                 async with self._db.execute(
@@ -12043,7 +12048,10 @@ class SQLiteHumanMemoryBackend:
                         raise MemoryValidationError("analysis_evidence_lineage_differs")
                 existing = await self._read_invocation(invocation_id)
                 if existing is not None:
-                    stored_decisions = await self._read_decisions(invocation_id)
+                    stored_decisions = await self._read_decisions(
+                        invocation_id,
+                        operation_order=tuple(item.operation_id for item in decisions),
+                    )
                     if (
                         existing.invocation_hash != expected.invocation_hash
                         or stored_decisions != decisions
@@ -13564,7 +13572,20 @@ class SQLiteHumanMemoryBackend:
             raise MemoryCorruptionError("stored analysis invocation hash differs")
         return record
 
-    async def _read_decisions(self, invocation_id: str) -> tuple[DecisionLedgerEntry, ...]:
+    async def _read_decisions(
+        self,
+        invocation_id: str,
+        *,
+        operation_order: tuple[str, ...] | None = None,
+    ) -> tuple[DecisionLedgerEntry, ...]:
+        """Read one invocation's decisions.
+
+        默认按 ``decision_id`` 稳定排序（audit trace / manifest 口径不变）。
+        ``operation_order`` 给出规范序（accepted plan 的 ``plan.operations`` 顺序）时，
+        按该序重排；``decision_id`` 是 hash，不再作为多 operation 比较基准（0.6.1 §8.2）。
+        规范序未覆盖或缺失的 operation 保持 ``decision_id`` 序追加，由调用方比较判定差异。
+        """
+
         from simple_harness.runtime import EvidenceRef
 
         from simple_harness_memory.core.audit import DecisionLedgerEntry, DecisionOutcome
@@ -13576,6 +13597,15 @@ class SQLiteHumanMemoryBackend:
             (invocation_id,),
         ) as cursor:
             rows = await cursor.fetchall()
+        if operation_order is not None:
+            rank = {operation_id: index for index, operation_id in enumerate(operation_order)}
+            rows = sorted(
+                rows,
+                key=lambda row: (
+                    rank.get(str(row["operation_id"]), len(rank)),
+                    str(row["decision_id"]),
+                ),
+            )
         decisions: list[DecisionLedgerEntry] = []
         for row in rows:
             async with self._db.execute(
