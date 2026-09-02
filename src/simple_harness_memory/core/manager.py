@@ -31,6 +31,7 @@ from simple_harness_memory.core.identity import (
     ExportPage,
     MemoryPrincipal,
     MemoryScope,
+    PrincipalRegistrationReceipt,
     PrivacyReceipt,
     ScopeKind,
 )
@@ -69,6 +70,7 @@ if TYPE_CHECKING:
     )
 
     from simple_harness_memory.cognitive.twin_builder import TwinGraphView
+    from simple_harness_memory.core.jobs import AnalysisLineage
     from simple_harness_memory.core.recall import TypedRecallExecution
     from simple_harness_memory.core.short_horizon import (
         ShortHorizonGenerationBuildResult,
@@ -129,8 +131,14 @@ class MemoryManager:
         self,
         envelope: SanitizedEvidenceEnvelope,
         receipt: SanitizedEvidenceReceipt,
+        *,
+        analysis_lineage: AnalysisLineage | None = None,
     ) -> EvidenceIngestionReceipt:
-        return await self._backend.ingest_committed_evidence(envelope, receipt)
+        if analysis_lineage is None:
+            return await self._backend.ingest_committed_evidence(envelope, receipt)
+        return await self._backend.ingest_committed_evidence(
+            envelope, receipt, analysis_lineage=analysis_lineage
+        )
 
     async def register_conversation_evidence(self, reference: object) -> object:
         return await self._backend.register_conversation_evidence(reference)
@@ -284,6 +292,17 @@ class MemoryManager:
         operation = getattr(self._backend, "read_occurrence_inbox")
         return await operation(principal=principal, after=after, limit=limit)
 
+    async def register_principal_owner(
+        self, principal: MemoryPrincipal, scope: MemoryScope
+    ) -> PrincipalRegistrationReceipt:
+        """幂等登记 subject 的属主形状（deployment/household）；重复调用返回同一回执。"""
+
+        operation = getattr(self._backend, "register_principal_owner", None)
+        if operation is None:
+            raise RuntimeError("backend does not support principal owner registration")
+        result: PrincipalRegistrationReceipt = await operation(principal, scope)
+        return result
+
     async def read_outbox(
         self,
         *,
@@ -416,8 +435,13 @@ class MemoryManager:
         short_horizon_embedder: Any | None = None,
         world: WorldModelPort | None = None,
         allow_development_embedder: bool = False,
+        supported_filter_policies: frozenset[str] | None = None,
     ) -> MemoryManager:
-        """Build the fresh-only schema-v7 backend behind the complete public facade."""
+        """Build the fresh-only schema-v7 backend behind the complete public facade.
+
+        ``supported_filter_policies`` 透传 backend；``None`` 保持默认（仅
+        ``credential-filter/v1``）。Host 组合传入自己的 sanitizer 策略集合。
+        """
 
         if (
             not allow_development_embedder
@@ -430,6 +454,9 @@ class MemoryManager:
             )
         from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
 
+        backend_kwargs: dict[str, Any] = {}
+        if supported_filter_policies is not None:
+            backend_kwargs["supported_filter_policies"] = frozenset(supported_filter_policies)
         backend = SQLiteHumanMemoryBackend(
             db_path,
             analysis_delivery_authority=analysis_delivery_authority,
@@ -441,6 +468,7 @@ class MemoryManager:
             prospective_signal_authority=prospective_signal_authority,
             audit_access_authority=audit_access_authority,
             short_horizon_embedder=short_horizon_embedder,
+            **backend_kwargs,
         )
         await backend.initialize()
         return cls(backend, world or _NullWorldModel())

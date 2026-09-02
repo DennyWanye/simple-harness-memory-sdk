@@ -6,11 +6,12 @@ import asyncio
 import hashlib
 import math
 from collections.abc import Callable
-from dataclasses import dataclass
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol, cast
 
-from simple_harness.contracts import canonical_json
+from simple_harness.contracts import JsonValue, canonical_json
 from simple_harness.runtime import (
     AnalysisBudget,
     MemoryAnalysisDeliveryAuthorityPort,
@@ -114,6 +115,65 @@ class MemoryJobWorkerConfig:
         object.__setattr__(self, "retry_delays_seconds", delays)
 
 
+_CURRENT_ANALYSIS_APPLY_HEAD: ContextVar[int | None] = ContextVar(
+    "simple_harness_memory_analysis_apply_head", default=None
+)
+
+
+def current_analysis_apply_head() -> int | None:
+    """Host executor 在 ``analyze_memory`` 内读取本次 claim 的 ``analysis_apply_head``。
+
+    ``MemoryAnalysisExecutorPort.analyze_memory(request)`` 是 Harness 0.7.1 冻结签名，
+    不携带 claim；``DurableMemoryJobRunner`` 在调用 executor 期间把
+    ``AnalysisBatchClaim.analysis_apply_head`` 放入 contextvar，供 Host 填 ``plan.base_revision``。
+    在 runner 之外调用返回 ``None``。
+    """
+
+    return _CURRENT_ANALYSIS_APPLY_HEAD.get()
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisLineage:
+    """逐 evidence 持久的分析血缘（0.6.1 §8.5）。
+
+    Host 在 ingest 时给出该 evidence 应由哪个 provider/model/config 分析；
+    ``claim_analysis_batch`` 从成员派生 ``MemoryAnalysisRequest`` 的同名字段，成员不一致
+    → ``analysis_batch_lineage_differs``；成员均无血缘时回落 ``MemoryJobWorkerConfig``。
+    """
+
+    provider_id: str
+    model_id: str
+    model_config_hash: str
+
+    def __post_init__(self) -> None:
+        _identifier(self.provider_id, "analysis_lineage_provider_id")
+        _identifier(self.model_id, "analysis_lineage_model_id")
+        if (
+            not isinstance(self.model_config_hash, str)
+            or len(self.model_config_hash) != 64
+            or any(character not in "0123456789abcdef" for character in self.model_config_hash)
+        ):
+            raise MemoryValidationError("analysis_lineage_model_config_hash_invalid")
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "schema_version": 1,
+            "provider_id": self.provider_id,
+            "model_id": self.model_id,
+            "model_config_hash": self.model_config_hash,
+        }
+
+    @classmethod
+    def from_json(cls, value: object) -> AnalysisLineage:
+        if not isinstance(value, dict) or value.get("schema_version") != 1:
+            raise MemoryValidationError("analysis_lineage_wire_invalid")
+        return cls(
+            str(value.get("provider_id", "")),
+            str(value.get("model_id", "")),
+            str(value.get("model_config_hash", "")),
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class AnalysisBatchClaim:
     batch_id: str
@@ -126,6 +186,9 @@ class AnalysisBatchClaim:
     request: MemoryAnalysisRequest
     envelope: MemoryAnalysisResultEnvelope | None = None
     application: AnalysisApplication | None = None
+    # 0.6.1 §8.6：claim 时 analysis_apply_heads 的当前 revision（已与 cognitive head 对齐），
+    # 供 Host executor 填 plan.base_revision。仓储必填，无产品默认。
+    analysis_apply_head: int = field(kw_only=True)
 
     def __post_init__(self) -> None:
         for value, name in (
@@ -136,6 +199,7 @@ class AnalysisBatchClaim:
             (self.lease_token, "analysis_lease_token"),
         ):
             _identifier(value, name)
+        _positive_int(self.analysis_apply_head, "analysis_apply_head")
         jobs = tuple(_identifier(item, "analysis_job_id") for item in self.job_ids)
         if not jobs or len(set(jobs)) != len(jobs):
             raise MemoryValidationError("analysis_job_ids_invalid")
@@ -425,6 +489,7 @@ class DurableMemoryJobRunner:
         admission: _AnalysisDeliveryAdmission | None = None
         if application is None:
             if envelope is None:
+                head_token = _CURRENT_ANALYSIS_APPLY_HEAD.set(claim.analysis_apply_head)
                 try:
                     candidate = await self._executor.analyze_memory(claim.request)
                 except asyncio.CancelledError:
@@ -437,6 +502,8 @@ class DurableMemoryJobRunner:
                     return await self._repository.fail_analysis_batch(
                         claim, "analysis_executor_failed", self._config
                     )
+                finally:
+                    _CURRENT_ANALYSIS_APPLY_HEAD.reset(head_token)
                 if type(candidate) is not MemoryAnalysisResultEnvelope:
                     return await self._repository.reject_analysis_result(
                         claim,
@@ -587,6 +654,7 @@ class DurableMemoryJobRunner:
 __all__ = (
     "AnalysisApplication",
     "AnalysisBatchClaim",
+    "AnalysisLineage",
     "AnalysisDeliveryAuthorityTransientError",
     "AnalysisResultCommit",
     "AnalysisResultCommitOutcome",
@@ -595,4 +663,5 @@ __all__ = (
     "MemoryJobWorkerConfig",
     "RejectedAnalysisAudit",
     "WorkerRunOutcome",
+    "current_analysis_apply_head",
 )

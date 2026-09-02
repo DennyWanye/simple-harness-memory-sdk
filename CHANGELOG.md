@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.6.1] - 2026-09-02（S5b Task 4a：Memory 0.6.1 核心）
+
+依据 `plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/design-freeze.md` §8。
+
+- `MemoryManager.build_human_memory_v7(..., supported_filter_policies=None)` 透传 backend；默认仍只认
+  `credential-filter/v1`（§8.1）。
+- 多 operation analysis finalize 收敛：`_read_decisions(operation_order=...)` 按 accepted plan 的
+  operations 规范序比较，`decision_id`（hash）序不再作比较基准；≥2 op plan 不再卡死 audit_pending（§8.2）。
+- accepted 且 `outcome=mutate` 的 analysis plan 在 `prepare_analysis_application` 同一事务内、以仓储
+  单次签发的内核能力物化（复用 `apply_memory_mutation_plan` 的 compile/apply 内核）：写 cognitive
+  revisions/heads、`memory_mutation_receipts`、`memory.cognitive.committed` 与 prospective registration
+  outbox；`no_mutation` 不物化；replay 幂等；物化失败 SAVEPOINT 回退、plan 转 rejected
+  （`analysis_materialization_rejected`）；`analysis_apply_heads` 与 `cognitive_apply_heads` 对齐到 max 后
+  同步推进到 base+1。前置：backend 绑定 `evidence_authority` 与 `classification_policy`，否则保持 0.6.0
+  审计-only；evidence authority 在写锁内被调用，不得回调 Memory backend 加锁读（§8.3）。
+- `MemoryManager.register_principal_owner(principal, scope) -> PrincipalRegistrationReceipt`：幂等登记
+  属主 deployment/household（修正 ingest 占位形状）；登记后 outbox/inbox/短时域读取不再
+  `short_horizon_principal_rejected`（§8.4）。
+- `AnalysisLineage(provider_id, model_id, model_config_hash)`（包根导出）；
+  `ingest_committed_evidence(envelope, receipt, *, analysis_lineage=None)` 逐 evidence 持久到
+  `evidence_envelopes.analysis_lineage_json`；回放给出不同血缘或事后补写 →
+  `evidence_lineage_replay_conflict`。`claim_analysis_batch` 从成员派生 request 的
+  provider/model/config_hash，成员不一致（含部分缺失）→ `analysis_batch_lineage_differs`，全部缺失
+  回落 `MemoryJobWorkerConfig`（15 字段仍必填）（§8.5）。
+- `AnalysisBatchClaim.analysis_apply_head: int`（仓储必填 kw_only）：claim 时只读
+  max(analysis head, cognitive head)，缺省 1；`DurableMemoryJobRunner` 在调用 executor 期间经
+  contextvar 暴露，Host 用 `core.jobs.current_analysis_apply_head()` 填 `plan.base_revision`（§8.6）。
+- schema v7 → **v7.1**（`SCHEMA_MINOR_VERSION=1`、`SCHEMA_VERSION_LABEL="7.1"`；主版本 7 与
+  receipt CHECK 不变，小版本由 DDL checksum 编码）。规则：0.6.0 写出的库（meta checksum ==
+  `SCHEMA_CHECKSUM_V7_0` 且无新列）打开时在一个事务内 `ALTER TABLE` 加列并把
+  `initialization_receipts`/`schema_meta` 的 checksum 与 receipt_hash 重算为 v7.1 值，之后按 v7.1
+  checksum 校验；新库直接按 v7.1 建；未知 checksum 仍 fail-closed。
+- 公共 API 快照 `tests/artifact/public-api-0.6.1.json`：0.6.0 根导出全部保留，仅新增
+  `AnalysisLineage`、`PrincipalRegistrationReceipt`。
+- 候选 wheel `uv build --no-sources` 两次 clean build 字节一致：见 `docs/build-and-release.md`
+  「0.6.1 candidate manifest」。
+
 ## 0.6.0（S5a 消费面定稿，2026-09-02）
 
 - 包根导出 jobs 消费符号（`DurableMemoryJobRunner`/`MemoryJobWorkerConfig`/`WorkerRunOutcome`）。

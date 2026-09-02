@@ -24,6 +24,8 @@ if TYPE_CHECKING:
         RecallResultPageV1,
     )
 
+    from simple_harness_memory.core.jobs import AnalysisLineage
+
 from simple_harness_memory.cognitive.twin_builder import TwinGraphView
 from simple_harness_memory.core.audit import (
     AuditAccessAuthorityRefV1,
@@ -34,7 +36,11 @@ from simple_harness_memory.core.audit import (
     CanonicalStateManifestAccessV1,
 )
 from simple_harness_memory.core.evidence import EvidenceIngestionReceipt, IngestedEvidenceRecord
-from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
+from simple_harness_memory.core.identity import (
+    MemoryPrincipal,
+    MemoryScope,
+    PrincipalRegistrationReceipt,
+)
 from simple_harness_memory.core.lifecycle_results import (
     ProcedureObservationApplyResult,
     ProspectiveSignalApplyResult,
@@ -316,8 +322,16 @@ class CognitiveMemoryBackend(Protocol):
     ) -> MemoryMutationReceiptView: ...
 
     async def ingest_committed_evidence(
-        self, envelope: object, receipt: object
+        self,
+        envelope: object,
+        receipt: object,
+        *,
+        analysis_lineage: AnalysisLineage | None = None,
     ) -> EvidenceIngestionReceipt: ...
+
+    async def register_principal_owner(
+        self, principal: MemoryPrincipal, scope: MemoryScope
+    ) -> PrincipalRegistrationReceipt: ...
 
     async def register_conversation_evidence(self, reference: object) -> object: ...
 

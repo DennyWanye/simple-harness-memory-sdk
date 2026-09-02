@@ -45,7 +45,7 @@ def _read_build_info(path: Path) -> dict[str, str]:
 def _assert_ci_metadata(dist: Path) -> None:
     info = _read_build_info(dist / "BUILD_INFO.txt")
     assert info["package"] == "simple-harness-memory-sdk"
-    assert info["version"] == "0.6.0"
+    assert info["version"] == "0.6.1"
     assert re.fullmatch(r"[0-9a-f]{40}", info["source_commit"])
     assert info["requires_python"] == "<3.14,>=3.11"
     assert info["harness_requires"] == "simple-harness-sdk<0.8,>=0.7"

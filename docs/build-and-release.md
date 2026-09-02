@@ -5,14 +5,14 @@ SPDX-License-Identifier: BUSL-1.1
 
 # 0.6 candidate build and verification runbook
 
-This is the current operator procedure for `simple-harness-memory-sdk` 0.6.0. The Task 6 boundary is
+This is the current operator procedure for `simple-harness-memory-sdk` 0.6.1. The Task 6 boundary is
 candidate-only: build and verify artifacts, but do not create or move a tag, push a release commit, upload
 assets, or publish the candidate. `.github/workflows/release.yml` remains the read-only 0.5.1 historical
 publisher and must not be used for 0.6.
 
 ## Current invariants
 
-- Memory version is exactly `0.6.0`; base and `[harness]` metadata both require
+- Memory version is exactly `0.6.1`; base and `[harness]` metadata both require
   `simple-harness-sdk>=0.7,<0.8`.
 - The Harness input is exact source commit `8f1027d2d64ca3a7e7a4d161833507eadac9552b`, built once as
   a 0.7.0 wheel with `SOURCE_DATE_EPOCH=315532800`; its required SHA-256 is
@@ -99,7 +99,7 @@ import inspect
 
 from simple_harness_memory import MemoryManager, __version__
 
-assert __version__ == "0.6.0"
+assert __version__ == "0.6.1"
 assert metadata.version("simple-harness-sdk") == "0.7.0"
 for name in ("enable_facts", "fact_extractor", "auto_extract_facts"):
     assert name not in inspect.signature(MemoryManager.build).parameters
@@ -127,6 +127,19 @@ After retaining the candidate evidence outside Git, remove the detached worktree
 ```bash
 git -C "$MEMORY_REPO" worktree remove "$RELEASE_DIR"
 ```
+
+## 0.6.1 candidate manifest（S5b Task 4a，2026-09-02）
+
+候选构建口径：`uv build --no-sources`（本仓 worktree，源码提交 `eb81e54`，Python 3.12.14 / uv 0.12.8），
+两次 clean build 到不同输出目录，字节一致：
+
+| artifact | sha256（build 1 == build 2） |
+|---|---|
+| `simple_harness_memory_sdk-0.6.1-py3-none-any.whl` | `4b6c7bc665178d85340b80751d2216fd77821b0ae12f7a4c3281ae4fe9d2b5d6` |
+| `simple_harness_memory_sdk-0.6.1.tar.gz` | `5ad351ec628f901b1659b93f5cc412dafbde30408dfe079f9351593a84e9c26e` |
+
+未打 tag、未 push、未发布；Host `pyproject`/`vendor` pin 以 wheel sha256 fail-closed（Task 4 接线）。
+schema v7.1 前向加列规则见 `CHANGELOG.md` [0.6.1] 与 `backends/schema_v5.py` 注释。
 
 ## Historical releases
 

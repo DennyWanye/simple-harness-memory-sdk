@@ -8,6 +8,10 @@ import sqlite3
 from dataclasses import dataclass, field
 
 SCHEMA_VERSION = 7
+# v7.1（0.6.1）：evidence_envelopes 前向加列 analysis_lineage_json；主版本号仍为 7
+# （initialization_receipts.schema_version CHECK = 7 不变），小版本由 DDL checksum 编码。
+SCHEMA_MINOR_VERSION = 1
+SCHEMA_VERSION_LABEL = f"{SCHEMA_VERSION}.{SCHEMA_MINOR_VERSION}"
 SCHEMA_EPOCH = "human-memory-v1"
 
 DDL = """
@@ -59,6 +63,7 @@ CREATE TABLE evidence_envelopes (
     removed_spans_json BLOB NOT NULL,
     sanitized_payload BLOB NOT NULL,
     created_at REAL NOT NULL CHECK (created_at >= 0),
+    analysis_lineage_json BLOB,
     UNIQUE (principal_id, source_ref)
 );
 CREATE TABLE evidence_items (
@@ -1775,6 +1780,17 @@ def ddl_statements(script: str = DDL) -> tuple[str, ...]:
 
 
 SCHEMA_CHECKSUM = hashlib.sha256(DDL.encode("utf-8")).hexdigest()
+
+# ---- v7.0 → v7.1 前向迁移定义（0.6.1）-------------------------------------------
+# 规则：0.6.0 写出的库（checksum == SCHEMA_CHECKSUM_V7_0）在打开时于一个事务内
+# ALTER TABLE 追加 V7_1_ADDED_COLUMNS，并把 initialization_receipts / schema_meta 的
+# checksum 与 receipt_hash 重算为 v7.1 值；之后按 v7.1 checksum 校验。新库直接按 v7.1 建。
+_V7_1_EVIDENCE_LINEAGE_COLUMN_DDL = "    analysis_lineage_json BLOB,\n"
+V7_1_ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("evidence_envelopes", "analysis_lineage_json", "BLOB"),
+)
+DDL_V7_0 = DDL.replace(_V7_1_EVIDENCE_LINEAGE_COLUMN_DDL, "", 1)
+SCHEMA_CHECKSUM_V7_0 = "82c36e161eea0e5f92f6c0f5dae57501934b62aa6771c82c4435d0f03f1a4915"
 REQUIRED_TABLES = frozenset(
     {
         "schema_meta",
@@ -1951,11 +1967,16 @@ def _receipt_hash(receipt: InitializationReceipt) -> str:
 
 __all__ = (
     "DDL",
+    "DDL_V7_0",
     "CANONICAL_MANIFEST_DERIVED_EXCLUSIONS",
     "InitializationReceipt",
     "REQUIRED_TABLES",
     "SCHEMA_CHECKSUM",
+    "SCHEMA_CHECKSUM_V7_0",
     "SCHEMA_EPOCH",
+    "SCHEMA_MINOR_VERSION",
     "SCHEMA_VERSION",
+    "SCHEMA_VERSION_LABEL",
+    "V7_1_ADDED_COLUMNS",
     "ddl_statements",
 )

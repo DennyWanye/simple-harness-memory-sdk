@@ -498,7 +498,7 @@ def test_expiring_projection_does_not_delete_registration_or_raw_evidence(
     connection.execute(
         """
         INSERT INTO evidence_envelopes VALUES(
-            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
         )
         """,
         (
@@ -517,6 +517,7 @@ def test_expiring_projection_does_not_delete_registration_or_raw_evidence(
             b"[]",
             b"{}",
             1.0,
+            None,  # analysis_lineage_json（v7.1）
         ),
     )
     connection.execute(
