@@ -28,7 +28,7 @@
 - plan 批准："批准" sha256 8cbe697b157364a5…
 
 ## 遗留问题清单（无悬空）
-1. **真人桌面 UI 场景（S5A-S1/S2/S3/S6 manual_required=是）+ ≥20 turn 真实长会话**：headless 后端被 Tauri 身份桥门控，只能由用户在真实 app 驱动，或用户显式批准 all-ai/自动化等价（record-approval 待用户答复）——DoD 收尾前唯一未决项。
+1. ~~**真人桌面 UI 场景（S5A-S1/S2/S3/S6 manual_required=是）+ ≥20 turn 真实长会话**~~ **已闭合（2026-09-02）**：用户批准 all-ai 等价并指定由 AI 驱动，四个场景已在真实桌面 app + 真实 provider 上完成并各自入账（详见本文件「phase-4 终态」段）。
 2. WeMM 快照上传 COS 模型桶（发布前置，S5b/发布任务）。
 3. PROJECT_EFFECT root 签发接线（S5b Task 5 前置义务）。
 4. HM-AC-8 质量门 NOT_RUN/BLOCKED（外部人工语料 review 前置，如实维持）。

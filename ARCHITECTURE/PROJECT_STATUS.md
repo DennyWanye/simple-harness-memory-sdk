@@ -1,8 +1,23 @@
 # PROJECT STATUS — simple-harness-memory-sdk
 
-> 最后更新：2026-09-01
+> 最后更新：2026-09-02
 
 ## 2026-09-02 S5a：0.6 消费面定稿 + Host 生产接入
+
+- **终态（2026-09-02）：S5a 增量 SHIPPABLE**，机器门 receipt
+  `b5d416e372e3d2b8c3bd6ac86428941ce896b4123e291e12003697cee9118dac`（run `r3-s5a`）。
+  7/7 required 场景 root PASS，独立 full-audit verdict=PASS。本仓全量 1071 passed 无回归；
+  本轮本仓无代码改动（0.6.0 消费面已定稿），两个缺陷修复均落在 Host 侧。
+- **真实桌面 UI 验收对本仓的一条上游义务**：Host 在全新安装场景发现，v7 store 的读路径
+  （`read_occurrence_inbox`）对尚未注册的本地属主 fail-closed 抛
+  `short_horizon_principal_rejected`，而属主只在首次 typed recall / mutation 时才自注册——
+  全新安装的第一次 reconcile 因此必然失败。Host 侧已按"未注册属主的收件箱受 principals 外键
+  强制不可能有条目"做了收窄的 fail-open 兜底，但**正解在本仓**：应提供正式的属主注册 API
+  （或让读路径对未注册属主返回空页而非冲突），届时 Host 侧兜底分支移除。列 S5b 前置义务。
+- **另一条 S5b 上游义务（SDK 仓，非本仓）**：`simple-harness-sdk` 的冻结契约禁止 provider
+  assistant 消息把私有 metadata 写进 durable Context，导致 Host 无法跨轮携带 `tool_calls`，
+  OpenAI 兼容端点因此拒绝 continuation 请求。建议上游把 assistant 的 `tool_calls` 视为
+  一等公共 transcript 字段在 Context 重建请求时回挂。
 
 - Host `feat/human-memory-s5a-context-route` 完成 S5a：v7 认知库首次生产组合（HumanMemoryV7Runtime），
   typed recall + short-horizon 双 lane 消费，occurrence inbox reconcile 成为 no_recall 硬门。
