@@ -49,3 +49,30 @@
 - **机器门**：finalize --check-only = READY_FOR_AUDIT；三条 STABILITY 降级为 advisory（豁免公开可追责，逐场景根因在账）。
 - **独立 full-audit verdict=PASS**（终验补充轮），8 条 P2 已整改 7 条，1 条（S1 真实车道非空回答断言）如实 defer 至 S5b。
 - **S5b 遗留（更新）**：①SDK 上游把 assistant.tool_calls 作为一等公共 transcript 字段回挂，消除 F2 的 arguments 退化；②memory-sdk 上游补正式的属主注册 API，消除 F1 的 fail-open 分支；③S1 真实车道补非空回答断言 + transcript dump；④changed-surface lint 小项清理。
+
+## 终态（2026-09-02）
+**VERDICT: SHIPPABLE** — 机器门 finalize PASS，receipt `b5d416e372e3d2b8c3bd6ac86428941ce896b4123e291e12003697cee9118dac`
+（run `r3-s5a`，Host HEAD d1bb5cce）。
+
+兑现表：7/7 required 场景 root PASS（S1/S2 真实 provider 各 2 root + business-terminal 绑定、
+S3/S4/S5 确定性、S6 组合含最终 HEAD 冷启动 E2E、REG 双仓全量）；真实桌面 UI 场景经用户批准由
+AI 驱动完成并各自入账；独立 full-audit verdict=PASS（8 条 P2，7 条本轮整改、1 条明示 defer）。
+
+轮次交代：探索轮 `r2-s5a` 已 retire（继任 `r3-s5a`），账本与全部证据完整保留不删除——它记录了
+7 轮迭代、r1 误删事故自报、两次真实缺陷修复，以及真实 UI 验收抓到的两个产品缺陷；因账本留有
+4 条 root fail 历史，按 gate 的 FLAKY 规则无法自行推进到 SHIPPABLE，故由同一 HEAD 上干净重跑的
+r3-s5a 承接。
+
+悬空义务（不许静默关闭）：`audit-s1-real-lane-nonempty-assert` — S1 真实车道补非空回答断言 +
+transcript dump，defer 至 S5b。
+
+## 自我批评（retro）
+1. **rm 不进命令链**：r1 草稿 gate run 因链式命令被误删。删除必须单独一条、先看后删。
+2. **impact_paths 必须是仓库相对路径**：写成绝对 glob 时永不匹配，导致每次 re-attest 都退化为全量复测。
+3. **"改完了"必须验证改动真的落盘**：曾用原始字符替换含转义序列的文本，replace 静默无操作却自称已修。
+4. **命令错误会被记成产品失败**：本轮 6 条 root fail 里有 5 条是我的 cwd/路径/marker 错误。gate 只看
+   exit code，写命令时必须先自测一次再 record-run，否则污染稳定性判定并需要用户批准的豁免来清理。
+5. **真实 UI 验收不可省**：两个 P0（全新安装首条 chat 必死、每个用工具的 chat 第二轮必挂）零件测试
+   全绿却整机不通，只有真机真链路能暴露。以后凡有 UI 面的增量，UI 验收就是必答题不是加分题。
+6. **绕不过的门就老实走**：ARCHITECTURE/ 下的 md 不在 doc-only 白名单导致全量重测、FLAKY 无法豁免
+   导致必须开新 run——两次都可以靠改配置或加豁免绕过，但那正是门存在的理由。
