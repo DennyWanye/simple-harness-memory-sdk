@@ -19,3 +19,10 @@
 | T2-R P2 | terminal 未走 `terminal:{run_id}` 预留路径 → 统一 | `test_run_terminal_reserved_then_ingested` |
 | T2-R P2 | envelope 回退（gate 拒绝/异常）产生无人排空的预留 → 拒绝路径立即 abandoned | `test_rejected_effect_reservation_abandoned_immediately` |
 | T2-R P2 | `read_reserved_fact` 生产实现零测试 | `test_read_reserved_fact_reads_sdk_ledger` |
+| T3-R P2 | `not_sent` 在真实 SDK（`from None` 包装）下是死路径；测试用裸 httpx 异常 → 用真实 adapter 异常类型判定 | `test_invoker_not_sent_classification_with_real_adapter_error` |
+| T3-R P2 | `reserved→handed_off` UPDATE 不查 rowcount → 可能账本外调用 Provider | `test_invoker_handoff_requires_rowcount_one` |
+| T3-R P2 | 多字节 `idempotency_key` 逃逸成 `tool_handler_failed` 无 pre-admission audit | `test_task_scope_update_multibyte_key_rejected_with_audit` |
+| T3-R P2 | invoker 吞 `CancelledError` | `test_invoker_propagates_cancelled_error` |
+| T3-R P2 | `force_close_pending` 以 head 水位吞执行中 Run 的脏 → 以该 Run 观察到的水位为界 | `test_force_close_does_not_swallow_in_flight_run_dirty` |
+| T3-R P2 | drain 对 `objective_evidence_hash_conflict` 无降级（Task 2 F-1 残余） | `test_drain_degrades_on_objective_evidence_hash_conflict` |
+| T3-R P2 | 覆盖缺口：CANCELLED/STOPPED 终态门、真实 runtime 端到端、并发双 owner | 三条 |
