@@ -11836,6 +11836,7 @@ class SQLiteHumanMemoryBackend:
     ) -> AnalysisApplication:
         from simple_harness.runtime import (
             AnalysisValidationStatus,
+            EvidenceRef,
             ExistingMemoryTarget,
             MemoryAnalysisReceipt,
             MemoryMutationPlan,
@@ -11895,10 +11896,21 @@ class SQLiteHumanMemoryBackend:
                     "proposed-memory", plan.plan_id, operation.operation_id
                 )
                 operation_evidence_ids = {span.evidence_id for span in operation.evidence_spans}
+                # 0.6.2：operation 可引用 batch 成员集合（plan.evidence_refs ==
+                # request.ordered_evidence_refs，已在 prepare 校验）中的任一 evidence。
+                # decision 的 evidence_refs 是按 batch 顺序过滤出的子集，ordinal 须按子集
+                # 重编为 1..n（DecisionLedgerEntry 契约），不能沿用 batch ordinal——否则只引
+                # 非首条 evidence 的 operation 会被 decision_evidence_refs_ordinal_invalid 拒绝。
                 operation_evidence_refs = tuple(
-                    reference
-                    for reference in plan.evidence_refs
-                    if reference.evidence_id in operation_evidence_ids
+                    EvidenceRef(reference.evidence_id, reference.content_hash, ordinal)
+                    for ordinal, reference in enumerate(
+                        (
+                            reference
+                            for reference in plan.evidence_refs
+                            if reference.evidence_id in operation_evidence_ids
+                        ),
+                        start=1,
+                    )
                 )
                 decisions.append(
                     DecisionLedgerEntry(

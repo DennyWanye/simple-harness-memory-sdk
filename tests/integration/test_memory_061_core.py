@@ -305,10 +305,18 @@ class _HostExecutor:
 
     issuer_id = "host-analysis-authority"
 
-    def __init__(self, ops: tuple[dict[str, Any], ...], *, no_mutation: bool = False) -> None:
+    def __init__(
+        self,
+        ops: tuple[dict[str, Any], ...],
+        *,
+        no_mutation: bool = False,
+        extra_evidence_ids: tuple[str, ...] = (),
+    ) -> None:
         self.backend: Any = None
         self.ops = ops
         self.no_mutation = no_mutation
+        # 0.6.2 反例：plan.evidence_refs 额外附带不在 batch 成员集合内的 evidence。
+        self.extra_evidence_ids = extra_evidence_ids
         self.calls = 0
         self.verification_calls = 0
         self.plans: dict[str, MemoryMutationPlan] = {}
@@ -381,6 +389,12 @@ class _HostExecutor:
             head = current_analysis_apply_head()
             assert head is not None, "runner must expose the claim's analysis_apply_head"
             self.observed_heads.append(head)
+            evidence_refs = list(request.ordered_evidence_refs)
+            for evidence_id in self.extra_evidence_ids:
+                record = await self.backend.read_ingested_evidence(evidence_id)
+                evidence_refs.append(
+                    EvidenceRef(evidence_id, record.envelope.envelope_hash, len(evidence_refs) + 1)
+                )
             plan = MemoryMutationPlan(
                 plan_id=f"plan-{request.job_id[-12:]}",
                 run_id=request.run_id,
@@ -390,7 +404,7 @@ class _HostExecutor:
                 outcome=MemoryMutationPlanOutcome.MUTATE,
                 operations=operations,
                 disclosure_context=request.disclosure_context,
-                evidence_refs=request.ordered_evidence_refs,
+                evidence_refs=tuple(evidence_refs),
                 idempotency_key=request.idempotency_key,
             )
             self.plans[request.job_id] = plan
