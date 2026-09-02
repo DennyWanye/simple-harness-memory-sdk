@@ -18,8 +18,26 @@
 - `MemoryManager.register_principal_owner(principal, scope) -> PrincipalRegistrationReceipt`：幂等登记
   属主 deployment/household（修正 ingest 占位形状）；登记后 outbox/inbox/短时域读取不再
   `short_horizon_principal_rejected`（§8.4）。
-- （§8.5/§8.6 与 schema v7.1、wheel 双 build 校验见本条目后续小节。）
+- `AnalysisLineage(provider_id, model_id, model_config_hash)`（包根导出）；
+  `ingest_committed_evidence(envelope, receipt, *, analysis_lineage=None)` 逐 evidence 持久到
+  `evidence_envelopes.analysis_lineage_json`；回放给出不同血缘或事后补写 →
+  `evidence_lineage_replay_conflict`。`claim_analysis_batch` 从成员派生 request 的
+  provider/model/config_hash，成员不一致（含部分缺失）→ `analysis_batch_lineage_differs`，全部缺失
+  回落 `MemoryJobWorkerConfig`（15 字段仍必填）（§8.5）。
+- `AnalysisBatchClaim.analysis_apply_head: int`（仓储必填 kw_only）：claim 时只读
+  max(analysis head, cognitive head)，缺省 1；`DurableMemoryJobRunner` 在调用 executor 期间经
+  contextvar 暴露，Host 用 `core.jobs.current_analysis_apply_head()` 填 `plan.base_revision`（§8.6）。
+- schema v7 → **v7.1**（`SCHEMA_MINOR_VERSION=1`、`SCHEMA_VERSION_LABEL="7.1"`；主版本 7 与
+  receipt CHECK 不变，小版本由 DDL checksum 编码）。规则：0.6.0 写出的库（meta checksum ==
+  `SCHEMA_CHECKSUM_V7_0` 且无新列）打开时在一个事务内 `ALTER TABLE` 加列并把
+  `initialization_receipts`/`schema_meta` 的 checksum 与 receipt_hash 重算为 v7.1 值，之后按 v7.1
+  checksum 校验；新库直接按 v7.1 建；未知 checksum 仍 fail-closed。
+- 公共 API 快照 `tests/artifact/public-api-0.6.1.json`：0.6.0 根导出全部保留，仅新增
+  `AnalysisLineage`、`PrincipalRegistrationReceipt`。
+- 候选 wheel `uv build --no-sources` 两次 clean build 字节一致：见 `docs/build-and-release.md`
+  「0.6.1 candidate manifest」。
 
+## 0.6.0（S5a 消费面定稿，2026-09-02）
 
 - 包根导出 jobs 消费符号（`DurableMemoryJobRunner`/`MemoryJobWorkerConfig`/`WorkerRunOutcome`）。
 - 新增只读 occurrence inbox / outbox 投影（`OccurrenceInboxEntryV1/PageV1`、`OutboxEntryV1/PageV1`）：

@@ -128,6 +128,19 @@ After retaining the candidate evidence outside Git, remove the detached worktree
 git -C "$MEMORY_REPO" worktree remove "$RELEASE_DIR"
 ```
 
+## 0.6.1 candidate manifest（S5b Task 4a，2026-09-02）
+
+候选构建口径：`uv build --no-sources`（本仓 worktree，源码提交 `eb81e54`，Python 3.12.14 / uv 0.12.8），
+两次 clean build 到不同输出目录，字节一致：
+
+| artifact | sha256（build 1 == build 2） |
+|---|---|
+| `simple_harness_memory_sdk-0.6.1-py3-none-any.whl` | `4b6c7bc665178d85340b80751d2216fd77821b0ae12f7a4c3281ae4fe9d2b5d6` |
+| `simple_harness_memory_sdk-0.6.1.tar.gz` | `5ad351ec628f901b1659b93f5cc412dafbde30408dfe079f9351593a84e9c26e` |
+
+未打 tag、未 push、未发布；Host `pyproject`/`vendor` pin 以 wheel sha256 fail-closed（Task 4 接线）。
+schema v7.1 前向加列规则见 `CHANGELOG.md` [0.6.1] 与 `backends/schema_v5.py` 注释。
+
 ## Historical releases
 
 The published 0.5.1 release and its Harness 0.4/0.5 receipts remain historical audit records in
