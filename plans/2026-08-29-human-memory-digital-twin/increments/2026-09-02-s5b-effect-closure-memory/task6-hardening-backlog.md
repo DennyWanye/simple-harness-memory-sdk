@@ -13,3 +13,9 @@
 | A5/AC-3⑤ | Auto `explicit_only`：`_CONFIRM_ONLY` 类在 Auto 下 REQUIRE_USER；断言 a–d | `test_auto_mode_never_grants_confirm_only` 等 |
 | Task 2 发现 | `migrator.py`：037 不在 `_S4_HUMAN_MIGRATIONS` 集合 → v45 无 marker/迁移链/恢复注册（fence 触发器缺失）；038 已补链，需回补 037 | `test_v45_migration_registered_in_human_chain` |
 | S5a 遗留 | `backend/uv.lock` 仍指 memory 0.5.2（pin 真相在 sdk_candidate.py） | `uv lock` 刷新或记 known-debt |
+| T2-R P2 | 步骤 0 对 PREPARED 状态也跳 gate（窄窗口 fail-open）→ 仅 HANDED_OFF/UNKNOWN/终态跳 | `test_gate_still_runs_for_prepared_effect` |
+| T2-R P2 | `pytest && rm -rf` 类复合命令被标 host.test → 只有单一 runner 命令且无 shell 连接符才算 test | `test_compound_shell_command_not_classified_as_test` |
+| T2-R P2 | v46 单调守卫漏列（`provider_request_id`、outbox lineage 等）→ 逐列补 UPDATE 拦截 | `test_v46_guard_covers_every_mutable_column` |
+| T2-R P2 | terminal 未走 `terminal:{run_id}` 预留路径 → 统一 | `test_run_terminal_reserved_then_ingested` |
+| T2-R P2 | envelope 回退（gate 拒绝/异常）产生无人排空的预留 → 拒绝路径立即 abandoned | `test_rejected_effect_reservation_abandoned_immediately` |
+| T2-R P2 | `read_reserved_fact` 生产实现零测试 | `test_read_reserved_fact_reads_sdk_ledger` |
