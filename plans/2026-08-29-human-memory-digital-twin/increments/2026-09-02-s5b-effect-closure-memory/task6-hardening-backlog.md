@@ -26,3 +26,4 @@
 | T3-R P2 | `force_close_pending` 以 head 水位吞执行中 Run 的脏 → 以该 Run 观察到的水位为界 | `test_force_close_does_not_swallow_in_flight_run_dirty` |
 | T3-R P2 | drain 对 `objective_evidence_hash_conflict` 无降级（Task 2 F-1 残余） | `test_drain_degrades_on_objective_evidence_hash_conflict` |
 | T3-R P2 | 覆盖缺口：CANCELLED/STOPPED 终态门、真实 runtime 端到端、并发双 owner | 三条 |
+| T4-R 遗留（不在 Task 6） | 真实车道 transcript 只 1 份（no_mutation 首跑/persona 追加运行无证据）→ phase-4 复跑生成 ≥2 root；`lease_lost` 两事务窗口 + `revalidate` 生产永不触发；Host durable 响应无本地凭据过滤（Memory 两道边界兜住）；episode `occurred_at` 取分析时刻；`manager()` 注册失败泄漏；测试 `now` 常量；README oracle 偏弱 | journal 遗留清单 |
