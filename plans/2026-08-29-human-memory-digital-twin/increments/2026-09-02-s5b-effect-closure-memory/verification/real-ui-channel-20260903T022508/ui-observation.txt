@@ -1,0 +1,10 @@
+# 真实 UI 操作记录（Browser pane，http://127.0.0.1:5199/，tabId=seed）
+1. navigate 代理地址 → 页面就绪：左下"● 已连接"，右上 gpt-5.6-luna，"暂无 Session"/"未选择会话"（ui-page-before.txt）
+2. 点击"＋ 新建普通会话" → 弹出"选择项目文件夹"对话框；点击"创建普通 Session"（坐标点击与 ref 点击各一次）→ 对话框不关闭、后端无 session_create 到达、DB 无 workspace_allocations（前端在本纯浏览器通道下未发出该请求，原因未深究）
+3. 诊断探针（tools 外的临时脚本，走同一 /ws/control 协议发 session_create）→ ok:true，证明后端会话创建已通（host-bootstrap-v2 带 documents_root 之后）。副作用：DB 多一条空会话 9b40ee92…（无 run、无 route 行）
+4. 点击"取消"关闭对话框 → 点击输入框 → type "今天想去公园散步" → 点击"发送"（空态直发：前端 chat_v2 new_session=true，由后端同请求内新建会话 24ab4744…）
+5. 8s 后截图：用户气泡出现，状态"工具执行中 / ■ 停止"，左栏出现会话 24ab4744…
+6. 约 40s 后截图 + get_page_text：助手终答出现（ui-page-after.txt），状态"✓ 空闲"
+# 附注
+- 上一轮 run 20260903T015153 的失败根因：harness bootstrap 用 window-control-bootstrap-v1 不带 documents_root/documents_identity → 后端 session_create / 空态直发均以 host_documents_unavailable 静默失败（chat_v2_error 未在 UI 呈现）。本轮 harness 改为 host-bootstrap-v2（与 Rust 壳 process_manager.rs::bootstrap_line 同配方）后通过。
+- PNG 落盘仍不可用（screencapture 无屏幕录制权限；Browser pane 截图仅回传会话；页面注入脚本被权限分类器拒绝）→ 以 ui-page-before/after.txt 页面文本捕获替代，截图 6 张内联于会话。

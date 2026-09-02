@@ -1,0 +1,17 @@
+# Browser pane get_page_text —— 发送前（http://127.0.0.1:5199/，tabId=seed，2026-09-03 02:26 本地；Host HEAD 0de95582）
+Title: DeskPet
+URL: http://127.0.0.1:5199
+Source element: <main>
+---
+新对话（直接输入即可开始）
+gpt-5.6-luna
+🔧
+◌
+—
+（消息流为空）
+📎
+发送
+✓ 空闲
+Enter 发送 · Shift+Enter 换行 · 📎 文本附件 · / 命令
+未选择会话
+# 截图（会话内联）：左栏"暂无 Session"，左下"● 已连接"，右上模型徽标 gpt-5.6-luna，消息流为空
