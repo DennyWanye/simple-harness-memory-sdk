@@ -36,3 +36,5 @@
 - 原主要矛盾"真实发生的事能否确定性沉淀为任务档案语义与长期记忆"已在真实 provider 上成立（改文件 → 客观事件 → 收口 → 同事务 outbox → analysis 物化 → 可召回）。
 - 现在决定成败的问题转为：**这条链在故障、并发、恢复与权限边界下能否稳定、可审计地交付**——三轮独立审查已累计抓出 5 个 P1（全部已修）与 ~25 个 P2（Task 6 backlog），说明主链跑通但硬化不足；其次是 **真实桌面 UI 上整机是否通**（S5a 教训：零件绿整机不通）。
 - 排序据此调整：Task 6（hardening：审查 P2 全清 + Auto explicit_only + cutover 前置 + 037 迁移链）与 Task 7（真实 UI 通道）并行先行，Task 5（0.6.2）汇合后再进 Task 8 验收矩阵与机器门。
+- **Task 5 完成并合并**（Memory merge `abcaa9b`，3 commits）：缺陷根因 `_application_from_batch_unlocked` 把按 ordinal 过滤的 evidence_refs 子集直接交给 `DecisionLedgerEntry`（要求 ordinal 1..n）→ prepare COMMIT 后抛 `decision_evidence_refs_ordinal_invalid`；修为按 batch 顺序重编 ordinal，batch 外引用仍拒绝（反例覆盖）。0.6.2 cutover 测试（schema 钉 v7.1 checksum、0.6.1 库不迁移、0.6.0 库前向加列）、CHANGELOG、candidate manifest；全量 1113 passed / 8 skipped；wheel 双次 clean build + 主 checkout 重建同 hash `598678c6a90d6dcc0a0b75e4b7ebb8c2fc9ca52c362c6037334f93692bc2bd05`。Host pin → 0.6.2（vendor/candidate/sdk_candidate/pyproject/superseded 断言），Memory 面 Host 测试全绿。
+- 分兵事故三：Task 6 首派再次落错仓（派发前 shell cwd 在 Memory 仓），代理零改动即停；已从 Host cwd 重派。规则固化：**每次 `isolation: worktree` 派发前，同一回合先单独 `cd` 到目标仓并 `pwd` 确认**。
