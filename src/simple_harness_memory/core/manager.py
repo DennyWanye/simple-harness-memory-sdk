@@ -416,8 +416,13 @@ class MemoryManager:
         short_horizon_embedder: Any | None = None,
         world: WorldModelPort | None = None,
         allow_development_embedder: bool = False,
+        supported_filter_policies: frozenset[str] | None = None,
     ) -> MemoryManager:
-        """Build the fresh-only schema-v7 backend behind the complete public facade."""
+        """Build the fresh-only schema-v7 backend behind the complete public facade.
+
+        ``supported_filter_policies`` 透传 backend；``None`` 保持默认（仅
+        ``credential-filter/v1``）。Host 组合传入自己的 sanitizer 策略集合。
+        """
 
         if (
             not allow_development_embedder
@@ -430,6 +435,9 @@ class MemoryManager:
             )
         from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
 
+        backend_kwargs: dict[str, Any] = {}
+        if supported_filter_policies is not None:
+            backend_kwargs["supported_filter_policies"] = frozenset(supported_filter_policies)
         backend = SQLiteHumanMemoryBackend(
             db_path,
             analysis_delivery_authority=analysis_delivery_authority,
@@ -441,6 +449,7 @@ class MemoryManager:
             prospective_signal_authority=prospective_signal_authority,
             audit_access_authority=audit_access_authority,
             short_horizon_embedder=short_horizon_embedder,
+            **backend_kwargs,
         )
         await backend.initialize()
         return cls(backend, world or _NullWorldModel())
