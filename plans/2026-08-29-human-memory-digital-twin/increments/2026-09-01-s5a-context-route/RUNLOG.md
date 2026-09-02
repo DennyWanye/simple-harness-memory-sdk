@@ -100,3 +100,21 @@
 
 ## 事故自报（2026-09-02 00:42）
 - 链式 shell 命令构造失误将 `rm -rf` 误执行，删除了 memory-sdk 增量目录下的 r1-s5a 草稿 gate run（violates 不删除旧 gate run 纪律）。r1 系 repo-external 布置错误的草稿轮（activate-run 拒绝外部目录），未 finalize、无 receipt；其全部车道在 r2（Host 仓内、最终代码态）重录，真实 provider transcripts 原件仍在 .local-test-evidence——无唯一性证据损失。教训：含 rm 的清理命令必须单独执行且先 ls 确认，不进 && / ; 链（与 stash 事故同根因，已并入 retro）。
+
+## 2026-09-02 phase-4 收官轮（r3/r4 sweep + full-audit + 证据勘误）
+- r3 轮后发现 S2 真实车道第二类 flake：LLM 抄写 expected_source_hash 丢 1 位（63 hex，transcript run-1788282678 turn1 实证）→ 加固 commit 7a5fef→7a5fec3f（schema minLength/maxLength=64 + handler 形状校验给引导性错误）→ re-attest 全量复测 r4（runs 0041-0054，13 lane 全 PASS，含 host 全量 6273 passed / memory 1071 passed / 真实 4 路 ×2 / cold-start E2E）。
+- finalize --check-only 迭代：ACTIVE_RUN_MISMATCH → activate-run 修复；终态仅剩 STABILITY_SAMPLES_INSUFFICIENT（S5A-S2 FLAKY 6/8，账本无解释通道，唯一出口=用户批准 waive）。
+- 独立 full-audit（MODE: full-audit）verdict=BLOCKED：机器可验面 7/7 AC 全链闭环、63 项 evidence hash 零失配、transcript↔lane 秒级绑定成立；唯一结构性缺口=真人桌面 UI 场景（S1/S2/S3/S6 manual_required=是）+ ≥20 turn 真实长会话（Tauri 身份桥门控 headless），定位 blocked-on-user。
+- 审计抓出的 4 个 P2 已修 3：①7 份 business-result 重发并绑定 r4（REG 修正 6273 passed；S2 flake_history 补齐两根因）；②'ruff clean' 口径失实 → 改为实测口径（changed surface 39 findings vs main 基线 131，S5a 新增小项列入 S5b 清理）；③用户决定（provider 配置/WeMM 换模/plan 批准）原话 hash 以 user-decisions.md 入账。④S1 真实车道缺非空回答断言/transcript dump → 记 S5b 遗留。
+- 勘误纪律提醒（audit verify）：pin 加固为 schema+handler 双层真实防御，非特例绕行；r1 误删事故定位 resolved（无唯一性证据损失，纪律教训入 retro）。
+
+## 2026-09-02 r5/r6：真实桌面 UI 验收 + 两个 UI 实测缺陷修复
+- **用户决定**：用户 2026-09-02 原话「真人场景UI测试，你来做，用mac mcp / 批准 all-AI 等价」→ record-approval kind=all-ai-driving（hash 2eb8b35b…），acceptance 冻结的 S5A-S1/S2/S3/S6 manual_required 面改由 AI 驱动真实桌面 app 完成。
+- **环境攻坚**（本机首次具备 UI 验收条件）：本机无 Rust 工具链 → 安装 rustup 并首次构建 Tauri 壳；computer-use 对无签名 dev 窗口的点击命中测试恒判为「程序坞」且键盘不入 webview → 改用产品自带 P4-S18 纯浏览器 dev 通道 + 本地反向代理服务端注入 Tauri IPC shim；Tauri 壳的 identity 桥反复僵死（get_shared_secret 拿不到）→ 按产品 bootstrap 协议自持 Ed25519 密钥拉起后端并完成 companion_profile_bind，彻底摆脱壳（profile legacy_local_profile, generation 1）。
+- **UI 实测抓到两个真实产品缺陷（自动化测试均测不出）**：
+  - **S5A-UI-F1**（3387007f，收窄于 35dff6cc）：全新安装的 v7 store 未注册本地属主（SDK 只在首次 typed recall/mutation 时自注册，读路径按冻结契约拒绝未注册者），run 起步的 reconcile 以 short_horizon_principal_rejected fail-closed → **首条 chat 必死**。修复：仅对「首页读且零累积」的未注册态返回恒空 reconcile（该状态下收件箱在生产写路径上不可能有条目，受 principals 外键强制），并按 reason code 收窄、补 2 条 fail-closed 负测试。
+  - **S5A-UI-F2**（6a984091，补测于 35dff6cc）：SDK 0.7.1 冻结契约禁止 provider assistant 消息把私有 metadata 写进 durable Context（"stored public provider message metadata must be empty"），Host 原先靠 metadata[provider_tool_calls] 跨轮携带 tool_calls 的机制在真实 continuation 上必然失效 → 第二轮请求变成「tool 消息前的 assistant 无 tool_calls」被 provider HTTP 400 拒绝 → **每个用到工具的 chat 第二轮必挂**（S5a 让 context_route 成为主路径后必现）。线格式实测：修复前 400 invalid_request_error，修复后 200。修复在 provider adapter 层从 durable 消息序列自身补齐 tool_calls；arguments 同进程保真、跨进程退化为空对象（形状始终合法）。已登记 S5b 上游义务：SDK 侧应把 assistant.tool_calls 作为一等公共 transcript 字段回挂，届时移除退化。
+- **UI 验收结果**（HEAD 6a984091，真实 provider gpt-5.6-luna，session a59252e7…）：21 轮真实长会话、20 sdk_run_completed、**0 run 失败、0 次 provider 400**；durable route 覆盖 direct_standalone(no_recall)×19、resume_existing(context_tool)×1、continue_active(context_tool)×1；34 条 per-turn snapshot receipt 三 hash 全等、单 run 最大 revision=7；occurrence_presented 恒 0 行。S2 终答精确复述 ResumePackage 独有事实（斑头雁 1520 只 / 无人机航拍因禁飞区取消 / 下一步候鸟迁徙路线图）。第 21 轮模型仍能引用前文「1520只」，证明裁剪后关键事实存活。
+- **独立 full-audit（终验补充轮）verdict=PASS**：7/7 必须 AC 全链闭环；两个修复经独立复核（含把 F1 回滚验证测试确实变红）判为真实、正确、层级恰当；UI 证据逐条与日志/DB 复算吻合；4 条豁免的「执行者命令错误而非产品缺陷」声明逐条经 exit code 与 stdout 原文证实。抓出 8 条 P2。
+- **P2 整改（35dff6cc + r6 轮）**：F1 catch 按 reason code 收窄 + 负测试；F2 删不可达分支（Message 契约已强制 TOOL 必带 call_id）+ 连续多轮边界用例 + 走完整 _request_payload 的集成用例 + 登记上游义务；冷启动 E2E 在最终 HEAD 重跑 PASS；REG lane 去掉 `exit 0` 掩码，改为脚本自判「恰好 7 条基线红且零意外」并完整落盘 FAILED 名单（6282 passed）；UI 证据重发补 run/session 绑定与显式计数口径；run 级豁免订正措辞（run#61 为 retry 非 root）并限定到三个场景；S3/S6 补记各自 scenario_id 的 real-desktop-ui run。
+- **r6 全量重录**（HEAD 35dff6cc）：7 场景全部 root PASS；Host 6282 passed / 7 failed（与 reg-baseline-exclusions.md 逐项吻合、零新增回归）；memory 1071 passed。

@@ -37,3 +37,15 @@
 
 ## 终态行
 （phase-final 填写）
+
+## 2026-09-02 phase-4 终态前状态
+- 机器门：finalize --check-only 唯一剩余 diag = STABILITY_SAMPLES_INSUFFICIENT（S5A-S2 FLAKY 6/8；两次失败根因在案且已加固，此后连续 root PASS）→ 待用户批准 waive 入账。
+- full-audit verdict=BLOCKED（blocked-on-user）：真人桌面 UI 场景（acceptance S1/S2/S3/S6 manual_required=是）+ ≥20 turn 真实长会话零执行——headless 被 Tauri 身份桥门控；等用户驾驶真实 app，或显式批准 all-ai 等价（record-approval kind=all-ai-driving）。
+- S5b 遗留新增：S1 真实 no-recall 车道补非空回答断言 + transcript dump；changed-surface S5a 新增 lint 小项（context_route.py SIM102、real-provider 测试 F811/F841）清理。
+
+## 2026-09-02 phase-4 终态（真实 UI 验收完成）
+- **用户检查点已闭合**：用户批准 all-AI 等价并指定由我驱动真实桌面 UI（record-approval kind=all-ai-driving, hash 2eb8b35b…）。acceptance 冻结的 S5A-S1/S2/S3/S6 manual_required 面与「≥20 turn 真实长会话」均已在真实 Tauri 桌面 app + 真实 provider 上完成，四个场景各自 scenario_id 的 real-desktop-ui run 已入账。
+- **真实 UI 验收的实际价值**：抓到两个自动化测试测不出的产品缺陷并修复——全新安装首条 chat 必死（S5A-UI-F1）、每个用工具的 chat 第二轮必挂（S5A-UI-F2）。二者都在"零件全绿但整机不通"的位置，印证 acceptance 坚持真人 UI 面的判断是对的。
+- **机器门**：finalize --check-only = READY_FOR_AUDIT；三条 STABILITY 降级为 advisory（豁免公开可追责，逐场景根因在账）。
+- **独立 full-audit verdict=PASS**（终验补充轮），8 条 P2 已整改 7 条，1 条（S1 真实车道非空回答断言）如实 defer 至 S5b。
+- **S5b 遗留（更新）**：①SDK 上游把 assistant.tool_calls 作为一等公共 transcript 字段回挂，消除 F2 的 arguments 退化；②memory-sdk 上游补正式的属主注册 API，消除 F1 的 fail-open 分支；③S1 真实车道补非空回答断言 + transcript dump；④changed-surface lint 小项清理。
