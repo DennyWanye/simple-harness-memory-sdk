@@ -1,0 +1,21 @@
+# 真实 UI 观察记录（Browser pane，http://127.0.0.1:5199/，tabId=seed）
+## 页面加载后（截图 1，内联于会话）
+- 左栏：会话 / 新建普通会话 / 无项目会话 / 暂无 Session；左下角 "● 已连接"
+- 顶栏：新对话（直接输入即可开始）；右上角模型徽标 "gpt-5.6-luna"
+- 消息流："（消息流为空）"；底部输入框占位 "输入消息，Enter 发送..."；状态 "✓ 空闲"
+## 操作
+1. left_click 输入框 (380,390) → type "今天想去公园散步" → 截图 2：输入框显示 "今天想去公园散步"
+2. key Return → 3s 后截图 3：输入框仍为 "今天想去公园散步"，消息流仍为空（Enter 未触发发送）
+3. left_click "发送" 按钮 (595,414) → 4s 后截图 4：输入框被清空（占位符恢复），消息流仍 "（消息流为空）"，状态 "✓ 空闲"
+## get_page_text（发送后）
+新对话（直接输入即可开始） / gpt-5.6-luna / （消息流为空） / 发送 / ✓ 空闲 / Enter 发送 · Shift+Enter 换行 · 📎 文本附件 · / 命令 / 未选择会话
+## 浏览器 console（发送后，全部）
+[debug] [vite] connecting...
+[error] WebSocket connection to 'ws://127.0.0.1:5199/?token=...' failed:      ← vite HMR 打到代理端口，随后回退直连，无害
+[info] [vite] Direct websocket connection fallback.
+[debug] [vite] connected.
+[log] [HealthCheck] Session health monitor started
+[warn] [session-control] socket not open; queueing message for flush on reconnect  (x2)
+## 结论
+- 通道本身走通：shim 注入成功（页面拿到 secret，"已连接"、模型徽标可见），真实点击/输入可达。
+- 发送后无终答：后端日志 105 行内没有任何 sdk_run_started / chat 事件；根因见 summary.md（SDK runtime 启动即 skipped）。

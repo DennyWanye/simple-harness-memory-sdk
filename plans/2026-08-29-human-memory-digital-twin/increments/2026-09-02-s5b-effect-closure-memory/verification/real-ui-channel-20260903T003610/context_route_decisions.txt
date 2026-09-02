@@ -1,0 +1,4 @@
+# sqlite3 /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/real-ui-channel/20260903T003610/userdata/data/state.db
+## context_route_decisions（全部行）
+
+## context_route_decisions（receipt_json / recall_refs_json）

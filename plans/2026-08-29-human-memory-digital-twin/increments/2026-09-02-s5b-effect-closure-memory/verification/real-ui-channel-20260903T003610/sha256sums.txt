@@ -1,0 +1,12 @@
+76b55826feb079a28b6a7384d27f9ae6ad1df3c4f1ef7d696aa615acebd77ca3  ./backend-log-excerpt.txt
+73979cc414029f9ab4fd1c8715c5c33e2a30a1136ac6c52fbd4f356735c17344  ./backend.log
+657a8803c4e857f33e9c8c51de3cf0a89b69b51859e0386239754392da4c1a95  ./context_route_decisions.txt
+d8a9e70c0ac5a49cc8d5a5e4cd73e0b0b067d4ecec6890a792179ebdd704bcbf  ./harness.log
+557e3ab892dcafc61497954e50dafd36413e49c6da9773ef47723810bccbef16  ./harness.pid
+d071d1f450e895a5823a87d4e4c4dbe69518a6db9f23640ae2c568d716a53871  ./proxy.log
+f1a370c99ee8c291a8edcb40538febae53891dbd39574b87d5b115266ea5a4c8  ./proxy.pid
+e10437ef773fe395eba1e417b335426de535b4ce9a6a6c807f517dc1e6c8be3c  ./summary.md
+718ad37e3f0ca512de4d710355233e3c8759d909e0a2669be7e5b1a2e024c839  ./ui-observation.txt
+5a53f707e44980bfe8a551ddf47692c318ebf9676c3acc6e236915a4b5ca1d57  ./vite.log
+b146ffede7c4e22312ac5a06289b26f346c1d43119fef2d469ca7acbfbf17d2d  ./vite.pid
+29ef1235ed1acab5021d1da9daed5384d926e5ee7e7fd0bfd874fef047017d24  /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/real-ui-channel/20260903T003610/userdata/data/state.db
