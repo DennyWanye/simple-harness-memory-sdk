@@ -666,8 +666,19 @@ async def test_memory_selector_reconstructs_create_final_id_lineage(tmp_path: Pa
     )
     await backend.initialize()
     try:
-        for evidence_envelope, evidence_admission in evidence:
+        # 0.6.1：accepted plan 在 prepare 事务内物化，Host 的 evidence authority 必须在
+        # 分析前就能解析 executor 将引用的 span（与 _Executor 的 span 形状一致）。
+        for ordinal, (evidence_envelope, evidence_admission) in enumerate(evidence, start=1):
             await backend.ingest_committed_evidence(evidence_envelope, evidence_admission)
+            cognitive_authority.register_admitted(
+                evidence_envelope,
+                evidence_admission,
+                replace(
+                    _span(evidence_envelope, evidence_admission),
+                    span_id=f"analysis-span-{ordinal}",
+                    item_id=f"message-{ordinal}",
+                ),
+            )
         runner = DurableMemoryJobRunner(
             backend,
             executor,
@@ -683,14 +694,12 @@ async def test_memory_selector_reconstructs_create_final_id_lineage(tmp_path: Pa
             plan_row = await cursor.fetchone()
         assert plan_row is not None
         plan = MemoryMutationPlan.from_json(json.loads(str(plan_row["plan_json"])))
-        evidence_by_id = {item[0].evidence_id: item for item in evidence}
-        for evidence_span in plan.operations[0].evidence_spans:
-            evidence_envelope, evidence_admission = evidence_by_id[evidence_span.evidence_id]
-            cognitive_authority.register_admitted(
-                evidence_envelope,
-                evidence_admission,
-                evidence_span,
-            )
+        async with backend.connection.execute(
+            "SELECT COUNT(*) FROM memory_mutation_receipts"
+        ) as cursor:
+            receipts_after_runner = await cursor.fetchone()
+        assert receipts_after_runner is not None and int(receipts_after_runner[0]) == 1
+        # Host 再次 apply 同一 plan 是幂等回放（0.6.0 桥接调用保持可用）。
         result = await backend.apply_memory_mutation_plan(
             principal=_cognitive_principal(),
             scope=MemoryScope.personal("actor-1"),
@@ -698,15 +707,22 @@ async def test_memory_selector_reconstructs_create_final_id_lineage(tmp_path: Pa
         )
         assert result.receipt_ref is not None
         async with backend.connection.execute(
+            "SELECT COUNT(*) FROM memory_mutation_receipts"
+        ) as cursor:
+            receipts_after_replay = await cursor.fetchone()
+        assert receipts_after_replay is not None and int(receipts_after_replay[0]) == 1
+        async with backend.connection.execute(
             "SELECT memory_id FROM cognitive_memory_heads WHERE principal_id=?",
             ("actor-1",),
         ) as cursor:
             memory_row = await cursor.fetchone()
         assert memory_row is not None
         final_memory_id = str(memory_row["memory_id"])
+        # 仓储内物化使用 principals 行的形状（此处为 ingest 写入的占位形状）；
+        # Host 形状的属主由 register_principal_owner 登记（0.6.1 §8.4）。
         page = await backend.export_audit_trace(
             AuditTraceQuery("actor-1", AuditTraceSelector.MEMORY, final_memory_id),
-            principal=_cognitive_principal(),
+            principal=_principal(),
         )
         assert len(page.items) == 1
         assert {item.kind for item in page.items[0].lineage_refs} >= {

@@ -282,6 +282,27 @@ _AUDIT_IDENTIFIER_CREDENTIAL_PATTERNS = (
 )
 
 
+class _MutationKernelCapability:
+    """Opaque single-use capability minted by the repository for one kernel call."""
+
+    __slots__ = ()
+
+
+@dataclass(frozen=True, slots=True)
+class _MutationKernelOutcome:
+    result: MemoryMutationApplyResult
+    short_circuit: bool
+
+
+class _MutationKernelRollback(Exception):
+    """The kernel requires the whole transaction to roll back with this apply result."""
+
+    def __init__(self, exc: BaseException, result: MemoryMutationApplyResult) -> None:
+        super().__init__(str(exc))
+        self.exc = exc
+        self.result = result
+
+
 @dataclass(slots=True)
 class _DeliveryAdmissionState:
     admission: object
@@ -344,6 +365,7 @@ class SQLiteHumanMemoryBackend:
         self._admission_lock = asyncio.Lock()
         self._authority_registration_lock = threading.Lock()
         self._delivery_admissions: dict[int, _DeliveryAdmissionState] = {}
+        self._mutation_kernel_capabilities: set[int] = set()
         self._receipt: InitializationReceipt | None = None
         self._audit_cursor_hmac_key: bytes | None = None
         self._busy_timeout_ms = 5000
@@ -5908,43 +5930,14 @@ class SQLiteHumanMemoryBackend:
         """Apply one exact Harness plan as a repository-owned transaction."""
 
         from simple_harness.runtime import (
-            EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION,
-            CreatedByOperationTarget,
-            EvidenceItemAuthority,
-            ExistingMemoryTarget,
-            InformationAttribute,
-            LongTermMemoryType,
-            MemoryActionAuthority,
             MemoryMutationApplyOutcome,
             MemoryMutationApplyReasonCode,
-            MemoryMutationApplyReceipt,
-            MemoryMutationApplyReceiptRef,
             MemoryMutationApplyResult,
-            MemoryMutationKind,
             MemoryMutationPlan,
-            MemoryMutationPlanOutcome,
-            PrivacyClass,
-            SemanticMemoryPayload,
-            SemanticRelationMemoryPayload,
-            verify_evidence_span,
-        )
-        from simple_harness.runtime.memory_action_protocol import (
-            MEMORY_ACTION_AUTHORITY_SCHEMA_VERSION,
-            verify_memory_action_authority,
         )
 
         from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
-        from simple_harness_memory.core.mutations import (
-            InformationClassificationPolicy,
-            compile_memory_mutation_plan,
-            join_information_classification,
-            validate_lifecycle_transition,
-        )
-        from simple_harness_memory.core.suppression import (
-            OrdinaryMemoryPurpose,
-            SuppressionCandidate,
-            SuppressionDenied,
-        )
+        from simple_harness_memory.core.mutations import InformationClassificationPolicy
 
         if type(principal) is not MemoryPrincipal:
             raise TypeError("principal must use MemoryPrincipal")
@@ -5973,8 +5966,8 @@ class SQLiteHumanMemoryBackend:
                 except Exception as audit_exc:
                     raise MemoryCorruptionError("mutation_rejection_audit_failed") from audit_exc
                 raise
-        classification_policy = self._classification_policy
-        assert type(classification_policy) is InformationClassificationPolicy
+        if type(self._classification_policy) is not InformationClassificationPolicy:
+            raise MemoryValidationError("classification_policy_required")
 
         async with self._write_lock:
             begun = False
@@ -5984,1307 +5977,37 @@ class SQLiteHumanMemoryBackend:
                 await self._db.execute("BEGIN IMMEDIATE")
                 begun = True
                 self._fault("mutation.after_begin")
-
-                prior_result = await self._read_mutation_apply_result_unlocked(plan)
-                if (
-                    prior_result is not None
-                    and type(prior_result) is MemoryMutationApplyResult
-                    and prior_result.outcome is not MemoryMutationApplyOutcome.COMMITTED
-                ):
-                    await self._db.execute("COMMIT")
-                    committed = True
-                    return prior_result
-
-                replay = await self._read_mutation_receipt_by_idempotency_unlocked(
-                    plan.subject, plan.idempotency_key
-                )
-                if replay is not None:
-                    stored_plan_hash, stored_receipt = replay
-                    if stored_plan_hash != plan.plan_hash:
-                        raise MemoryIdempotencyConflict("mutation_idempotency_hash_conflict")
-                    stored_receipt.validate_plan(plan)
-                    stored_result = await self._read_mutation_apply_result_unlocked(plan)
-                    if type(stored_result) is not MemoryMutationApplyResult:
-                        raise MemoryCorruptionError("committed mutation apply result is missing")
-                    assert stored_result is not None
-                    if (
-                        stored_result.outcome is not MemoryMutationApplyOutcome.COMMITTED
-                        or stored_result.receipt_ref
-                        != MemoryMutationApplyReceiptRef(
-                            stored_receipt.receipt_id,
-                            stored_receipt.receipt_hash,
-                        )
-                    ):
-                        raise MemoryCorruptionError("committed mutation apply result differs")
-                    await self._db.execute("COMMIT")
-                    committed = True
-                    return stored_result
-
-                compiled = compile_memory_mutation_plan(plan)
-                transaction_at = _timestamp(self._now())
-                await self._db.execute(
-                    "INSERT INTO principals(principal_id,deployment_id,household_id,actor_id,"
-                    "created_at) VALUES(?,?,?,?,?) ON CONFLICT(principal_id) DO UPDATE SET "
-                    "deployment_id=excluded.deployment_id,household_id=excluded.household_id,"
-                    "actor_id=excluded.actor_id WHERE principals.deployment_id="
-                    "principals.principal_id AND principals.household_id=principals.principal_id "
-                    "AND principals.actor_id=principals.principal_id",
-                    (
-                        plan.subject,
-                        principal.deployment_id,
-                        principal.household_id,
-                        principal.actor_id,
-                        transaction_at,
-                    ),
-                )
-                async with self._db.execute(
-                    "SELECT deployment_id,household_id,actor_id FROM principals "
-                    "WHERE principal_id=?",
-                    (plan.subject,),
-                ) as cursor:
-                    principal_row = await cursor.fetchone()
-                if principal_row is None or tuple(str(item) for item in principal_row) != (
-                    principal.deployment_id,
-                    principal.household_id,
-                    principal.actor_id,
-                ):
-                    raise MemoryOwnershipConflict("cognitive principal binding differs")
-                await self._verify_plan_evidence_refs_unlocked(plan)
-                async with self._db.execute(
-                    "SELECT revision FROM cognitive_apply_heads WHERE principal_id=?",
-                    (plan.subject,),
-                ) as cursor:
-                    head_row = await cursor.fetchone()
-                current_apply_revision = 1 if head_row is None else int(head_row[0])
-                if current_apply_revision != plan.base_revision:
-                    raise MemoryWriterConflict("cognitive_apply_head_stale")
-                if head_row is None:
-                    await self._db.execute(
-                        "INSERT INTO cognitive_apply_heads(principal_id,revision,updated_at) "
-                        "VALUES(?,?,?)",
-                        (plan.subject, current_apply_revision, transaction_at),
+                try:
+                    kernel_outcome = await self._apply_mutation_plan_kernel_unlocked(
+                        principal,
+                        scope,
+                        plan,
+                        capability=self._mint_mutation_kernel_capability(),
                     )
-
-                verified_authorities: dict[str, EvidenceItemAuthority] = {}
-                verified_span_origins: dict[str, tuple[object, ...]] = {}
-                for compiled_operation in compiled.operations:
-                    operation = compiled_operation.operation
-                    for span in operation.evidence_spans:
-                        if span.span_hash in verified_authorities:
-                            continue
-                        try:
-                            authority = await verify_evidence_span(span, self._evidence_authority)
-                        except (TypeError, ValueError) as exc:
-                            raise MemoryValidationError("evidence_authority_rejected") from exc
-                        if (
-                            type(authority) is not EvidenceItemAuthority
-                            or authority.schema_version != EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION
-                        ):
-                            raise MemoryValidationError("evidence_authority_rejected")
-                        origins = await self._verify_mutation_span_unlocked(
-                            subject=plan.subject,
-                            span=span,
-                        )
-                        verified_authorities[span.span_hash] = authority
-                        verified_span_origins[span.span_hash] = origins
-                self._fault("mutation.after_evidence")
-
-                protected_kinds = {
-                    MemoryMutationKind.REVISE,
-                    MemoryMutationKind.SUPERSEDE,
-                    MemoryMutationKind.SUPPRESS,
-                }
-                missing_action_authorities: list[str] = []
-                verified_action_authorities: list[
-                    tuple[
-                        int,
-                        MemoryMutationOperation,
-                        MemoryActionAuthorityRef,
-                        MemoryActionAuthority,
-                        float,
-                    ]
-                ] = []
-                action_authority_failure: MemoryValidationError | None = None
-                for canonical_index, compiled_operation in enumerate(compiled.operations, start=1):
-                    operation = compiled_operation.operation
-                    if operation.kind not in protected_kinds:
-                        continue
-                    if not isinstance(operation.target, ExistingMemoryTarget):
-                        raise MemoryValidationError("memory_action_exact_target_required")
-                    async with self._db.execute(
-                        "SELECT current_revision FROM cognitive_memory_heads "
-                        "WHERE principal_id=? AND deployment_id=? AND household_id=? "
-                        "AND scope_kind=? AND scope_owner=? "
-                        "AND memory_id=?",
-                        (
-                            plan.subject,
-                            principal.deployment_id,
-                            principal.household_id,
-                            scope.kind.value,
-                            scope.owner_id,
-                            operation.target.memory_id,
-                        ),
-                    ) as cursor:
-                        action_target_row = await cursor.fetchone()
-                    if action_target_row is None:
-                        raise MemoryValidationError("mutation_target_not_found")
-                    if int(action_target_row[0]) != operation.target.revision:
-                        raise MemoryWriterConflict("cognitive_target_revision_stale")
-                    intent = plan.action_intent(operation.operation_id)
-                    if intent.canonical_operation_index != canonical_index:
-                        raise MemoryCorruptionError("memory action canonical index differs")
-                    reference = operation.action_authority_ref
-                    if reference is None:
-                        missing_action_authorities.append(operation.operation_id)
-                        continue
-                    if self._memory_action_authority is None:
-                        action_authority_failure = MemoryValidationError(
-                            "action_authority_rejected"
-                        )
-                        break
-                    try:
-                        verification_started_at = _timestamp(self._now())
-                        verified_action = await verify_memory_action_authority(
-                            intent,
-                            reference,
-                            self._memory_action_authority,
-                            current_time=verification_started_at,
-                        )
-                    except (KeyError, TypeError, ValueError) as exc:
-                        action_authority_failure = MemoryValidationError(
-                            "action_authority_rejected"
-                        )
-                        action_authority_failure.__cause__ = exc
-                        break
-                    if (
-                        type(verified_action) is not MemoryActionAuthority
-                        or verified_action.schema_version != MEMORY_ACTION_AUTHORITY_SCHEMA_VERSION
-                    ):
-                        action_authority_failure = MemoryValidationError(
-                            "action_authority_rejected"
-                        )
-                        break
-                    consumed_at = _timestamp(self._now())
-                    if not (verified_action.issued_at <= consumed_at < verified_action.expires_at):
-                        action_authority_failure = MemoryValidationError(
-                            "action_authority_rejected"
-                        )
-                        break
-                    verified_action_authorities.append(
-                        (
-                            canonical_index,
-                            operation,
-                            reference,
-                            verified_action,
-                            consumed_at,
-                        )
-                    )
-
-                if missing_action_authorities or action_authority_failure is not None:
-                    if action_authority_failure is not None:
-                        action_exc = action_authority_failure
-                        action_result = _mutation_apply_result(
-                            plan,
-                            outcome=MemoryMutationApplyOutcome.REJECTED,
-                            reason_code=(MemoryMutationApplyReasonCode.ACTION_AUTHORITY_REJECTED),
-                            decided_at=_timestamp(self._now()),
-                        )
-                    else:
-                        action_exc = MemoryValidationError("action_authority_required")
-                        action_result = _mutation_apply_result(
-                            plan,
-                            outcome=MemoryMutationApplyOutcome.NEEDS_USER_CONFIRMATION,
-                            reason_code=(MemoryMutationApplyReasonCode.ACTION_AUTHORITY_REQUIRED),
-                            decided_at=_timestamp(self._now()),
-                            confirmation_operation_ids=tuple(missing_action_authorities),
-                        )
+                except _MutationKernelRollback as rollback:
                     await self._db.execute("ROLLBACK")
                     begun = False
                     try:
                         await self._append_mutation_rejection_audit_unlocked(
                             plan,
                             authenticated_principal_id=principal.actor_id,
-                            exc=action_exc,
-                            apply_result=action_result,
+                            exc=rollback.exc,
+                            apply_result=rollback.result,
                         )
                     except Exception as audit_exc:
                         raise MemoryCorruptionError(
                             "mutation_rejection_audit_failed"
                         ) from audit_exc
-                    return cast(MemoryMutationApplyResult, action_result)
-
-                action_consumptions: dict[str, tuple[str, str]] = {}
-                for (
-                    canonical_index,
-                    operation,
-                    reference,
-                    authority,
-                    consumed_at,
-                ) in verified_action_authorities:
-                    intent = plan.action_intent(operation.operation_id)
-                    consumption_id = _stable_id(
-                        "memory-action-authority-consumption",
-                        plan.subject,
-                        plan.plan_id,
-                        operation.operation_id,
-                    )
-                    consumption_json: dict[str, JsonValue] = {
-                        "schema_version": 1,
-                        "consumption_id": consumption_id,
-                        "principal_id": plan.subject,
-                        "plan_id": plan.plan_id,
-                        "plan_hash": plan.plan_hash,
-                        "plan_intent_hash": plan.plan_intent_hash,
-                        "operation_id": operation.operation_id,
-                        "canonical_operation_index": canonical_index,
-                        "action_kind": operation.kind.value,
-                        "target_memory_id": intent.target_memory_id,
-                        "target_revision": intent.target_revision,
-                        "intent": intent.to_json(),
-                        "intent_hash": intent.intent_hash,
-                        "authority_ref": reference.to_json(),
-                        "authority_ref_hash": reference.ref_hash,
-                        "authority": authority.to_json(),
-                        "authority_hash": authority.authority_hash,
-                        "consumed_at": consumed_at,
-                    }
-                    consumption_hash = hashlib.sha256(
-                        canonical_json(consumption_json).encode("utf-8")
-                    ).hexdigest()
-                    try:
-                        await self._db.execute(
-                            "INSERT INTO memory_action_authority_consumptions("
-                            "consumption_id,principal_id,plan_id,plan_hash,plan_intent_hash,"
-                            "operation_id,canonical_operation_index,action_kind,target_memory_id,"
-                            "target_revision,intent_json,intent_hash,authority_ref_json,"
-                            "authority_ref_hash,authority_schema_version,authority_id,"
-                            "authority_hash,issuer_ref,nonce,replay_identity,authority_json,"
-                            "issued_at,expires_at,consumed_at,consumption_hash) "
-                            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                            (
-                                consumption_id,
-                                plan.subject,
-                                plan.plan_id,
-                                plan.plan_hash,
-                                plan.plan_intent_hash,
-                                operation.operation_id,
-                                canonical_index,
-                                operation.kind.value,
-                                intent.target_memory_id,
-                                intent.target_revision,
-                                canonical_json(intent.to_json()),
-                                intent.intent_hash,
-                                canonical_json(reference.to_json()),
-                                reference.ref_hash,
-                                authority.schema_version,
-                                authority.authority_id,
-                                authority.authority_hash,
-                                authority.issuer_ref,
-                                authority.nonce,
-                                authority.replay_identity,
-                                canonical_json(authority.to_json()),
-                                authority.issued_at,
-                                authority.expires_at,
-                                consumed_at,
-                                consumption_hash,
-                            ),
-                        )
-                    except sqlite3.IntegrityError as exc:
-                        raise MemoryValidationError("action_authority_replayed") from exc
-                    action_consumptions[operation.operation_id] = (
-                        consumption_id,
-                        consumption_hash,
-                    )
-
-                created_by_operation: dict[str, str] = {}
-                operation_results: dict[str, tuple[str, int, int | None]] = {}
-                classification_results: dict[str, tuple[str, str]] = {}
-                for compiled_operation in compiled.operations:
-                    operation = compiled_operation.operation
-                    canonical_payload = operation.payload
-                    relation_endpoints: tuple[
-                        _ResolvedRelationEndpoint, _ResolvedRelationEndpoint
-                    ] | tuple[()] = ()
-                    is_relation_memory = False
-                    target_memory_id: str | None = None
-                    target_revision: int | None = None
-                    target_type: LongTermMemoryType | None = None
-                    target_lifecycle: Any = None
-                    target_privacy: PrivacyClass | None = None
-                    target_attributes: tuple[InformationAttribute, ...] = ()
-                    target_content_json: str | None = None
-                    target_content_hash: str | None = None
-                    target_conflict_status: str | None = None
-                    active_conflict_row: aiosqlite.Row | None = None
-
-                    if operation.kind is MemoryMutationKind.CREATE:
-                        memory_id = _stable_id(
-                            "cognitive-memory",
-                            plan.subject,
-                            plan.plan_id,
-                            operation.operation_id,
-                        )
-                        revision = 1
-                    else:
-                        if isinstance(operation.target, ExistingMemoryTarget):
-                            target_memory_id = operation.target.memory_id
-                            expected_revision = operation.target.revision
-                        elif isinstance(operation.target, CreatedByOperationTarget):
-                            try:
-                                target_memory_id = created_by_operation[
-                                    operation.target.operation_id
-                                ]
-                            except KeyError as exc:
-                                raise MemoryValidationError(
-                                    "mutation_created_target_not_materialized"
-                                ) from exc
-                            expected_revision = None
-                        else:  # pragma: no cover - exact Harness DTO prevents this
-                            raise MemoryValidationError("mutation_target_required")
-                        async with self._db.execute(
-                            "SELECT h.memory_type,h.current_revision,r.lifecycle_state,"
-                            "r.effective_privacy_class,r.information_attributes_json,"
-                            "r.content_json,r.epistemic_status,r.verification_state,"
-                            "r.valid_from,r.valid_to,h.scope_kind,h.scope_owner,"
-                            "r.scope_kind,r.scope_owner,r.conflict_status,r.content_hash "
-                            "FROM cognitive_memory_heads h "
-                            "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
-                            "AND r.revision=h.current_revision "
-                            "WHERE h.principal_id=? AND h.deployment_id=? "
-                            "AND h.household_id=? AND h.scope_kind=? AND h.scope_owner=? "
-                            "AND h.memory_id=?",
-                            (
-                                plan.subject,
-                                principal.deployment_id,
-                                principal.household_id,
-                                scope.kind.value,
-                                scope.owner_id,
-                                target_memory_id,
-                            ),
-                        ) as cursor:
-                            target_row = await cursor.fetchone()
-                        if target_row is None:
-                            raise MemoryValidationError("mutation_target_not_found")
-                        target_type = LongTermMemoryType(str(target_row[0]))
-                        target_revision = int(target_row[1])
-                        if str(target_row[10]) != str(target_row[12]) or str(target_row[11]) != str(
-                            target_row[13]
-                        ):
-                            raise MemoryCorruptionError("cognitive head and revision scope differ")
-                        if expected_revision is not None and target_revision != expected_revision:
-                            raise MemoryWriterConflict("cognitive_target_revision_stale")
-                        lifecycle_type = type(operation.lifecycle_state)
-                        target_lifecycle = lifecycle_type(str(target_row[2]))
-                        validate_lifecycle_transition(
-                            memory_type=target_type,
-                            current_lifecycle=target_lifecycle,
-                            operation=operation,
-                        )
-                        target_privacy = PrivacyClass(str(target_row[3]))
-                        raw_attributes = json.loads(str(target_row[4]))
-                        if not isinstance(raw_attributes, list):
-                            raise MemoryCorruptionError(
-                                "cognitive information attributes are invalid"
-                            )
-                        target_attributes = tuple(
-                            InformationAttribute(str(item)) for item in raw_attributes
-                        )
-                        target_content_json = str(target_row[5])
-                        target_conflict_status = str(target_row[14])
-                        target_content_hash = str(target_row[15])
-                        async with self._db.execute(
-                            "SELECT g.* FROM cognitive_conflict_groups g "
-                            "LEFT JOIN cognitive_conflict_resolutions x ON x.group_id=g.group_id "
-                            "WHERE g.principal_id=? AND g.memory_id=? "
-                            "AND g.challenger_revision=? AND x.group_id IS NULL",
-                            (plan.subject, target_memory_id, target_revision),
-                        ) as cursor:
-                            active_conflict_row = await cursor.fetchone()
-                        if target_conflict_status == "contested" and active_conflict_row is None:
-                            raise MemoryCorruptionError(
-                                "contested head has no active conflict group"
-                            )
-                        if operation.kind is MemoryMutationKind.CONTEST:
-                            if not isinstance(operation.target, ExistingMemoryTarget):
-                                raise MemoryValidationError("mutation_contest_exact_slot_required")
-                            if active_conflict_row is not None:
-                                raise MemoryValidationError(
-                                    "mutation_contest_nested_group_rejected"
-                                )
-                            proposed_content_json = (
-                                None
-                                if operation.payload is None
-                                else canonical_json(operation.payload.to_json())
-                            )
-                            if (
-                                proposed_content_json is None
-                                or proposed_content_json == target_content_json
-                                or operation.lifecycle_state.value != str(target_row[2])
-                                or operation.epistemic_status.value != str(target_row[6])
-                                or operation.verification_state.value != str(target_row[7])
-                                or operation.valid_time_interval.valid_from != target_row[8]
-                                or operation.valid_time_interval.valid_until != target_row[9]
-                            ):
-                                raise MemoryValidationError("mutation_contest_exact_slot_required")
-                            async with self._db.execute(
-                                "SELECT span_id,evidence_id FROM cognitive_evidence_spans "
-                                "WHERE memory_id=? AND revision=? ORDER BY ordinal",
-                                (target_memory_id, target_revision),
-                            ) as cursor:
-                                incumbent_evidence = {
-                                    (str(row[0]), str(row[1]))
-                                    for row in await cursor.fetchall()
-                                }
-                            if not incumbent_evidence:
-                                raise MemoryCorruptionError(
-                                    "conflict incumbent has no evidence"
-                                )
-                            challenger_evidence = {
-                                (span.span_id, span.evidence_id)
-                                for span in operation.evidence_spans
-                            }
-                            if not challenger_evidence or challenger_evidence <= incumbent_evidence:
-                                raise MemoryValidationError(
-                                    "mutation_contest_distinct_evidence_required"
-                                )
-                        elif active_conflict_row is not None:
-                            if operation.kind is MemoryMutationKind.REVISE:
-                                if operation.conflict_status.value != "resolved":
-                                    raise MemoryValidationError(
-                                        "mutation_conflict_resolution_state_required"
-                                    )
-                            elif operation.kind not in {
-                                MemoryMutationKind.SUPERSEDE,
-                                MemoryMutationKind.SUPPRESS,
-                            }:
-                                raise MemoryValidationError(
-                                    "mutation_active_conflict_resolution_required"
-                                )
-                        memory_id = target_memory_id
-                        revision = target_revision + 1
-
-                    target_semantic_kind = (
-                        self._semantic_kind_from_content_json(target_content_json)
-                        if target_type is LongTermMemoryType.SEMANTIC
-                        else None
-                    )
-                    if isinstance(operation.payload, SemanticRelationMemoryPayload):
-                        if (
-                            operation.kind is not MemoryMutationKind.CREATE
-                            and target_semantic_kind != "relation"
-                        ):
-                            raise MemoryValidationError(
-                                "relation_mutation_target_must_be_relation"
-                            )
-                        canonical_payload, relation_endpoints = (
-                            await self._resolve_semantic_relation_payload_unlocked(
-                                principal=principal,
-                                payload=operation.payload,
-                                created_by_operation=created_by_operation,
-                                operation_results=operation_results,
-                                now=transaction_at,
-                            )
-                        )
-                        is_relation_memory = True
-                    elif (
-                        isinstance(operation.payload, SemanticMemoryPayload)
-                        and target_semantic_kind == "relation"
-                    ):
-                        raise MemoryValidationError("relation_memory_kind_change_rejected")
-                    elif operation.payload is None and target_semantic_kind == "relation":
-                        if target_content_json is None:
-                            raise MemoryCorruptionError(
-                                "relation mutation target content is missing"
-                            )
-                        try:
-                            copied_relation_payload = SemanticRelationMemoryPayload.from_json(
-                                json.loads(target_content_json)
-                            )
-                        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-                            raise MemoryCorruptionError(
-                                "relation mutation target content is invalid"
-                            ) from exc
-                        canonical_payload, relation_endpoints = (
-                            await self._resolve_semantic_relation_payload_unlocked(
-                                principal=principal,
-                                payload=copied_relation_payload,
-                                created_by_operation=created_by_operation,
-                                operation_results=operation_results,
-                                now=transaction_at,
-                            )
-                        )
-                        is_relation_memory = True
-
-                    target_entity_ids = self._mutation_entity_ids_from_content_json(
-                        target_content_json
-                    )
-                    entity_ids = tuple(
-                        dict.fromkeys(
-                            (
-                                *target_entity_ids,
-                                *self._mutation_entity_ids(canonical_payload),
-                            )
-                        )
-                    )
-                    for span in operation.evidence_spans:
-                        resolution = await self._resolve_suppression_unlocked(
-                            SuppressionCandidate(
-                                plan.subject,
-                                evidence_id=span.evidence_id,
-                                memory_id=target_memory_id,
-                                entity_ids=entity_ids,
-                            ),
-                            OrdinaryMemoryPurpose.MUTATION,
-                        )
-                        if resolution.denied:
-                            raise SuppressionDenied()
-
-                    operation_authorities = tuple(
-                        verified_authorities[span.span_hash] for span in operation.evidence_spans
-                    )
-                    privacy_floors = [classification_policy.required_privacy_class]
-                    privacy_floors.extend(
-                        authority.required_privacy_class for authority in operation_authorities
-                    )
-                    if target_privacy is not None:
-                        privacy_floors.append(target_privacy)
-                    privacy_floors.extend(
-                        PrivacyClass(endpoint.privacy_class)
-                        for endpoint in relation_endpoints
-                    )
-                    classification = join_information_classification(
-                        operation,
-                        trusted_privacy_floors=tuple(privacy_floors),
-                        trusted_attribute_sets=(
-                            classification_policy.required_information_attributes,
-                            *(
-                                authority.required_information_attributes
-                                for authority in operation_authorities
-                            ),
-                            target_attributes,
-                            *(
-                                tuple(
-                                    InformationAttribute(item)
-                                    for item in endpoint.information_attributes
-                                )
-                                for endpoint in relation_endpoints
-                            ),
-                        ),
-                    )
-                    origins_by_registration: dict[str, tuple[str, str, str]] = {}
-                    for span in operation.evidence_spans:
-                        for origin in verified_span_origins[span.span_hash]:
-                            task_scope_id, evidence_id, registration_id = cast(
-                                tuple[str, str, str], origin
-                            )
-                            origins_by_registration[registration_id] = (
-                                task_scope_id,
-                                evidence_id,
-                                registration_id,
-                            )
-                    distinct_scopes = {value[0] for value in origins_by_registration.values()}
-                    revision_task_scope = (
-                        next(iter(distinct_scopes)) if len(distinct_scopes) == 1 else None
-                    )
-
-                    if is_relation_memory:
-                        self._fault("mutation.before_relation_memory_insert")
-                    if operation.kind is MemoryMutationKind.CREATE:
-                        await self._db.execute(
-                            "INSERT INTO cognitive_memory_heads(memory_id,principal_id,"
-                            "deployment_id,household_id,scope_kind,scope_owner,memory_type,"
-                            "current_revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                            (
-                                memory_id,
-                                plan.subject,
-                                principal.deployment_id,
-                                principal.household_id,
-                                scope.kind.value,
-                                scope.owner_id,
-                                operation.memory_type.value,
-                                revision,
-                                transaction_at,
-                                transaction_at,
-                            ),
-                        )
-                    content_json = (
-                        target_content_json
-                        if operation.payload is None
-                        else canonical_json(canonical_payload.to_json())
-                    )
-                    if content_json is None:
-                        raise MemoryCorruptionError("cognitive target content is missing")
-                    content_hash = hashlib.sha256(content_json.encode("utf-8")).hexdigest()
-                    await self._db.execute(
-                        "INSERT INTO cognitive_memory_revisions(memory_id,principal_id,revision,"
-                        "deployment_id,household_id,scope_kind,scope_owner,plan_id,plan_hash,"
-                        "operation_id,task_scope_id,"
-                        "lifecycle_state,"
-                        "epistemic_status,conflict_status,"
-                        "verification_state,effective_privacy_class,"
-                        "information_attributes_json,content_json,content_hash,valid_from,"
-                        "valid_to,created_at) "
-                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (
-                            memory_id,
-                            plan.subject,
-                            revision,
-                            principal.deployment_id,
-                            principal.household_id,
-                            scope.kind.value,
-                            scope.owner_id,
-                            plan.plan_id,
-                            plan.plan_hash,
-                            operation.operation_id,
-                            revision_task_scope,
-                            operation.lifecycle_state.value,
-                            operation.epistemic_status.value,
-                            operation.conflict_status.value,
-                            operation.verification_state.value,
-                            classification.privacy_class.value,
-                            canonical_json(
-                                [item.value for item in classification.information_attributes]
-                            ),
-                            content_json,
-                            content_hash,
-                            operation.valid_time_interval.valid_from,
-                            operation.valid_time_interval.valid_until,
-                            transaction_at,
-                        ),
-                    )
-                    if canonical_payload is None:
-                        assert target_memory_id is not None and target_revision is not None
-                        await self._copy_cognitive_payload_unlocked(
-                            operation.memory_type.value,
-                            target_memory_id,
-                            target_revision,
-                            memory_id,
-                            revision,
-                        )
-                    else:
-                        await self._insert_cognitive_payload_unlocked(
-                            memory_id,
-                            revision,
-                            canonical_payload,
-                            new_procedure_epoch=operation.kind
-                            in {
-                                MemoryMutationKind.CREATE,
-                                MemoryMutationKind.REVISE,
-                            },
-                        )
-                    if operation.memory_type is LongTermMemoryType.PROSPECTIVE:
-                        await self._append_prospective_mutation_outbox_unlocked(
-                            principal_id=plan.subject,
-                            memory_id=memory_id,
-                            revision=revision,
-                            lifecycle_state=operation.lifecycle_state.value,
-                            previous_revision=target_revision,
-                            previous_lifecycle_state=(
-                                None if target_lifecycle is None else target_lifecycle.value
-                            ),
-                            created_at=transaction_at,
-                        )
-                    await self._insert_cognitive_evidence_unlocked(
-                        memory_id, revision, operation.evidence_spans
-                    )
-                    classification_decision_id = _stable_id(
-                        "cognitive-classification-decision",
-                        plan.subject,
-                        plan.plan_id,
-                        operation.operation_id,
-                    )
-                    authority_inputs: list[JsonValue] = []
-                    for ordinal, (span, authority) in enumerate(
-                        zip(operation.evidence_spans, operation_authorities, strict=True),
-                        start=1,
-                    ):
-                        authority_inputs.append(
-                            {
-                                "ordinal": ordinal,
-                                "span_hash": span.span_hash,
-                                "evidence_id": span.evidence_id,
-                                "authority": authority.to_json(),
-                                "authority_hash": authority.authority_hash,
-                            }
-                        )
-                    target_input: JsonValue = (
-                        None
-                        if target_memory_id is None
-                        else {
-                            "memory_id": target_memory_id,
-                            "revision": target_revision,
-                            "privacy_class": (
-                                None if target_privacy is None else target_privacy.value
-                            ),
-                            "information_attributes": [item.value for item in target_attributes],
-                            }
-                    )
-                    if len(relation_endpoints) not in {0, 2}:
-                        raise MemoryCorruptionError(
-                            "semantic relation endpoint resolution is incomplete"
-                        )
-                    classification_json: dict[str, JsonValue] = {
-                        "schema_version": 1,
-                        "classification_decision_id": classification_decision_id,
-                        "principal_id": plan.subject,
-                        "plan_id": plan.plan_id,
-                        "plan_hash": plan.plan_hash,
-                        "operation_id": operation.operation_id,
-                        "memory_ref": f"{memory_id}@{revision}",
-                        "policy": classification_policy.to_json(),
-                        "policy_hash": classification_policy.policy_hash,
-                        "evidence_authorities": authority_inputs,
-                        "target": target_input,
-                        "proposal": {
-                            "privacy_class": operation.proposed_privacy_class.value,
-                            "information_attributes": [
-                                item.value for item in operation.proposed_information_attributes
-                            ],
-                        },
-                        "effective": {
-                            "privacy_class": classification.privacy_class.value,
-                            "information_attributes": [
-                                item.value for item in classification.information_attributes
-                            ],
-                        },
-                    }
-                    if relation_endpoints:
-                        classification_json["relation_endpoints"] = [
-                            {
-                                "role": role,
-                                "memory_id": endpoint.memory_id,
-                                "revision": endpoint.revision,
-                                "memory_type": endpoint.memory_type,
-                                "privacy_class": endpoint.privacy_class,
-                                "information_attributes": list(
-                                    endpoint.information_attributes
-                                ),
-                                "content_hash": endpoint.content_hash,
-                            }
-                            for role, endpoint in zip(
-                                ("source", "target"), relation_endpoints, strict=True
-                            )
-                        ]
-                    classification_decision_hash = hashlib.sha256(
-                        canonical_json(classification_json).encode("utf-8")
-                    ).hexdigest()
-                    await self._db.execute(
-                        "INSERT INTO cognitive_classification_decisions("
-                        "classification_decision_id,principal_id,plan_id,plan_hash,operation_id,"
-                        "memory_id,memory_revision,policy_id,policy_version,policy_authority_ref,"
-                        "policy_hash,policy_privacy_class,policy_attributes_json,"
-                        "target_memory_id,target_revision,target_privacy_class,"
-                        "target_attributes_json,proposed_privacy_class,proposed_attributes_json,"
-                        "effective_privacy_class,effective_attributes_json,decision_json,"
-                        "decision_hash,created_at) "
-                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (
-                            classification_decision_id,
-                            plan.subject,
-                            plan.plan_id,
-                            plan.plan_hash,
-                            operation.operation_id,
-                            memory_id,
-                            revision,
-                            classification_policy.policy_id,
-                            classification_policy.policy_version,
-                            classification_policy.authority_ref,
-                            classification_policy.policy_hash,
-                            classification_policy.required_privacy_class.value,
-                            canonical_json(
-                                [
-                                    item.value
-                                    for item in (
-                                        classification_policy.required_information_attributes
-                                    )
-                                ]
-                            ),
-                            target_memory_id,
-                            target_revision,
-                            None if target_privacy is None else target_privacy.value,
-                            canonical_json([item.value for item in target_attributes]),
-                            operation.proposed_privacy_class.value,
-                            canonical_json(
-                                [item.value for item in operation.proposed_information_attributes]
-                            ),
-                            classification.privacy_class.value,
-                            canonical_json(
-                                [item.value for item in classification.information_attributes]
-                            ),
-                            canonical_json(classification_json),
-                            classification_decision_hash,
-                            transaction_at,
-                        ),
-                    )
-                    await self._db.executemany(
-                        "INSERT INTO cognitive_classification_evidence_authorities("
-                        "classification_decision_id,ordinal,span_hash,evidence_id,"
-                        "authority_schema_version,authority_id,authority_hash,issuer_ref,"
-                        "classification_authority_ref,required_privacy_class,"
-                        "required_attributes_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                        (
-                            (
-                                classification_decision_id,
-                                ordinal,
-                                span.span_hash,
-                                span.evidence_id,
-                                authority.schema_version,
-                                authority.authority_id,
-                                authority.authority_hash,
-                                authority.issuer_ref,
-                                authority.classification_authority_ref,
-                                authority.required_privacy_class.value,
-                                canonical_json(
-                                    [
-                                        item.value
-                                        for item in authority.required_information_attributes
-                                    ]
-                                ),
-                            )
-                            for ordinal, (span, authority) in enumerate(
-                                zip(
-                                    operation.evidence_spans,
-                                    operation_authorities,
-                                    strict=True,
-                                ),
-                                start=1,
-                            )
-                        ),
-                    )
-                    await self._db.executemany(
-                        "INSERT INTO cognitive_revision_task_scope_origins("
-                        "memory_id,revision,task_scope_id,evidence_id,registration_id) "
-                        "VALUES(?,?,?,?,?)",
-                        (
-                            (memory_id, revision, task_scope_id, evidence_id, registration_id)
-                            for task_scope_id, evidence_id, registration_id in sorted(
-                                origins_by_registration.values()
-                            )
-                        ),
-                    )
-
-                    if isinstance(canonical_payload, SemanticRelationMemoryPayload):
-                        if len(relation_endpoints) != 2:
-                            raise MemoryCorruptionError(
-                                "semantic relation endpoints were not resolved"
-                            )
-                        source_endpoint, target_endpoint = relation_endpoints
-                        self._fault(
-                            "mutation.after_relation_memory_before_knowledge_row"
-                        )
-                        relation_id = _stable_id(
-                            "cognitive-knowledge-relation",
-                            plan.subject,
-                            plan.plan_id,
-                            operation.operation_id,
-                            memory_id,
-                            str(revision),
-                        )
-                        knowledge_relation_json: dict[str, JsonValue] = {
-                            "relation_id": relation_id,
-                            "principal_id": plan.subject,
-                            "plan_id": plan.plan_id,
-                            "plan_hash": plan.plan_hash,
-                            "relation_domain": "knowledge",
-                            "relation_memory_id": memory_id,
-                            "relation_memory_revision": revision,
-                            "source_memory_id": source_endpoint.memory_id,
-                            "source_revision": source_endpoint.revision,
-                            "relation_kind": canonical_payload.relation_kind.value,
-                            "target_memory_id": target_endpoint.memory_id,
-                            "target_revision": target_endpoint.revision,
-                            "operation_id": operation.operation_id,
-                        }
-                        relation_hash = hashlib.sha256(
-                            canonical_json(knowledge_relation_json).encode("utf-8")
-                        ).hexdigest()
-                        await self._db.execute(
-                            "INSERT INTO cognitive_relations(relation_id,principal_id,"
-                            "plan_id,plan_hash,relation_domain,relation_memory_id,"
-                            "relation_memory_revision,source_memory_id,source_revision,"
-                            "relation_kind,target_memory_id,target_revision,operation_id,"
-                            "created_at,relation_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                            (
-                                relation_id,
-                                plan.subject,
-                                plan.plan_id,
-                                plan.plan_hash,
-                                "knowledge",
-                                memory_id,
-                                revision,
-                                source_endpoint.memory_id,
-                                source_endpoint.revision,
-                                canonical_payload.relation_kind.value,
-                                target_endpoint.memory_id,
-                                target_endpoint.revision,
-                                operation.operation_id,
-                                transaction_at,
-                                relation_hash,
-                            ),
-                        )
-                        self._fault("mutation.after_knowledge_row_before_commit")
-
-                    if target_memory_id is not None and target_revision is not None:
-                        relation_kind = {
-                            MemoryMutationKind.REVISE: "amends",
-                            MemoryMutationKind.SUPERSEDE: "supersedes",
-                            MemoryMutationKind.CONTEST: "contests",
-                            MemoryMutationKind.SUPPRESS: "relates_to",
-                        }[operation.kind]
-                        relation_id = _stable_id(
-                            "cognitive-relation",
-                            plan.subject,
-                            plan.plan_id,
-                            operation.operation_id,
-                            relation_kind,
-                            memory_id,
-                            str(revision),
-                            target_memory_id,
-                            str(target_revision),
-                        )
-                        evolution_relation_json: dict[str, JsonValue] = {
-                            "relation_id": relation_id,
-                            "principal_id": plan.subject,
-                            "plan_id": plan.plan_id,
-                            "plan_hash": plan.plan_hash,
-                            "relation_domain": "evolution",
-                            "relation_memory_id": None,
-                            "relation_memory_revision": None,
-                            "relation_kind": relation_kind,
-                            "source_memory_id": memory_id,
-                            "source_revision": revision,
-                            "target_memory_id": target_memory_id,
-                            "target_revision": target_revision,
-                            "operation_id": operation.operation_id,
-                        }
-                        relation_hash = hashlib.sha256(
-                            canonical_json(evolution_relation_json).encode("utf-8")
-                        ).hexdigest()
-                        await self._db.execute(
-                            "INSERT INTO cognitive_relations(relation_id,principal_id,"
-                            "plan_id,plan_hash,relation_domain,relation_memory_id,"
-                            "relation_memory_revision,source_memory_id,source_revision,"
-                            "relation_kind,target_memory_id,target_revision,operation_id,"
-                            "created_at,relation_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                            (
-                                relation_id,
-                                plan.subject,
-                                plan.plan_id,
-                                plan.plan_hash,
-                                "evolution",
-                                None,
-                                None,
-                                memory_id,
-                                revision,
-                                relation_kind,
-                                target_memory_id,
-                                target_revision,
-                                operation.operation_id,
-                                transaction_at,
-                                relation_hash,
-                            ),
-                        )
-                        if operation.kind is MemoryMutationKind.CONTEST:
-                            if target_content_hash is None:
-                                raise MemoryCorruptionError(
-                                    "conflict incumbent content hash is missing"
-                                )
-                            await self._insert_cognitive_conflict_group_unlocked(
-                                principal_id=plan.subject,
-                                memory_id=memory_id,
-                                incumbent_revision=target_revision,
-                                challenger_revision=revision,
-                                incumbent_content_hash=target_content_hash,
-                                challenger_content_hash=content_hash,
-                                plan_id=plan.plan_id,
-                                plan_hash=plan.plan_hash,
-                                operation_id=operation.operation_id,
-                                created_at=transaction_at,
-                            )
-                        elif active_conflict_row is not None:
-                            await self._insert_cognitive_conflict_resolution_unlocked(
-                                group_row=active_conflict_row,
-                                principal_id=plan.subject,
-                                memory_id=memory_id,
-                                resolution_revision=revision,
-                                resolution_content_hash=content_hash,
-                                operation_kind=operation.kind.value,
-                                plan_id=plan.plan_id,
-                                plan_hash=plan.plan_hash,
-                                operation_id=operation.operation_id,
-                                created_at=transaction_at,
-                            )
-                        update = await self._db.execute(
-                            "UPDATE cognitive_memory_heads SET current_revision=?,updated_at=? "
-                            "WHERE principal_id=? AND scope_kind=? AND scope_owner=? "
-                            "AND deployment_id=? AND household_id=? "
-                            "AND memory_id=? AND current_revision=?",
-                            (
-                                revision,
-                                transaction_at,
-                                plan.subject,
-                                scope.kind.value,
-                                scope.owner_id,
-                                principal.deployment_id,
-                                principal.household_id,
-                                memory_id,
-                                target_revision,
-                            ),
-                        )
-                        if update.rowcount != 1:
-                            raise MemoryWriterConflict("cognitive_target_cas_failed")
-
-                    created_by_operation[operation.operation_id] = memory_id
-                    operation_results[operation.operation_id] = (
-                        memory_id,
-                        revision,
-                        target_revision,
-                    )
-                    classification_results[operation.operation_id] = (
-                        classification_decision_id,
-                        classification_decision_hash,
-                    )
-                    self._fault("mutation.after_operation")
-
-                self._fault("mutation.after_operations")
-                committed_at = _timestamp(self._now())
-                if any(
-                    not authority.issued_at
-                    <= transaction_at
-                    <= consumed_at
-                    <= committed_at
-                    < authority.expires_at
-                    for _, _, _, authority, consumed_at in verified_action_authorities
-                ):
-                    raise MemoryValidationError("action_authority_rejected")
-                committed_revision = plan.base_revision + (
-                    1 if plan.outcome is MemoryMutationPlanOutcome.MUTATE else 0
-                )
-                if plan.outcome is MemoryMutationPlanOutcome.MUTATE:
-                    update = await self._db.execute(
-                        "UPDATE cognitive_apply_heads SET revision=?,updated_at=? "
-                        "WHERE principal_id=? AND revision=?",
-                        (
-                            committed_revision,
-                            committed_at,
-                            plan.subject,
-                            plan.base_revision,
-                        ),
-                    )
-                    if update.rowcount != 1:
-                        raise MemoryWriterConflict("cognitive_apply_head_cas_failed")
-
-                receipt_id = _stable_id(
-                    "memory-mutation-receipt", plan.subject, plan.idempotency_key
-                )
-                classification_decision_refs: list[JsonValue] = [
-                    {
-                        "operation_id": operation_id,
-                        "classification_decision_id": classification_results[operation_id][0],
-                        "classification_decision_hash": classification_results[operation_id][1],
-                    }
-                    for operation_id in (item.operation_id for item in compiled.operations)
-                ]
-                classification_decision_refs_json = canonical_json(classification_decision_refs)
-                classification_decisions_hash = hashlib.sha256(
-                    classification_decision_refs_json.encode("utf-8")
-                ).hexdigest()
-                action_authority_refs: list[JsonValue] = [
-                    {
-                        "operation_id": item.operation_id,
-                        "action_authority_consumption_id": action_consumptions[item.operation_id][
-                            0
-                        ],
-                        "action_authority_consumption_hash": action_consumptions[item.operation_id][
-                            1
-                        ],
-                    }
-                    for item in (compiled_item.operation for compiled_item in compiled.operations)
-                    if item.operation_id in action_consumptions
-                ]
-                action_authority_refs_json = canonical_json(action_authority_refs)
-                action_authorities_hash = hashlib.sha256(
-                    action_authority_refs_json.encode("utf-8")
-                ).hexdigest()
-                transaction_started_hash = hashlib.sha256(
-                    canonical_json({"transaction_started_at": transaction_at}).encode("utf-8")
-                ).hexdigest()
-                mutation_authority_hash = hashlib.sha256(
-                    canonical_json(
-                        {
-                            "action_authorities_hash": action_authorities_hash,
-                            "classification_decisions_hash": (classification_decisions_hash),
-                            "transaction_started_hash": transaction_started_hash,
-                        }
-                    ).encode("utf-8")
-                ).hexdigest()
-                receipt = MemoryMutationApplyReceipt(
-                    receipt_id=receipt_id,
-                    authority_ref=(
-                        f"sqlite-human-memory:{self._receipt.receipt_id}:"
-                        f"mutation:{mutation_authority_hash}"
-                    ),
-                    plan_id=plan.plan_id,
-                    plan_hash=plan.plan_hash,
-                    run_id=plan.run_id,
-                    subject=plan.subject,
-                    base_revision=plan.base_revision,
-                    committed_revision=committed_revision,
-                    canonical_operation_ids=tuple(
-                        item.operation_id for item in compiled.operations
-                    ),
-                    apply_mode=plan.apply_mode,
-                    committed_at=committed_at,
-                )
-                receipt.validate_plan(plan)
-                await self._db.execute(
-                    "INSERT INTO memory_mutation_receipts(receipt_id,principal_id,"
-                    "authority_ref,plan_id,plan_hash,run_id,subject,idempotency_key,"
-                    "plan_outcome,plan_json,base_revision,committed_revision,"
-                    "canonical_operation_ids_json,apply_mode,classification_decision_refs_json,"
-                    "classification_decisions_hash,action_authority_refs_json,"
-                    "action_authorities_hash,transaction_started_at,receipt_json,"
-                    "receipt_hash,committed_at) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (
-                        receipt.receipt_id,
-                        plan.subject,
-                        receipt.authority_ref,
-                        plan.plan_id,
-                        plan.plan_hash,
-                        plan.run_id,
-                        plan.subject,
-                        plan.idempotency_key,
-                        plan.outcome.value,
-                        canonical_json(plan.to_json()),
-                        plan.base_revision,
-                        receipt.committed_revision,
-                        canonical_json(list(receipt.canonical_operation_ids)),
-                        plan.apply_mode.value,
-                        classification_decision_refs_json,
-                        classification_decisions_hash,
-                        action_authority_refs_json,
-                        action_authorities_hash,
-                        transaction_at,
-                        canonical_json(receipt.to_json()),
-                        receipt.receipt_hash,
-                        committed_at,
-                    ),
-                )
-                for compiled_operation in compiled.operations:
-                    operation = compiled_operation.operation
-                    memory_id, after_revision, before_revision = operation_results[
-                        operation.operation_id
-                    ]
-                    before_ref = (
-                        None if before_revision is None else f"{memory_id}@{before_revision}"
-                    )
-                    decision_id = _stable_id(
-                        "memory-mutation-decision",
-                        receipt.receipt_id,
-                        operation.operation_id,
-                    )
-                    classification_decision_id, classification_decision_hash = (
-                        classification_results[operation.operation_id]
-                    )
-                    action_consumption = action_consumptions.get(operation.operation_id)
-                    decision_json: dict[str, JsonValue] = {
-                        "schema_version": 1,
-                        "decision_id": decision_id,
-                        "operation_id": operation.operation_id,
-                        "outcome": "committed",
-                        "reason_code": operation.reason_code,
-                        "before_ref": before_ref,
-                        "after_ref": f"{memory_id}@{after_revision}",
-                        "classification_decision_id": classification_decision_id,
-                        "classification_decision_hash": classification_decision_hash,
-                        "action_authority_consumption_id": (
-                            None if action_consumption is None else action_consumption[0]
-                        ),
-                        "action_authority_consumption_hash": (
-                            None if action_consumption is None else action_consumption[1]
-                        ),
-                    }
-                    decision_hash = hashlib.sha256(
-                        canonical_json(decision_json).encode("utf-8")
-                    ).hexdigest()
-                    await self._db.execute(
-                        "INSERT INTO memory_mutation_decisions(decision_id,receipt_id,"
-                        "operation_id,outcome,reason_code,before_ref,after_ref,"
-                        "classification_decision_id,classification_decision_hash,"
-                        "action_authority_consumption_id,action_authority_consumption_hash,"
-                        "decision_json,decision_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (
-                            decision_id,
-                            receipt.receipt_id,
-                            operation.operation_id,
-                            "committed",
-                            operation.reason_code,
-                            before_ref,
-                            f"{memory_id}@{after_revision}",
-                            classification_decision_id,
-                            classification_decision_hash,
-                            None if action_consumption is None else action_consumption[0],
-                            None if action_consumption is None else action_consumption[1],
-                            canonical_json(decision_json),
-                            decision_hash,
-                        ),
-                    )
-                self._fault("mutation.after_receipt")
-
-                if plan.outcome is MemoryMutationPlanOutcome.MUTATE:
-                    outbox_payload: dict[str, JsonValue] = {
-                        "schema_version": 1,
-                        "receipt_id": receipt.receipt_id,
-                        "receipt_hash": receipt.receipt_hash,
-                        "plan_id": plan.plan_id,
-                        "committed_revision": committed_revision,
-                    }
-                    outbox_json = canonical_json(outbox_payload)
-                    await self._db.execute(
-                        "INSERT INTO outbox(outbox_id,principal_id,topic,idempotency_key,"
-                        "payload,payload_hash,state,next_attempt_at,created_at,updated_at) "
-                        "VALUES(?,?,?,?,?,?,'pending',?,?,?)",
-                        (
-                            _stable_id("memory-mutation-outbox", receipt.receipt_id),
-                            plan.subject,
-                            "memory.cognitive.committed",
-                            receipt.receipt_id,
-                            outbox_json,
-                            hashlib.sha256(outbox_json.encode("utf-8")).hexdigest(),
-                            committed_at,
-                            committed_at,
-                            committed_at,
-                        ),
-                    )
-                receipt_ref = MemoryMutationApplyReceiptRef(
-                    receipt.receipt_id, receipt.receipt_hash
-                )
-                apply_result = _mutation_apply_result(
-                    plan,
-                    outcome=MemoryMutationApplyOutcome.COMMITTED,
-                    reason_code=(
-                        MemoryMutationApplyReasonCode.COMMITTED
-                        if plan.outcome is MemoryMutationPlanOutcome.MUTATE
-                        else MemoryMutationApplyReasonCode.NO_MUTATION
-                    ),
-                    decided_at=committed_at,
-                    receipt_ref=receipt_ref,
-                )
-                await self._insert_mutation_apply_result_unlocked(plan, apply_result)
-                self._fault("mutation.after_outbox")
-                if plan.outcome is MemoryMutationPlanOutcome.MUTATE:
-                    await self._advance_recall_authority_unlocked(
-                        principal.actor_id,
-                        event_kind="cognitive_memory_changed",
-                        source_ref=receipt.receipt_id,
-                        now=committed_at,
-                    )
+                    return rollback.result
+                if kernel_outcome.short_circuit:
+                    await self._db.execute("COMMIT")
+                    committed = True
+                    return kernel_outcome.result
                 self._fault("mutation.before_commit")
                 await self._db.execute("COMMIT")
                 committed = True
                 self._fault("mutation.after_commit")
-                return cast(MemoryMutationApplyResult, apply_result)
+                return kernel_outcome.result
             except BaseException as exc:
                 if not committed:
                     if begun:
@@ -7324,6 +6047,1348 @@ class SQLiteHumanMemoryBackend:
                     if noncommitted_result is not None:
                         return cast(MemoryMutationApplyResult, noncommitted_result)
                 raise
+
+    async def _apply_mutation_plan_kernel_unlocked(
+        self,
+        principal: MemoryPrincipal,
+        scope: MemoryScope,
+        plan: MemoryMutationPlan,
+        *,
+        capability: _MutationKernelCapability,
+    ) -> _MutationKernelOutcome:
+        """compile/apply 内核：调用方须持 ``_write_lock`` 且已 ``BEGIN``。
+
+        由 ``apply_memory_mutation_plan``（caller principal 路径）与
+        ``prepare_analysis_application``（accepted analysis plan 同事务物化，0.6.1 §8.3）
+        共用。内核本身不 COMMIT/ROLLBACK：``short_circuit`` 表示幂等回放（未写入），
+        ``_MutationKernelRollback`` 表示需要回滚整个事务并记录拒绝审计。
+        ``capability`` 是仓储单次签发的进程内能力，防止外部直接驱动内核。
+        """
+
+        from simple_harness.runtime import (
+            EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION,
+            CreatedByOperationTarget,
+            EvidenceItemAuthority,
+            ExistingMemoryTarget,
+            InformationAttribute,
+            LongTermMemoryType,
+            MemoryActionAuthority,
+            MemoryMutationApplyOutcome,
+            MemoryMutationApplyReasonCode,
+            MemoryMutationApplyReceipt,
+            MemoryMutationApplyReceiptRef,
+            MemoryMutationApplyResult,
+            MemoryMutationKind,
+            MemoryMutationPlanOutcome,
+            PrivacyClass,
+            SemanticMemoryPayload,
+            SemanticRelationMemoryPayload,
+            verify_evidence_span,
+        )
+        from simple_harness.runtime.memory_action_protocol import (
+            MEMORY_ACTION_AUTHORITY_SCHEMA_VERSION,
+            verify_memory_action_authority,
+        )
+
+        from simple_harness_memory.core.mutations import (
+            InformationClassificationPolicy,
+            compile_memory_mutation_plan,
+            join_information_classification,
+            validate_lifecycle_transition,
+        )
+        from simple_harness_memory.core.suppression import (
+            OrdinaryMemoryPurpose,
+            SuppressionCandidate,
+            SuppressionDenied,
+        )
+
+        self._consume_mutation_kernel_capability(capability)
+        assert self._db is not None and self._receipt is not None
+        classification_policy = self._classification_policy
+        assert type(classification_policy) is InformationClassificationPolicy
+        prior_result = await self._read_mutation_apply_result_unlocked(plan)
+        if (
+            prior_result is not None
+            and type(prior_result) is MemoryMutationApplyResult
+            and prior_result.outcome is not MemoryMutationApplyOutcome.COMMITTED
+        ):
+            return _MutationKernelOutcome(prior_result, short_circuit=True)
+
+        replay = await self._read_mutation_receipt_by_idempotency_unlocked(
+            plan.subject, plan.idempotency_key
+        )
+        if replay is not None:
+            stored_plan_hash, stored_receipt = replay
+            if stored_plan_hash != plan.plan_hash:
+                raise MemoryIdempotencyConflict("mutation_idempotency_hash_conflict")
+            stored_receipt.validate_plan(plan)
+            stored_result = await self._read_mutation_apply_result_unlocked(plan)
+            if type(stored_result) is not MemoryMutationApplyResult:
+                raise MemoryCorruptionError("committed mutation apply result is missing")
+            assert stored_result is not None
+            if (
+                stored_result.outcome is not MemoryMutationApplyOutcome.COMMITTED
+                or stored_result.receipt_ref
+                != MemoryMutationApplyReceiptRef(
+                    stored_receipt.receipt_id,
+                    stored_receipt.receipt_hash,
+                )
+            ):
+                raise MemoryCorruptionError("committed mutation apply result differs")
+            return _MutationKernelOutcome(stored_result, short_circuit=True)
+
+        compiled = compile_memory_mutation_plan(plan)
+        transaction_at = _timestamp(self._now())
+        await self._db.execute(
+            "INSERT INTO principals(principal_id,deployment_id,household_id,actor_id,"
+            "created_at) VALUES(?,?,?,?,?) ON CONFLICT(principal_id) DO UPDATE SET "
+            "deployment_id=excluded.deployment_id,household_id=excluded.household_id,"
+            "actor_id=excluded.actor_id WHERE principals.deployment_id="
+            "principals.principal_id AND principals.household_id=principals.principal_id "
+            "AND principals.actor_id=principals.principal_id",
+            (
+                plan.subject,
+                principal.deployment_id,
+                principal.household_id,
+                principal.actor_id,
+                transaction_at,
+            ),
+        )
+        async with self._db.execute(
+            "SELECT deployment_id,household_id,actor_id FROM principals "
+            "WHERE principal_id=?",
+            (plan.subject,),
+        ) as cursor:
+            principal_row = await cursor.fetchone()
+        if principal_row is None or tuple(str(item) for item in principal_row) != (
+            principal.deployment_id,
+            principal.household_id,
+            principal.actor_id,
+        ):
+            raise MemoryOwnershipConflict("cognitive principal binding differs")
+        await self._verify_plan_evidence_refs_unlocked(plan)
+        async with self._db.execute(
+            "SELECT revision FROM cognitive_apply_heads WHERE principal_id=?",
+            (plan.subject,),
+        ) as cursor:
+            head_row = await cursor.fetchone()
+        current_apply_revision = 1 if head_row is None else int(head_row[0])
+        if current_apply_revision != plan.base_revision:
+            raise MemoryWriterConflict("cognitive_apply_head_stale")
+        if head_row is None:
+            await self._db.execute(
+                "INSERT INTO cognitive_apply_heads(principal_id,revision,updated_at) "
+                "VALUES(?,?,?)",
+                (plan.subject, current_apply_revision, transaction_at),
+            )
+
+        verified_authorities: dict[str, EvidenceItemAuthority] = {}
+        verified_span_origins: dict[str, tuple[object, ...]] = {}
+        for compiled_operation in compiled.operations:
+            operation = compiled_operation.operation
+            for span in operation.evidence_spans:
+                if span.span_hash in verified_authorities:
+                    continue
+                try:
+                    authority = await verify_evidence_span(span, self._evidence_authority)
+                except (TypeError, ValueError) as exc:
+                    raise MemoryValidationError("evidence_authority_rejected") from exc
+                if (
+                    type(authority) is not EvidenceItemAuthority
+                    or authority.schema_version != EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION
+                ):
+                    raise MemoryValidationError("evidence_authority_rejected")
+                origins = await self._verify_mutation_span_unlocked(
+                    subject=plan.subject,
+                    span=span,
+                )
+                verified_authorities[span.span_hash] = authority
+                verified_span_origins[span.span_hash] = origins
+        self._fault("mutation.after_evidence")
+
+        protected_kinds = {
+            MemoryMutationKind.REVISE,
+            MemoryMutationKind.SUPERSEDE,
+            MemoryMutationKind.SUPPRESS,
+        }
+        missing_action_authorities: list[str] = []
+        verified_action_authorities: list[
+            tuple[
+                int,
+                MemoryMutationOperation,
+                MemoryActionAuthorityRef,
+                MemoryActionAuthority,
+                float,
+            ]
+        ] = []
+        action_authority_failure: MemoryValidationError | None = None
+        for canonical_index, compiled_operation in enumerate(compiled.operations, start=1):
+            operation = compiled_operation.operation
+            if operation.kind not in protected_kinds:
+                continue
+            if not isinstance(operation.target, ExistingMemoryTarget):
+                raise MemoryValidationError("memory_action_exact_target_required")
+            async with self._db.execute(
+                "SELECT current_revision FROM cognitive_memory_heads "
+                "WHERE principal_id=? AND deployment_id=? AND household_id=? "
+                "AND scope_kind=? AND scope_owner=? "
+                "AND memory_id=?",
+                (
+                    plan.subject,
+                    principal.deployment_id,
+                    principal.household_id,
+                    scope.kind.value,
+                    scope.owner_id,
+                    operation.target.memory_id,
+                ),
+            ) as cursor:
+                action_target_row = await cursor.fetchone()
+            if action_target_row is None:
+                raise MemoryValidationError("mutation_target_not_found")
+            if int(action_target_row[0]) != operation.target.revision:
+                raise MemoryWriterConflict("cognitive_target_revision_stale")
+            intent = plan.action_intent(operation.operation_id)
+            if intent.canonical_operation_index != canonical_index:
+                raise MemoryCorruptionError("memory action canonical index differs")
+            reference = operation.action_authority_ref
+            if reference is None:
+                missing_action_authorities.append(operation.operation_id)
+                continue
+            if self._memory_action_authority is None:
+                action_authority_failure = MemoryValidationError(
+                    "action_authority_rejected"
+                )
+                break
+            try:
+                verification_started_at = _timestamp(self._now())
+                verified_action = await verify_memory_action_authority(
+                    intent,
+                    reference,
+                    self._memory_action_authority,
+                    current_time=verification_started_at,
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                action_authority_failure = MemoryValidationError(
+                    "action_authority_rejected"
+                )
+                action_authority_failure.__cause__ = exc
+                break
+            if (
+                type(verified_action) is not MemoryActionAuthority
+                or verified_action.schema_version != MEMORY_ACTION_AUTHORITY_SCHEMA_VERSION
+            ):
+                action_authority_failure = MemoryValidationError(
+                    "action_authority_rejected"
+                )
+                break
+            consumed_at = _timestamp(self._now())
+            if not (verified_action.issued_at <= consumed_at < verified_action.expires_at):
+                action_authority_failure = MemoryValidationError(
+                    "action_authority_rejected"
+                )
+                break
+            verified_action_authorities.append(
+                (
+                    canonical_index,
+                    operation,
+                    reference,
+                    verified_action,
+                    consumed_at,
+                )
+            )
+
+        if missing_action_authorities or action_authority_failure is not None:
+            if action_authority_failure is not None:
+                action_exc = action_authority_failure
+                action_result = _mutation_apply_result(
+                    plan,
+                    outcome=MemoryMutationApplyOutcome.REJECTED,
+                    reason_code=(MemoryMutationApplyReasonCode.ACTION_AUTHORITY_REJECTED),
+                    decided_at=_timestamp(self._now()),
+                )
+            else:
+                action_exc = MemoryValidationError("action_authority_required")
+                action_result = _mutation_apply_result(
+                    plan,
+                    outcome=MemoryMutationApplyOutcome.NEEDS_USER_CONFIRMATION,
+                    reason_code=(MemoryMutationApplyReasonCode.ACTION_AUTHORITY_REQUIRED),
+                    decided_at=_timestamp(self._now()),
+                    confirmation_operation_ids=tuple(missing_action_authorities),
+                )
+            raise _MutationKernelRollback(
+                action_exc, cast(MemoryMutationApplyResult, action_result)
+            )
+
+        action_consumptions: dict[str, tuple[str, str]] = {}
+        for (
+            canonical_index,
+            operation,
+            reference,
+            authority,
+            consumed_at,
+        ) in verified_action_authorities:
+            intent = plan.action_intent(operation.operation_id)
+            consumption_id = _stable_id(
+                "memory-action-authority-consumption",
+                plan.subject,
+                plan.plan_id,
+                operation.operation_id,
+            )
+            consumption_json: dict[str, JsonValue] = {
+                "schema_version": 1,
+                "consumption_id": consumption_id,
+                "principal_id": plan.subject,
+                "plan_id": plan.plan_id,
+                "plan_hash": plan.plan_hash,
+                "plan_intent_hash": plan.plan_intent_hash,
+                "operation_id": operation.operation_id,
+                "canonical_operation_index": canonical_index,
+                "action_kind": operation.kind.value,
+                "target_memory_id": intent.target_memory_id,
+                "target_revision": intent.target_revision,
+                "intent": intent.to_json(),
+                "intent_hash": intent.intent_hash,
+                "authority_ref": reference.to_json(),
+                "authority_ref_hash": reference.ref_hash,
+                "authority": authority.to_json(),
+                "authority_hash": authority.authority_hash,
+                "consumed_at": consumed_at,
+            }
+            consumption_hash = hashlib.sha256(
+                canonical_json(consumption_json).encode("utf-8")
+            ).hexdigest()
+            try:
+                await self._db.execute(
+                    "INSERT INTO memory_action_authority_consumptions("
+                    "consumption_id,principal_id,plan_id,plan_hash,plan_intent_hash,"
+                    "operation_id,canonical_operation_index,action_kind,target_memory_id,"
+                    "target_revision,intent_json,intent_hash,authority_ref_json,"
+                    "authority_ref_hash,authority_schema_version,authority_id,"
+                    "authority_hash,issuer_ref,nonce,replay_identity,authority_json,"
+                    "issued_at,expires_at,consumed_at,consumption_hash) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        consumption_id,
+                        plan.subject,
+                        plan.plan_id,
+                        plan.plan_hash,
+                        plan.plan_intent_hash,
+                        operation.operation_id,
+                        canonical_index,
+                        operation.kind.value,
+                        intent.target_memory_id,
+                        intent.target_revision,
+                        canonical_json(intent.to_json()),
+                        intent.intent_hash,
+                        canonical_json(reference.to_json()),
+                        reference.ref_hash,
+                        authority.schema_version,
+                        authority.authority_id,
+                        authority.authority_hash,
+                        authority.issuer_ref,
+                        authority.nonce,
+                        authority.replay_identity,
+                        canonical_json(authority.to_json()),
+                        authority.issued_at,
+                        authority.expires_at,
+                        consumed_at,
+                        consumption_hash,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise MemoryValidationError("action_authority_replayed") from exc
+            action_consumptions[operation.operation_id] = (
+                consumption_id,
+                consumption_hash,
+            )
+
+        created_by_operation: dict[str, str] = {}
+        operation_results: dict[str, tuple[str, int, int | None]] = {}
+        classification_results: dict[str, tuple[str, str]] = {}
+        for compiled_operation in compiled.operations:
+            operation = compiled_operation.operation
+            canonical_payload = operation.payload
+            relation_endpoints: tuple[
+                _ResolvedRelationEndpoint, _ResolvedRelationEndpoint
+            ] | tuple[()] = ()
+            is_relation_memory = False
+            target_memory_id: str | None = None
+            target_revision: int | None = None
+            target_type: LongTermMemoryType | None = None
+            target_lifecycle: Any = None
+            target_privacy: PrivacyClass | None = None
+            target_attributes: tuple[InformationAttribute, ...] = ()
+            target_content_json: str | None = None
+            target_content_hash: str | None = None
+            target_conflict_status: str | None = None
+            active_conflict_row: aiosqlite.Row | None = None
+
+            if operation.kind is MemoryMutationKind.CREATE:
+                memory_id = _stable_id(
+                    "cognitive-memory",
+                    plan.subject,
+                    plan.plan_id,
+                    operation.operation_id,
+                )
+                revision = 1
+            else:
+                if isinstance(operation.target, ExistingMemoryTarget):
+                    target_memory_id = operation.target.memory_id
+                    expected_revision = operation.target.revision
+                elif isinstance(operation.target, CreatedByOperationTarget):
+                    try:
+                        target_memory_id = created_by_operation[
+                            operation.target.operation_id
+                        ]
+                    except KeyError as exc:
+                        raise MemoryValidationError(
+                            "mutation_created_target_not_materialized"
+                        ) from exc
+                    expected_revision = None
+                else:  # pragma: no cover - exact Harness DTO prevents this
+                    raise MemoryValidationError("mutation_target_required")
+                async with self._db.execute(
+                    "SELECT h.memory_type,h.current_revision,r.lifecycle_state,"
+                    "r.effective_privacy_class,r.information_attributes_json,"
+                    "r.content_json,r.epistemic_status,r.verification_state,"
+                    "r.valid_from,r.valid_to,h.scope_kind,h.scope_owner,"
+                    "r.scope_kind,r.scope_owner,r.conflict_status,r.content_hash "
+                    "FROM cognitive_memory_heads h "
+                    "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
+                    "AND r.revision=h.current_revision "
+                    "WHERE h.principal_id=? AND h.deployment_id=? "
+                    "AND h.household_id=? AND h.scope_kind=? AND h.scope_owner=? "
+                    "AND h.memory_id=?",
+                    (
+                        plan.subject,
+                        principal.deployment_id,
+                        principal.household_id,
+                        scope.kind.value,
+                        scope.owner_id,
+                        target_memory_id,
+                    ),
+                ) as cursor:
+                    target_row = await cursor.fetchone()
+                if target_row is None:
+                    raise MemoryValidationError("mutation_target_not_found")
+                target_type = LongTermMemoryType(str(target_row[0]))
+                target_revision = int(target_row[1])
+                if str(target_row[10]) != str(target_row[12]) or str(target_row[11]) != str(
+                    target_row[13]
+                ):
+                    raise MemoryCorruptionError("cognitive head and revision scope differ")
+                if expected_revision is not None and target_revision != expected_revision:
+                    raise MemoryWriterConflict("cognitive_target_revision_stale")
+                lifecycle_type = type(operation.lifecycle_state)
+                target_lifecycle = lifecycle_type(str(target_row[2]))
+                validate_lifecycle_transition(
+                    memory_type=target_type,
+                    current_lifecycle=target_lifecycle,
+                    operation=operation,
+                )
+                target_privacy = PrivacyClass(str(target_row[3]))
+                raw_attributes = json.loads(str(target_row[4]))
+                if not isinstance(raw_attributes, list):
+                    raise MemoryCorruptionError(
+                        "cognitive information attributes are invalid"
+                    )
+                target_attributes = tuple(
+                    InformationAttribute(str(item)) for item in raw_attributes
+                )
+                target_content_json = str(target_row[5])
+                target_conflict_status = str(target_row[14])
+                target_content_hash = str(target_row[15])
+                async with self._db.execute(
+                    "SELECT g.* FROM cognitive_conflict_groups g "
+                    "LEFT JOIN cognitive_conflict_resolutions x ON x.group_id=g.group_id "
+                    "WHERE g.principal_id=? AND g.memory_id=? "
+                    "AND g.challenger_revision=? AND x.group_id IS NULL",
+                    (plan.subject, target_memory_id, target_revision),
+                ) as cursor:
+                    active_conflict_row = await cursor.fetchone()
+                if target_conflict_status == "contested" and active_conflict_row is None:
+                    raise MemoryCorruptionError(
+                        "contested head has no active conflict group"
+                    )
+                if operation.kind is MemoryMutationKind.CONTEST:
+                    if not isinstance(operation.target, ExistingMemoryTarget):
+                        raise MemoryValidationError("mutation_contest_exact_slot_required")
+                    if active_conflict_row is not None:
+                        raise MemoryValidationError(
+                            "mutation_contest_nested_group_rejected"
+                        )
+                    proposed_content_json = (
+                        None
+                        if operation.payload is None
+                        else canonical_json(operation.payload.to_json())
+                    )
+                    if (
+                        proposed_content_json is None
+                        or proposed_content_json == target_content_json
+                        or operation.lifecycle_state.value != str(target_row[2])
+                        or operation.epistemic_status.value != str(target_row[6])
+                        or operation.verification_state.value != str(target_row[7])
+                        or operation.valid_time_interval.valid_from != target_row[8]
+                        or operation.valid_time_interval.valid_until != target_row[9]
+                    ):
+                        raise MemoryValidationError("mutation_contest_exact_slot_required")
+                    async with self._db.execute(
+                        "SELECT span_id,evidence_id FROM cognitive_evidence_spans "
+                        "WHERE memory_id=? AND revision=? ORDER BY ordinal",
+                        (target_memory_id, target_revision),
+                    ) as cursor:
+                        incumbent_evidence = {
+                            (str(row[0]), str(row[1]))
+                            for row in await cursor.fetchall()
+                        }
+                    if not incumbent_evidence:
+                        raise MemoryCorruptionError(
+                            "conflict incumbent has no evidence"
+                        )
+                    challenger_evidence = {
+                        (span.span_id, span.evidence_id)
+                        for span in operation.evidence_spans
+                    }
+                    if not challenger_evidence or challenger_evidence <= incumbent_evidence:
+                        raise MemoryValidationError(
+                            "mutation_contest_distinct_evidence_required"
+                        )
+                elif active_conflict_row is not None:
+                    if operation.kind is MemoryMutationKind.REVISE:
+                        if operation.conflict_status.value != "resolved":
+                            raise MemoryValidationError(
+                                "mutation_conflict_resolution_state_required"
+                            )
+                    elif operation.kind not in {
+                        MemoryMutationKind.SUPERSEDE,
+                        MemoryMutationKind.SUPPRESS,
+                    }:
+                        raise MemoryValidationError(
+                            "mutation_active_conflict_resolution_required"
+                        )
+                memory_id = target_memory_id
+                revision = target_revision + 1
+
+            target_semantic_kind = (
+                self._semantic_kind_from_content_json(target_content_json)
+                if target_type is LongTermMemoryType.SEMANTIC
+                else None
+            )
+            if isinstance(operation.payload, SemanticRelationMemoryPayload):
+                if (
+                    operation.kind is not MemoryMutationKind.CREATE
+                    and target_semantic_kind != "relation"
+                ):
+                    raise MemoryValidationError(
+                        "relation_mutation_target_must_be_relation"
+                    )
+                canonical_payload, relation_endpoints = (
+                    await self._resolve_semantic_relation_payload_unlocked(
+                        principal=principal,
+                        payload=operation.payload,
+                        created_by_operation=created_by_operation,
+                        operation_results=operation_results,
+                        now=transaction_at,
+                    )
+                )
+                is_relation_memory = True
+            elif (
+                isinstance(operation.payload, SemanticMemoryPayload)
+                and target_semantic_kind == "relation"
+            ):
+                raise MemoryValidationError("relation_memory_kind_change_rejected")
+            elif operation.payload is None and target_semantic_kind == "relation":
+                if target_content_json is None:
+                    raise MemoryCorruptionError(
+                        "relation mutation target content is missing"
+                    )
+                try:
+                    copied_relation_payload = SemanticRelationMemoryPayload.from_json(
+                        json.loads(target_content_json)
+                    )
+                except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                    raise MemoryCorruptionError(
+                        "relation mutation target content is invalid"
+                    ) from exc
+                canonical_payload, relation_endpoints = (
+                    await self._resolve_semantic_relation_payload_unlocked(
+                        principal=principal,
+                        payload=copied_relation_payload,
+                        created_by_operation=created_by_operation,
+                        operation_results=operation_results,
+                        now=transaction_at,
+                    )
+                )
+                is_relation_memory = True
+
+            target_entity_ids = self._mutation_entity_ids_from_content_json(
+                target_content_json
+            )
+            entity_ids = tuple(
+                dict.fromkeys(
+                    (
+                        *target_entity_ids,
+                        *self._mutation_entity_ids(canonical_payload),
+                    )
+                )
+            )
+            for span in operation.evidence_spans:
+                resolution = await self._resolve_suppression_unlocked(
+                    SuppressionCandidate(
+                        plan.subject,
+                        evidence_id=span.evidence_id,
+                        memory_id=target_memory_id,
+                        entity_ids=entity_ids,
+                    ),
+                    OrdinaryMemoryPurpose.MUTATION,
+                )
+                if resolution.denied:
+                    raise SuppressionDenied()
+
+            operation_authorities = tuple(
+                verified_authorities[span.span_hash] for span in operation.evidence_spans
+            )
+            privacy_floors = [classification_policy.required_privacy_class]
+            privacy_floors.extend(
+                authority.required_privacy_class for authority in operation_authorities
+            )
+            if target_privacy is not None:
+                privacy_floors.append(target_privacy)
+            privacy_floors.extend(
+                PrivacyClass(endpoint.privacy_class)
+                for endpoint in relation_endpoints
+            )
+            classification = join_information_classification(
+                operation,
+                trusted_privacy_floors=tuple(privacy_floors),
+                trusted_attribute_sets=(
+                    classification_policy.required_information_attributes,
+                    *(
+                        authority.required_information_attributes
+                        for authority in operation_authorities
+                    ),
+                    target_attributes,
+                    *(
+                        tuple(
+                            InformationAttribute(item)
+                            for item in endpoint.information_attributes
+                        )
+                        for endpoint in relation_endpoints
+                    ),
+                ),
+            )
+            origins_by_registration: dict[str, tuple[str, str, str]] = {}
+            for span in operation.evidence_spans:
+                for origin in verified_span_origins[span.span_hash]:
+                    task_scope_id, evidence_id, registration_id = cast(
+                        tuple[str, str, str], origin
+                    )
+                    origins_by_registration[registration_id] = (
+                        task_scope_id,
+                        evidence_id,
+                        registration_id,
+                    )
+            distinct_scopes = {value[0] for value in origins_by_registration.values()}
+            revision_task_scope = (
+                next(iter(distinct_scopes)) if len(distinct_scopes) == 1 else None
+            )
+
+            if is_relation_memory:
+                self._fault("mutation.before_relation_memory_insert")
+            if operation.kind is MemoryMutationKind.CREATE:
+                await self._db.execute(
+                    "INSERT INTO cognitive_memory_heads(memory_id,principal_id,"
+                    "deployment_id,household_id,scope_kind,scope_owner,memory_type,"
+                    "current_revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        memory_id,
+                        plan.subject,
+                        principal.deployment_id,
+                        principal.household_id,
+                        scope.kind.value,
+                        scope.owner_id,
+                        operation.memory_type.value,
+                        revision,
+                        transaction_at,
+                        transaction_at,
+                    ),
+                )
+            content_json = (
+                target_content_json
+                if operation.payload is None
+                else canonical_json(canonical_payload.to_json())
+            )
+            if content_json is None:
+                raise MemoryCorruptionError("cognitive target content is missing")
+            content_hash = hashlib.sha256(content_json.encode("utf-8")).hexdigest()
+            await self._db.execute(
+                "INSERT INTO cognitive_memory_revisions(memory_id,principal_id,revision,"
+                "deployment_id,household_id,scope_kind,scope_owner,plan_id,plan_hash,"
+                "operation_id,task_scope_id,"
+                "lifecycle_state,"
+                "epistemic_status,conflict_status,"
+                "verification_state,effective_privacy_class,"
+                "information_attributes_json,content_json,content_hash,valid_from,"
+                "valid_to,created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    memory_id,
+                    plan.subject,
+                    revision,
+                    principal.deployment_id,
+                    principal.household_id,
+                    scope.kind.value,
+                    scope.owner_id,
+                    plan.plan_id,
+                    plan.plan_hash,
+                    operation.operation_id,
+                    revision_task_scope,
+                    operation.lifecycle_state.value,
+                    operation.epistemic_status.value,
+                    operation.conflict_status.value,
+                    operation.verification_state.value,
+                    classification.privacy_class.value,
+                    canonical_json(
+                        [item.value for item in classification.information_attributes]
+                    ),
+                    content_json,
+                    content_hash,
+                    operation.valid_time_interval.valid_from,
+                    operation.valid_time_interval.valid_until,
+                    transaction_at,
+                ),
+            )
+            if canonical_payload is None:
+                assert target_memory_id is not None and target_revision is not None
+                await self._copy_cognitive_payload_unlocked(
+                    operation.memory_type.value,
+                    target_memory_id,
+                    target_revision,
+                    memory_id,
+                    revision,
+                )
+            else:
+                await self._insert_cognitive_payload_unlocked(
+                    memory_id,
+                    revision,
+                    canonical_payload,
+                    new_procedure_epoch=operation.kind
+                    in {
+                        MemoryMutationKind.CREATE,
+                        MemoryMutationKind.REVISE,
+                    },
+                )
+            if operation.memory_type is LongTermMemoryType.PROSPECTIVE:
+                await self._append_prospective_mutation_outbox_unlocked(
+                    principal_id=plan.subject,
+                    memory_id=memory_id,
+                    revision=revision,
+                    lifecycle_state=operation.lifecycle_state.value,
+                    previous_revision=target_revision,
+                    previous_lifecycle_state=(
+                        None if target_lifecycle is None else target_lifecycle.value
+                    ),
+                    created_at=transaction_at,
+                )
+            await self._insert_cognitive_evidence_unlocked(
+                memory_id, revision, operation.evidence_spans
+            )
+            classification_decision_id = _stable_id(
+                "cognitive-classification-decision",
+                plan.subject,
+                plan.plan_id,
+                operation.operation_id,
+            )
+            authority_inputs: list[JsonValue] = []
+            for ordinal, (span, authority) in enumerate(
+                zip(operation.evidence_spans, operation_authorities, strict=True),
+                start=1,
+            ):
+                authority_inputs.append(
+                    {
+                        "ordinal": ordinal,
+                        "span_hash": span.span_hash,
+                        "evidence_id": span.evidence_id,
+                        "authority": authority.to_json(),
+                        "authority_hash": authority.authority_hash,
+                    }
+                )
+            target_input: JsonValue = (
+                None
+                if target_memory_id is None
+                else {
+                    "memory_id": target_memory_id,
+                    "revision": target_revision,
+                    "privacy_class": (
+                        None if target_privacy is None else target_privacy.value
+                    ),
+                    "information_attributes": [item.value for item in target_attributes],
+                    }
+            )
+            if len(relation_endpoints) not in {0, 2}:
+                raise MemoryCorruptionError(
+                    "semantic relation endpoint resolution is incomplete"
+                )
+            classification_json: dict[str, JsonValue] = {
+                "schema_version": 1,
+                "classification_decision_id": classification_decision_id,
+                "principal_id": plan.subject,
+                "plan_id": plan.plan_id,
+                "plan_hash": plan.plan_hash,
+                "operation_id": operation.operation_id,
+                "memory_ref": f"{memory_id}@{revision}",
+                "policy": classification_policy.to_json(),
+                "policy_hash": classification_policy.policy_hash,
+                "evidence_authorities": authority_inputs,
+                "target": target_input,
+                "proposal": {
+                    "privacy_class": operation.proposed_privacy_class.value,
+                    "information_attributes": [
+                        item.value for item in operation.proposed_information_attributes
+                    ],
+                },
+                "effective": {
+                    "privacy_class": classification.privacy_class.value,
+                    "information_attributes": [
+                        item.value for item in classification.information_attributes
+                    ],
+                },
+            }
+            if relation_endpoints:
+                classification_json["relation_endpoints"] = [
+                    {
+                        "role": role,
+                        "memory_id": endpoint.memory_id,
+                        "revision": endpoint.revision,
+                        "memory_type": endpoint.memory_type,
+                        "privacy_class": endpoint.privacy_class,
+                        "information_attributes": list(
+                            endpoint.information_attributes
+                        ),
+                        "content_hash": endpoint.content_hash,
+                    }
+                    for role, endpoint in zip(
+                        ("source", "target"), relation_endpoints, strict=True
+                    )
+                ]
+            classification_decision_hash = hashlib.sha256(
+                canonical_json(classification_json).encode("utf-8")
+            ).hexdigest()
+            await self._db.execute(
+                "INSERT INTO cognitive_classification_decisions("
+                "classification_decision_id,principal_id,plan_id,plan_hash,operation_id,"
+                "memory_id,memory_revision,policy_id,policy_version,policy_authority_ref,"
+                "policy_hash,policy_privacy_class,policy_attributes_json,"
+                "target_memory_id,target_revision,target_privacy_class,"
+                "target_attributes_json,proposed_privacy_class,proposed_attributes_json,"
+                "effective_privacy_class,effective_attributes_json,decision_json,"
+                "decision_hash,created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    classification_decision_id,
+                    plan.subject,
+                    plan.plan_id,
+                    plan.plan_hash,
+                    operation.operation_id,
+                    memory_id,
+                    revision,
+                    classification_policy.policy_id,
+                    classification_policy.policy_version,
+                    classification_policy.authority_ref,
+                    classification_policy.policy_hash,
+                    classification_policy.required_privacy_class.value,
+                    canonical_json(
+                        [
+                            item.value
+                            for item in (
+                                classification_policy.required_information_attributes
+                            )
+                        ]
+                    ),
+                    target_memory_id,
+                    target_revision,
+                    None if target_privacy is None else target_privacy.value,
+                    canonical_json([item.value for item in target_attributes]),
+                    operation.proposed_privacy_class.value,
+                    canonical_json(
+                        [item.value for item in operation.proposed_information_attributes]
+                    ),
+                    classification.privacy_class.value,
+                    canonical_json(
+                        [item.value for item in classification.information_attributes]
+                    ),
+                    canonical_json(classification_json),
+                    classification_decision_hash,
+                    transaction_at,
+                ),
+            )
+            await self._db.executemany(
+                "INSERT INTO cognitive_classification_evidence_authorities("
+                "classification_decision_id,ordinal,span_hash,evidence_id,"
+                "authority_schema_version,authority_id,authority_hash,issuer_ref,"
+                "classification_authority_ref,required_privacy_class,"
+                "required_attributes_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    (
+                        classification_decision_id,
+                        ordinal,
+                        span.span_hash,
+                        span.evidence_id,
+                        authority.schema_version,
+                        authority.authority_id,
+                        authority.authority_hash,
+                        authority.issuer_ref,
+                        authority.classification_authority_ref,
+                        authority.required_privacy_class.value,
+                        canonical_json(
+                            [
+                                item.value
+                                for item in authority.required_information_attributes
+                            ]
+                        ),
+                    )
+                    for ordinal, (span, authority) in enumerate(
+                        zip(
+                            operation.evidence_spans,
+                            operation_authorities,
+                            strict=True,
+                        ),
+                        start=1,
+                    )
+                ),
+            )
+            await self._db.executemany(
+                "INSERT INTO cognitive_revision_task_scope_origins("
+                "memory_id,revision,task_scope_id,evidence_id,registration_id) "
+                "VALUES(?,?,?,?,?)",
+                (
+                    (memory_id, revision, task_scope_id, evidence_id, registration_id)
+                    for task_scope_id, evidence_id, registration_id in sorted(
+                        origins_by_registration.values()
+                    )
+                ),
+            )
+
+            if isinstance(canonical_payload, SemanticRelationMemoryPayload):
+                if len(relation_endpoints) != 2:
+                    raise MemoryCorruptionError(
+                        "semantic relation endpoints were not resolved"
+                    )
+                source_endpoint, target_endpoint = relation_endpoints
+                self._fault(
+                    "mutation.after_relation_memory_before_knowledge_row"
+                )
+                relation_id = _stable_id(
+                    "cognitive-knowledge-relation",
+                    plan.subject,
+                    plan.plan_id,
+                    operation.operation_id,
+                    memory_id,
+                    str(revision),
+                )
+                knowledge_relation_json: dict[str, JsonValue] = {
+                    "relation_id": relation_id,
+                    "principal_id": plan.subject,
+                    "plan_id": plan.plan_id,
+                    "plan_hash": plan.plan_hash,
+                    "relation_domain": "knowledge",
+                    "relation_memory_id": memory_id,
+                    "relation_memory_revision": revision,
+                    "source_memory_id": source_endpoint.memory_id,
+                    "source_revision": source_endpoint.revision,
+                    "relation_kind": canonical_payload.relation_kind.value,
+                    "target_memory_id": target_endpoint.memory_id,
+                    "target_revision": target_endpoint.revision,
+                    "operation_id": operation.operation_id,
+                }
+                relation_hash = hashlib.sha256(
+                    canonical_json(knowledge_relation_json).encode("utf-8")
+                ).hexdigest()
+                await self._db.execute(
+                    "INSERT INTO cognitive_relations(relation_id,principal_id,"
+                    "plan_id,plan_hash,relation_domain,relation_memory_id,"
+                    "relation_memory_revision,source_memory_id,source_revision,"
+                    "relation_kind,target_memory_id,target_revision,operation_id,"
+                    "created_at,relation_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        relation_id,
+                        plan.subject,
+                        plan.plan_id,
+                        plan.plan_hash,
+                        "knowledge",
+                        memory_id,
+                        revision,
+                        source_endpoint.memory_id,
+                        source_endpoint.revision,
+                        canonical_payload.relation_kind.value,
+                        target_endpoint.memory_id,
+                        target_endpoint.revision,
+                        operation.operation_id,
+                        transaction_at,
+                        relation_hash,
+                    ),
+                )
+                self._fault("mutation.after_knowledge_row_before_commit")
+
+            if target_memory_id is not None and target_revision is not None:
+                relation_kind = {
+                    MemoryMutationKind.REVISE: "amends",
+                    MemoryMutationKind.SUPERSEDE: "supersedes",
+                    MemoryMutationKind.CONTEST: "contests",
+                    MemoryMutationKind.SUPPRESS: "relates_to",
+                }[operation.kind]
+                relation_id = _stable_id(
+                    "cognitive-relation",
+                    plan.subject,
+                    plan.plan_id,
+                    operation.operation_id,
+                    relation_kind,
+                    memory_id,
+                    str(revision),
+                    target_memory_id,
+                    str(target_revision),
+                )
+                evolution_relation_json: dict[str, JsonValue] = {
+                    "relation_id": relation_id,
+                    "principal_id": plan.subject,
+                    "plan_id": plan.plan_id,
+                    "plan_hash": plan.plan_hash,
+                    "relation_domain": "evolution",
+                    "relation_memory_id": None,
+                    "relation_memory_revision": None,
+                    "relation_kind": relation_kind,
+                    "source_memory_id": memory_id,
+                    "source_revision": revision,
+                    "target_memory_id": target_memory_id,
+                    "target_revision": target_revision,
+                    "operation_id": operation.operation_id,
+                }
+                relation_hash = hashlib.sha256(
+                    canonical_json(evolution_relation_json).encode("utf-8")
+                ).hexdigest()
+                await self._db.execute(
+                    "INSERT INTO cognitive_relations(relation_id,principal_id,"
+                    "plan_id,plan_hash,relation_domain,relation_memory_id,"
+                    "relation_memory_revision,source_memory_id,source_revision,"
+                    "relation_kind,target_memory_id,target_revision,operation_id,"
+                    "created_at,relation_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        relation_id,
+                        plan.subject,
+                        plan.plan_id,
+                        plan.plan_hash,
+                        "evolution",
+                        None,
+                        None,
+                        memory_id,
+                        revision,
+                        relation_kind,
+                        target_memory_id,
+                        target_revision,
+                        operation.operation_id,
+                        transaction_at,
+                        relation_hash,
+                    ),
+                )
+                if operation.kind is MemoryMutationKind.CONTEST:
+                    if target_content_hash is None:
+                        raise MemoryCorruptionError(
+                            "conflict incumbent content hash is missing"
+                        )
+                    await self._insert_cognitive_conflict_group_unlocked(
+                        principal_id=plan.subject,
+                        memory_id=memory_id,
+                        incumbent_revision=target_revision,
+                        challenger_revision=revision,
+                        incumbent_content_hash=target_content_hash,
+                        challenger_content_hash=content_hash,
+                        plan_id=plan.plan_id,
+                        plan_hash=plan.plan_hash,
+                        operation_id=operation.operation_id,
+                        created_at=transaction_at,
+                    )
+                elif active_conflict_row is not None:
+                    await self._insert_cognitive_conflict_resolution_unlocked(
+                        group_row=active_conflict_row,
+                        principal_id=plan.subject,
+                        memory_id=memory_id,
+                        resolution_revision=revision,
+                        resolution_content_hash=content_hash,
+                        operation_kind=operation.kind.value,
+                        plan_id=plan.plan_id,
+                        plan_hash=plan.plan_hash,
+                        operation_id=operation.operation_id,
+                        created_at=transaction_at,
+                    )
+                update = await self._db.execute(
+                    "UPDATE cognitive_memory_heads SET current_revision=?,updated_at=? "
+                    "WHERE principal_id=? AND scope_kind=? AND scope_owner=? "
+                    "AND deployment_id=? AND household_id=? "
+                    "AND memory_id=? AND current_revision=?",
+                    (
+                        revision,
+                        transaction_at,
+                        plan.subject,
+                        scope.kind.value,
+                        scope.owner_id,
+                        principal.deployment_id,
+                        principal.household_id,
+                        memory_id,
+                        target_revision,
+                    ),
+                )
+                if update.rowcount != 1:
+                    raise MemoryWriterConflict("cognitive_target_cas_failed")
+
+            created_by_operation[operation.operation_id] = memory_id
+            operation_results[operation.operation_id] = (
+                memory_id,
+                revision,
+                target_revision,
+            )
+            classification_results[operation.operation_id] = (
+                classification_decision_id,
+                classification_decision_hash,
+            )
+            self._fault("mutation.after_operation")
+
+        self._fault("mutation.after_operations")
+        committed_at = _timestamp(self._now())
+        if any(
+            not authority.issued_at
+            <= transaction_at
+            <= consumed_at
+            <= committed_at
+            < authority.expires_at
+            for _, _, _, authority, consumed_at in verified_action_authorities
+        ):
+            raise MemoryValidationError("action_authority_rejected")
+        committed_revision = plan.base_revision + (
+            1 if plan.outcome is MemoryMutationPlanOutcome.MUTATE else 0
+        )
+        if plan.outcome is MemoryMutationPlanOutcome.MUTATE:
+            update = await self._db.execute(
+                "UPDATE cognitive_apply_heads SET revision=?,updated_at=? "
+                "WHERE principal_id=? AND revision=?",
+                (
+                    committed_revision,
+                    committed_at,
+                    plan.subject,
+                    plan.base_revision,
+                ),
+            )
+            if update.rowcount != 1:
+                raise MemoryWriterConflict("cognitive_apply_head_cas_failed")
+
+        receipt_id = _stable_id(
+            "memory-mutation-receipt", plan.subject, plan.idempotency_key
+        )
+        classification_decision_refs: list[JsonValue] = [
+            {
+                "operation_id": operation_id,
+                "classification_decision_id": classification_results[operation_id][0],
+                "classification_decision_hash": classification_results[operation_id][1],
+            }
+            for operation_id in (item.operation_id for item in compiled.operations)
+        ]
+        classification_decision_refs_json = canonical_json(classification_decision_refs)
+        classification_decisions_hash = hashlib.sha256(
+            classification_decision_refs_json.encode("utf-8")
+        ).hexdigest()
+        action_authority_refs: list[JsonValue] = [
+            {
+                "operation_id": item.operation_id,
+                "action_authority_consumption_id": action_consumptions[item.operation_id][
+                    0
+                ],
+                "action_authority_consumption_hash": action_consumptions[item.operation_id][
+                    1
+                ],
+            }
+            for item in (compiled_item.operation for compiled_item in compiled.operations)
+            if item.operation_id in action_consumptions
+        ]
+        action_authority_refs_json = canonical_json(action_authority_refs)
+        action_authorities_hash = hashlib.sha256(
+            action_authority_refs_json.encode("utf-8")
+        ).hexdigest()
+        transaction_started_hash = hashlib.sha256(
+            canonical_json({"transaction_started_at": transaction_at}).encode("utf-8")
+        ).hexdigest()
+        mutation_authority_hash = hashlib.sha256(
+            canonical_json(
+                {
+                    "action_authorities_hash": action_authorities_hash,
+                    "classification_decisions_hash": (classification_decisions_hash),
+                    "transaction_started_hash": transaction_started_hash,
+                }
+            ).encode("utf-8")
+        ).hexdigest()
+        receipt = MemoryMutationApplyReceipt(
+            receipt_id=receipt_id,
+            authority_ref=(
+                f"sqlite-human-memory:{self._receipt.receipt_id}:"
+                f"mutation:{mutation_authority_hash}"
+            ),
+            plan_id=plan.plan_id,
+            plan_hash=plan.plan_hash,
+            run_id=plan.run_id,
+            subject=plan.subject,
+            base_revision=plan.base_revision,
+            committed_revision=committed_revision,
+            canonical_operation_ids=tuple(
+                item.operation_id for item in compiled.operations
+            ),
+            apply_mode=plan.apply_mode,
+            committed_at=committed_at,
+        )
+        receipt.validate_plan(plan)
+        await self._db.execute(
+            "INSERT INTO memory_mutation_receipts(receipt_id,principal_id,"
+            "authority_ref,plan_id,plan_hash,run_id,subject,idempotency_key,"
+            "plan_outcome,plan_json,base_revision,committed_revision,"
+            "canonical_operation_ids_json,apply_mode,classification_decision_refs_json,"
+            "classification_decisions_hash,action_authority_refs_json,"
+            "action_authorities_hash,transaction_started_at,receipt_json,"
+            "receipt_hash,committed_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                receipt.receipt_id,
+                plan.subject,
+                receipt.authority_ref,
+                plan.plan_id,
+                plan.plan_hash,
+                plan.run_id,
+                plan.subject,
+                plan.idempotency_key,
+                plan.outcome.value,
+                canonical_json(plan.to_json()),
+                plan.base_revision,
+                receipt.committed_revision,
+                canonical_json(list(receipt.canonical_operation_ids)),
+                plan.apply_mode.value,
+                classification_decision_refs_json,
+                classification_decisions_hash,
+                action_authority_refs_json,
+                action_authorities_hash,
+                transaction_at,
+                canonical_json(receipt.to_json()),
+                receipt.receipt_hash,
+                committed_at,
+            ),
+        )
+        for compiled_operation in compiled.operations:
+            operation = compiled_operation.operation
+            memory_id, after_revision, before_revision = operation_results[
+                operation.operation_id
+            ]
+            before_ref = (
+                None if before_revision is None else f"{memory_id}@{before_revision}"
+            )
+            decision_id = _stable_id(
+                "memory-mutation-decision",
+                receipt.receipt_id,
+                operation.operation_id,
+            )
+            classification_decision_id, classification_decision_hash = (
+                classification_results[operation.operation_id]
+            )
+            action_consumption = action_consumptions.get(operation.operation_id)
+            decision_json: dict[str, JsonValue] = {
+                "schema_version": 1,
+                "decision_id": decision_id,
+                "operation_id": operation.operation_id,
+                "outcome": "committed",
+                "reason_code": operation.reason_code,
+                "before_ref": before_ref,
+                "after_ref": f"{memory_id}@{after_revision}",
+                "classification_decision_id": classification_decision_id,
+                "classification_decision_hash": classification_decision_hash,
+                "action_authority_consumption_id": (
+                    None if action_consumption is None else action_consumption[0]
+                ),
+                "action_authority_consumption_hash": (
+                    None if action_consumption is None else action_consumption[1]
+                ),
+            }
+            decision_hash = hashlib.sha256(
+                canonical_json(decision_json).encode("utf-8")
+            ).hexdigest()
+            await self._db.execute(
+                "INSERT INTO memory_mutation_decisions(decision_id,receipt_id,"
+                "operation_id,outcome,reason_code,before_ref,after_ref,"
+                "classification_decision_id,classification_decision_hash,"
+                "action_authority_consumption_id,action_authority_consumption_hash,"
+                "decision_json,decision_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    decision_id,
+                    receipt.receipt_id,
+                    operation.operation_id,
+                    "committed",
+                    operation.reason_code,
+                    before_ref,
+                    f"{memory_id}@{after_revision}",
+                    classification_decision_id,
+                    classification_decision_hash,
+                    None if action_consumption is None else action_consumption[0],
+                    None if action_consumption is None else action_consumption[1],
+                    canonical_json(decision_json),
+                    decision_hash,
+                ),
+            )
+        self._fault("mutation.after_receipt")
+
+        if plan.outcome is MemoryMutationPlanOutcome.MUTATE:
+            outbox_payload: dict[str, JsonValue] = {
+                "schema_version": 1,
+                "receipt_id": receipt.receipt_id,
+                "receipt_hash": receipt.receipt_hash,
+                "plan_id": plan.plan_id,
+                "committed_revision": committed_revision,
+            }
+            outbox_json = canonical_json(outbox_payload)
+            await self._db.execute(
+                "INSERT INTO outbox(outbox_id,principal_id,topic,idempotency_key,"
+                "payload,payload_hash,state,next_attempt_at,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,'pending',?,?,?)",
+                (
+                    _stable_id("memory-mutation-outbox", receipt.receipt_id),
+                    plan.subject,
+                    "memory.cognitive.committed",
+                    receipt.receipt_id,
+                    outbox_json,
+                    hashlib.sha256(outbox_json.encode("utf-8")).hexdigest(),
+                    committed_at,
+                    committed_at,
+                    committed_at,
+                ),
+            )
+        receipt_ref = MemoryMutationApplyReceiptRef(
+            receipt.receipt_id, receipt.receipt_hash
+        )
+        apply_result = _mutation_apply_result(
+            plan,
+            outcome=MemoryMutationApplyOutcome.COMMITTED,
+            reason_code=(
+                MemoryMutationApplyReasonCode.COMMITTED
+                if plan.outcome is MemoryMutationPlanOutcome.MUTATE
+                else MemoryMutationApplyReasonCode.NO_MUTATION
+            ),
+            decided_at=committed_at,
+            receipt_ref=receipt_ref,
+        )
+        await self._insert_mutation_apply_result_unlocked(plan, apply_result)
+        self._fault("mutation.after_outbox")
+        if plan.outcome is MemoryMutationPlanOutcome.MUTATE:
+            await self._advance_recall_authority_unlocked(
+                principal.actor_id,
+                event_kind="cognitive_memory_changed",
+                source_ref=receipt.receipt_id,
+                now=committed_at,
+            )
+        return _MutationKernelOutcome(
+            cast(MemoryMutationApplyResult, apply_result), short_circuit=False
+        )
 
     async def resolve_memory_mutation_apply_receipt(
         self, receipt_ref: MemoryMutationApplyReceiptRef
@@ -11353,23 +11418,20 @@ class SQLiteHumanMemoryBackend:
                         and plan.disclosure_context == claim.request.disclosure_context
                         and plan.evidence_refs == claim.request.ordered_evidence_refs
                     )
-                await self._db.execute(
-                    "INSERT INTO analysis_apply_heads(principal_id,revision,updated_at) "
-                    "VALUES(?,1,?) ON CONFLICT(principal_id) DO NOTHING",
-                    (claim.subject, now),
-                )
-                async with self._db.execute(
-                    "SELECT revision FROM analysis_apply_heads WHERE principal_id=?",
-                    (claim.subject,),
-                ) as cursor:
-                    head_row = await cursor.fetchone()
-                if head_row is None:
-                    raise MemoryCorruptionError("analysis apply head missing")
-                base_revision = int(head_row["revision"])
+                base_revision = await self._align_apply_heads_unlocked(claim.subject, now)
                 valid = valid and (
                     no_mutation or (plan is not None and plan.base_revision == base_revision)
                 )
+                rejection_reason = "analysis_validator_rejected"
                 committed_revision: int | None = None
+                if valid and plan is not None:
+                    # 0.6.1 §8.3：accepted 且 outcome=mutate 的 plan 在本事务内物化。
+                    materialization_reason = await self._materialize_accepted_plan_unlocked(
+                        claim.subject, plan
+                    )
+                    if materialization_reason is not None:
+                        valid = False
+                        rejection_reason = materialization_reason
                 if valid:
                     if plan is not None:
                         committed_revision = base_revision + 1
@@ -11458,7 +11520,7 @@ class SQLiteHumanMemoryBackend:
                 await self._append_batch_events_unlocked(
                     claim.batch_id,
                     "application_staged" if valid else "application_rejected",
-                    "analysis_validator_accepted" if valid else "analysis_validator_rejected",
+                    "analysis_validator_accepted" if valid else rejection_reason,
                     now,
                     result.result_hash,
                 )
@@ -11479,6 +11541,118 @@ class SQLiteHumanMemoryBackend:
                 if not committed:
                     with suppress(Exception):
                         await self._db.execute("ROLLBACK")
+
+    async def _align_apply_heads_unlocked(self, subject: str, now: float) -> int:
+        """对齐 ``analysis_apply_heads`` 与 ``cognitive_apply_heads``，返回当前 base revision。
+
+        规则（0.6.1 §8.3/§8.6）：两者是同一 principal 的同一 apply 计数。任一方落后
+        （0.6.0 audit-only 提交只推进 analysis head；Host 直接 ``apply_memory_mutation_plan``
+        只推进 cognitive head）时抬到 ``max``；cognitive 行缺失且目标 > 1 时补建。物化后
+        内核推进 cognitive head，``prepare_analysis_application`` 推进 analysis head，二者
+        同为 ``base + 1``。调用方须持 ``_write_lock`` 且在事务内。
+        """
+
+        assert self._db is not None
+        await self._db.execute(
+            "INSERT INTO analysis_apply_heads(principal_id,revision,updated_at) "
+            "VALUES(?,1,?) ON CONFLICT(principal_id) DO NOTHING",
+            (subject, now),
+        )
+        async with self._db.execute(
+            "SELECT revision FROM analysis_apply_heads WHERE principal_id=?", (subject,)
+        ) as cursor:
+            analysis_row = await cursor.fetchone()
+        if analysis_row is None:
+            raise MemoryCorruptionError("analysis apply head missing")
+        async with self._db.execute(
+            "SELECT revision FROM cognitive_apply_heads WHERE principal_id=?", (subject,)
+        ) as cursor:
+            cognitive_row = await cursor.fetchone()
+        analysis_revision = int(analysis_row["revision"])
+        cognitive_revision = None if cognitive_row is None else int(cognitive_row["revision"])
+        target = max(analysis_revision, cognitive_revision or 1)
+        if analysis_revision < target:
+            await self._db.execute(
+                "UPDATE analysis_apply_heads SET revision=?,updated_at=? "
+                "WHERE principal_id=? AND revision=?",
+                (target, now, subject, analysis_revision),
+            )
+        if cognitive_revision is None:
+            if target > 1:
+                await self._db.execute(
+                    "INSERT INTO cognitive_apply_heads(principal_id,revision,updated_at) "
+                    "VALUES(?,?,?)",
+                    (subject, target, now),
+                )
+        elif cognitive_revision < target:
+            await self._db.execute(
+                "UPDATE cognitive_apply_heads SET revision=?,updated_at=? "
+                "WHERE principal_id=? AND revision=?",
+                (target, now, subject, cognitive_revision),
+            )
+        return target
+
+    async def _materialize_accepted_plan_unlocked(
+        self, subject: str, plan: MemoryMutationPlan
+    ) -> str | None:
+        """在 ``prepare_analysis_application`` 事务内物化 accepted plan（0.6.1 §8.3）。
+
+        返回 ``None`` 表示已物化（或幂等回放同 plan_hash，不重复写）；返回稳定 reason code
+        表示 plan 须转为 rejected，本次物化写入已通过 SAVEPOINT 回退。
+        前置：backend 绑定 ``evidence_authority`` 与 ``classification_policy``；否则保持
+        0.6.0 审计-only 行为（不物化、不拒绝），由 Host 组合负责绑定。
+        principal 形状取 ``principals`` 行（``register_principal_owner`` 或 caller 写入的
+        deployment/household），scope 为 subject 的 personal scope。
+        """
+
+        from simple_harness.runtime import MemoryMutationApplyOutcome
+
+        from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
+        from simple_harness_memory.core.mutations import InformationClassificationPolicy
+
+        assert self._db is not None
+        if (
+            self._evidence_authority is None
+            or type(self._classification_policy) is not InformationClassificationPolicy
+        ):
+            return None
+        async with self._db.execute(
+            "SELECT deployment_id,household_id,actor_id FROM principals WHERE principal_id=?",
+            (subject,),
+        ) as cursor:
+            principal_row = await cursor.fetchone()
+        if principal_row is None or str(principal_row["actor_id"]) != subject:
+            raise MemoryCorruptionError("analysis principal row is missing")
+        principal = MemoryPrincipal(
+            str(principal_row["deployment_id"]),
+            str(principal_row["household_id"]),
+            subject,
+            "analysis-application",
+        )
+        scope = MemoryScope.personal(subject)
+        await self._db.execute("SAVEPOINT analysis_materialization")
+        try:
+            outcome = await self._apply_mutation_plan_kernel_unlocked(
+                principal,
+                scope,
+                plan,
+                capability=self._mint_mutation_kernel_capability(),
+            )
+        except (_MutationKernelRollback, MemoryErrorBase, TypeError, ValueError) as exc:
+            await self._db.execute("ROLLBACK TO SAVEPOINT analysis_materialization")
+            await self._db.execute("RELEASE SAVEPOINT analysis_materialization")
+            logger.warning(
+                "memory.analysis_materialization_rejected",
+                stable_code="analysis_materialization_rejected",
+                plan_hash=plan.plan_hash,
+                exception_type=type(exc).__name__,
+                reason=str(exc)[:200],
+            )
+            return "analysis_materialization_rejected"
+        await self._db.execute("RELEASE SAVEPOINT analysis_materialization")
+        if outcome.result.outcome is not MemoryMutationApplyOutcome.COMMITTED:
+            return "analysis_materialization_rejected"
+        return None
 
     async def _application_from_batch_unlocked(
         self,
@@ -16712,6 +16886,19 @@ class SQLiteHumanMemoryBackend:
         async with self._admission_lock:
             self._delivery_admissions.clear()
         self._release_writer_lease()
+
+    def _mint_mutation_kernel_capability(self) -> _MutationKernelCapability:
+        capability = _MutationKernelCapability()
+        self._mutation_kernel_capabilities.add(id(capability))
+        return capability
+
+    def _consume_mutation_kernel_capability(self, capability: object) -> None:
+        if (
+            type(capability) is not _MutationKernelCapability
+            or id(capability) not in self._mutation_kernel_capabilities
+        ):
+            raise MemoryValidationError("mutation_kernel_capability_invalid")
+        self._mutation_kernel_capabilities.discard(id(capability))
 
     def _fault(self, point: str) -> None:
         if self._fault_injector is not None:

@@ -56,6 +56,7 @@ from simple_harness.runtime import (
 
 from simple_harness_memory import MemoryManager
 from simple_harness_memory.core.errors import MemoryValidationError
+from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
 from simple_harness_memory.core.jobs import (
     DurableMemoryJobRunner,
     MemoryJobWorkerConfig,
@@ -239,18 +240,30 @@ def _span(
 
 
 class _HostEvidenceAuthority:
-    """Host 解析器：从仓储读回 envelope/receipt 并签发 item authority。"""
+    """Host 解析器：从 Host 自己的 durable 记录解析 envelope/receipt 并签发 item authority。
+
+    注意：该端口在 Memory backend 写锁内被调用（物化与 caller apply 同一内核），
+    因此绝不能回调 Memory backend 的加锁读（如 ``read_ingested_evidence``）。
+    """
 
     def __init__(self) -> None:
         self.backend: Any = None
         self.resolutions = 0
+        self.admitted: dict[str, tuple[SanitizedEvidenceEnvelope, SanitizedEvidenceReceipt]] = {}
+
+    def remember(
+        self, envelope: SanitizedEvidenceEnvelope, receipt: SanitizedEvidenceReceipt
+    ) -> None:
+        self.admitted[envelope.evidence_id] = (envelope, receipt)
 
     async def resolve_admitted_evidence(self, span: EvidenceSpanRef) -> AdmittedEvidenceAuthority:
         self.resolutions += 1
-        record = await self.backend.read_ingested_evidence(span.evidence_id)
+        if span.evidence_id not in self.admitted:
+            raise ValueError("evidence is not admitted by the Host")
+        envelope, receipt = self.admitted[span.evidence_id]
         return AdmittedEvidenceAuthority(
-            record.envelope,
-            record.admission_receipt,
+            envelope,
+            receipt,
             EvidenceItemAuthority(
                 schema_version=EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION,
                 authority_id=f"item-authority-{span.evidence_id}",
@@ -437,6 +450,16 @@ async def _build_pipeline(
     return manager, runner
 
 
+async def _ingest(
+    manager: MemoryManager,
+    evidence: tuple[SanitizedEvidenceEnvelope, SanitizedEvidenceReceipt],
+    authority: _HostEvidenceAuthority | None = None,
+) -> None:
+    if authority is not None:
+        authority.remember(*evidence)
+    await manager.ingest_committed_evidence(*evidence)
+
+
 def _semantic_ops(
     *operation_ids: str, evidence_id: str = "evidence-1"
 ) -> tuple[dict[str, Any], ...]:
@@ -585,5 +608,214 @@ async def test_multi_operation_finalize_boundary_replays_with_canonical_order(
         assert await runner.run_once() is WorkerRunOutcome.IDLE
         assert await _count(manager, "SELECT COUNT(*) FROM decision_records") == 3
         assert await _rows(manager, "SELECT state FROM analysis_batches") == [("applied",)]
+    finally:
+        await manager.close()
+
+
+# --------------------------------------------------------------------------- §8.3
+
+
+def _placeholder_principal() -> MemoryPrincipal:
+    return MemoryPrincipal(SUBJECT, SUBJECT, SUBJECT, "analysis-reader")
+
+
+MIXED_OPS: tuple[dict[str, Any], ...] = (
+    {
+        "operation_id": "remind-weekly-report",
+        "evidence_id": "evidence-1",
+        "memory_type": "prospective",
+    },
+    {"operation_id": "remember-backend-python", "evidence_id": "evidence-1", "predicate": "stack"},
+)
+
+
+async def _materialization_snapshot(manager: MemoryManager) -> dict[str, Any]:
+    outbox = await _rows(manager, "SELECT topic,state FROM outbox ORDER BY topic,created_at")
+    return {
+        "heads": await _count(manager, "SELECT COUNT(*) FROM cognitive_memory_heads"),
+        "revisions": await _count(manager, "SELECT COUNT(*) FROM cognitive_memory_revisions"),
+        "receipts": await _count(manager, "SELECT COUNT(*) FROM memory_mutation_receipts"),
+        "outbox": outbox,
+        "analysis_head": await _rows(manager, "SELECT revision FROM analysis_apply_heads"),
+        "cognitive_head": await _rows(manager, "SELECT revision FROM cognitive_apply_heads"),
+    }
+
+
+@pytest.mark.asyncio
+async def test_spike_a2_step_4a_runner_alone_materializes_accepted_plan(tmp_path: Path) -> None:
+    """spike A2 步骤 4a：仅 run_once() 后 registration outbox 与 cognitive head 即存在。"""
+
+    executor = _HostExecutor(MIXED_OPS)
+    authority = _HostEvidenceAuthority()
+    manager, runner = await _build_pipeline(
+        tmp_path / "spike-a2-4a.db", executor, evidence_authority=authority
+    )
+    try:
+        await _ingest(manager, _evidence(1, text="从今以后每周五提醒我提交周报"), authority)
+        assert await runner.run_once() is WorkerRunOutcome.APPLIED
+        assert authority.resolutions >= 1
+        pending = await manager.read_outbox(principal=_placeholder_principal(), states=("pending",))
+        topics = sorted(entry.topic for entry in pending.entries)
+        assert topics == [
+            "memory.cognitive.committed",
+            "memory.prospective.registration.requested",
+        ]
+        registration = next(
+            entry
+            for entry in pending.entries
+            if entry.topic == "memory.prospective.registration.requested"
+        )
+        assert registration.payload is not None and "memory_id" in registration.payload
+        snapshot = await _materialization_snapshot(manager)
+        assert snapshot["heads"] == 2 and snapshot["revisions"] == 2
+        assert snapshot["receipts"] == 1
+        assert snapshot["analysis_head"] == [(2,)] and snapshot["cognitive_head"] == [(2,)]
+        lineage = await _rows(
+            manager,
+            "SELECT cr.plan_hash, ap.plan_hash FROM cognitive_memory_revisions cr "
+            "JOIN accepted_analysis_plans ap ON ap.plan_hash=cr.plan_hash",
+        )
+        assert len(lineage) == 2 and all(row[0] == row[1] for row in lineage)
+        assert await _rows(manager, "SELECT state FROM jobs") == [("applied",)]
+
+        # 再次 run_once 幂等：IDLE、零新增物化
+        assert await runner.run_once() is WorkerRunOutcome.IDLE
+        assert await _materialization_snapshot(manager) == snapshot
+
+        # Host 再用同一 plan 调 apply_memory_mutation_plan：replay 返回 committed，不重复写
+        plan = next(iter(executor.plans.values()))
+        replay = await manager.apply_memory_mutation_plan(
+            principal=_placeholder_principal(), scope=MemoryScope.personal(SUBJECT), plan=plan
+        )
+        assert str(replay.outcome) == "committed"
+        assert await _materialization_snapshot(manager) == snapshot
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_no_mutation_plan_materializes_nothing(tmp_path: Path) -> None:
+    executor = _HostExecutor((), no_mutation=True)
+    authority = _HostEvidenceAuthority()
+    manager, runner = await _build_pipeline(
+        tmp_path / "no-mutation.db", executor, evidence_authority=authority
+    )
+    try:
+        await _ingest(manager, _evidence(1), authority)
+        assert await runner.run_once() is WorkerRunOutcome.APPLIED
+        snapshot = await _materialization_snapshot(manager)
+        assert snapshot["heads"] == 0 and snapshot["revisions"] == 0
+        assert snapshot["receipts"] == 0
+        assert snapshot["outbox"] == [("memory.mutation.requested", "applied")]
+        assert snapshot["analysis_head"] == [(1,)]
+        assert snapshot["cognitive_head"] in ([], [(1,)])
+        assert authority.resolutions == 0
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_without_evidence_authority_stays_audit_only(tmp_path: Path) -> None:
+    """规则：backend 未绑定 evidence_authority 时保持 0.6.0 审计-only（head 仍推进，不物化）。"""
+
+    executor = _HostExecutor(MIXED_OPS)
+    manager, runner = await _build_pipeline(tmp_path / "audit-only.db", executor)
+    try:
+        await manager.ingest_committed_evidence(*_evidence(1))
+        assert await runner.run_once() is WorkerRunOutcome.APPLIED
+        snapshot = await _materialization_snapshot(manager)
+        assert snapshot["heads"] == 0 and snapshot["receipts"] == 0
+        assert snapshot["analysis_head"] == [(2,)]
+        assert snapshot["outbox"] == [("memory.mutation.requested", "applied")]
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("point", ["job.apply.before_commit", "job.apply.after_commit"])
+async def test_materialization_converges_across_apply_commit_boundary(
+    tmp_path: Path, point: str
+) -> None:
+    path = tmp_path / f"materialize-{point.replace('.', '-')}.db"
+    clock = [20.0]
+    fired = False
+
+    def fault(candidate: str) -> None:
+        nonlocal fired
+        if candidate == point and not fired:
+            fired = True
+            raise RuntimeError(f"kill at {point}")
+
+    executor = _HostExecutor(MIXED_OPS)
+    authority = _HostEvidenceAuthority()
+    manager, runner = await _build_pipeline(
+        path,
+        executor,
+        evidence_authority=authority,
+        fault_injector=fault,
+        now=lambda: clock[0],
+    )
+    try:
+        await _ingest(manager, _evidence(1), authority)
+        with pytest.raises(RuntimeError, match=f"kill at {point}"):
+            await runner.run_once()
+    finally:
+        await manager.close()
+
+    clock[0] = 31.0
+    replay = _HostExecutor(MIXED_OPS)
+    replay.deliveries = executor.deliveries
+    replay_authority = _HostEvidenceAuthority()
+    replay_authority.admitted = authority.admitted  # Host durable admission survives restart
+    manager, runner = await _build_pipeline(
+        path, replay, evidence_authority=replay_authority, now=lambda: clock[0]
+    )
+    try:
+        assert await runner.run_once() is WorkerRunOutcome.APPLIED
+        assert replay.calls == 0
+        assert await runner.run_once() is WorkerRunOutcome.IDLE
+        snapshot = await _materialization_snapshot(manager)
+        assert snapshot["heads"] == 2 and snapshot["revisions"] == 2
+        assert snapshot["receipts"] == 1
+        assert snapshot["analysis_head"] == [(2,)] and snapshot["cognitive_head"] == [(2,)]
+        assert [item for item in snapshot["outbox"] if item[0] != "memory.mutation.requested"] == [
+            ("memory.cognitive.committed", "pending"),
+            ("memory.prospective.registration.requested", "pending"),
+        ]
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_materialization_failure_rejects_plan_without_partial_writes(
+    tmp_path: Path,
+) -> None:
+    """evidence authority 拒绝 span：plan 转 rejected，SAVEPOINT 回退，head 不推进。"""
+
+    executor = _HostExecutor(MIXED_OPS)
+    authority = _HostEvidenceAuthority()
+    manager, runner = await _build_pipeline(
+        tmp_path / "materialize-rejected.db", executor, evidence_authority=authority
+    )
+    try:
+        await manager.ingest_committed_evidence(*_evidence(1))  # Host 未 remember → 解析失败
+        assert await runner.run_once() is WorkerRunOutcome.APPLIED
+        assert authority.resolutions == 1
+        snapshot = await _materialization_snapshot(manager)
+        assert snapshot["heads"] == 0 and snapshot["revisions"] == 0
+        assert snapshot["receipts"] == 0
+        assert snapshot["analysis_head"] == [(1,)]
+        assert snapshot["outbox"] == [("memory.mutation.requested", "applied")]
+        assert await _count(manager, "SELECT COUNT(*) FROM accepted_analysis_plans") == 0
+        events = await _rows(
+            manager,
+            "SELECT DISTINCT event_kind,reason_code FROM job_attempt_events "
+            "WHERE event_kind='application_rejected'",
+        )
+        assert events == [("application_rejected", "analysis_materialization_rejected")]
+        receipt = await _rows(
+            manager, "SELECT application_receipt_json FROM analysis_batches"
+        )
+        assert '"validation_status":"rejected"' in str(receipt[0][0])
     finally:
         await manager.close()
