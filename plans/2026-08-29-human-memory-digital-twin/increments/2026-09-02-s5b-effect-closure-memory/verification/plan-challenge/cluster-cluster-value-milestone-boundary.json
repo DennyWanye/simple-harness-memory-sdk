@@ -1,0 +1,73 @@
+{
+ "cluster": {
+  "cluster_id": "cluster-value-milestone-boundary",
+  "parent_finding_ids": [
+   "pc-milestone-stops-at-accepted-plan",
+   "analysis-result-schema-and-span-derivation-missing",
+   "evidence-authority-and-principal-registration-absent-from-composition"
+  ],
+  "specialty": "architecture",
+  "question": "把「被记忆库接受的 MemoryMutationPlan」作为价值里程碑终点是否诚实——在 0.6.0 上 accepted 状态能否被任何用户可观察路径（typed recall / snapshot / occurrence）读到？里程碑的直接依赖边界应画在哪里（Task 1 的哪些断言、Task 5 的物化、Host analysis prompt/result schema/EvidenceSpanRef 派生、evidence_authority 与属主注册调用点）？真实主模型能否在 Host 的 sanitized payload 形状（键 `text`）上产出被 0.6.x validator accepted 的 plan？",
+  "required_evidence": [
+   "sqlite_v5.py prepare_analysis_application/finalize_analysis_application accepted 分支与 apply_memory_mutation_plan compile/apply 内核对 evidence_authority 的依赖",
+   "Host 侧 analysis prompt / result schema / span 派生的设计或 spike：真实 provider 对一条含事实的 Host 真实 turn payload 产出 accepted MemoryMutationPlan 的原始输出",
+   "typed_recall / initial snapshot 在 accepted-but-not-materialized 状态下的读取结果",
+   "Task 1 中哪些断言是 write_file→host.file 事件的直接依赖"
+  ],
+  "specialist_required": true
+ },
+ "parent_findings": [
+  {
+   "id": "pc-milestone-stops-at-accepted-plan",
+   "severity": "P0",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-2",
+    "S5B-AC-3"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-HALF-STATE",
+    "TRUST-SDK-WHEELS",
+    "ASSET-WORKSPACE-AUTHORITY"
+   ],
+   "evidence": "acceptance.md:10-12 主要矛盾 = 沉淀为「任务档案语义状态与长期记忆」; acceptance.md:23-28 / plan.md:8-14 里程碑终点 = 「被记忆库接受的 MemoryMutationPlan」; spikes/a2/RESULT.md:45 + run_final.log:8 step 4a FAIL: 0.6.0 runner APPLIED 后 cognitive_memory_heads=0、无 prospective registration outbox（accepted ≠ 长期记忆，typed recall/snapshot 读不到）; plan.md:157 边界声明把物化推到 Task 5（里程碑之后）; plan.md:131-136 Task 1 在里程碑前承载完整 TC-HM-09 步骤3-6 矩阵（六类拒绝/inode 漂移/Auto/exposure-follows-route/durable reject），而最小动作只需 write_file 经 envelope + host.file 事件",
+   "status": "open",
+   "root_cause": "主要矛盾质询 2/3 不满足：里程碑终点定义在仓储审计状态（accepted_analysis_plans + job applied）而非用户可观察的价值（下一轮能召回/沉淀为 cognitive head），于是价值的直接依赖（Memory 0.6.1 物化，Task 5）被排在里程碑之后，同时非直接依赖（AC-3 次要矩阵的全部拒绝/漂移/Auto 断言）被排在里程碑之前。主要矛盾本身单一且价值在前，但最小验证动作既不最小也不验证价值：在 0.6.0 上它只证明「记忆库收下了一份计划」，S5B-S1 quality_bar「每条记忆可回指对话原句」在无物化时不可检查。"
+  },
+  {
+   "id": "analysis-result-schema-and-span-derivation-missing",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-2"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-LLM-PAYLOAD",
+    "ADV-LLM-PAYLOAD",
+    "ASSET-CREDENTIALS"
+   ],
+   "evidence": "grep prompt_version/result_schema_version/EvidenceSpanRef/analysis_prompt 于 memory core/jobs.py、core/port.py、core/manager.py 与 Host memory/human_memory_v7.py、human_memory_service.py: 只有 MemoryJobWorkerConfig 字段 (jobs.py:73-74)，无任何 prompt/结果 schema/span 派生实现; spikes/a2/RESULT.md:64 (fact 7) EvidenceSpanRef 需 envelope_hash/sanitized_hash/admission receipt/JSON pointer/byte range/quote_hash——模型不可能自算; spike A2 用 fake executor (RESULT.md:44) ，A1 只证明 TaskScopeMutationPlan 形状 (spikes/a1/run2.log) ，无任何真实 provider → accepted MemoryMutationPlan 的 spike; Host 真实 turn payload 键为 `text` (human_memory_service.py:786-790) 而 A2 配方假设 `public_text`/`item_id`; plan.md:155 Task 4 ③ 只写「解析结构化 MemoryMutationPlan（strict）」，文件影响清单 (plan.md:83-107) 无 prompt/schema/span 派生模块",
+   "status": "open",
+   "root_cause": "价值里程碑最后一跳（真实主模型 → 记忆库 accepted 的 MemoryMutationPlan）依赖尚不存在且未被任何 spike 证明的 Host 侧 analysis prompt、result schema（模型可填的形状）与确定性 EvidenceSpanRef 派生层；plan 把它当作已存在的解析步骤，任务清单与 spike 表均未覆盖。"
+  },
+  {
+   "id": "evidence-authority-and-principal-registration-absent-from-composition",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-2",
+    "S5B-AC-6"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-COMPOSITION-FALLBACK",
+    "FAIL-HALF-STATE"
+   ],
+   "evidence": "spikes/a2/RESULT.md:68 (GOTCHA A) 物化路径调用 evidence_authority.resolve_admitted_evidence（计数 0→1），Host 必须提供 AdmittedEvidenceAuthority 解析; spikes/a2/RESULT.md:70 (GOTCHA B) read_outbox/read_occurrence_inbox 在首次 caller-principal 写之前拒绝 Host principal; plan.md:100 human_memory_v7.py 改动只列「analysis delivery / prospective signal / memory action authority」，无 evidence_authority; plan.md:162 Task 5 「以 repository 生成的 application capability 编译并物化 plan——复用 apply_memory_mutation_plan 的 compile/apply 内核」未声明该内核是否仍需 caller 侧 evidence authority; acceptance.md:65 AC-6① 逐项移除任一 → startup fail 的清单同样不含 evidence_authority; plan.md:105 register_principal_owner 只在 Memory 侧新增，Host 何时调用（首次 v7 构建/每次启动/迁移）未写",
+   "status": "open",
+   "root_cause": "spike A2 已证明物化与 Host principal 可读性各依赖一个 Host 侧组件（evidence authority 解析器、属主注册调用点），plan 的 composition 注入表与 startup-fail 清单都没有它们；Task 5 在仓储内物化的设计若仍走 compile/apply 内核则同样需要 evidence authority，若不走则需说明审计血缘如何保持一致。"
+  }
+ ]
+}

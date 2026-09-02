@@ -1,0 +1,74 @@
+
+[A] exception: TaskExecutionAuthorityError('sdk_task_execution_route_authority_missing')
+[A] handler calls: ['context_route']
+[A] write_file handler invocations: 0
+[A] issue_envelope requests: 2 errors: ['sdk_task_execution_route_authority_missing']
+[A] write_file tool messages: []
+[A] checkpoint route_state: routed_standalone phase: tool_batch_reserved
+.
+[A2] write_file tool messages: ['{"error_code":"ROUTE_BARRIER_NOT_OBSERVED","outcome":"rejected","public_message":"Observe a Context route before executing this Tool.","value":null}']
+[A2] handler calls: [] issue_envelope requests: 0
+.
+[A3-same-batch] write_file tool messages: ['{"error_code":"ROUTE_BARRIER_NOT_OBSERVED","outcome":"rejected","public_message":"Observe a Context route before executing this Tool.","value":null}']
+.
+[B] issue_envelope tool_names: ['context_route', 'write_file', 'write_file']
+[B] envelope: {'schema_version': 1, 'run_id': 'run-spike-a3', 'call_id': 'call-47d7b22c9d87d6e17b4da7ccf56e9500c6676aeed297bfa52a4304d420514d7b', 'effect_id': 'effect-47d7b22c9d87d6e17b4da7ccf56e9500c6676aeed297bfa52a4304d420514d7b', 'raw_call_id': 'raw-write', 'turn_ordinal': 2, 'call_ordinal': 0, 'tool_name': 'write_file', 'capability_id': 'builtin:write_file', 'capability_fingerprint': 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd', 'route_receipt_id': '1c3a93f1-0e90-5e1b-a32e-4142e49aec60', 'route_receipt_hash': 'f596bb80a27bb95f09b3b86df6dc686c775deb0249851d714ef5265e27574b56', 'task_scope_id': '322eb89c-b858-5671-a57a-4750a633b2a8', 'root_id': 'root-322eb89c-b858-5671-a57a-4750a633b2a8', 'root_identity_hash': '5c61af8c3ef8aada74a6d1b2de7adc1cfff6d0f8a9308501b69ec47508ebfdb9', 'binding_set_revision': 1, 'binding_set_receipt_id': 'e1678ff2-2774-5275-bfa2-c665f3de018e', 'binding_set_receipt_hash': '83436b788671218f821c1a9eb30128e4010a7ce6471ece366d761db56fddd88d', 'idempotency_key': 'effect-47d7b22c9d87d6e17b4da7ccf56e9500c6676aeed297bfa52a4304d420514d7b'}
+[B] envelope: {'schema_version': 1, 'run_id': 'run-spike-a3', 'call_id': 'call-33fe134187787be22b8253238223c0bae0147c932a8bfd4ac57c2ba5c621deac', 'effect_id': 'effect-33fe134187787be22b8253238223c0bae0147c932a8bfd4ac57c2ba5c621deac', 'raw_call_id': 'raw-write-2', 'turn_ordinal': 3, 'call_ordinal': 0, 'tool_name': 'write_file', 'capability_id': 'builtin:write_file', 'capability_fingerprint': 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd', 'route_receipt_id': '1c3a93f1-0e90-5e1b-a32e-4142e49aec60', 'route_receipt_hash': 'f596bb80a27bb95f09b3b86df6dc686c775deb0249851d714ef5265e27574b56', 'task_scope_id': '322eb89c-b858-5671-a57a-4750a633b2a8', 'root_id': 'root-322eb89c-b858-5671-a57a-4750a633b2a8', 'root_identity_hash': '5c61af8c3ef8aada74a6d1b2de7adc1cfff6d0f8a9308501b69ec47508ebfdb9', 'binding_set_revision': 1, 'binding_set_receipt_id': 'e1678ff2-2774-5275-bfa2-c665f3de018e', 'binding_set_receipt_hash': '83436b788671218f821c1a9eb30128e4010a7ce6471ece366d761db56fddd88d', 'idempotency_key': 'effect-33fe134187787be22b8253238223c0bae0147c932a8bfd4ac57c2ba5c621deac'}
+[B] verify_task_execution_envelope -> root-322eb89c-b858-5671-a57a-4750a633b2a8 1
+.
+[C:task_execution_envelope] write_file tool messages: ['{"error_code":"MODEL_AUTHORITY_FIELD_FORBIDDEN","outcome":"rejected","public_message":"Observe a Context route before executing this Tool.","value":null}']
+.
+[C:binding_set_revision] write_file tool messages: ['{"error_code":"MODEL_AUTHORITY_FIELD_FORBIDDEN","outcome":"rejected","public_message":"Observe a Context route before executing this Tool.","value":null}']
+.
+[D] exception: TaskExecutionAuthorityError('sdk_task_execution_root_authority_unavailable')
+[D] handler calls: ['context_route']
+.
+[E1] provider_specs: ['context_route', 'task_scope_search']
+[E1] exception: TaskExecutionAuthorityError('sdk_task_execution_route_authority_missing')
+[E1] handler calls: ['context_route'] issue_envelope: ['context_route', 'write_file']
+[E1] write_file TOOL msgs: []
+[E1] checkpoint: routed_standalone tool_batch_reserved
+.
+[E2:deferred-standalone] provider_specs: ['context_route', 'task_scope_search']
+[E2:deferred-standalone] exception: RuntimeToolCatalogError('visible Tool execution policy is unavailable') code: catalog_execution_policy_unavailable
+[E2:deferred-standalone] handler calls: ['context_route'] issue_envelope: ['context_route']
+[E2:deferred-standalone] write_file TOOL msgs: []
+[E2:deferred-standalone] checkpoint: routed_standalone tool_batch_reserved provider calls: 2
+.
+[E2:deferred-unrouted] provider_specs: ['context_route', 'task_scope_search']
+[E2:deferred-unrouted] exception: RuntimeToolCatalogError('visible Tool execution policy is unavailable') code: catalog_execution_policy_unavailable
+[E2:deferred-unrouted] handler calls: [] issue_envelope: []
+[E2:deferred-unrouted] write_file TOOL msgs: []
+[E2:deferred-unrouted] checkpoint: unrouted tool_batch_reserved provider calls: 1
+.
+[E2:absent-standalone] provider_specs: ['context_route', 'task_scope_search']
+[E2:absent-standalone] exception: RuntimeToolCatalogError('visible Tool execution policy is unavailable') code: catalog_execution_policy_unavailable
+[E2:absent-standalone] handler calls: ['context_route'] issue_envelope: ['context_route']
+[E2:absent-standalone] write_file TOOL msgs: []
+[E2:absent-standalone] checkpoint: routed_standalone tool_batch_reserved provider calls: 2
+.
+[E2:deferred-routed_task] provider_specs: ['context_route', 'task_scope_search']
+[E2:deferred-routed_task] exception: RuntimeToolCatalogError('visible Tool execution policy is unavailable') code: catalog_execution_policy_unavailable
+[E2:deferred-routed_task] handler calls: ['context_route'] issue_envelope: ['context_route']
+[E2:deferred-routed_task] write_file TOOL msgs: []
+[E2:deferred-routed_task] checkpoint: routed_task tool_batch_reserved provider calls: 2
+.
+[E3] exception: None
+[E3] handler calls: ['context_route', 'write_file', 'context_route', 'write_file']
+[E3] envelope scope/root/rev: 322eb89c-b858-5671-a57a-4750a633b2a8 root-322eb89c-b858-5671-a57a-4750a633b2a8 1 505905bc-f235-5f2e-810a-47e8c4964a70
+[E3] envelope scope/root/rev: fc276e76-c793-5bfe-9ead-55016822fa5d root-fc276e76-c793-5bfe-9ead-55016822fa5d 1 278004f6-91da-56ef-8671-660a857ab891
+[E3] final route_state: routed_task route task_scope: fc276e76-c793-5bfe-9ead-55016822fa5d
+.
+[E4] exception: None
+[E4] head before/after: 1 -> 2 roots: 2
+[E4] envelope revision/root: [(1, 'root-322eb89c-b858-5671-a57a-4750a633b2a8')]
+[E4] verify_task_execution_envelope (stale rev vs head) -> 1 ACCEPTED
+[E4] head-equality resolver -> AssertionError(head != receipt)
+.
+[E5:rename_away] verify_task_execution_envelope -> workspace_root_unavailable
+.
+[E5:replace_same_path] verify_task_execution_envelope -> workspace_root_identity_drift
+.
+[E5:symlink_same_path] verify_task_execution_envelope -> workspace_root_not_canonical
+.
+17 passed in 4.23s

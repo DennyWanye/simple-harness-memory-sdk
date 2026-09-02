@@ -1,0 +1,487 @@
+{
+ "review_mode": "diff",
+ "findings": [
+  {
+   "id": "pc-milestone-stops-at-accepted-plan",
+   "severity": "P0",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-2",
+    "S5B-AC-3"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-HALF-STATE",
+    "TRUST-SDK-WHEELS",
+    "ASSET-WORKSPACE-AUTHORITY"
+   ],
+   "evidence": "Revised plan.md:8-19 redefines the milestone end as 'accepted 并物化 (cognitive head + memory.cognitive.committed) → 下一轮 typed recall 可读到' and orders 0→1(min)→2→3→4a→4; Task 4a (plan.md:188-192) carries the 0.6.1 core (filter policy, multi-op finalize, in-repository materialization via application capability, register_principal_owner, analysis_lineage, analysis_apply_head port, schema version) and is a declared dependency of Task 4 (plan.md:200); Task 4 milestone lane (plan.md:198) asserts materialization + next-turn typed recall on 0.6.1; Task 1 is cut to write_file entry + BindingRootResolver + minimal EffectGate + host.file (plan.md:167-172), hardening moved to Task 8 (plan.md:220-223). Abandoned alternative (Host bridge) recorded at plan.md:89-90 with the reason (bridge cannot fix finalize/filter-policy P0s). Resolved conditional on user approval of A1 (milestone wording) and A2 (0.6.1 instead of '0.6 wheel'); the plan's definition is a strict superset of the current acceptance text and TRUST-SDK-WHEELS already allows 0.6.x, so no current-acceptance violation.",
+   "status": "resolved",
+   "root_cause": "Milestone end was defined on a repository audit state that no Host read path can observe; revised plan moves the observable value (materialized, recallable memory) and its direct dependency (Memory 0.6.1 core) in front of the milestone."
+  },
+  {
+   "id": "analysis-result-schema-and-span-derivation-missing",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-2"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-LLM-PAYLOAD",
+    "ADV-LLM-PAYLOAD",
+    "ASSET-CREDENTIALS"
+   ],
+   "evidence": "New module `backend/deskpet/memory/analysis_proposal.py` in the file impact table (plan.md:128): proposal tool schema (memory_type/fields/evidence_item_id/exact_quote/reason_code), prompt_version constant, deterministic EvidenceSpanRef derivation (text.find → UTF-8 byte range, quote_hash, pointer /text, item_ordinal=1, paraphrase fail-closed), compile with Host-filled run_id/subject/disclosure/evidence_refs/idempotency_key/turn_id/base_revision; base_revision source fixed to the 0.6.1 `analysis_apply_head` port (plan.md:140 ⑥, Task 4 ③ plan.md:197) — raw SQL read is no longer an option. A6 (plan.md:102) records the real-provider spike as PASS. Recursive prospective intent falls back to first-due with backlog (Task 6 ⑦, plan.md:210; amendment A8). Epistemic/support-kind constant combinations are not spelled out but are internal to the compile step and covered by the 0.6.x validator tests in Task 4a.",
+   "status": "resolved",
+   "root_cause": "The last hop (model proposal → deterministic span derivation → MemoryMutationPlan) had no module in the plan; the revised plan adds it with an evidence-backed recipe and a port-based base_revision source."
+  },
+  {
+   "id": "analysis-request-lineage-worker-config-not-run-binding",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-2",
+    "S5B-AC-6"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-PROTOCOL-REPLAY",
+    "TRUST-AUTH-CONTEXT",
+    "FAIL-COMPOSITION-FALLBACK"
+   ],
+   "evidence": "Memory 0.6.1 item ⑤ (plan.md:140): `ingest_committed_evidence(..., analysis_lineage=)` persisted per evidence + claim derives provider/model/config_hash from members and asserts uniformity; Host side: `memory_ingestion_outbox` row carries lineage/model_config_hash (plan.md:118), Task 4 ① computes model_config_hash=sha256(canonical{provider_id, incarnation, config_revision, model_id, model_params, endpoint_identity}) in the terminal-commit transaction, Task 4 ③ executor verifies request lineage == rebuilt binding before any provider call (plan.md:197), file table plan.md:129. Because Task 4a now precedes Task 4 the 0.6.0 interim (B) is no longer needed and is correctly absent. Residual (non-blocking): the S5B-S1 real lane assertion 'Memory llm_invocations.provider_id/model_id == originating Run binding' is only implied by Task 4a's 'lineage 派生一致性断言' on the Memory side; add it to the milestone lane assertions in Task 0 oracle freeze.",
+   "status": "resolved",
+   "root_cause": "0.6.0 audited worker constants as lineage; revised plan binds lineage at ingest (0.6.1) and verifies it against the rebuilt Run binding in the executor."
+  },
+  {
+   "id": "analysis-idempotency-attempt-bound-unknown",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-2"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-PROVIDER-IDEMPOTENCY",
+    "FAIL-DUPLICATE-PROVIDER-CALL",
+    "ADV-DUPLICATE-DELIVERY",
+    "FAIL-PROTOCOL-REPLAY"
+   ],
+   "evidence": "v46 `post_turn_invocation_attempts` (plan.md:118) has UNIQUE(request_hash, attempt_ordinal) + evidence_set_key + unknown_class + `_members(subject, run_id, evidence_id)`; `RunBoundInvoker.invoke(purpose, request_hash, evidence_set_key, members, build_request)` (plan.md:127) refuses with 0 calls when any member has an open handed_off/sent_unknown row; unknown taxonomy not_sent (attempt+1 allowed) / sent_unknown (never resend → terminal refuse) / sent_confirmed (injected observer only); Task 4 ⑤ (plan.md:197) sets sent_unknown terminal = Memory dead_letter + Host durable `memory.analysis.blocked`; Task 4 change list sets `lease_seconds > analysis deadline + 余量` (plan.md:195); lane seams for reconciliation observer, lease-reclaim in-flight, membership growth (plan.md:141, 198). Resolved conditional on A10: the CURRENT S5B-AC-2③ text ('unknown 后经 provider response id 确认成功者返回同一行') has no production path on a non-streaming OpenAI-compatible endpoint, and the acceptance non-functional 'analysis worker lease 30s' is contradicted by the plan's lease rule — both are covered by A10.",
+   "status": "resolved",
+   "root_cause": "Ledger keyed only by (request_hash, attempt) could not see a prior sent_unknown across Memory's attempt+1 retries and the confirm branch was unexecutable; revised plan adds the attempt-independent evidence_set_key + member index and defines an executable sent_unknown terminal."
+  },
+  {
+   "id": "harness-evidence-outbox-async-vs-run-terminal-ordering",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-1"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-HALF-STATE",
+    "FAIL-PROTOCOL-REPLAY",
+    "ASSET-FOREGROUND-RUN-ORDER"
+   ],
+   "evidence": "Async worker deleted (plan.md:84, 153); `harness_evidence.py` (plan.md:124) + v46 `harness_evidence_reservations(run_id, source_sequence, source_event_id, status reserved|ingested|abandoned)` (plan.md:118); Task 2 ②③ (plan.md:177): state.db facts ingest in their own commit transaction, SDK-effect/provider-invocation facts reserve seq first (reservation point = Host `ProductEffectExecutor.execute` pre-gate and `ProductProviderAdapter.invoke`, both Host-controlled) and ingest after the physical action; terminal observer is the sole drainer (ingest or tombstone), next_sequence = MAX(reservations ∪ receipts)+1, run_terminal last, crash → new owner replays the same drain. Tombstone feasibility verified against frozen code: `ExecutionEvidenceKind` has exactly 5 members (evidence_protocol.py:1969-1974) and Host `validate_execution_evidence` (deskpet/task_scope/protocol.py:177-208) only requires `public_payload` to be a Mapping without private keys — so a same-kind tombstone with `public_payload.status=abandoned` is admissible and consumes the seq. Lane seams `objective-event-commit`/`terminal-watermark` + observer next_sequence race listed (plan.md:141, 178). Design is complete. Wording drift vs. AC-1① ('source-ledger outbox') is tracked separately as `ac1-outbox-wording-vs-reservation-design`.",
+   "status": "resolved",
+   "root_cause": "next_sequence was allocated from ingested receipts while facts lived in an unrelated outbox; revised plan makes the reservation table the single sequence source and the terminal observer the single drainer."
+  },
+  {
+   "id": "closure-fallback-window-durable-state-and-recovery",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-1"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-SEMANTIC-CLOSURE",
+    "FAIL-HALF-STATE",
+    "FAIL-DUPLICATE-PROVIDER-CALL",
+    "ASSET-PROVIDER-IDEMPOTENCY",
+    "ASSET-FOREGROUND-RUN-ORDER"
+   ],
+   "evidence": "Task 3 ③④⑤ (plan.md:184): request_hash=H(sdk_run_id, scope, closure_watermark, last_assistant_hash), plan_id=H(request_hash); reserved row inserted in the same tx as `_validate_lease_tx` (verified to exist at foreground_queue.py:2428-2451 and to reject terminal/stale/expired heads), only the current lease owner may call, re-validate lease before apply; `EffectBoundary.CLOSURE` added (plan.md:131, 182; current enum foreground_queue.py:65-92 has SDK_START/SDK_CONTROL/TOOL so a new member with the TOOL state set is a Host-only change); receipt and `apply_mutation_plan` in one transaction (Task 3 ①); gate for COMPLETED/FAILED/CANCELLED/STOPPED, fallback only for COMPLETED with a last assistant message (plan.md:126); reconcile table: no row/failed(not_sent) → new ordinal; reserved-not-handed_off → failed(not_sent)+new; handed_off/unknown → never resend → pending(closure_attempt_unknown); succeeded-without-receipt → derive from `task_scope_mutation_decisions` by plan_id. Delivery point moved to the SDK pump (plan.md:91 ⑦, 132) which matches A3 exactly. Ordering observe→drain→gate→fallback→Host terminal (plan.md:132) is internally consistent with Task 2's drain and Task 3's hook-level check. Resolved conditional on A3: without A3 the plan's 'terminal answer delivered via SDK pump before closure' contradicts the CURRENT AC-1③ '暂存终答不交付…终答带 pending 标记交付'.",
+   "status": "resolved",
+   "root_cause": "The fallback window had no durable, lease-fenced attempt state and assumed a delivery seam that does not exist; revised plan models the window as a five-state ledger with explicit reconcile rules and accepts the SDK pump as the delivery point."
+  },
+  {
+   "id": "pending-closure-bound-to-scope-not-conversation",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-1"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-TASKSCOPE-CANONICAL-STATE",
+    "FAIL-SEMANTIC-CLOSURE"
+   ],
+   "evidence": "`task_scope_closure_receipts` keyed by admission scope (plan.md:118); `dirty_state(scope)` from the last non-pending receipt watermark (plan.md:126, Task 2 ④); Task 3 ⑥ (plan.md:184): pending belongs to the admission scope, next Run in the same scope merges it, other-scope/standalone turns neither carry nor clear it, complete/checkpoint/resume with pending → Host `no_mutation(closure_abandoned)` with 0 provider calls, STATUS/projection shows `semantic_closure_pending`; state-transition table adds pending→no_mutation as legal in any status and forbids plan.* after complete (Task 3 ①); objective events write `human_memory_evidence` rows in the same transaction so refs are usable (Task 2 ①, plan.md:177); cross-Run base_revision/refs verified in Task 3 lane (plan.md:185). Resolved conditional on A3 (same-scope next-Run injection and forced abandonment are A3 wording; current AC-1③ says '下一轮 initial snapshot 携带 pending 要求' without scope qualification, which the plan narrows).",
+   "status": "resolved",
+   "root_cause": "Debt was attached to the conversation/route instead of the admission scope; revised plan binds receipts, dirty computation, merge and termination to the scope."
+  },
+  {
+   "id": "effect-exposure-hiding-unverified-and-standalone-run-fault",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-3"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-WORKSPACE-AUTHORITY",
+    "FAIL-EFFECT-AUTHORITY-DRIFT",
+    "ADV-LLM-PAYLOAD",
+    "TRUST-SDK-WHEELS"
+   ],
+   "evidence": "'SDK unknown-tool rejection' claim deleted; explicit partition written (plan.md:66-68 investigation 9⑪, plan.md:91 ⑥, Task 1 ④ plan.md:170): model-visible ToolResult.rejected = {UNROUTED, same-batch, forged authority field, EffectGate failure after envelope issue}; Run fault with stable code mapped to durable FAILED + host.run_fault = {standalone PROJECT_EFFECT → sdk_task_execution_route_authority_missing, zero/multi root → sdk_task_execution_root_authority_*, hidden tool → catalog_execution_policy_unavailable}; route-aware provider_specs hiding is explicitly 'optional, probability reducer, fingerprint stable' (plan.md:168); Task 1 verification asserts durable FAILED + stable code and zero write for the standalone case (plan.md:171). A10 row (plan.md:106) records the 17-passed spike. Resolved conditional on A4: the CURRENT D2 / AC-3④ text ('被拒绝，模型必须先建立 TaskScope') is not achievable on the frozen SDK and the plan implements the A4 behaviour. Patch-induced side issue (new event kind `host.run_fault`) tracked as `host-run-fault-event-kind-outside-recorder-allowlist`.",
+   "status": "resolved",
+   "root_cause": "Rejection semantics were assigned to SDK seams that only know UNROUTED/same-batch; revised plan assigns model-visible rejection to the Host EffectGate and documents the remaining cases as fail-closed Run faults."
+  },
+  {
+   "id": "prospective-ack-channel-undefined",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-4"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-SCHEDULER-DUPLICATE",
+    "ADV-LLM-PAYLOAD",
+    "ADV-AMBIGUOUS-NL"
+   ],
+   "evidence": "New Host tool `prospective_ack{occurrence_key}` (plan.md:85, 136, 152): direct kernel, PROJECTLESS_SAFE (set exists at sdk_adapters/tools.py:50-58; HOST_COMPOSED_TOOL_NAMES precedent at :39), default policy so it is exposed on all five routes; handler single transaction: key ∈ presented → acknowledged → occurrence_presented projection → `prospective_ack_invocations(sdk_run_id, occurrence_key UNIQUE)` idempotent row (Task 6 ⑤, plan.md:210); inbox message carries the 64-hex key (plan.md:133); settled(acknowledged) driven by the acking run's terminal commit hook (plan.md:131, 210); no call/refusal keeps presented and re-injects next turn. Resolved conditional on A7 (processed := durable ack receipt); without A7 the CURRENT AC-4③/⑤ '终答提及 → ack' remains an NL-defined oracle the plan does not implement.",
+   "status": "resolved",
+   "root_cause": "presented→acknowledged had no deterministic input; revised plan adds a structured Host tool with exact-key membership validation."
+  },
+  {
+   "id": "evidence-authority-principal-registration-missing",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-2",
+    "S5B-AC-6"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-COMPOSITION-FALLBACK",
+    "FAIL-HALF-STATE"
+   ],
+   "evidence": "human_memory_v7 wiring adds evidence authority (Host state.db resolver, never reading the Memory backend — deadlock recorded at plan.md:60-61) and idempotent first-build `register_principal_owner` (plan.md:134); new module `memory/evidence_authority.py` (Task 4, plan.md:195); Memory 0.6.1 ③④ define materialization reusing the compile/apply kernel with the `analysis_apply_heads`/`cognitive_apply_heads` unification rule and the owner-registration API (plan.md:140); composition startup-fail list includes the new authorities (plan.md:139). Resolved conditional on A9 (CURRENT AC-6① injection list lacks evidence_authority and owner registration; the plan adds both). Sequencing wrinkle (Task 4a wires a module created in Task 4) tracked as `task-4a-host-wiring-precedes-evidence-authority-module`.",
+   "status": "resolved",
+   "root_cause": "Materialization kernel dependencies (Host evidence authority, registered principal, apply-head unification) were absent from composition and 0.6.1 design; revised plan names all three."
+  },
+  {
+   "id": "fault-runners-built-after-they-are-needed",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-1",
+    "S5B-AC-2",
+    "S5B-AC-4"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-HALF-STATE",
+    "FAIL-PROTOCOL-REPLAY",
+    "FAIL-SCHEDULER-DUPLICATE"
+   ],
+   "evidence": "Task 0 now builds the four-lane runner skeletons `backend/tests/faults/*` + runner_contract emitter + seam constants, verified by NOT_IMPLEMENTED non-zero exit (plan.md:161-164); file table lists the new seams (plan.md:141); Task 2/3/4/6 verification items each bind to a named lane and seam (plan.md:178, 185, 198, 211); directory confirmed absent today (`backend/tests/faults` missing). Residual: plan.md:52 (investigation item 7) still reads '本增量兑现前三条', contradicting the four-lane statements elsewhere — tracked as `plan-lane-count-narrative-stale` (P2).",
+   "status": "resolved",
+   "root_cause": "Negative-safety oracles were scheduled after all implementation; revised plan front-loads the runner/seam contract into Task 0 and binds each task's verification to a lane."
+  },
+  {
+   "id": "release-unit-third-subsystem-packing",
+   "severity": "P1",
+   "scope_relation": "scope-change-proposal",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-4",
+    "S5B-AC-5",
+    "S5B-AC-6"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-FOREGROUND-RUN-ORDER",
+    "FAIL-COMPOSITION-FALLBACK"
+   ],
+   "evidence": "Awaiting user decision on A11 (D5). The revised plan is written against the A11 default option: acceptance recorded per chain in lane order (effect/closure → memory analysis → prospective/immediate) in Task 9 (plan.md:230) and Memory 0.6.1 gets an independent cutover receipt in Task 5 (plan.md:203); high-risk count kept at 3 (plan.md:163). If the user chooses the split option, AC-4/AC-5 (Task 6/7) move to S5c and Task 0's check-release-unit numbers change. Not a plan defect; stays open until approval is recorded.",
+   "status": "open",
+   "root_cause": "Release-unit sizing is an acceptance-level decision (D5) that only the user can make; plan depends on the A11 default."
+  },
+  {
+   "id": "task-scope-update-projectless-safe-vs-dirty-exposure",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-1"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-TASKSCOPE-CANONICAL-STATE",
+    "FAIL-LLM-PAYLOAD"
+   ],
+   "evidence": "Task 3 registers `task_scope_update` as an always-exposed direct tool in PROJECTLESS_SAFE_TOOL_NAMES with policy non_project_effect / route required / task_scope required (plan.md:182); handler-level gates `task_scope_update_scope_unbound` (standalone) and `task_scope_update_nothing_to_close` (no revision bump) (plan.md:184 ①); snapshot injection only controls instruction text (plan.md:133, 184 ②). Verified against frozen code that this composition reaches the handler instead of faulting: `ExecutableToolRecord.__post_init__` (tools/runtime_catalog.py:255-269) constrains only CONTEXT_CONTROL and PROJECT_EFFECT, so NON_PROJECT_EFFECT+REQUIRED+REQUIRED is admissible; Host `issue_envelope` (sdk_adapters/task_execution.py:44-95) raises only for PROJECT_EFFECT, and SDK `_preflight_tool_batch` (react_loop.py:660-695) has no ROUTED_STANDALONE rule — so a standalone call yields a handler-level ToolResult.rejected, not a Run fault.",
+   "status": "resolved",
+   "root_cause": "Per-turn hiding would turn a stray call into a whole-Run fault; revised plan always exposes the tool and enforces the dirty/pending condition in the handler."
+  },
+  {
+   "id": "occurrence-presented-dual-table-state",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-4"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-SCHEDULER-DUPLICATE",
+    "ASSET-SUPPRESSION-ORDER",
+    "FAIL-PROTOCOL-REPLAY"
+   ],
+   "evidence": "v46 `prospective_occurrences` is the canonical lifecycle table (claimed|presented|acknowledged|settled + settled_reason + presented_run_id/snapshot_id + ack_run_id/receipt) and `occurrence_presented` (v45) is schema-untouched and written only as a gate projection when the occurrence leaves the mandatory inbox (plan.md:118, 135); Task 6 ④ writes presented in the same tx as the snapshot receipt WITHOUT touching occurrence_presented, ⑤ writes the projection at ack, ⑥ at settled(superseded|expired), suppressed never (plan.md:210). This keeps the S5a read query byte-identical and satisfies 'unacked → next turn still pending'. Resolved conditional on A7 (which restates the projection timing in acceptance); consistent with the CURRENT AC-4③ sentence 'occurrence_presented 写入由本增量接管'.",
+   "status": "resolved",
+   "root_cause": "The plan wrote 'presented' into the S5a gate table at snapshot time, which the gate reads as 'cleared'; revised plan separates lifecycle (v46) from projection (v45) and writes the projection only at inbox-clearing transitions."
+  },
+  {
+   "id": "analysis-adapter-rebuild-after-provider-config-change",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-2"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-DATA-LOSS",
+    "ASSET-RAW-EVIDENCE"
+   ],
+   "evidence": "Executor classifies an unrebuildable binding as `not_sent(binding_unrebuildable:*)` with 0 provider calls (plan.md:129, Task 4 ③ plan.md:197); Memory dead-letters after max_attempts or immediately via the optional 0.6.1 `AnalysisExecutorPermanentError` (plan.md:140 ⑦, Task 5 plan.md:203); no automatic re-analysis under a new binding (stop-tracking list unchanged). Residual detail: the Host durable event name for this terminal (`memory.analysis.dead_letter{run_id, evidence_set_key, reason}` in the synthesis) is not spelled out — only `memory.analysis.blocked` for sent_unknown is (plan.md:197); add it to the Task 0 design freeze.",
+   "status": "resolved",
+   "root_cause": "Terminal for an unrebuildable binding was silent and mislabelled; revised plan gives it a definite not_sent reason and a dead-letter path without resends."
+  },
+  {
+   "id": "real-ui-harness-not-a-task",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-1",
+    "S5B-AC-2",
+    "S5B-AC-4",
+    "S5B-AC-5"
+   ],
+   "assurance_contract_ids": [
+    "TRUST-S5A-RECEIPT"
+   ],
+   "evidence": "New Task 8b rebuilds identity_harness/shim_proxy/tauri_shim in an ignored tools directory and runs a 1-turn real-provider rehearsal before S5B-S1, failure → BLOCKED (plan.md:225-227); file table row plan.md:142; Task 9 depends on 8b (plan.md:231). The S5B-S8 scenario the plan references (plan.md:161, 230) does not exist in the CURRENT acceptance matrix — it depends on amendment A12; resolved conditional on A12.",
+   "status": "resolved",
+   "root_cause": "The real desktop UI channel was an unowned external precondition; revised plan makes it a task with a rehearsal gate."
+  },
+  {
+   "id": "memory-061-cutover-schema-and-pin",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-6"
+   ],
+   "assurance_contract_ids": [
+    "TRUST-SDK-WHEELS",
+    "FAIL-DATA-LOSS"
+   ],
+   "evidence": "Task 4a: schema version bump, two clean builds identical + candidate manifest, Host pyproject/vendor pin with wrong-hash fail-closed, forward-open test for a 0.6.0-written DB (plan.md:189-191); Task 5: independent Memory 0.6.1 cutover sub-item with schema declaration, forward-open test, pin/hash regression and its own cutover receipt (plan.md:203-204).",
+   "status": "resolved",
+   "root_cause": "Cutover obligations covered only Host v46; revised plan adds an independent Memory 0.6.1 cutover receipt with forward/pin assertions."
+  },
+  {
+   "id": "prospective-registration-accepted-signal-step-missing",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-4"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-SCHEDULER-DUPLICATE",
+    "FAIL-PROTOCOL-REPLAY",
+    "FAIL-HALF-STATE"
+   ],
+   "evidence": "Task 6 ① outbox consumption = one state.db tx writing `prospective_scheduler_registrations(state=received)` + cursor; ② deterministic signal identity derived from outbox_id (signal_id/receipt/nonce/operation_id stable hashes, observed_at = durable received_at) for `REGISTRATION_ACCEPTED`, `prospective_signal_replayed` treated as already-accepted only after re-reading Memory registration state, invalidation rows consumed the same way (plan.md:210); verification includes 'no REGISTRATION_ACCEPTED → registration_not_live intercepted' and 'invalidation → zero triggers' (plan.md:211); A11 row records the replay probe (plan.md:107). Resolved conditional on A8 (which adds this handshake to AC-4①②; the CURRENT text does not forbid it, so no violation without A8).",
+   "status": "resolved",
+   "root_cause": "The mandatory REGISTRATION_ACCEPTED handshake and its deterministic identity discipline were missing; revised plan adds both with a same-transaction cursor."
+  },
+  {
+   "id": "effect-envelope-root-vs-frozen-write-scope-split",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-3"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-WORKSPACE-AUTHORITY",
+    "FAIL-EFFECT-AUTHORITY-DRIFT",
+    "ADV-LLM-PAYLOAD"
+   ],
+   "evidence": "EffectGate frozen-authority consistency step with codes `effect_gate_frozen_scope_mismatch` / `effect_gate_projectless_project_effect` / `effect_gate_frozen_root_mismatch` placed before `verify_task_execution_envelope` (plan.md:123); Task 1 minimal gate includes this step (plan.md:168, 170 ③) and verifies the E3 sequence yields `effect_gate_frozen_scope_mismatch` (plan.md:171); re-routing inside a Run is deliberately not forbidden (revision-notes 9), so the consequence 'write happens in the next Run' is carried by A4. Resolved conditional on A4 (D2 wording).",
+   "status": "resolved",
+   "root_cause": "Envelope root and frozen physical write root were two truths; revised plan asserts their equality per effect.",
+   "why_not_found_in_round_one": "specialist E3 probe（同 Run 再路由后 envelope 与冻结写根分裂）需要运行真 ReActLoop 才能观察，primary breadth 只做静态阅读"
+  },
+  {
+   "id": "auto-mode-exemption-broader-than-folder-append",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-3"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-WORKSPACE-AUTHORITY",
+    "FAIL-EFFECT-AUTHORITY-DRIFT"
+   ],
+   "evidence": "Task 8 wires `explicit_only` from the frozen effect classification into `decide()` so `_CONFIRM_ONLY` classes return REQUIRE_USER (`product_policy_user_confirmation`) under Auto, with assertion tests (a) Auto+DESTRUCTIVE → REQUIRE_USER, (b) Auto+write_file → ALLOW (existing), (c) Auto+append_binding no challenge, (d) PROJECT_EFFECT list per-item EffectClass assertion (plan.md:221-222); EffectGate's last step lists confirm-only with `explicit_only` computed from the frozen classification (plan.md:123). Resolved conditional on A5: the CURRENT AC-3⑤ ('Auto 只豁免 folder-append 确认；_CONFIRM_ONLY 门…不变') is contradicted by the plan's preserve-approved 'Auto+write_file → ALLOW（既有）', which only A5 legitimises.",
+   "status": "resolved",
+   "root_cause": "Confirm-only enforcement lived only in the legacy executor; revised plan ports it into the SDK authorization decision and freezes the exemption set by test.",
+   "why_not_found_in_round_one": "需追踪 SDK 授权路径 decide()→plan_prepared_call 的 explicit_only 传参，primary 只核对了 legacy tool_executor 的 _CONFIRM_ONLY"
+  },
+  {
+   "id": "tc-hm-09-multi-root-canary-vs-oos-and-d2-wording",
+   "severity": "P1",
+   "scope_relation": "scope-change-proposal",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-3"
+   ],
+   "assurance_contract_ids": [
+    "OOS-MULTI-ROOT-SELECTION",
+    "ASSET-WORKSPACE-AUTHORITY"
+   ],
+   "evidence": "Awaiting user approval of A6 (single-root-per-canary oracle interpretation + strict post-append semantics) and A4 (D2 wording). Plan already depends on both: Task 0 freezes the TC-HM-09 step-6 interpretation + behavior_changes (plan.md:161), Task 8 implements `workspace_binding_receipt_superseded` strict and verifies TC-HM-09 3–6 under the single-root-per-canary reading (plan.md:221-222), Task 1 ④ documents the fault/reject partition (plan.md:170). Not a plan defect; stays open until approval is recorded.",
+   "status": "open",
+   "root_cause": "Acceptance text and the frozen oracle encode behaviours the contract and frozen SDK exclude; only the user can approve the reinterpretation.",
+   "why_not_found_in_round_one": "冻结 oracle 与 OOS-MULTI-ROOT-SELECTION 的冲突在 specialist 逐步比对 TC-HM-09 步骤 3/6 与 freeze-time 投影后才显形"
+  },
+  {
+   "id": "binding-head-vs-receipt-stale-definition",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-3"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-WORKSPACE-AUTHORITY"
+   ],
+   "evidence": "Frozen check order and reason-code table written into the file table (plan.md:123): envelope presence/identity → sticky memo (run_id, route_receipt_id) via v46 `effect_gate_rejections` (plan.md:118) → frozen-authority consistency → `verify_task_execution_envelope` S4 code set incl. inode/canonical → scope lifecycle → confirm-only; every failure returns `ToolResult.rejected(error_code)` with effect=None and no execution_effects row/event (plan.md:122); Task 0 freezes the table before code (plan.md:162); Task 8 verification pins rename → `workspace_root_unavailable` and replace → `workspace_root_identity_drift` (plan.md:222), replacing the earlier wrong 'os.rename → inode drift' expectation.",
+   "status": "resolved",
+   "root_cause": "Reason codes and check order were implied; revised plan freezes them in Task 0 and pins the correct code per drift shape.",
+   "why_not_found_in_round_one": "reason-code 顺序缺失只有在 specialist 用 exact_receipt resolver 跑 E4/E5 probe 后才可判定"
+  },
+  {
+   "id": "project-effect-policy-change-breaks-inflight-run-restore",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-6"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-HALF-STATE",
+    "ASSET-FOREGROUND-RUN-ORDER"
+   ],
+   "evidence": "Task 8 cutover adds the migration precondition 'no non-terminal foreground Run / no WAITING SDK Run' plus an old-checkpoint restore stable-isolation test (plan.md:221); A3 row keeps the note that a cross-deploy fingerprint change makes in-flight Runs fail stably (plan.md:99).",
+   "status": "resolved",
+   "root_cause": "PROJECT_EFFECT classification changes the SDK catalog fingerprint; revised plan guards cutover with a precondition and a restore test.",
+   "why_not_found_in_round_one": "需要读 runtime_catalog 的 fingerprint 组成（policy 三字段入 fingerprint），primary 未深入 SDK catalog 实现"
+  },
+  {
+   "id": "prospective-processed-definition-acceptance-wording",
+   "severity": "P1",
+   "scope_relation": "scope-change-proposal",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-4"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-SCHEDULER-DUPLICATE",
+    "ADV-AMBIGUOUS-NL"
+   ],
+   "evidence": "Awaiting user approval of A7 ('processed := durable prospective_ack receipt'; '终答提及' only as quality_bar human check). The plan is written against A7 (plan.md:85, 136, 210 ⑤; S5B-S5 verification 'model calls prospective_ack', plan.md:211). Without A7 the CURRENT AC-4③/⑤ NL-defined oracle remains unimplemented by any deterministic gate. Not a plan defect; stays open until approval is recorded.",
+   "status": "open",
+   "root_cause": "Acceptance defines processed by the model's prose; the deterministic replacement is an acceptance-text change requiring user approval.",
+   "why_not_found_in_round_one": "specialist 证明 ack 只能由结构化工具驱动后，acceptance 措辞问题才成为独立根因"
+  },
+  {
+   "id": "prospective-triggered-intent-has-no-host-exit",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-4"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-SCHEDULER-DUPLICATE"
+   ],
+   "evidence": "Task 6 ⑥ derives settled(superseded|expired|suppressed) from inbox/outbox facts inside the scheduler tick, in the same tx as any required projection row; ⑦ states Memory-side triggered→completed is produced only by the acking turn's analysis plan (Task 7 goal) and that the bounded re-presentation rule for presented-never-acked occurrences goes into the design freeze (plan.md:210); stop-tracking list adds 'Memory 侧 triggered→completed 的非 analysis 路径' and recursive intents (plan.md:240). Residual: the bounded re-presentation rule's content is deferred to the Task 0 freeze rather than stated; acceptable for P2 but the freeze must state it explicitly (no silent expiry, per synthesis).",
+   "status": "resolved",
+   "root_cause": "Who drives Memory-side completion and what expiry means were unspecified; revised plan makes Host settle derived-only and names the analysis path as the only Memory exit.",
+   "why_not_found_in_round_one": "需要 Memory prospective 状态机 probe E（EXPIRED→not_live）才能发现 Host 无退出信号"
+  },
+  {
+   "id": "prospective-kill-point-transaction-map",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-4"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-PROTOCOL-REPLAY",
+    "FAIL-HALF-STATE"
+   ],
+   "evidence": "Task 6 verification maps the four kill points to concrete transactions (registration_commit = Host tx(received+cursor) → Memory ack tx → Host tx(accepted); occurrence_commit = Memory trigger tx → Host claimed from inbox; snapshot_commit = snapshot receipt + presented one tx; ack_commit = invocation row + acknowledged + projection one tx) (plan.md:211); the three invariants (deterministic signal identity, inbox-sourced claims, projection only at inbox-clearing transitions) are in Task 6 ②③④⑤ and the Task 0 freeze item 'Prospective 四 kill 点 ↔ 表/事务映射与三不变量' (plan.md:162).",
+   "status": "resolved",
+   "root_cause": "Kill points were listed without table/transaction binding; revised plan binds them and freezes the invariants.",
+   "why_not_found_in_round_one": "两库事务映射只有在 specialist 完成表/事务设计后才可评估为缺口"
+  },
+  {
+   "id": "memory-060-multi-operation-finalize-nonconvergent",
+   "severity": "P0",
+   "scope_relation": "in-scope",
+   "origin": "new-external-fact",
+   "violated_acceptance_ids": [
+    "S5B-AC-2"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-HALF-STATE",
+    "FAIL-PROTOCOL-REPLAY",
+    "TRUST-SDK-WHEELS",
+    "ADV-LLM-PAYLOAD"
+   ],
+   "evidence": "Memory 0.6.1 item ② 'finalize 写/读同一规范序（多 op 收敛）' (plan.md:140), Task 4a tests '≥2 op applied' and 'kill 在 apply 前后收敛' (plan.md:189), A7 row records the deterministic reproduction and its fix target (plan.md:103); Host worker treats finalize exceptions as dead-letter rather than a crash loop (plan.md:129, 197); lane seams '≥2 op finalize/audit_pending 卡死' (plan.md:141, 198). Task 4a precedes the Task 4 milestone (plan.md:200). Resolved conditional on A2 (0.6.1 named in AC-2①).",
+   "status": "resolved",
+   "root_cause": "0.6.0 finalize compared decisions in two different orders; revised plan fixes it upstream in 0.6.1 before the milestone."
+  },
+  {
+   "id": "host-filter-policy-not-admitted-by-memory-060",
+   "severity": "P0",
+   "scope_relation": "in-scope",
+   "origin": "new-external-fact",
+   "violated_acceptance_ids": [
+    "S5B-AC-2"
+   ],
+   "assurance_contract_ids": [
+    "TRUST-SDK-WHEELS",
+    "ASSET-RAW-EVIDENCE",
+    "FAIL-HALF-STATE"
+   ],
+   "evidence": "Memory 0.6.1 item ① builder pass-through of `supported_filter_policies` (plan.md:140), Host passes it at v7 build (plan.md:134, 189), Task 4 ② worker reuses the Host-durable envelope/receipt and explicitly does not re-wrap (plan.md:197) so raw-evidence lineage is preserved; A8 row records the failure and fix target (plan.md:104); Task 4a test 'filter policy 透传' (plan.md:189). Resolved conditional on A2.",
+   "status": "resolved",
+   "root_cause": "Memory hard-coded one filter policy and the builder could not be configured; revised plan adds the pass-through in 0.6.1 and forbids re-wrapping."
+  }
+ ]
+}

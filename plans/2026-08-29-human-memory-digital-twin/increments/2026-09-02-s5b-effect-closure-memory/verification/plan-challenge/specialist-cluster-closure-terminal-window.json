@@ -1,0 +1,115 @@
+{
+ "cluster_id": "cluster-closure-terminal-window",
+ "parent_finding_ids": [
+  "harness-evidence-outbox-async-vs-run-terminal-ordering",
+  "closure-fallback-window-durable-state-and-recovery",
+  "pending-closure-bound-to-scope-not-conversation",
+  "task-scope-update-projectless-safe-vs-dirty-exposure"
+ ],
+ "specialty": "failure-recovery",
+ "findings": [
+  {
+   "id": "harness-evidence-outbox-async-vs-run-terminal-ordering",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-1"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-HALF-STATE",
+    "FAIL-PROTOCOL-REPLAY",
+    "ASSET-FOREGROUND-RUN-ORDER"
+   ],
+   "evidence": "已用真实 ExecutionEvidenceIngress 复现丢行（probe：/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-closure/probe_closure_window.py，输出 probe_output.txt P1）：已导入 seq1 provider 行、outbox 尚有 seq2/3 未导入时，observer 按 foreground_runtime.py:1170-1178 的 `COALESCE(MAX(i.source_sequence),0)+1`（只看 task_scope_execution_ingest_receipts，不看 outbox）取 next_sequence=2 写 run_terminal → 迟到 seq2 被 `execution_source_sequence_conflict`（evidence_ingress.py:94-100）、seq3 被 `execution_after_terminal_rejected`（:101-111）永久拒绝，而 authorize_terminal 以 durable=terminal=2 放行（:165-192）——终态门在丢 2 行的情况下判定「完整」。生产者与 observer 均在 Host 同一进程同一 asyncio loop（composition.py:346 in-process Runtime；observer 在 `wait_idle` 之后运行 foreground_runtime.py:1134，此后不再有新的 Harness 事实产生）。各事实的 durable 提交点：route_decision = context_authority.py:486-531（state.db 独立 `BEGIN IMMEDIATE`）；context_snapshot = :401-453（state.db）；route tool_invocation = :613-642（state.db）；物理 effect = SDK `execution_effects`（SDK execution DB，非 state.db；spikes/a3/RESULT.md 步骤 6）；provider_invocation：`ProductProviderAdapter.invoke` provider.py:571-690 只写日志无 Host 行，durable 事实在 SDK/Host coordinator 的 execution_provider_invocations（workflows/store/schema.py:2327，另一 DB）。既有测试 tests/task_scope/test_canonical_archive.py:216-238 只证明「terminal 先到、gap 后补」可行，未覆盖 next_sequence 分配竞争。",
+   "status": "open",
+   "root_cause": "next_sequence 的分配源（已导入 receipts）与事实的产生源（outbox/其它 DB）不一致，且 observer 与 worker 之间没有排空契约；在 Host 进程内自产事实的场景下 outbox+异步 worker 是无必要的第二失败域。修法（确定）：① 去掉异步 worker；state.db 内提交的事实（snapshot/route/route-tool-invocation）在**同一事务**内直接 `ingest`（复用 `_append_event_tx`+receipt+watermark），source_sequence 由 v46 `harness_evidence_reservations(run_id, source_sequence UNIQUE, source_event_id UNIQUE, status reserved|ingested|abandoned)` 在同一事务预留；② 事实落在其它 DB 的（SDK effect、provider invocation）先在 state.db 预留 seq（reserved），物理动作完成后 ingest；③ terminal observer 成为**唯一排空者**：run_terminal 前先把本 run 全部 reserved 行按 seq 顺序 ingest（事实可从 SDK DB/coordinator 读到）或写 tombstone（同 kind、public_payload.status=abandoned，消费该 seq 以维持连续水位），next_sequence = MAX(reservations ∪ receipts)+1；④ crash 后新 owner 的 observer 重放同一排空（source_event_id 幂等 evidence_ingress.py:71-86）。ExecutionEvidenceKind 冻结 5 种，tombstone 不能新增 kind，只能用 payload 状态表达。"
+  },
+  {
+   "id": "closure-fallback-window-durable-state-and-recovery",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-1"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-SEMANTIC-CLOSURE",
+    "FAIL-HALF-STATE",
+    "FAIL-DUPLICATE-PROVIDER-CALL",
+    "ASSET-PROVIDER-IDEMPOTENCY",
+    "ASSET-FOREGROUND-RUN-ORDER"
+   ],
+   "evidence": "现状（无兜底时）该窗口今天可恢复且幂等：Host 在 SDK COMPLETED 后、record_sdk_terminal 前死亡 → lease（默认 300s，foreground_runtime.py:310；心跳 lease/3 :1060-1074）到期 → 新进程 `_drive_once` :475-490 等待到期后 `reclaim_expired`（generation+1，foreground_queue.py:1665-1725，要求 head 非终态且 lease 过期）→ `_drive_claimed` 带 previously_bound_sdk_run_id → `query` 命中记 QUERY_FOUND（:749-770）→ `_observe_with_heartbeats` → observer `wait_idle` 立即返回、`resolve_host_terminal` :268-291 → run_terminal 按 source_event_id 幂等（:1237-1259）→ `record_sdk_terminal` 以新 generation 提交（payload generation ≤ generation :1902-1909；tests/execution/test_foreground_queue.py:800-840 已证）。SDK 侧：driver 异常（A3 的 `sdk_task_execution_route_authority_missing`）由 kernel.py:2822-2850 终结为 FAILED，`list_recoverable_root_runs` 只取 created/queued/running/cancel_requested（uow.py:6420-6429）→ 留下的 tool_batch_reserved checkpoint **不会被任何恢复重放**（required_evidence #3 结论：无重放风险，但该 Run 的 Host 终态是 FAILED，此前已成功的批次可能已产生 material 脏事件）。插入兜底后的缺口：(a) 窗口内唯一 durable 状态是 lease；`foreground_run_heads` 的 CHECK/触发器枚举状态（033_foreground_queue_v41.sql:150-175, 320-360）不能新增「closure in flight」head 状态（SQLite CHECK 不可改）→ 必须是 v46 独立行；(b) plan.md:148 ⑤ 的 `post_turn_invocation_attempts` 未规定「在 Provider 调用前、同一事务内 `_validate_lease_tx`（foreground_queue.py:2428-2451）+ 插入 attempt 行」，也无 `authorize_effect` 类的 CLOSURE 边界（EffectBoundary 只有 SDK_START/SDK_CONTROL/TOOL :65-92），A1 实测 16.6–33.9s 的调用期间 lease 可被 reclaim，旧 owner 仍可提交 plan/receipt；(c) D7 的 `sent_unknown`「按 provider response id 确认」对 closure 不可实现：OpenAI-compatible chat completion 无服务端查询通道，`provider_request_id` 只在响应返回后可得（provider.py:670-689）；(d) 成功路径本身有半状态：plan 提交（`apply_mutation_plan` 单事务 store.py:234-338）与 `task_scope_closure_receipts` 写入（plan.md:148 ① 由 handler 在 apply 之后写）是两个事务；(e) 交付顺序：SDK 在自己的终态事务内提交 deliveries（harness/kernel_terminal.py:160-180 `kwargs[\"deliveries\"]`→commit_run_outcome），SDK delivery pump（simple-harness-sdk kernel.py:2240-2255）经 desktop_runtime.py:184 `_delivery_adapters` → `ProductDeliveryAdapter.handle_event`（delivery.py:129-190）把终答推到 presenter/WebSocket，**独立于且通常先于** Host observer 到达 record_sdk_terminal；即 plan 在 foreground_runtime.py/kernel_terminal.py「暂存终答」的 seam 上终答已经交付。probe P4：同 plan_id 重放返回同 receipt、Provider 计数 0（store.py:243-256）。",
+   "status": "open",
+   "root_cause": "兜底调用被放进「SDK 终态→Host 终态」窗口，但 plan 没有把该窗口建模为可重放的 durable 状态机，也没有意识到终答交付由 SDK delivery pump 在窗口开始前完成。推荐 durable 设计（确定修法）：① v46 `post_turn_invocation_attempts(attempt_id, purpose='closure', host_run_id, sdk_run_id, generation, task_scope_id, closure_watermark, request_hash, attempt_ordinal, status reserved|handed_off|succeeded|failed|unknown, provider_request_id, plan_id, created_at)`，`UNIQUE(request_hash, attempt_ordinal)`；request_hash = H(sdk_run_id, task_scope_id, closure_watermark, staged_answer_hash)，staged_answer_hash 取 SDK context 中最后一条 assistant 消息（durable、跨 owner 确定）；plan_id = H(request_hash)（确定性 → apply 幂等）。② 谁可调 Provider：只有**当前 lease owner**，插入 reserved 行与 `_validate_lease_tx` 同一事务；新增 `EffectBoundary.CLOSURE`（允许状态同 TOOL 集合），调用前 `authorize_effect`；返回后再次 `_validate_lease_tx` 才允许 apply。③ reconcile 规则（新 owner 或重启）：查 (request_hash) 最新 attempt：无行或 `failed(not_sent)` → 可新建 attempt_ordinal+1（Provider 计数≤1 次/attempt）；`reserved`（未 handed_off）→ 标 failed(not_sent) 后新建；`handed_off/unknown` → **绝不重发**，直接判 pending(reason=closure_attempt_unknown) 并终结；`succeeded` 但无 closure receipt → 从 `task_scope_mutation_decisions` 按 plan_id 派生 receipt（apply 幂等）。④ closure receipt 与 `apply_mutation_plan` 同一事务（在 store 增加同事务钩子或在 record_sdk_terminal 钩子里对已存在 decision 派生），pending receipt 同样 durable。⑤ 终态门对 COMPLETED/FAILED/CANCELLED/STOPPED 一律生效（FAILED Run 也可能有 material 脏事件），兜底只在 COMPLETED 且有 staged answer 时发起，其余直接 pending。⑥ 「暂存终答」的可执行 seam 是 Host presenter（`RunPresenter.present_run_event` 对终态/final 事件）而不是 SDK terminal：要么 presenter 按 durable closure 状态扣押 final 事件（需 `_delivery_adapters` 注册处 main.py:11917-11929/7378 的 foreground 路径加门），要么按 D1「pending 仍交付」把 AC-1③ 收窄为「先交付、后收口、pending 标记以补充事件形式追加」——后者需用户确认措辞。"
+  },
+  {
+   "id": "pending-closure-bound-to-scope-not-conversation",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-1"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-TASKSCOPE-CANONICAL-STATE",
+    "FAIL-SEMANTIC-CLOSURE"
+   ],
+   "evidence": "债务归属可以确定：每个 foreground Run 在 admission 时就绑定 scope——`QueueTurnRequest.scope_ref` 必填（human_memory_service.py:221-229）、`foreground_turns.task_scope_id` 进入 candidate（foreground_queue.py:2115-2180）、`_drive_claimed` 对 None 抛 `foreground_runtime_route_authority_missing`（foreground_runtime.py:575-583）、初始路由 HOST_INITIAL RESUME_EXISTING 指向该 scope（:589-603）；run_terminal 与全部 Harness 证据都导入 admission scope（observer authority 查询 join foreground_runs :1170-1178）。Run 内 `context_route` 可转到 direct_standalone/memory_standalone/create_new（context_route.py:294-507）但不改变 admission scope。跨 Run 提交合法性（probe P2）：`apply_mutation_plan` 接受 plan.run_id ≠ 事件发生 Run（store 不核对 run_id，只 CAS base_revision :263-272 与 `_verify_refs_tx` 对 `human_memory_evidence` id+hash :551-555）；SDK DTO 只要求 disclosure_context.run_id == run_id（task_scope_protocol.py:302-303）。但 `append_host_event` 只写 task_scope_events（store.py:175-232），不产 `human_memory_evidence` 行 → host.file/host.test 事件本身不能作 evidence_refs，plan「refs ∈ 本 scope 事件/证据」需要为每个客观事件同事务写 evidence 行（现有 run_terminal 引用的是 foreground_turns.evidence_id）。`no_mutation` 同样递增 current_revision（probe P2：2→3，store.py:295-300 无条件 committed=observed+1）；`_reduce` 不校验迁移，task.complete 之后仍可 plan.step.add（probe P3，store.py:578-606）。",
+   "status": "open",
+   "root_cause": "pending 是 admission scope 的债务而非会话/路由的债务，但 plan 把补交通道挂在「当前轮 route receipt」上。确定修法：① `task_scope_closure_receipts` 以 (task_scope_id=admission scope, sdk_run_id, closure_watermark, outcome mutate|no_mutation|pending, plan_id, reason) 记录，pending 行可查；② dirty_state 按 scope 计算（自最后一条非 pending closure receipt 的 event_watermark 起），因此**下一个进入同 scope 的 Run**（无论其 route 结果）在 snapshot 注入与终态兜底时自然合并前序 pending，request_hash 以新 Run 与新 watermark 计；跨 Run 提交的 base_revision 取提交时 head.current_revision，evidence_refs 允许引用任何已链接到该 scope 的 evidence 行；③ 路由到其它 scope/standalone 的轮次不承担该债务，也不得静默清除；④ 终止条件：scope 被 `task.complete`/checkpoint/resume 打开时，若仍 pending，Host 以确定性 `no_mutation(closure_reason=\"closure_abandoned\", reason_code=host_forced)` 收口（零 Provider 调用），并且投影/STATUS 必须显式展示 `semantic_closure_pending`（不得呈现为一致状态）；⑤ Host 侧状态迁移表必须把 pending→no_mutation 设为任何 status 下的合法边，并禁止 complete 之后的 plan.* 操作（probe P3 证明 store 不拦）。"
+  },
+  {
+   "id": "task-scope-update-projectless-safe-vs-dirty-exposure",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-1"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-TASKSCOPE-CANONICAL-STATE",
+    "FAIL-LLM-PAYLOAD"
+   ],
+   "evidence": "`PROJECTLESS_SAFE_TOOL_NAMES`（sdk_adapters/tools.py:50）只决定 catalog 级 `projectless_admission`（tool_catalog/providers.py:494/532；tool_authority.py:528-537 对 projectless workspace 含非 safe 工具抛 `projectless_catalog_contains_project_tool`），与 per-turn 暴露无关。per-turn 暴露 = SDK `CatalogRunToolExposure.provider_specs(run_id)`（runtime_catalog.py:1062-1069，visible = direct_ids ∪ activated_ids），每个 provider turn 读取（react_loop.py:279-283）并进入 `prepare_snapshot`（context_authority.py:860-861）；catalog fingerprint 取 `exposure.checkpoint(run_id)[\"catalog_fingerprint\"]`（react_loop.py:720-731），所以 visible 集变化不破坏 fingerprint。但 `_preflight_tool_batch` 对每个 call 无保护地调用 `tool_exposure.execution_policy(run_id, call.name)`（react_loop.py:677），SDK 对不在 visible 集的名字抛 `RuntimeToolCatalogError(catalog_execution_policy_unavailable)`（runtime_catalog.py:1071-1085）→ 异常逃出 ReActLoop → kernel.py:2822-2850 终结 Run 为 FAILED。即「不脏时把 task_scope_update 从暴露集移除」会把模型一次多余调用变成整轮 FAILED（且该 FAILED Run 仍可能带 material 脏事件，见 finding 2 ⑤）。Host `resolve_exposure` 返回的是 SDK 对象（tool_authority.py:796-801），本身没有 per-turn 隐藏 API。",
+   "status": "open",
+   "root_cause": "两个互斥口径之外还有第三个事实：SDK 对不可见工具的调用是致命异常而非拒绝。一致规则（确定修法）：① `task_scope_update` 在每个 foreground Run **始终作为 direct 工具暴露**，并加入 PROJECTLESS_SAFE_TOOL_NAMES（它不触碰 workspace）；policy = non_project_effect / route_requirement=required / task_scope_requirement=required，使 UNROUTED 首轮调用由 SDK barrier 以 `ROUTE_BARRIER_NOT_OBSERVED` 拒绝而非异常；② 「只在脏/pending 时」改为 handler 级门：Host 从 `_checkpoint_route_receipt` 派生的当前 route receipt 读 task_scope_id，standalone（task_scope_id None）→ `ToolResult.rejected(\"task_scope_update_scope_unbound\")`；有 scope 但无脏/pending → `rejected(\"task_scope_update_nothing_to_close\")`（不递增 revision，避免 CAS 漂移）；③ snapshot 注入只控制「收口指令」文本，不控制工具可见性；④ 兜底调用（A1 路径）是独立 ProviderRequest，只带 task_scope_update spec，与 SDK 暴露无关。升为 P1：直接影响 HM-TO-R8「模型漏调用/拒绝」车道的可重试性，且修法确定。"
+  }
+ ],
+ "cross_cluster_refs": [
+  {
+   "cross_cluster_ref": "cluster-effect-gate-exposure",
+   "finding_ids": [
+    "closure-fallback-window-durable-state-and-recovery"
+   ],
+   "reason": "A3 证实 Host authority 异常逃出 ReActLoop 后 SDK 把 Run 终结为 FAILED（kernel.py:2822-2850）且不重放 tool_batch_reserved；closure 终态门因此必须覆盖 FAILED 终态，并且 effect gate 若选择「异常即 fail-closed」会增加带脏事件的 FAILED Run 数量。"
+  },
+  {
+   "cross_cluster_ref": "cluster-analysis-idempotency-lineage",
+   "finding_ids": [
+    "closure-fallback-window-durable-state-and-recovery"
+   ],
+   "reason": "RunBoundInvoker 与 post_turn_invocation_attempts 由 closure/analysis/remember 共用；本 cluster 证明 D7 的 `sent_unknown` 对 OpenAI-compatible chat completion 没有确认通道（provider.py:670-689 只在响应后得到 provider_request_id），三消费者都必须采用「sent_unknown ⇒ 终结为 pending/dead-letter，不重发」的同一规则。"
+  },
+  {
+   "cross_cluster_ref": "cluster-value-milestone-boundary",
+   "finding_ids": [
+    "closure-fallback-window-durable-state-and-recovery"
+   ],
+   "reason": "终答由 SDK delivery pump 在 Host 终态前交付（kernel_terminal.py:160-180；desktop_runtime.py:184；delivery.py:129-190），里程碑断言「一个 Run、零重复 Provider 调用、终答带 pending 标记」需要明确终答交付点与 pending 标记的载体。"
+  },
+  {
+   "cross_cluster_ref": "cluster-testability-fault-lanes",
+   "finding_ids": [
+    "harness-evidence-outbox-async-vs-run-terminal-ordering",
+    "closure-fallback-window-durable-state-and-recovery"
+   ],
+   "reason": "`backend/tests/faults/` 目录不存在；本 cluster 给出的 probe（observer next_sequence 竞争、attempt 五态 reconcile、跨 Run plan）应成为 `foreground-fifo-closure` lane 的 seam 用例。"
+  }
+ ],
+ "conclusion": {
+  "status": "refined",
+  "summary": "四个 parent finding 全部成立并已用代码与真实存储 probe 证实：(1) outbox+异步 worker 与 observer 的 next_sequence 分配存在真实丢行路径且终态门照常放行（probe P1）——应改为 state.db 同事务直写 + 预留表 + observer 作唯一排空者；(2) 兜底窗口今天可恢复且终态幂等，但插入 Provider 调用后没有 durable attempt/lease-fenced 状态机，`sent_unknown` 不可确认，成功路径 plan/receipt 分两事务，且终答实际由 SDK delivery pump 在 Host 终态前交付，plan 所选「暂存终答」seam 不可执行；(3) pending 归属应固定为 admission scope（每个 foreground Run 必有 scope），跨 Run 提交在 store/DTO 层合法，但需要客观事件同事务产 evidence 行、scope 级 dirty 合并、close/resume 时 Host 强制 no_mutation(closure_abandoned) 且 STATUS 显式展示 pending；(4) per-turn 隐藏 task_scope_update 会让模型的多余调用变成 FAILED Run，应始终暴露并在 handler 以稳定 reason 拒绝。无 scope-change：全部修法在 acceptance/contract 内可执行，仅 AC-1③「暂存终答不交付」的措辞需按 D1 由用户确认交付点。"
+ }
+}

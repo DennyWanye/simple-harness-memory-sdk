@@ -1,0 +1,68 @@
+{
+ "cluster": {
+  "cluster_id": "cluster-prospective-ack-lifecycle",
+  "parent_finding_ids": [
+   "prospective-ack-channel-undefined",
+   "occurrence-presented-dual-table-state",
+   "prospective-registration-accepted-signal-step-missing"
+  ],
+  "specialty": "data-state",
+  "question": "occurrence presented→acknowledged→settled 的每个迁移各由什么确定性输入触发（不解析自然语言、不改冻结 DTO）？registration accepted 回签、outbox 游标、occurrence_presented（S5a 读源）与新 prospective_occurrences 表之间的事务边界与 canonical 归属是什么？",
+  "required_evidence": [
+   "Memory prospective 状态机对 REGISTRATION_ACCEPTED 的要求（test_prospective_signal_repository_v5.py）",
+   "S5a reconcile/no_recall 门对 occurrence_presented 的读写契约（context_authority.py:539-551, 878-883, 955-970）",
+   "可承载 ack 的工具/receipt 结构提案与其 Host 校验"
+  ],
+  "specialist_required": true
+ },
+ "parent_findings": [
+  {
+   "id": "prospective-ack-channel-undefined",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-4"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-SCHEDULER-DUPLICATE",
+    "ADV-LLM-PAYLOAD",
+    "ADV-AMBIGUOUS-NL"
+   ],
+   "evidence": "acceptance.md:63 AC-4③「模型终答未提及/拒绝 → 不标 processed」、⑤「模型终答提及 → ack」; plan.md:169 Task 6 ②「终答后 Host 检查模型是否 ack（task_scope_update/终答 receipt 里的 acknowledged_occurrences，由 Host 从 tool 载荷解析，不解析自然语言）」; harness runtime/task_scope_protocol.py:261-312 TaskScopeMutationPlan 字段集（notes-investigation-task6.md:4）无 acknowledged_occurrences；SDK 0.7.1 冻结（OOS-SDK-CHANGE）; memory_standalone 路由（Prospective 触发的典型下一轮）不会有 task_scope_update；plan 未定义任何承载 ack 的工具或 receipt 结构",
+   "status": "open",
+   "root_cause": "occurrence 生命周期 presented→acknowledged 的状态迁移没有确定性输入：acceptance 用「终答提及」定义 ack（自然语言判断，program 明令禁止关键词/正则），plan 改写为「tool 载荷解析」却指向一个冻结 DTO 中不存在的字段，且在无 TaskScope 的轮次没有任何工具可承载；结果是 acknowledged/settled 不可达或只能靠猜。"
+  },
+  {
+   "id": "occurrence-presented-dual-table-state",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-4"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-SCHEDULER-DUPLICATE",
+    "ASSET-SUPPRESSION-ORDER"
+   ],
+   "evidence": "memory/migrations/037_*.sql:72-83 occurrence_presented(occurrence_key PK, presented_at, settled_at, settled_reason) + append-only/单调触发器; sdk_adapters/context_authority.py:539-551 presented_occurrence_keys 为 S5a reconcile 门唯一读源（注释「S5a: zero rows by design」）; plan.md:85 新增 prospective_occurrences（claimed→presented→acknowledged→settled）且「occurrence_presented 不改 schema」、plan.md:101 scheduler 同时写 occurrence_presented",
+   "status": "advisory",
+   "root_cause": "同一 presented/settled 事实将存在于两张表，S5a 门读旧表、S5b 生命周期写新表；plan 未声明两者必须同事务且以哪一张为 canonical，suppressed → settled(suppressed) 是否同步反映到 occurrence_presented 影响 no_recall 门。"
+  },
+  {
+   "id": "prospective-registration-accepted-signal-step-missing",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-4"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-SCHEDULER-DUPLICATE"
+   ],
+   "evidence": "spikes/a2/RESULT.md:48/72 step 6：先 REGISTRATION_ACCEPTED（绑定 outbox_id+payload_hash）→ acknowledged，再 TIME_DUE → triggered；plan.md:169 Task 6 ② 只写「到期/事件 → claim registration → apply_prospective_signal」，未列 REGISTRATION_ACCEPTED 信号及其与 outbox 游标推进的事务关系",
+   "status": "advisory",
+   "root_cause": "Memory 侧 registration 状态机需要 Host 先回签 accepted 信号；plan 的 scheduler 生命周期漏掉这一步，registration 与 occurrence 之间的 kill 点（registration-commit）语义因此不完整。"
+  }
+ ]
+}

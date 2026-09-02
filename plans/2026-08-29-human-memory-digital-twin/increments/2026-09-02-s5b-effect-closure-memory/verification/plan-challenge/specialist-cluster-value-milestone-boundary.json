@@ -1,0 +1,143 @@
+{
+ "cluster_id": "cluster-value-milestone-boundary",
+ "parent_finding_ids": [
+  "pc-milestone-stops-at-accepted-plan",
+  "analysis-result-schema-and-span-derivation-missing",
+  "evidence-authority-principal-registration-missing"
+ ],
+ "specialty": "architecture",
+ "findings": [
+  {
+   "id": "pc-milestone-stops-at-accepted-plan",
+   "severity": "P0",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-2",
+    "S5B-AC-3"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-HALF-STATE",
+    "TRUST-SDK-WHEELS",
+    "ASSET-WORKSPACE-AUTHORITY"
+   ],
+   "evidence": "(a) 0.6.0 'accepted' 只是结构+血缘校验，不是证据校验也不是物化：simple-harness-memory-sdk/src/simple_harness_memory/backends/sqlite_v5.py:11335-11364 prepare_analysis_application 只做 MemoryMutationPlan.from_json + run_id/subject/idempotency_key/disclosure/evidence_refs 相等 + plan.base_revision==analysis_apply_heads，从不调用 verify_evidence_span/evidence_authority；spike run4 `/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-value/run4_only_first.log` step3→4: runner APPLIED 后 evidence_authority.resolve calls=0、cognitive_memory_heads=0、pending outbox=[]、analysis_apply_heads=2。(b) 用户可观察读取全部读 cognitive_memory_heads：execute_typed_recall 候选来自 heads/revisions join（sqlite_v5.py:947,1077,4273,5254）；Host 初始 snapshot 只经 pending_occurrences(read_occurrence_inbox) 与 typed_recall（simple_harness/backend/deskpet/memory/human_memory_v7.py:87-136,251-255）；spike `/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-value/run_multiop.log` [one-op-reads]: APPLIED 后 read_outbox/read_occurrence_inbox/recall_short_horizon 均为空页、heads=0 ⇒ accepted 状态对任何 Host 读路径不可见，S5B-S1 quality_bar『每条记忆可回指对话原句』在 accepted 阶段无法检查（span 校验只发生在 apply：sqlite_v5.py:6068-6089 verify_evidence_span + :8755 _verify_mutation_span_unlocked）。(c) 0.6.0 无任何测试把不物化当作契约：tests/integration/test_durable_memory_jobs_v5.py:478-483 只断言 accepted_analysis_plans/llm_invocations/analysis_apply_heads，全文件零处引用 cognitive_memory_heads ⇒ 是上游缺口不是设计。(d) 里程碑在 0.6.0 上可以诚实闭合：spike run4 step5 Host 以同一 plan 调 apply_memory_mutation_plan(host_principal, scope, plan) → committed/memory_mutation_committed、cognitive_memory_heads=1、pending outbox=['memory.prospective.registration.requested','memory.cognitive.committed']、内容=模型提出的 prospective(action='提醒用户提交周报', 2026-09-04T18:47:49+08:00)；两个计数器 analysis_apply_heads=2 / cognitive_apply_heads=2 仅在『每个 accepted plan 恰被 apply 一次』时保持同步（apply 前 cognitive_apply_heads=None）。(e) Task 1 直接依赖边界（plan.md:131-136 vs 最小动作 write_file→host.file）：直接依赖 = ① write_file 进 PROJECT_EFFECT 覆盖表、② BindingRootResolver（spike A3 (d): resolver=None 时异常逃出 ReActLoop 成 Run fault）、③ EffectGate 最小重验（envelope 非空 + verify_task_execution_envelope，A3 (b) 已证接受）+ 执行后写 host.file、⑤ 暴露随路由（A3 (a): routed_standalone 下 Host authority 抛错逃出 loop，真实模型先写后路由会把 Run 打成 fault）；可后移的 hardening = ④ 以 route_receipt_id 为键的 durable 持续拒绝、六类拒绝矩阵、inode 漂移、Manual/Auto canary、Auto 下 DESTRUCTIVE grant、_CONFIRM_ONLY 不变断言、unknown-tool 拒绝、root_resolver 缺失 startup-fail 组合测试（MODEL_AUTHORITY_FIELD_FORBIDDEN 与同批 barrier 已由 A3 (c)/(a″) 在 SDK 侧证明，不需 Host 用例前置）。",
+   "status": "open",
+   "root_cause": "里程碑终点定义在仓储审计状态（accepted_analysis_plans + job applied）而非用户可观察价值；0.6.0 的 accepted 既未做证据 span 校验也未物化，任何 Host 读路径都读不到。修法确定：里程碑终点改为『accepted + 物化 committed（cognitive head + memory.cognitive.committed/prospective registration outbox）』，并二选一写进 plan：(A) Task 4 内 Host bridge——对 runner APPLIED 的同一 plan 调 apply_memory_mutation_plan（spike 已证 0.6.0 可行，需 Host evidence_authority + Host principal），或 (B) 把 Task 5 的 0.6.1 仓储内物化提到里程碑之前；同时把 Task 1 的 hardening 断言后移到里程碑之后。"
+  },
+  {
+   "id": "analysis-result-schema-and-span-derivation-missing",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-2"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-LLM-PAYLOAD",
+    "ADV-LLM-PAYLOAD",
+    "ASSET-CREDENTIALS"
+   ],
+   "evidence": "最后一跳已由真实 provider spike 证明可行，但该层在 plan 中仍不存在。spike `/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-value/spike_value_last_hop.py`（真实 gpt-5.6-luna，A1 adapter 配方，key 不打印）：模型只填 proposal（memory_type/semantic|prospective 字段/evidence_item_id/exact_quote/reason_code，无 hash/offset/receipt），Host 确定性派生 EvidenceSpanRef（text.find(quote)→UTF-8 byte range、quote_hash、pointer '/text'、item_ordinal=1、item_id=delivery_key）并编译 MemoryMutationPlan。4 次 provider 调用（run1/2/3/4 `/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-value/run*.log`, 原始 tool call 见 `/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-value/raw_model_output.json`）全部 finish=tool_calls、exact_quote 均为逐字子串、derivation_failures=[]、compile_memory_mutation_plan OK；改写引文 fail-closed（step7: quote_not_verbatim）。0.6.0 validator：turn1（prospective 1 op）3/3 accepted；turn2（事实句）在 base_revision 正确时 2/2 accepted。Host 真实 payload 形状（键 text：simple_harness/backend/deskpet/memory/human_memory_service.py:786-790）可用：evidence_items 恒 ordinal=1/sanitized_payload（simple-harness-memory-sdk/src/simple_harness_memory/core/evidence.py validate_sanitized_evidence 返回 EvidenceSpan(1,'sanitized_payload')），span.item_id 只需与 Host 签发的 EvidenceItemAuthority.item_id 一致（simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/runtime/evidence_protocol.py:1798-1822），pointer 由 Host 定为 '/text'。仍缺的 Host 侧字段/规则（plan 文件影响清单 plan.md:83-107 无对应模块）：(1) base_revision——MemoryAnalysisRequest 无此字段（simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness/runtime/evidence_protocol.py:2109-2123），core/port.py、manager.py、jobs.py 零处暴露 analysis_apply_heads；spike run1 `/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-value/run1.log` 硬编码 base_revision=1 时第二个 job 被 validator 拒绝（analysis_validator_rejected），run2 起改为 raw SQL 读 analysis_apply_heads 才 accepted ⇒ 0.6.0 下 Host executor 只能读 Memory 内部表或等 0.6.1 端口；(2) turn_id=_stable_id('analysis-batch-turn', job_id)、lineage 五字段从 request 复制；(3) epistemic/verification/lifecycle 常量与 span support_kind 的合法组合（simple-harness-memory-sdk/src/simple_harness_memory/core/mutations.py:440-492：EXPLICIT_USER 要求 USER/AUTHENTICATED_USER/EXPLICIT_USER_ASSERTION span）；(4) prospective 触发解析：模型给 ISO 首次到期，wheel 只有 ProspectiveTimeTrigger/EventTrigger（memory_protocol.py:2378-2462），『每周五』递归语义不可表达，只能落首次到期。",
+   "status": "open",
+   "root_cause": "价值里程碑最后一跳依赖尚未列入 plan 的 Host analysis 层：proposal 工具 schema + prompt、确定性 span 派生、Host 填充的 base_revision/turn_id/lineage/常量。spike 已把可行性从假设变为证据（含 raw 输出），修法确定：在 Task 4 新增 `analysis_proposal.py`（schema/prompt/派生/编译）并把 base_revision 来源（0.6.1 端口或 raw 读）写明。"
+  },
+  {
+   "id": "evidence-authority-principal-registration-missing",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-2",
+    "S5B-AC-6"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-COMPOSITION-FALLBACK",
+    "FAIL-HALF-STATE"
+   ],
+   "evidence": "(a) compile/apply 内核结构性依赖 evidence_authority：simple-harness-memory-sdk/src/simple_harness_memory/backends/sqlite_v5.py:5959-5960 `evidence_authority_required`；:6068-6089 对每个 span 调 verify_evidence_span(span, self._evidence_authority) 再 _verify_mutation_span_unlocked（:8755-8800 与 evidence_envelopes/evidence_items/ingestion_receipts 六元组精确比对）。(b) 解析器在 BEGIN IMMEDIATE + _write_lock 内被调用（:5987-5992 → :6076），因此 Host evidence_authority 不能经 Memory backend 读证据：read_ingested_evidence→_ordinary_evidence_record 取 self._write_lock（sqlite_v5.py:724-729 及其 `async with self._write_lock`），spike `/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-value/run_multiop.log` [one-op-reads] apply→TimeoutError（死锁）；改为 Host 侧 durable envelope/receipt 缓存（对应 Host state.db human_memory_evidence/sanitization_receipts，simple_harness/backend/deskpet/memory/human_memory_program.py:668-687）后 run4 step5 resolve calls=1、committed。(c) Task 5『prepare 的 accepted 分支内以 application capability 物化』若复用该内核，则仍需：同一 evidence_authority 端口（builder 已绑定 `_evidence_authority`，可行）、caller principal 的 deployment/household + scope 写 cognitive_memory_heads/principals（sqlite_v5.py:6027-6047 ON CONFLICT DO UPDATE、:6115-6125），而 analysis 路径只有 claim.subject 且 principals 行是 subject/subject/subject 占位（:585-587）⇒ register_principal_owner 是 Task 5 物化的硬前置而非并列项；并需统一/同步 analysis_apply_heads（:11343-11375）与 cognitive_apply_heads（:6053-6066）两个 CAS 计数器，否则 accepted 而物化被拒的 plan 会让两头永久错位（analysis 头 +1、cognitive 头不动，后续 plan 的 base_revision 在物化侧永远 stale）。(d) principal 形状：run4 在 Host apply 之前 read_outbox 需用占位 principal（spike A2 GOTCHA B 复现），apply 后 host_principal 被接受；plan.md:100/105 与 acceptance AC-6① 清单仍无 evidence_authority 与属主注册调用点。",
+   "status": "open",
+   "root_cause": "物化内核（无论在 Host bridge 还是 0.6.1 仓储内）都需要 Host evidence_authority（且必须从 Host 自有 durable 证据解析、不得回读 Memory backend）与已注册的 Host principal；plan 的 composition 注入表、startup-fail 清单与 Task 5 设计都未声明这两项及两个 apply head 的同步规则。修法确定：AC-6①/plan.md:100,104 加 evidence_authority（Host state.db 解析器）；Task 5 明确 register_principal_owner 先于物化并定义 head 统一规则；Host 调用点 = v7 首次构建时幂等注册。"
+  },
+  {
+   "id": "memory-060-multi-operation-finalize-nonconvergent",
+   "severity": "P0",
+   "scope_relation": "in-scope",
+   "origin": "new-external-fact",
+   "violated_acceptance_ids": [
+    "S5B-AC-2"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-HALF-STATE",
+    "FAIL-PROTOCOL-REPLAY",
+    "TRUST-SDK-WHEELS",
+    "ADV-LLM-PAYLOAD"
+   ],
+   "evidence": "exact wheel 0.6.0（与仓库 src 逐字相同，diff -q SAME）：simple-harness-memory-sdk/src/simple_harness_memory/backends/sqlite_v5.py:11533-11566 _application_from_batch_unlocked 按 plan.operations 顺序生成 decisions；:13567-13576 _read_decisions `ORDER BY decision_id`（decision_id=_stable_id('analysis-decision', batch_id, operation_id) 的 sha256）；:11655-11661 finalize_analysis_application 以元组相等比较 → 任何 ≥2 operation 的 accepted plan，只要 hash 序≠plan 序即 MemoryWriterConflict('analysis_audit_decisions_differ')。确定性复现 `/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-value/spike_multiop_finalize.py` → `/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-value/run_multiop.log`: [two-ops] 与 [two-ops-sorted-ids] run_once=MemoryWriterConflict、jobs=['claimed']、batches=['audit_pending']，decision_records 顺序与 plan 顺序相反；[two-ops-swapped-ids]（hash 序恰好一致）applied；[one-op] applied。真实 provider 复现：事实句『我住在杭州滨江，平时主要用 Python 写后端服务。』模型 3/3 次产出 2 个 semantic operation（`/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-value/run1.log`,`run2.log`,`run3.log` raw tool call），run2/run3 在 validator accepted 后 finalize 崩溃（traceback sqlite_v5.py:11661），异常从 DurableMemoryJobRunner.run_once 逃出（core/jobs.py:569）。不可收敛：重放时 claim_analysis_batch 对 audit_pending 批返回 claim.application（sqlite_v5.py:10599），runner 跳过 executor 直接再次 finalize → 同一错误永久重复（job 永远 claimed/audit_pending，既不 applied 也不 failed/dead-letter；Provider 计数不增加）。",
+   "status": "open",
+   "root_cause": "Memory 0.6.0 finalize 的审计一致性比较对 decision 顺序敏感，而写入与读回使用不同排序；多 operation plan（真实模型对含多事实的对话的常态输出）在 accepted 后落入永久 audit_pending。这是里程碑真实车道与 S5B-AC-2⑤ 的直接阻断，且不是 Host 能绕开的（除非把模型限制为每 plan 单 operation，那会牺牲 AC-2⑤ 的非空多事实语义）。修法确定：Memory 0.6.1 内统一排序（写入/读回同按 operation 规范序或都按 decision_id 序）+ 新增 ≥2 op 的 applied 测试；因此 0.6.1 成为里程碑直接依赖，Task 5 至少此项须前移到 Task 4 真实车道之前。"
+  },
+  {
+   "id": "host-filter-policy-not-admitted-by-memory-060",
+   "severity": "P0",
+   "scope_relation": "in-scope",
+   "origin": "new-external-fact",
+   "violated_acceptance_ids": [
+    "S5B-AC-2"
+   ],
+   "assurance_contract_ids": [
+    "TRUST-SDK-WHEELS",
+    "ASSET-RAW-EVIDENCE",
+    "FAIL-HALF-STATE"
+   ],
+   "evidence": "simple-harness-memory-sdk/src/simple_harness_memory/core/evidence.py:32 SUPPORTED_FILTER_POLICY_VERSIONS = {'credential-filter/v1'}；backend ctor 接受 supported_filter_policies（sqlite_v5.py:350-354）但 MemoryManager.build_human_memory_v7（simple-harness-memory-sdk/src/simple_harness_memory/core/manager.py:404-445）无该 kwarg，Host 无法配置。Host 生产 envelope 的 filter_policy_version 为 'host-public-turn/v1'（simple_harness/backend/deskpet/memory/human_memory_service.py:827,845）与 'host-typed-ingress/v1'（:1697,1715）；Host 既有 ingest 测试只用 'credential-filter/v1'（simple_harness/backend/tests/sdk_adapters/test_no_recall_gate.py:120）所以从未暴露。spike step1（run1–run4 全部）：以 Host 真实 envelope 形状 + 'host-public-turn/v1' 调 ingest_committed_evidence → MemoryValidationError(evidence_filter_policy_unsupported)。plan.md:155 Task 4② 『复用 _append_host_evidence 的构造，filter_policy_version 同』在 exact wheel 上每一行都会进 dead-letter，analysis 永远不会开始。",
+   "status": "open",
+   "root_cause": "Host 与 Memory 对 sanitizer 策略版本的注册面缺失：Memory 只认硬编码的 credential-filter/v1，builder 不透传 supported_filter_policies；Host 侧若改为在 outbox worker 里以 credential-filter/v1 重新封装，则 Memory 侧 envelope/receipt 与 Host durable 的 sanitized raw evidence（AC-2① 要求同事务 link）不再是同一对象，破坏 raw evidence 血缘。修法确定：Memory 0.6.1 builder 增加 supported_filter_policies（或策略注册 API），Host 传入 host-public-turn/v1 与 host-typed-ingress/v1；此项同样把 0.6.1 变为里程碑直接依赖。"
+  }
+ ],
+ "cross_cluster_refs": [
+  {
+   "cross_cluster_ref": "cluster-analysis-idempotency-lineage",
+   "finding_ids": [
+    "memory-060-multi-operation-finalize-nonconvergent",
+    "analysis-result-schema-and-span-derivation-missing"
+   ],
+   "reason": "finalize 非收敛让 job 永久 claimed/audit_pending 且异常逃出 run_once（Host worker 需把它当 dead-letter 而非崩溃循环）；request_hash 不含 base_revision，同一 request 在不同 analysis 头下 accepted/rejected 结果不同，attempt 账本与 unknown 分类需覆盖『validator rejected 但 Provider 已计费』的分支。"
+  },
+  {
+   "cross_cluster_ref": "cluster-release-unit-and-cutover",
+   "finding_ids": [
+    "memory-060-multi-operation-finalize-nonconvergent",
+    "host-filter-policy-not-admitted-by-memory-060",
+    "pc-milestone-stops-at-accepted-plan"
+   ],
+   "reason": "Memory 0.6.1 现在至少承载三项上游修复（filter policy 注册、多 op finalize 排序、物化/属主注册），且前两项是里程碑直接依赖 ⇒ Task 5 的（部分）必须前移到 Task 4 真实车道之前，release unit 与 cutover 顺序需重排。"
+  },
+  {
+   "cross_cluster_ref": "cluster-prospective-ack-lifecycle",
+   "finding_ids": [
+    "analysis-result-schema-and-span-derivation-missing",
+    "pc-milestone-stops-at-accepted-plan"
+   ],
+   "reason": "memory.prospective.registration.requested 只在 Host/仓储物化后出现（runner APPLIED 不产生）；wheel 只有 time/event trigger，『每周五』递归意图只能落首次到期，scheduler 的 occurrence 语义须决定一次性 vs 递归。"
+  },
+  {
+   "cross_cluster_ref": "cluster-testability-fault-lanes",
+   "finding_ids": [
+    "memory-060-multi-operation-finalize-nonconvergent"
+   ],
+   "reason": "memory-mutation-plan lane 必须包含 ≥2 operation 的 accepted plan 与 audit_pending 卡死 seam，否则 0.6.0 的非收敛在 deterministic lane 上不可见。"
+  },
+  {
+   "cross_cluster_ref": "cluster-effect-gate-exposure",
+   "finding_ids": [
+    "pc-milestone-stops-at-accepted-plan"
+   ],
+   "reason": "本 cluster 给出 Task 1 直接依赖/后移 hardening 的切分（见 finding (e)），exposure-follows-route 属直接依赖，其余矩阵可后移。"
+  }
+ ],
+ "conclusion": {
+  "status": "refined",
+  "summary": "三个 parent finding 全部经代码与 spike 证实并细化：0.6.0 的 accepted 既不校验 span 也不物化、对任何 Host 读路径不可见，但里程碑可在 0.6.0 上以 Host bridge（同一 plan 调 apply_memory_mutation_plan）诚实闭合（真实 provider spike run4：1 op → accepted → committed → cognitive head=1 → prospective registration outbox）。最后一跳（真实主模型 → 模型可填 proposal → Host 确定性 EvidenceSpanRef 派生 → 0.6.0 validator）4/4 次成功，Host 真实 payload 键 text 可用。spike 同时发现两个独立 P0 上游事实：(1) 0.6.0 finalize 对 ≥2 operation 的 accepted plan 因 decision 排序不一致永久卡在 audit_pending（真实模型对事实句 3/3 产出 2 op，2/2 崩溃）；(2) Memory 只接受 credential-filter/v1 且 builder 不可配置，Host 真实 host-public-turn/v1 envelope 被 ingest 拒绝。两者都使 Memory 0.6.1 成为里程碑直接依赖。Task 1 中只有 write_file 清单项、root resolver、最小 envelope 重验+host.file 记录、暴露随路由是直接依赖，其余矩阵可后移。"
+ }
+}

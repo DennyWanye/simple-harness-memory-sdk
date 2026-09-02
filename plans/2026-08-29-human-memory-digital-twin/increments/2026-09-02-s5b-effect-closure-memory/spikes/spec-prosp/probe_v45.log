@@ -1,0 +1,10 @@
+OK   insert claimed row (presented NULL)
+FAIL settle without presented (suppressed-before-present) -> CHECK constraint failed: settled_at IS NULL OR presented_at IS NOT NULL
+OK   NULL->presented
+FAIL presented -> re-present different run (monotonic guard) -> occurrence_presented_monotonic
+OK   presented -> settled(acknowledged)
+FAIL settled -> change reason -> occurrence_presented_monotonic
+OK   v46 additive ALTER ADD COLUMN acknowledged_at
+OK   acknowledged_at NULL->1
+OK   acknowledged_at 1->2 (v45 trigger does NOT guard new column)
+FAIL delete -> context_route_append_only

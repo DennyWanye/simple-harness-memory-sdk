@@ -1,0 +1,52 @@
+{
+ "cluster": {
+  "cluster_id": "cluster-release-unit-and-cutover",
+  "parent_finding_ids": [
+   "release-unit-third-subsystem-packing",
+   "memory-061-cutover-schema-and-pin"
+  ],
+  "specialty": "release-rollback",
+  "question": "6 MUST AC / 10 任务 / 三个被打包计为 1 的状态机 + 一次上游 wheel 发布是否仍满足 program release-unit 门限；Memory 0.6.0→0.6.1 的数据/schema/pin cutover 是否需要独立 receipt？",
+  "required_evidence": [
+   "用户对 D5 Ponytail 的裁决",
+   "Memory 0.6.1 对既有 0.6.0 DB 的打开行为与 schema 版本声明"
+  ],
+  "specialist_required": false
+ },
+ "parent_findings": [
+  {
+   "id": "release-unit-third-subsystem-packing",
+   "severity": "P1",
+   "scope_relation": "scope-change-proposal",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-4",
+    "S5B-AC-5",
+    "S5B-AC-6"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-FOREGROUND-RUN-ORDER",
+    "FAIL-COMPOSITION-FALLBACK"
+   ],
+   "evidence": "program acceptance.md:57-58「不能一次修改超过三个高风险子系统后再统一测试」; acceptance.md:98-100 D5 把 outbox + analysis executor + Prospective scheduler + 即时操作 计为 1 个子系统，另加 Memory 0.6.1 上游发布（plan.md:161-164 Task 5：仓储物化 + 新公共 API + wheel/manifest/pin）与 v46 九张表 (plan.md:85); plan-challenge-manifest.json release_unit: must_ac_count 6, task_count 10, high_risk_subsystems 3, concurrent_layer_kinds 3; plan.md:190 执行模式：Task 5 后 Task 6/7 串行，全部在 Task 9 才做统一验收矩阵",
+   "status": "open",
+   "root_cause": "高风险子系统计数为 3 是通过把三个独立状态机（Host↔Memory outbox+executor、Prospective scheduler/occurrence、suppression 即时操作）与一次上游 SDK 版本发布打包成「第 ③ 项」达成的；统一验收在 Task 9 意味着 6 条 MUST AC 在同一 release unit 内统一测试，与 program 级 release-unit 门限精神冲突。是否采用 D5 Ponytail（AC-4/5 拆 S5c）需要用户批准，非 challenger 可裁决。"
+  },
+  {
+   "id": "memory-061-cutover-schema-and-pin",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-6"
+   ],
+   "assurance_contract_ids": [
+    "TRUST-SDK-WHEELS",
+    "FAIL-DATA-LOSS"
+   ],
+   "evidence": "plan.md:105/162 Memory 0.6.1：仓储物化 + register_principal_owner + wheel/manifest + Host pin; plan.md:81/85 cutover 义务只覆盖 Host v46; spikes/a2/RESULT.md:70 principals 行形状由 DO NOTHING/DO UPDATE 决定（数据形状变化无 schema 版本）; plan 未写 Memory DB schema 版本是否变化、0.6.0 已写 DB 被 0.6.1 打开的行为、Host pin 更新后 exact-hash 回归",
+   "status": "advisory",
+   "root_cause": "cutover receipt 只按 Host v46 定义，Memory 0.6.0→0.6.1 的数据兼容/schema 版本/pin hash 变更没有独立的前向/拒绝/回滚断言。"
+  }
+ ]
+}

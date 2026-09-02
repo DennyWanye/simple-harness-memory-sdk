@@ -1,0 +1,20 @@
+import sqlite3, re
+sql=open('/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/deskpet/memory/migrations/037_context_route_ledger_v45.sql').read()
+table=re.search(r'CREATE TABLE occurrence_presented \(.*?\n\);', sql, re.S).group(0)
+trig_del=re.search(r'CREATE TRIGGER occurrence_presented_no_delete.*?END;', sql, re.S).group(0)
+trig_guard=re.search(r'CREATE TRIGGER occurrence_presented_guard.*?\nEND;', sql, re.S).group(0)
+db=sqlite3.connect(':memory:'); db.executescript(table+"\n"+trig_del+"\n"+trig_guard)
+k='a'*64
+def t(label, fn):
+    try: fn(); print("OK  ", label)
+    except Exception as e: print("FAIL", label, "->", e)
+t("insert claimed row (presented NULL)", lambda: db.execute("INSERT INTO occurrence_presented(occurrence_key,memory_id,prospective_revision) VALUES(?,?,1)",(k,'m')))
+t("settle without presented (suppressed-before-present)", lambda: db.execute("UPDATE occurrence_presented SET settled_at=1,settled_reason='suppressed' WHERE occurrence_key=?",(k,)))
+t("NULL->presented", lambda: db.execute("UPDATE occurrence_presented SET presented_at=1,presented_run_id='r1' WHERE occurrence_key=?",(k,)))
+t("presented -> re-present different run (monotonic guard)", lambda: db.execute("UPDATE occurrence_presented SET presented_at=2,presented_run_id='r2' WHERE occurrence_key=?",(k,)))
+t("presented -> settled(acknowledged)", lambda: db.execute("UPDATE occurrence_presented SET settled_at=3,settled_reason='acknowledged' WHERE occurrence_key=?",(k,)))
+t("settled -> change reason", lambda: db.execute("UPDATE occurrence_presented SET settled_reason='expired' WHERE occurrence_key=?",(k,)))
+t("v46 additive ALTER ADD COLUMN acknowledged_at", lambda: db.execute("ALTER TABLE occurrence_presented ADD COLUMN acknowledged_at REAL"))
+t("acknowledged_at NULL->1", lambda: db.execute("UPDATE occurrence_presented SET acknowledged_at=1 WHERE occurrence_key=?",(k,)))
+t("acknowledged_at 1->2 (v45 trigger does NOT guard new column)", lambda: db.execute("UPDATE occurrence_presented SET acknowledged_at=2 WHERE occurrence_key=?",(k,)))
+t("delete", lambda: db.execute("DELETE FROM occurrence_presented"))

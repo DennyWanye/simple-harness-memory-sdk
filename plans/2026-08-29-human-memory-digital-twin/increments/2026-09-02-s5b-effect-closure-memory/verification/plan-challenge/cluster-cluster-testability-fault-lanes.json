@@ -1,0 +1,55 @@
+{
+ "cluster": {
+  "cluster_id": "cluster-testability-fault-lanes",
+  "parent_finding_ids": [
+   "fault-runners-built-after-they-are-needed",
+   "real-ui-harness-not-a-task"
+  ],
+  "specialty": "testability-evidence",
+  "question": "决定性 negative-safety 场景的 runner/seam 契约与真实 UI 通道应在哪个任务前就绪，才能让 Task 3/4/6 的验证条目可执行？",
+  "required_evidence": [
+   "testcase fault-matrix lane 定义与 runner_contract",
+   "HANDOFF §6.3 通道脚本现状"
+  ],
+  "specialist_required": false
+ },
+ "parent_findings": [
+  {
+   "id": "fault-runners-built-after-they-are-needed",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-1",
+    "S5B-AC-2",
+    "S5B-AC-4"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-HALF-STATE",
+    "FAIL-PROTOCOL-REPLAY",
+    "FAIL-SCHEDULER-DUPLICATE"
+   ],
+   "evidence": "notes-investigation-task6.md:48 / task7.md:60 / plan.md:45-47: `backend/tests/faults/*` 四 lane runner 均不存在; plan.md:149 Task 3 验证「kill 在 semantic-closure-commit/terminal-watermark seam → 重放收敛」、plan.md:156 Task 4 验证「fault lane memory-mutation-plan 六 seam」、plan.md:170 Task 6「fault lane prospective-occurrence 四 seam」均在 Task 9 (plan.md:186) 才建 runner; plan.md:47 写「兑现前三条」而 plan.md:106/186 列四条 lane; acceptance.md:119-120 S5B-S2/S3 为决定性 negative-safety 场景",
+   "status": "open",
+   "root_cause": "决定性 negative-safety 场景的 oracle（fault-matrix runner、seam 注入点、before/after hash 契约）被排在全部实现之后，Task 3/4/6 的验证条目引用尚不存在的 runner，等于实现期没有可执行的失败矩阵；lane 数量在 plan 内自相矛盾。"
+  },
+  {
+   "id": "real-ui-harness-not-a-task",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-1",
+    "S5B-AC-2",
+    "S5B-AC-4",
+    "S5B-AC-5"
+   ],
+   "assurance_contract_ids": [
+    "TRUST-S5A-RECEIPT"
+   ],
+   "evidence": "HANDOFF-S5b.md §6.3: computer-use 驱动不了 dev 窗口，可用通道依赖 identity_harness.py/shim_proxy.py/tauri_shim.js（临时目录可能已清）; acceptance.md:118-124 四个 manual_required 场景，S1/S5/S6 各 ≥2 root run，S1 其一 ≥20 turn; HANDOFF §7.3 任一失败 root run 使场景永久 FLAKY; plan.md:186 Task 9 仅写「按交接 §6.3 通道」，无重建该通道的任务与预演",
+   "status": "advisory",
+   "root_cause": "真实桌面 UI 验收通道是外部前置条件而非 plan 任务，重建成本与失败率直接影响 7 个 positive-value root run 的稳定性判定。"
+  }
+ ]
+}

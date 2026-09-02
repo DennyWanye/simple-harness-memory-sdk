@@ -1,0 +1,77 @@
+target: spike-provider gpt-5.6-luna aaf2dfd7adfe
+elapsed=16.6s finish=tool_calls model=gpt-5.6-luna usage=ProviderUsage(input_tokens=4902, output_tokens=403, total_tokens=5305, cache_tokens=None, reasoning_tokens=56)
+assistant_text: ''
+tool_calls: 1
+{
+ "name": "task_scope_update",
+ "arguments": {
+  "base_revision": 7,
+  "evidence_refs": [
+   "ev-file-0091",
+   "ev-test-0092"
+  ],
+  "idempotency_key": "ts-readme-bump-close-7",
+  "outcome": "mutate",
+  "operations": [
+   {
+    "operation_id": "close-status",
+    "kind": "status.update",
+    "value": "completed",
+    "reason_code": "objective_work_verified",
+    "evidence_refs": [
+     "ev-file-0091",
+     "ev-test-0092"
+    ]
+   },
+   {
+    "operation_id": "release-phase",
+    "kind": "phase.update",
+    "value": "发布 1.2.0",
+    "reason_code": "requested_release_change_done",
+    "evidence_refs": [
+     "ev-file-0091",
+     "ev-test-0092"
+    ]
+   },
+   {
+    "operation_id": "record-change",
+    "kind": "changed.append",
+    "value": "README.md 版本号已从 1.1.3 更新为 1.2.0",
+    "reason_code": "file_updated",
+    "evidence_refs": [
+     "ev-file-0091"
+    ]
+   },
+   {
+    "operation_id": "record-verification",
+    "kind": "completed.append",
+    "value": "pytest -q 通过：42 passed，exit 0",
+    "reason_code": "tests_passed",
+    "evidence_refs": [
+     "ev-test-0092"
+    ]
+   },
+   {
+    "operation_id": "clear-next-action",
+    "kind": "next_action.update",
+    "value": "无，任务已完成",
+    "reason_code": "work_complete",
+    "evidence_refs": [
+     "ev-file-0091",
+     "ev-test-0092"
+    ]
+   },
+   {
+    "operation_id": "complete-task",
+    "kind": "task.complete",
+    "value": "已完成发布 1.2.0 所需 README 版本更新并通过测试",
+    "reason_code": "all_objective_events_complete",
+    "evidence_refs": [
+     "ev-file-0091",
+     "ev-test-0092"
+    ]
+   }
+  ]
+ }
+}
+A1_VERDICT: PASS

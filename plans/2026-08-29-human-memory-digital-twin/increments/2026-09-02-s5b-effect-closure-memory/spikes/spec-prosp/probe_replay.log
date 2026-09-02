@@ -1,0 +1,14 @@
+wheel: 0.6.0
+A1 same-ref replay: acknowledged acknowledged equal= True resolutions= 1
+A2 new-identity re-ack RAISED: MemoryValidationError prospective_signal_replayed
+   scheduler_registrations rows: [('accepted', 1, 'prospective-schedule')]
+B1 TIME_DUE: applied triggered rev 2
+B1 same-ref replay equal: True
+B2 TIME_DUE new-identity replay: ignored prospective_signal_stale pending
+   trigger_events: [('matched', 'time_due', '93d55c05', 1), ('ignored', 'time_due', 'e61e4ce6', 1)]
+   inbox: [('matched', 'triggered', '93d55c05'), ('ignored', 'triggered', 'e61e4ce6')]
+C outbox: [('memory.mutation.requested', 'pending'), ('memory.prospective.registration.requested', 'pending'), ('memory.cognitive.committed', 'pending'), ('memory.prospective.invalidation.requested', 'pending')]
+D signal kinds: ['registration_accepted', 'registration_invalidated', 'time_due', 'event_occurred', 'expired']
+E EXPIRED RAISED: MemoryValidationError prospective_scheduler_registration_not_live
+   inbox after expire: [('matched', 'triggered', 'time_due'), ('ignored', 'triggered', 'time_due')]
+EXIT=0

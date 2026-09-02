@@ -1,0 +1,71 @@
+{
+ "review_mode": "diff",
+ "note": "closure round 3 re-check of the five patch-induced P2s from round 2 (archived outside the canonical ledger); all five closed by plan e5c61436… without new patch-induced risk",
+ "findings": [
+  {
+   "id": "release-unit-task-count-mismatch",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "patch-induced",
+   "violated_acceptance_ids": [],
+   "assurance_contract_ids": [],
+   "evidence": "plan.md:163 now reads Task=12 (0,1,2,3,4a,4,5,6,7,8,8b,9), plan ≈240 行; matches the 12 `### Task` headings and `wc -l` = 240. Manifest release_unit (task_count 10 / plan_lines 195) still needs refreshing when Task 0 re-runs check-release-unit — a gate-ledger action, not a plan defect. [basis: plan.md sha256 e5c61436c8a93eeb7bef60834949c2726124b4099e58dc2adc86e8cc45dd55b7 (diff vs plan-round-2-reviewed.md db4f7c1e…: 5 hunks at plan.md:52, 163, 168, 189, 195 only)]",
+   "status": "resolved",
+   "root_cause": "The revision inserted two tasks (4a, 8b) but updated the release-unit count by only one; a stale number feeds the gate's release-unit check."
+  },
+  {
+   "id": "host-run-fault-event-kind-outside-recorder-allowlist",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "patch-induced",
+   "violated_acceptance_ids": [
+    "S5B-AC-1"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-TASKSCOPE-CANONICAL-STATE"
+   ],
+   "evidence": "plan.md:168: Run-fault codes go into `run_terminal` ExecutionEvidence `public_payload.error_code`; no new host.* kind, recorder allowlist unchanged, `run_terminal` = trivial. Verified feasible: Host authors run_terminal itself and validate_execution_evidence (deskpet/task_scope/protocol.py:189-199) only requires a private-free Mapping payload. Residual: add `run_terminal` explicitly to the plan.md:81 mapping table at the Task 0 freeze (currently listed only in Task 1's text). [basis: plan.md sha256 e5c61436c8a93eeb7bef60834949c2726124b4099e58dc2adc86e8cc45dd55b7 (diff vs plan-round-2-reviewed.md db4f7c1e…: 5 hunks at plan.md:52, 163, 168, 189, 195 only)]",
+   "status": "resolved",
+   "root_cause": "The revision introduced a new Host objective-event kind without adding it to the S4 recorder allowlist or the frozen dirty-flag mapping table."
+  },
+  {
+   "id": "task-4a-host-wiring-precedes-evidence-authority-module",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "patch-induced",
+   "violated_acceptance_ids": [
+    "S5B-AC-6"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-COMPOSITION-FALLBACK"
+   ],
+   "evidence": "plan.md:189 restricts Task 4a to Memory repo + Host pin; plan.md:195 moves all Host wiring into Task 4 next to `memory/evidence_authority.py`. The dependency cycle is gone; keeping the pin bump in 4a is safe because the pre-Task-4 wiring (default credential-filter/v1, fail-open branch) remains valid on 0.6.1 and Task 4a asserts forward-open + exact-pin regression. [basis: plan.md sha256 e5c61436c8a93eeb7bef60834949c2726124b4099e58dc2adc86e8cc45dd55b7 (diff vs plan-round-2-reviewed.md db4f7c1e…: 5 hunks at plan.md:52, 163, 168, 189, 195 only)]",
+   "status": "resolved",
+   "root_cause": "Splitting the 0.6.1 core into Task 4a left Host-side wiring in the Memory-repo task while its Host dependency was placed in the later Task 4."
+  },
+  {
+   "id": "ac1-outbox-wording-vs-reservation-design",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "patch-induced",
+   "violated_acceptance_ids": [
+    "S5B-AC-1"
+   ],
+   "assurance_contract_ids": [],
+   "evidence": "Amendment A13 added (acceptance-amendments-proposed.md:22) rewording AC-1① to same-transaction direct ingest + source_sequence reservation, no async outbox worker. Resolved conditional on user approval of A13 (acceptance.md itself is unchanged, as required). [basis: plan.md sha256 e5c61436c8a93eeb7bef60834949c2726124b4099e58dc2adc86e8cc45dd55b7 (diff vs plan-round-2-reviewed.md db4f7c1e…: 5 hunks at plan.md:52, 163, 168, 189, 195 only)]",
+   "status": "resolved",
+   "root_cause": "The revision changed the Harness-evidence import mechanism named in the acceptance text without proposing the corresponding acceptance amendment."
+  },
+  {
+   "id": "plan-lane-count-narrative-stale",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "patch-induced",
+   "violated_acceptance_ids": [],
+   "assurance_contract_ids": [],
+   "evidence": "plan.md:52 now reads '本增量兑现全部四条并按 runner_contract 输出…', consistent with plan.md:141 and Task 0. [basis: plan.md sha256 e5c61436c8a93eeb7bef60834949c2726124b4099e58dc2adc86e8cc45dd55b7 (diff vs plan-round-2-reviewed.md db4f7c1e…: 5 hunks at plan.md:52, 163, 168, 189, 195 only)]",
+   "status": "resolved",
+   "root_cause": "The revision fixed the lane count in the normative sections but left the investigation narrative stale."
+  }
+ ]
+}

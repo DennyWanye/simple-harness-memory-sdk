@@ -1,0 +1,124 @@
+{
+ "primary_contradiction": {
+  "id": "pc-value-milestone-accepted-vs-materialized",
+  "summary": "主要矛盾（真实发生的事确定性沉淀为任务档案语义状态与长期记忆）本身单一且价值在前，但最小验证动作不最小也不验证价值：里程碑终点停在 Memory 0.6.0 的「accepted plan」（spike A2 证明该状态下无 cognitive head、无 registration outbox、不可召回），价值的直接依赖（0.6.1 物化）被排在里程碑之后，AC-3 次要矩阵被排在里程碑之前；里程碑最后一跳（真实主模型 → accepted MemoryMutationPlan）无 prompt/schema/span 派生实现且无 spike。",
+  "acceptance_ids": [
+   "S5B-AC-2",
+   "S5B-AC-1",
+   "S5B-AC-3"
+  ]
+ },
+ "challenge_clusters": [
+  {
+   "cluster_id": "cluster-value-milestone-boundary",
+   "parent_finding_ids": [
+    "pc-milestone-stops-at-accepted-plan",
+    "analysis-result-schema-and-span-derivation-missing",
+    "evidence-authority-principal-registration-missing"
+   ],
+   "specialty": "architecture",
+   "question": "把「被记忆库接受的 MemoryMutationPlan」作为价值里程碑终点是否诚实——在 0.6.0 上 accepted 状态能否被任何用户可观察路径（typed recall / snapshot / occurrence）读到？里程碑的直接依赖边界应画在哪里（Task 1 的哪些断言、Task 5 的物化、Host analysis prompt/result schema/EvidenceSpanRef 派生、evidence_authority 与属主注册调用点）？真实主模型能否在 Host 的 sanitized payload 形状（键 `text`）上产出被 0.6.x validator accepted 的 plan？",
+   "required_evidence": [
+    "sqlite_v5.py prepare_analysis_application/finalize_analysis_application accepted 分支与 apply_memory_mutation_plan compile/apply 内核对 evidence_authority 的依赖",
+    "Host 侧 analysis prompt / result schema / span 派生的设计或 spike：真实 provider 对一条含事实的 Host 真实 turn payload 产出 accepted MemoryMutationPlan 的原始输出",
+    "typed_recall / initial snapshot 在 accepted-but-not-materialized 状态下的读取结果",
+    "Task 1 中哪些断言是 write_file→host.file 事件的直接依赖"
+   ],
+   "specialist_required": true
+  },
+  {
+   "cluster_id": "cluster-closure-terminal-window",
+   "parent_finding_ids": [
+    "harness-evidence-outbox-async-vs-run-terminal-ordering",
+    "closure-fallback-window-durable-state-and-recovery",
+    "pending-closure-bound-to-scope-not-conversation",
+    "task-scope-update-projectless-safe-vs-dirty-exposure"
+   ],
+   "specialty": "failure-recovery",
+   "question": "SDK terminal 与 Host record_sdk_terminal（同时是 lease 释放）之间插入的 closure 兜底窗口，在 crash/lease 到期/重放下是否有 durable 状态保证「恰一次 Provider 调用、不半状态」？Harness 证据经 Host 内 outbox+异步 worker 导入与 run_terminal 的 next_sequence/连续 seq 约束如何排序而不丢行？semantic_closure_pending 归属于 scope 时，后续轮路由到 standalone/其它 scope 时债务如何终止？",
+   "required_evidence": [
+    "foreground_runtime.py:700-934 reconcile 分支对「SDK terminal 已到、Host 未终态、post_turn_invocation_attempts 有 reserved/handed_off 行」的处理设计",
+    "evidence_ingress.py ingest/authorize_terminal 与 plan 的 harness_evidence_outbox worker 的排序/阻塞契约",
+    "SDK checkpoint tool_batch_reserved 在 Host recovery fence 下的行为（是否重放已保留 effect）",
+    "pending closure 跨 Run/跨路由的 base_revision、evidence_refs、终止条件设计"
+   ],
+   "specialist_required": true
+  },
+  {
+   "cluster_id": "cluster-analysis-idempotency-lineage",
+   "parent_finding_ids": [
+    "analysis-request-lineage-worker-config-not-run-binding",
+    "analysis-idempotency-attempt-bound-unknown",
+    "analysis-adapter-rebuild-after-provider-config-change"
+   ],
+   "specialty": "data-state",
+   "question": "在 Memory 0.6.0 request_hash 内含 attempt、batch_attempt 每次重试递增、provider/model 来自 worker 常量的既定契约下，Host `request_hash+attempt` 账本与 D7 unknown-call 三分类能否兑现 AC-2③「已 succeeded/unknown 后确认者 Provider 计数 0」与硬契约 96-97 的 Run 绑定血缘？对无回查 API 的 OpenAI 兼容 provider，`sent_unknown` 的可执行终态是什么？绑定不可重建时 job 的终态是什么？",
+   "required_evidence": [
+    "sqlite_v5.py claim_analysis_batch 完整逻辑（attempt/request 构造、retry 后 envelope 是否保留）与 test_durable_memory_jobs_v5.py:1816/2064 的断言前提",
+    "Host execution/provider_invocations.py ProviderInvocationCoordinator 对 unknown 的既有处理（是否存在 resend 策略）",
+    "provider.py ProductProviderAdapter.invoke 是否能拿到 provider response id 的时机（流式/非流式）",
+    "MemoryJobWorkerConfig 与多 Run 绑定并存时的 worker 生命周期设计"
+   ],
+   "specialist_required": true
+  },
+  {
+   "cluster_id": "cluster-effect-gate-exposure",
+   "parent_finding_ids": [
+    "effect-exposure-hiding-unverified-and-standalone-run-fault"
+   ],
+   "specialty": "security-privacy",
+   "question": "在冻结 SDK preflight 只看 Run 级 catalog policy、投影在 Run 冻结时一次决定的前提下，「暴露随路由」能否满足 D2 与 AC-3① 的「被拒绝」语义（而非整 Run fault）？Run 起始无 bound scope 时同一 Run 内 create_new→write 是否可能？每次项目 effect 的重验（envelope 血缘 + inode + scope lifecycle + _CONFIRM_ONLY 不变）与 Auto 豁免边界是否有显式断言与稳定 reason？",
+   "required_evidence": [
+    "react_loop.py _preflight_tool_batch 与 tool_exposure.execution_policy 对 snapshot 未列工具的行为（spike：模型调用 per-turn 隐藏但 catalog 内的 PROJECT_EFFECT 工具）",
+    "tool_authority.py resolve_exposure/CatalogRunToolExposure.provider_specs 是否可按 route state 过滤而不改 catalog fingerprint",
+    "foreground_runtime_ports.py:305-341 冻结时 root 选择与 Run 内 binding 变化的关系",
+    "TC-HM-09 rev4 步骤 3-6 对同一 Run 内 create→append→write 的要求"
+   ],
+   "specialist_required": true
+  },
+  {
+   "cluster_id": "cluster-prospective-ack-lifecycle",
+   "parent_finding_ids": [
+    "prospective-ack-channel-undefined",
+    "occurrence-presented-dual-table-state",
+    "prospective-registration-accepted-signal-step-missing"
+   ],
+   "specialty": "data-state",
+   "question": "occurrence presented→acknowledged→settled 的每个迁移各由什么确定性输入触发（不解析自然语言、不改冻结 DTO）？registration accepted 回签、outbox 游标、occurrence_presented（S5a 读源）与新 prospective_occurrences 表之间的事务边界与 canonical 归属是什么？",
+   "required_evidence": [
+    "Memory prospective 状态机对 REGISTRATION_ACCEPTED 的要求（test_prospective_signal_repository_v5.py）",
+    "S5a reconcile/no_recall 门对 occurrence_presented 的读写契约（context_authority.py:539-551, 878-883, 955-970）",
+    "可承载 ack 的工具/receipt 结构提案与其 Host 校验"
+   ],
+   "specialist_required": true
+  },
+  {
+   "cluster_id": "cluster-testability-fault-lanes",
+   "parent_finding_ids": [
+    "fault-runners-built-after-they-are-needed",
+    "real-ui-harness-not-a-task"
+   ],
+   "specialty": "testability-evidence",
+   "question": "决定性 negative-safety 场景的 runner/seam 契约与真实 UI 通道应在哪个任务前就绪，才能让 Task 3/4/6 的验证条目可执行？",
+   "required_evidence": [
+    "testcase fault-matrix lane 定义与 runner_contract",
+    "HANDOFF §6.3 通道脚本现状"
+   ],
+   "specialist_required": false
+  },
+  {
+   "cluster_id": "cluster-release-unit-and-cutover",
+   "parent_finding_ids": [
+    "release-unit-third-subsystem-packing",
+    "memory-061-cutover-schema-and-pin"
+   ],
+   "specialty": "release-rollback",
+   "question": "6 MUST AC / 10 任务 / 三个被打包计为 1 的状态机 + 一次上游 wheel 发布是否仍满足 program release-unit 门限；Memory 0.6.0→0.6.1 的数据/schema/pin cutover 是否需要独立 receipt？",
+   "required_evidence": [
+    "用户对 D5 Ponytail 的裁决",
+    "Memory 0.6.1 对既有 0.6.0 DB 的打开行为与 schema 版本声明"
+   ],
+   "specialist_required": false
+  }
+ ]
+}

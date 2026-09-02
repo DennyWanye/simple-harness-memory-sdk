@@ -1,0 +1,31 @@
+[PASS] step 1: built v7 manager; backend=SQLiteHumanMemoryBackend; db=spike_a2_1788343612.db
+2026-09-02 18:06:52 [info     ] memory.evidence_ingested       envelope_hash=63b9ab34015ea27205d57459519110364603cdb90c42acca888ac57d9140dc62 evidence_id_hash=46b66565e7f174d4eabdf87aaa04ba4850413b5de258500a138601c5a99b013d source_ref_hash=3cecf9026aefccbd5ce2ab173f8847eb8175c32fd9250d2769af2d70a56879d1
+  probe: Host principal rejected: short_horizon_principal_rejected; switching to placeholder principal
+  principals rows: [('deskpet-local-owner-v1', 'deskpet-local-owner-v1', 'deskpet-local-owner-v1', 'deskpet-local-owner-v1')]
+[PASS] step 2: ingestion_receipt=EvidenceIngestionReceipt; jobs=[('evidence-mutation-job-9b55606f00e6e80bfb7169439c2e0c41be2ff6e3120c275820d924ebf15e7762', 'pending', 0)]; outbox=[('memory.mutation.requested', 'pending')]
+2026-09-02 18:06:52 [info     ] memory.analysis_invocation_recorded invocation_id_hash=a5be4f7f74d94ac7b5d17672b15dbb0d9dee7981c2069a117e253ca1c7d95a05 request_hash=e7c8481465b9871d432b31239bd5b7533b90e581cda968ac6ed5d9a0f98830db validation_status=accepted
+[PASS] step 3: outcome=applied; jobs=[('evidence-mutation-job-9b55606f00e6e80bfb7169439c2e0c41be2ff6e3120c275820d924ebf15e7762', 'applied', 1)]; attempt_tables=[('job_attempts', 'applied'), ('job_attempt_events', "<no state column: ['event_id', 'batch_id', 'job_id', 'attempt', 'event_kind', 'reason_code', 'request_hash', 'result_hash', 'occurred_at', 'event_hash']>"), ('typed_recall_attempts', "<no state column: ['attempt_id', 'request_id', 'attempt_ordinal', 'started_at', 'attempt_hash']>")]; executor.calls=1; authority.verification_calls=1; evidence_authority.resolve_admitted_evidence calls=0; llm_invocations=[('analysis-invocation-788e', 'analysis_validator_accepted', 'accepted')]
+[FAIL] step 4a: runner-only: pending outbox=[]; cognitive_memory_heads=0; accepted_analysis_plans=[('analysis-batch-a14f16090236478', 1, 2, '00f80e2066a59a64')]
+  4b apply_memory_mutation_plan -> outcome=committed reason=memory_mutation_committed; evidence_authority.resolve_admitted_evidence calls now=1
+  principals rows after 4b: [('deskpet-local-owner-v1', 'deskpet-local', 'deskpet-local-household', 'deskpet-local-owner-v1')]
+  4b: Host deskpet-local principal now ACCEPTED by read_outbox (row upgraded)
+[PASS] step 4b: after Host apply_memory_mutation_plan: pending outbox=[('memory.prospective.registration.requested', 'pending', 'prospective-schedule'), ('memory.cognitive.committed', 'pending', 'memory-mutation-outb')]; registration payload keys=['command', 'memory_id', 'prospective_revision', 'registration_revision', 'schema_version', 'trigger', 'trigger_hash']; cognitive_memory_revisions(memory_id,plan_hash,accepted_plan_hash_match)=[('cognitive-memory', '00f80e2066a59a64', 1)]
+[PASS] step 5: outcome2=idle; executor.calls=1
+  probe: apply_prospective_signal ACCEPTED Host deskpet-local principal
+  principals rows after signals: [('deskpet-local-owner-v1', 'deskpet-local', 'deskpet-local-household', 'deskpet-local-owner-v1')]
+  probe: read_occurrence_inbox ACCEPTED Host deskpet-local principal at end
+[PASS] step 6: memory_id=cognitive-memory.. rev=1; ack=(acknowledged,prospective_registration_acknowledged); due=(applied,triggered,prospective_trigger_matched); inbox=[('matched', 'time_due', 'triggered', '提交周报', 'cognitive-memory')]; outbox_after=[('memory.mutation.requested', 'applied'), ('memory.prospective.registration.requested', 'pending'), ('memory.cognitive.committed', 'pending'), ('memory.prospective.invalidation.requested', 'pending')]; signal_resolutions=2
+2026-09-02 18:06:52 [info     ] memory.manager_closed          backend_type=SQLiteHumanMemoryBackend
+
+GOTCHAS:
+  - read_outbox with Host principal MemoryPrincipal(deployment_id='deskpet-local', household_id='deskpet-local-household', actor_id='deskpet-local-owner-v1', session_id='primary-conversation') after ingest-only -> short_horizon_principal_rejected ; ingest inserts principals(dep=hh=actor=subject); only apply_memory_mutation_plan (caller-principal path) upgrades it. Using placeholder-identity principal instead.
+  - DurableMemoryJobRunner.run_once()==APPLIED only records accepted_analysis_plans + decision_records and marks the memory.mutation.requested outbox row 'applied'; it does NOT create cognitive_memory_heads nor emit memory.prospective.registration.requested. A separate caller-principal manager.apply_memory_mutation_plan(principal, scope, plan=<same plan>) is required (4b).
+
+SUMMARY:
+  step 1: PASS
+  step 2: PASS
+  step 3: PASS
+  step 4a: FAIL
+  step 4b: PASS
+  step 5: PASS
+  step 6: PASS

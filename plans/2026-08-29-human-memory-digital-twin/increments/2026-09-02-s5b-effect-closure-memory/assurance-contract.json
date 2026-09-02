@@ -1,0 +1,156 @@
+{
+  "profile": "standard",
+  "acceptance_ids": [
+    "S5B-AC-1",
+    "S5B-AC-2",
+    "S5B-AC-3",
+    "S5B-AC-6"
+  ],
+  "protected_assets": [
+    {
+      "id": "ASSET-RAW-EVIDENCE",
+      "description": "Host 与 Memory 原始证据 append-only；终态提交、outbox、dead-letter、suppression、settle 均只追加不删改（承接 program HM-AC-1）"
+    },
+    {
+      "id": "ASSET-WORKSPACE-AUTHORITY",
+      "description": "项目 effect 只能在当前轮 route receipt + exact binding set + 恰一 root 的 envelope 下执行；根/revision/文件系统身份漂移即拒绝"
+    },
+    {
+      "id": "ASSET-TASKSCOPE-CANONICAL-STATE",
+      "description": "TaskScope canonical state 只经 CAS + 幂等 mutation plan 变化；脏标记确定性；closure receipt 与 checkpoint 不可伪造"
+    },
+    {
+      "id": "ASSET-PROVIDER-IDEMPOTENCY",
+      "description": "同一 request_hash+attempt 的主模型调用（closure / analysis / remember）永不重复执行；unknown 结果只能确认不能盲重发"
+    },
+    {
+      "id": "ASSET-SUPPRESSION-ORDER",
+      "description": "forget 的 suppression receipt 先于任何后续普通读取生效；suppressed occurrence 内容零进入 Context"
+    },
+    {
+      "id": "ASSET-FOREGROUND-RUN-ORDER",
+      "description": "S4 单 foreground Run/FIFO/generation fence 不被 closure 兜底、outbox worker 或 scheduler 削弱"
+    },
+    {
+      "id": "ASSET-CREDENTIALS",
+      "description": "provider APIKEY 只存进程与 llm_runtime.json（用户口径），不进 DB/日志/证据/仓库文件；analysis durable 记录只存 public 内容与 hash"
+    }
+  ],
+  "trusted_assumptions": [
+    {
+      "id": "TRUST-LOCAL-HOST",
+      "description": "本地开发者账户、OS/kernel、文件系统 inode 语义与系统绝对路径程序可信"
+    },
+    {
+      "id": "TRUST-SDK-WHEELS",
+      "description": "exact 版本+SHA 锁定的 Harness 0.7.1 与 Memory 0.6.x candidate wheel 可信；SDK 冻结不改"
+    },
+    {
+      "id": "TRUST-AUTH-CONTEXT",
+      "description": "Host 已认证 subject identity 与 Run 绑定快照可信；LLM 输出与自然语言不可信"
+    },
+    {
+      "id": "TRUST-FRESH-DATA-DIR",
+      "description": "S5b 验收使用全新 userdata（v46），不迁移旧数据"
+    },
+    {
+      "id": "TRUST-S5A-RECEIPT",
+      "description": "S5a receipt b5d416e3… 所证的 route/snapshot/no-recall 门继续有效，本增量只扩展不重证"
+    }
+  ],
+  "in_scope_failures": [
+    {
+      "id": "FAIL-EFFECT-AUTHORITY-DRIFT",
+      "description": "项目 effect 在无可信 envelope、stale revision、根漂移、多 root、伪造 auto 或 same-batch pre-route 下仍执行"
+    },
+    {
+      "id": "FAIL-SEMANTIC-CLOSURE",
+      "description": "有 material 脏标记的 Run 无 closure receipt 即对外完成、伪造 checkpoint/Markdown 成功、或 closure 兜底重复调用 Provider"
+    },
+    {
+      "id": "FAIL-HALF-STATE",
+      "description": "终态提交/outbox/attempt/apply 任一事务关键点崩溃后出现半状态、重复 effect、重复 occurrence 或不可重放"
+    },
+    {
+      "id": "FAIL-DUPLICATE-PROVIDER-CALL",
+      "description": "同一 request_hash+attempt 二次调用 Provider（含 unknown 后盲重发、authority 重试新建 attempt）"
+    },
+    {
+      "id": "FAIL-DATA-LOSS",
+      "description": "Memory 不可用/dead-letter/suppression/settle/rollback 任一路径物理删除或覆盖原始证据"
+    },
+    {
+      "id": "FAIL-PRIVACY-STALE",
+      "description": "forget 后普通读取仍返回内容；suppressed occurrence 进入 Context；analysis 结果含私有材料或凭据"
+    },
+    {
+      "id": "FAIL-SCHEDULER-DUPLICATE",
+      "description": "同 trigger revision/event 产生多个 occurrence、pending 丢失、invalidation 后仍触发、模型拒绝被标 processed"
+    },
+    {
+      "id": "FAIL-LLM-PAYLOAD",
+      "description": "task_scope_update / analysis result / memory tool 载荷五类变异造成半状态、越权或非稳定错误"
+    },
+    {
+      "id": "FAIL-COMPOSITION-FALLBACK",
+      "description": "缺 authority/store/worker 时以 Noop/fake/metadata 静默降级启动"
+    },
+    {
+      "id": "FAIL-PROTOCOL-REPLAY",
+      "description": "kill/replay 后 closure/analysis/occurrence 不可重放或 receipt 不一致"
+    }
+  ],
+  "in_scope_adversaries": [
+    {
+      "id": "ADV-LLM-PAYLOAD",
+      "description": "主模型 task_scope_update / MemoryMutationPlan / memory tool 载荷可能乱序、重复、违约、超长或拒调"
+    },
+    {
+      "id": "ADV-DUPLICATE-DELIVERY",
+      "description": "进程重启、lost ACK、worker 重复 claim 与 Provider 结果未知"
+    },
+    {
+      "id": "ADV-AMBIGUOUS-NL",
+      "description": "用户自然语言含糊（模糊的提醒条件、模糊的忘掉对象）"
+    },
+    {
+      "id": "ADV-FILESYSTEM-DRIFT",
+      "description": "绑定根在 Run 中被替换/移动/符号链接化"
+    }
+  ],
+  "out_of_scope_conditions": [
+    {
+      "id": "OOS-COMPROMISED-HOST",
+      "description": "宿主 OS/开发者账户已被攻陷"
+    },
+    {
+      "id": "OOS-SDK-CHANGE",
+      "description": "Harness SDK 0.7.1 任何改动（含 assistant.tool_calls 一等字段），顺延 SDK 0.8"
+    },
+    {
+      "id": "OOS-QUALITY-GATE",
+      "description": "HM-AC-8 路由质量阈值门——外部人工语料 review 前置，本增量维持 NOT_RUN/BLOCKED"
+    },
+    {
+      "id": "OOS-S6-UI",
+      "description": "S6 全部 UI 与 program 级最终验收"
+    },
+    {
+      "id": "OOS-EXTERNAL-ACTION",
+      "description": "系统通知/calendar provider/真实高风险 action executor；Prospective 交付通道只有下一轮 Context"
+    },
+    {
+      "id": "OOS-MULTI-ROOT-SELECTION",
+      "description": "多 root project effect 的 root 选择协议，继续 fail-closed"
+    },
+    {
+      "id": "OOS-RELEASE",
+      "description": "三仓 tag/push/publish、WeMM 上传 COS、分支合并"
+    },
+    {
+      "id": "OOS-S5C",
+      "description": "Prospective 唯一 scheduler/occurrence/prospective_ack、即时 remember/correct/forget、prospective_signal_authority 与 memory_action_authority 注入、v47 prospective 表族（依委托裁决 A11 移入 S5c，S6 之前）"
+    }
+  ],
+  "maximum_acceptable_impact": "收口失败只能产生 semantic_closure_pending 与保守终答，不得伪造状态；effect 校验失败只能拒绝执行；analysis 失败只能 dead-letter 并保留原始证据；任何情况下不重复调用 Provider、不越权召回、不丢原始证据、不削弱 S4 执行秩序。"
+}

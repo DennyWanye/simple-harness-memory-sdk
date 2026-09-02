@@ -1,0 +1,146 @@
+{
+ "cluster_id": "cluster-effect-gate-exposure",
+ "parent_finding_ids": [
+  "effect-exposure-hiding-unverified-and-standalone-run-fault"
+ ],
+ "specialty": "security-privacy",
+ "spike": {
+  "file": "/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-effect/spike_effect_exposure_test.py",
+  "output": "/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-effect/run_output.txt",
+  "command": "cd /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend && .venv/bin/python -m pytest /private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-effect/spike_effect_exposure_test.py -q -p no:cacheprovider -s  => 17 passed in 4.23s (7 original A3 + 10 specialist E1-E5)",
+  "observed": {
+   "E1 hidden-from-provider_specs write_file, routed_standalone": "TaskExecutionAuthorityError('sdk_task_execution_route_authority_missing') escapes ReActLoop.run; handler 0 calls; no TOOL message; checkpoint routed_standalone/tool_batch_reserved (hiding changes nothing)",
+   "E2 real CatalogRunToolExposure, write_file DEFERRED or absent, called in routed_standalone / unrouted / routed_task": "RuntimeToolCatalogError code=catalog_execution_policy_unavailable raised inside _preflight_tool_batch (react_loop.py:677) before any barrier rule; escapes the loop; issue_envelope never called; no ToolResult.rejected; SDK react.py:217 UnknownToolError->WAITING path is unreachable (registry is never consulted)",
+   "E3 same-Run context_route(resume_existing A) -> write_file -> context_route(resume_existing B) -> write_file": "SDK accepts the second route (react_loop.py:549-567 replaces the receipt unconditionally); both writes execute; envelope #1 root=root-A rev1, envelope #2 root=root-B rev1; final route_state routed_task on B",
+   "E4 Manual append of root #2 between route turn and write turn (head rev1->rev2, 2 roots)": "plan-style exact_receipt resolver issues envelope at rev1/root-A; handler executes; store.verify_task_execution_envelope(envelope, frozen_route_receipt) ACCEPTS; A3's head-equality resolver would raise (AssertionError head != receipt)",
+   "E5 drift codes from verify_task_execution_envelope after envelope issue": "os.rename root away -> workspace_root_unavailable; rename + mkdir same path -> workspace_root_identity_drift; rename + symlink same path -> workspace_root_not_canonical (the envelope itself is issued without any inode check when the resolver reads exact_receipt)"
+  }
+ },
+ "findings": [
+  {
+   "id": "effect-exposure-hiding-unverified-and-standalone-run-fault",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-3"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-WORKSPACE-AUTHORITY",
+    "FAIL-EFFECT-AUTHORITY-DRIFT",
+    "ADV-LLM-PAYLOAD",
+    "TRUST-SDK-WHEELS"
+   ],
+   "evidence": "CONFIRMED + REFINED by spike E1/E2 (/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-effect/run_output.txt). (1) Frozen SDK has exactly two model-visible rejection codes and both are emitted only in _preflight_tool_batch: MODEL_AUTHORITY_FIELD_FORBIDDEN (react_loop.py:682-683) and ROUTE_BARRIER_NOT_OBSERVED for route_state UNROUTED or same-batch CONTEXT_CONTROL (react_loop.py:687-694); there is no ROUTED_STANDALONE rule. A PROJECT_EFFECT call in routed_standalone reaches EffectBatchExecutor.one -> Host issue_envelope which must raise (task_execution.py:57-66) or return an envelope the SDK rejects with RuntimeError (react_loop.py:164-176); a hidden/deferred/absent tool call raises RuntimeToolCatalogError('catalog_execution_policy_unavailable') at react_loop.py:677 <- runtime_catalog.py:1071-1088 (visible = direct|activated). Both propagate out of ReActLoop.run (no except) and out of ReactDriver (react.py:217-272 catches only UnknownToolError/ProviderInvocationUnknownError/TerminationBudgetExceeded/ToolAuthorizationPending/ToolEffectUnknownError) to kernel.py:2822-2847 -> HarnessError('driver_failed'), Run FAILED; the Host sees it as FAILED via foreground_runtime.py:284 / harness/runtime.py:648 'driver_failed'. So 'exposure follows route' can only lower the probability of the call; it cannot convert the outcome into D2/AC-3 (1) 'rejected'. plan.md:135 'SDK unknown-tool rejection 而非 Run fault' is false: the SDK unknown-tool path (registry.py:121 -> react.py:217 WAITING/tool_not_exposed) is unreachable because the exposure policy lookup raises first. (2) Runs never start unbound: foreground_runtime.py:572-604 always injects a HOST_INITIAL RESUME_EXISTING receipt for the turn's task_scope_id (state starts ROUTED_TASK, react_loop.py:238-243), draft_lineage/prepare raise foreground_task_scope_authority_missing when task_scope_id is None (foreground_runtime_ports.py:91-92,114-115) and freeze raises foreground_tool_binding_authority_missing for binding_set_revision<1 (foreground_runtime_ports.py:306-311). The projection is decided once at freeze by root count of the frozen scope (foreground_runtime_ports.py:328-346 -> tools.py:606-690), never by route: after the model re-routes to direct_standalone the write tools stay projected (project_bound) and any call is a Run fault; conversely a multi-root scope is projectless for the whole Run and write_file is absent from the RuntimeToolCatalog (tool_authority.py:707-748 builds records only from the filtered catalog) so tool_activate cannot bring it back. (3) Same-Run create_new/resume_existing -> write is structurally not the D2 story: the frozen authority stays on the original scope (see finding effect-envelope-root-vs-frozen-write-scope-split). (4) Hidden-tool calls are a pre-existing production hazard independent of S5b: every non-kernel tool is DEFERRED (tool_authority.py:75-95, foreground_runtime_ports.py:348-351) so a hallucinated un-activated tool name already fails the whole Run with catalog_execution_policy_unavailable; no Host/SDK test covers it (grep catalog_execution_policy_unavailable in backend/tests and simple-harness-sdk/tests: 0 hits).",
+   "status": "open",
+   "root_cause": "The plan assigns the 'rejected' semantics of D2/AC-3 (1)(4) to an SDK preflight that only knows UNROUTED and same-batch barriers, and to a per-Run projection that is keyed by the frozen scope's root count rather than by route. Under the frozen SDK 0.7.1 the only Host-controllable model-visible rejection seam for a PROJECT_EFFECT call is AFTER issue_envelope succeeded (ProductEffectExecutor.execute returning EffectExecution(effect=None, ToolResult.rejected(...)) exactly like the SDK's own authorization-deny path at tools/executor.py:346-353); every case where issue_envelope or execution_policy must fail (standalone route, zero/multi root, hidden tool) is a whole-Run driver_failed. Required plan change: (a) drop plan.md:135 'SDK unknown-tool rejection' and plan.md:134 (5) as a rejection mechanism; state the partition explicitly: model-visible ToolResult.rejected = {UNROUTED, same-batch, forged authority field, EffectGate failures after envelope issue}; Run fault with stable code = {PROJECT_EFFECT under routed_standalone/memory_standalone -> sdk_task_execution_route_authority_missing, zero/multi root -> sdk_task_execution_root_authority_unavailable (or the new auditable reason), hidden/deferred tool -> catalog_execution_policy_unavailable}; (b) Host driver boundary maps those three codes to a durable FAILED observation with a user-facing message and the next turn (a new Run) is the recovery path — assert 'no execution_effects row, no host.file event, foreground FAILED with code' in the S5B-S4 lane; (c) optional probability reducer that keeps the catalog fingerprint stable: a Host RouteAwareExposure wrapper around CatalogRunToolExposure whose provider_specs(run_id) drops PROJECT_EFFECT specs while the ledger's current route for the Run is not ROUTED_TASK (route_state is already handed to prepare_snapshot via RunContextAuthorityRequest.route_state, context_authority.py:271-277; _tool_catalog_fingerprint reads checkpoint()['catalog_fingerprint'] so hiding does not touch the fingerprint) plus a refusal in the Host tool_activate handler for PROJECT_EFFECT capabilities outside ROUTED_TASK/project_bound with a model-visible stable code (activation results are ordinary tool results, runtime_catalog.py:1232-1244); (d) D2 wording must be amended to say that standalone-route project writes are hidden/non-activatable and, if still called, fail the turn closed with a stable reason instead of 'being rejected' and re-routed inside the same Run — this is acceptance text, so it needs user approval (see scope-change-proposal finding tc-hm-09-multi-root-canary-vs-oos-and-d2-wording)."
+  },
+  {
+   "id": "effect-envelope-root-vs-frozen-write-scope-split",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-3"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-WORKSPACE-AUTHORITY",
+    "FAIL-EFFECT-AUTHORITY-DRIFT",
+    "ADV-LLM-PAYLOAD"
+   ],
+   "evidence": "Spike E3 (/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-effect/run_output.txt): in one Run the model routed resume_existing(A) -> write_file -> resume_existing(B) -> write_file; the SDK accepted the second route and the second envelope carries task_scope_id=B, root_id=root-B (react_loop.py:549-567 replaces route_receipt unconditionally; context_route.py:369-438 never compares the requested scope with the Run's frozen candidate scope). The physical write root is NOT the envelope root: ToolExecutionContext.write_scope_root/workspace are frozen at Run freeze from the candidate scope (tool_authority.py:246-269 uses task_work_context.workspace_root; foreground_runtime_ports.py:328-331,357-358) and every write handler confines to context.workspace or write_scope_root (file_tools.py:170-172; registry.py:3081-3086, 3223-3230; resource_scopes.py:97). verify_task_execution_envelope (workspace_bindings.py:1168-1203) compares the envelope only to the route receipt and the binding store, never to the frozen physical root, so after re-route the file lands in root-A while the durable envelope (persisted on execution_effects via uow.py:5263-5313) attests root-B. Projectless Runs are worse: workspace_root=None makes file_tools._context_workspace_root fall back to the platformdirs default workspace (file_tools.py:160-172), i.e. the projection filter is the only thing standing between a projectless Run and an unscoped write. Plan Task 1 (3) (plan.md:134) lists envelope non-empty, run/call echo, verify_task_execution_envelope, scope lifecycle — nothing ties the envelope to the frozen authority.",
+   "status": "open",
+   "root_cause": "Two independent sources of truth for 'which root this effect writes into': the per-effect envelope (route receipt + binding store, mutable within a Run by re-routing) and the per-Run frozen ToolExecutionContext.write_scope_root (immutable after freeze, used by the physical handler). The plan verifies only the first. Fix in EffectGate (before super().execute in ProductEffectExecutor.execute, tools.py:344-357): resolve the frozen authority (registry.resolve(run_id)) and reject with stable codes when envelope.task_scope_id != authority.task_work_context.task_scope_id ('effect_gate_frozen_scope_mismatch'), when authority.workspace_resolution.kind != 'project_bound' ('effect_gate_projectless_project_effect'), and when verify_task_execution_envelope(...).root.canonical_path != authority.task_work_context.workspace_root ('effect_gate_frozen_root_mismatch'); additionally decide whether context_route to a scope other than the frozen candidate is allowed at all inside a Run (recommend: context_route._resume_existing/_create_new/_continue_active reject with 'context_route_scope_differs_from_run_authority' when task_scope_id != the Run's frozen candidate scope, since the projection cannot follow it). Consequence for D2: same-Run create_new -> write cannot be supported under the frozen projection; create_new binds scope B and the write happens in the next turn's Run (frozen to B). Test: E3 sequence through ProductEffectExecutor with a real frozen authority must yield ToolResult.rejected('effect_gate_frozen_scope_mismatch') for the second write and zero bytes in root-A."
+  },
+  {
+   "id": "auto-mode-exemption-broader-than-folder-append",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-3"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-WORKSPACE-AUTHORITY",
+    "FAIL-EFFECT-AUTHORITY-DRIFT"
+   ],
+   "evidence": "AC-3 (5) requires 'Auto 只豁免 folder-append 确认；_CONFIRM_ONLY 门与 grant 要求不变，且有显式断言测试'. On the SDK effect path the authorization decision is ProductAuthorizationAdapter.prepare -> policy.decide (tool_authority.py:1543-1649) -> permissions/runtime.py plan_prepared_call (:353-535): decide() passes only permission_category/task_grant_id=None/principal_id (:1556-1562), never explicit_only, so the confirm-only branch (runtime.py:385-402, 460-474) is dead on this path; at runtime.py:475-482 state.mode == 'auto' synthesises a 'policy:auto' TaskGrant for ANY permission_category/effect kind and policy.py:439-445 returns action='allow' ('auto policy allows without waiting'). _CONFIRM_ONLY (effect_policy.py:22-31) and IrreversibleEffectPolicy.classify are not referenced anywhere in sdk_adapters/ (grep: 0 hits); PreparedToolSet is created with no confirm_only_names (tool_authority.py:613-623); the `dangerous` manifest flag only enters run_start_record/authority fingerprint (tool_authority.py:325,651), never a decision; _validate_confirm_only_snapshot / explicit_only-needs-grant live in the legacy driver harness/tool_executor.py:557-612,894-911 which ProductEffectExecutor never calls. The same policy store mode also drives folder append (runtime_binding_authority.py:89-106) and plan confirmation (turn_preparer.py:989-1037). Therefore today Auto exempts every SDK tool authorization prompt (write_file, run_shell rm -rf, external send) — the 'unchanged _CONFIRM_ONLY gate' AC-3 (5) wants to keep does not exist on the S5b effect path, and plan.md:134 (3) '断言 effect_policy 分类不受 Auto 影响' asserts a static table, not the decision.",
+   "status": "open",
+   "root_cause": "The confirm-only/high-risk gate was implemented in the legacy tool executor and was never ported to the SDK authorization adapter; Auto mode is a single global policy_state.mode consumed by three unrelated gates. To make AC-3 (5) true and assertable: (1) EffectGate or decide() must compute explicit_only from the frozen catalog's effect classification (IrreversibleEffectPolicy.classify over authority.specs, or the manifest `dangerous` flag) and call plan_prepared_call(explicit_only=True, confirmed=False, ...) so that in auto mode the plan returns action='wait' and decide() returns REQUIRE_USER with reason 'product_policy_user_confirmation' (never ALLOW) for _CONFIRM_ONLY classes; (2) assertion tests: (a) policy mode=auto + DESTRUCTIVE-classified tool -> decide() REQUIRE_USER, grant_source never 'policy:auto'; (b) policy mode=auto + write_file (REVERSIBLE_LOCAL) -> ALLOW with grant_source 'policy:auto' is the intended exemption only if the user accepts it, otherwise it must also be listed as exempt in AC-3 (5) (today it is exempt); (c) policy mode=auto + append_binding -> no manual challenge (runtime_binding_authority.py:107-113); (d) exhaustiveness: every PROJECT_EFFECT_TOOL_NAMES entry has a frozen EffectClass and the confirm-only subset is asserted by name. Until (1) exists, 'Auto 不豁免其他高风险动作' (TC-HM-09 step 4) is unprovable on the SDK path."
+  },
+  {
+   "id": "tc-hm-09-multi-root-canary-vs-oos-and-d2-wording",
+   "severity": "P1",
+   "scope_relation": "scope-change-proposal",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-3"
+   ],
+   "assurance_contract_ids": [
+    "OOS-MULTI-ROOT-SELECTION",
+    "ASSET-WORKSPACE-AUTHORITY"
+   ],
+   "evidence": "TC-HM-09 rev4 step 3 (Manual append second root, old root kept) and step 6 ('在每个 root 执行不同 canary effect；每个 effect envelope 绑定 exact task_scope_id、root ref 和当时 revision') require project effects on a two-root scope; AC-3 (6) copies this ('逐 root canary envelope'). assurance-contract OOS-MULTI-ROOT-SELECTION keeps multi-root effects fail-closed and AC-3 (2) requires exactly one root; foreground_runtime_ports.py:332-341 makes any 2-root scope projectless for the whole Run (write tools absent from the catalog, spike E2 'absent' variant -> catalog_execution_policy_unavailable) and the plan's resolver raises for len(roots)!=1. Hence steps 3 and 6 cannot both PASS on the same scope under this contract; only per-root single-root scopes can carry the canary. Spike E4 additionally shows the S4 semantics after a Manual append inside the Run: the route receipt (rev1) stays valid, the effect executes under rev1 while head is rev2 and verify_task_execution_envelope accepts — plan.md:134 (4) 'binding revision 等于 receipt ... 任一 stale 拒绝直到下一轮 context_route 刷新' silently equates 'stale' with 'exact receipt no longer resolvable' (which cannot happen: revisions are immutable rows), so the intended behaviour after step 3 (reject until re-route, or continue under the old revision) is undecided. D2 (acceptance.md:92-93) promises 'rejected + model routes first' which the frozen SDK cannot provide for standalone routes (parent finding).",
+   "status": "open",
+   "root_cause": "Acceptance text (AC-3 (6), D2) and the frozen oracle TC-HM-09 rev4 encode behaviours (multi-root canary effects, same-Run re-route-then-write, model-visible rejection under standalone) that the assurance contract (OOS-MULTI-ROOT-SELECTION) and the frozen SDK 0.7.1 (TRUST-SDK-WHEELS) exclude. Proposal for user decision (no unilateral change): (a) S5B-S4 runs TC-HM-09 step 6 with one single-root scope per canary root and asserts the two-root scope fails closed with the auditable reason from AC-3 (2); record this as an explicit oracle interpretation in the verification spec (behavior_changes entry, TC-HM-09 stays frozen); (b) decide the post-append semantics inside a Run: strict (head must equal receipt -> reject 'workspace_binding_receipt_superseded' until the next Run/route) or exact (immutable receipt stays authoritative) — recommend strict for Manual append since the user just changed the authority set, and assert it; (c) amend D2 to: 'standalone 路由下写工具不可见/不可激活；模型仍调用则本轮以稳定原因 fail-closed 且零写入；建立 TaskScope 后在下一轮执行写入'."
+  },
+  {
+   "id": "binding-head-vs-receipt-stale-definition",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-3"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-WORKSPACE-AUTHORITY"
+   ],
+   "evidence": "Spike E4/E5 (/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-effect/run_output.txt): with the plan's exact_receipt resolver the envelope is issued with no filesystem check at all (exact_receipt reads immutable rows only, workspace_bindings.py:1219-1235); the inode/canonical checks run only inside the Host per-effect verify_task_execution_envelope -> verify_effect_authority -> _verify_root/_open_verified_root (workspace_bindings.py:1095-1135, 1338-1382) and yield three different codes for the three TC-HM-09 step 5 drift shapes: rename-away -> workspace_root_unavailable, replace-at-same-path -> workspace_root_identity_drift, symlink-at-same-path -> workspace_root_not_canonical. plan.md:135 expects '运行中 os.rename 根目录 → inode 漂移拒绝' i.e. identity_drift, which a plain rename does not produce. The gate order in plan.md:134 (3) also puts scope lifecycle after the store check and says nothing about the sticky reject memo key (route_receipt_id) vs Run FAILED cases.",
+   "status": "open",
+   "root_cause": "Reason codes and check order for per-effect re-verification are implied, not specified, so the S5B-S4 oracle can pin the wrong code. Freeze in Task 0: order = envelope presence/identity echo (effect_gate_envelope_missing / effect_gate_envelope_identity_mismatch) -> sticky reject memo by (run_id, route_receipt_id) (effect_gate_route_receipt_rejected) -> frozen-authority consistency (effect_gate_frozen_scope_mismatch / effect_gate_projectless_project_effect / effect_gate_frozen_root_mismatch) -> store.verify_task_execution_envelope with S4 codes {workspace_binding_route_authority_missing|stale, workspace_binding_envelope_lineage_mismatch, workspace_binding_effect_authority_missing|stale, workspace_binding_envelope_root_mismatch, workspace_root_unavailable, workspace_root_identity_drift, workspace_root_not_canonical, workspace_root_too_broad} -> scope lifecycle (effect_gate_task_scope_not_active) -> confirm-only/grant (product_policy_user_confirmation). Every code becomes ToolResult.rejected(error_code=code) returned from ProductEffectExecutor.execute with effect=None (no execution_effects row, no host.file event), and the oracle asserts the exact code per drift shape."
+  },
+  {
+   "id": "project-effect-policy-change-breaks-inflight-run-restore",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-6"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-HALF-STATE",
+    "ASSET-FOREGROUND-RUN-ORDER"
+   ],
+   "evidence": "SDK_TOOL_EXECUTION_POLICY_OVERRIDES (tool_authority.py:62-64) is folded into ExecutableToolRecord (tool_authority.py:737-746) whose to_json carries effect_class/route_requirement/task_scope_requirement (runtime_catalog.py:284-294) and feeds both the per-tool capability_fingerprint (:297-304, echoed into every envelope) and the catalog fingerprint (:566-575, stored in the ReAct checkpoint tool_exposure_state, react_loop.py:580-583). restore_run re-runs prepare_run with the CURRENT overrides (tool_authority.py:1008) while the Host-level catalog_generation/catalog_fingerprint check (:939-943) passes because overrides are not part of the Host catalog; the first ReActLoop.run after restart then hits tool_exposure.restore(checkpoint) (react_loop.py:256) -> _validate_state (runtime_catalog.py:866-869) -> RuntimeToolCatalogError('catalog_state_fingerprint_stale') -> driver_failed. No test covers this (grep catalog_state_fingerprint_stale in backend/tests and sdk tests: 0 hits). Any WAITING (authorization-pending) or in-flight foreground Run that survives the v46 upgrade therefore fails with a misleading code instead of a stable isolation.",
+   "status": "open",
+   "root_cause": "Adding the PROJECT_EFFECT classification changes the SDK catalog fingerprint without changing the Host catalog fingerprint or SDK_TOOL_AUTHORITY_RECORD_VERSION, so pre-upgrade Runs are neither restored nor isolated cleanly. Cutover must either (a) bump catalog generation / record version so restore_run raises SdkToolAuthorityMigrationUnavailable-style stable isolation for pre-v46 Runs, or (b) make the v46 migration precondition 'no non-terminal foreground Runs and no WAITING SDK Runs' with a drill that proves the stale-fingerprint path is unreachable; add a test that restores a pre-change checkpoint and asserts the stable outcome."
+  }
+ ],
+ "cross_cluster_refs": [
+  {
+   "cross_cluster_ref": "cluster-release-unit-and-cutover",
+   "finding_ids": [
+    "project-effect-policy-change-breaks-inflight-run-restore"
+   ],
+   "reason": "The catalog-fingerprint change caused by the PROJECT_EFFECT overrides is a cutover hazard for in-flight/WAITING Runs; owned by the cutover cluster, surfaced here because the mechanism lives in the effect-gate classification."
+  },
+  {
+   "cross_cluster_ref": "cluster-testability-fault-lanes",
+   "finding_ids": [
+    "fault-runners-built-after-they-are-needed"
+   ],
+   "reason": "S5B-S4 needs the stable reason-code table and the Run-fault lanes (route_authority_missing / root_authority_unavailable / catalog_execution_policy_unavailable) as oracle inputs before Task 1 is verified; the taskscope-init-binding runner is currently scheduled in Task 9."
+  },
+  {
+   "cross_cluster_ref": "cluster-value-milestone-boundary",
+   "finding_ids": [
+    "task-scope-update-projectless-safe-vs-dirty-exposure"
+   ],
+   "reason": "The same per-turn-exposure limitation applies to task_scope_update: hiding it per turn cannot produce a model-visible rejection; calling it while hidden is a Run fault (catalog_execution_policy_unavailable), so the dirty/pending exposure design must also decide fault-vs-reject."
+  }
+ ],
+ "conclusion": {
+  "status": "refined",
+  "summary": "Parent finding confirmed and sharpened by spike: under frozen SDK 0.7.1 neither per-turn hiding nor route-aware projection can turn a standalone-route PROJECT_EFFECT call or a hidden-tool call into a model-visible rejection; both are whole-Run driver_failed faults with codes sdk_task_execution_route_authority_missing / catalog_execution_policy_unavailable (E1/E2), and the SDK unknown-tool WAITING path is unreachable. Foreground Runs always start ROUTED_TASK on the turn's scope with a projection frozen by that scope's root count, so 'create_new then write in the same Run' is impossible and, worse, a same-Run re-route makes the envelope attest a root the physical handler does not write into (E3, new P1). Auto mode already exempts every SDK tool authorization, not just folder append (new P1). Recommended design: keep AC-3 (1) PROJECT_EFFECT classification; implement the gate as ToolResult.rejected from ProductEffectExecutor with a frozen reason-code table and a frozen-authority consistency check; treat standalone/multi-root/hidden calls as documented fail-closed Run faults mapped by the Host to a durable FAILED with stable code (optionally reduce their probability with route-aware provider_specs hiding + tool_activate refusal, which keeps the catalog fingerprint stable); port confirm-only enforcement into decide() via explicit_only; and take D2 wording, TC-HM-09 step 6 multi-root canary, and post-append stale semantics to the user as a scope-change proposal."
+ }
+}

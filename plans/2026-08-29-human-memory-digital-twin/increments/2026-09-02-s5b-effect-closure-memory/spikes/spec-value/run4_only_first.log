@@ -1,0 +1,23 @@
+target: spike-provider gpt-5.6-luna
+[FAIL] 1-host-policy: ingest_committed_evidence(host-public-turn/v1) -> MemoryValidationError(evidence_filter_policy_unsupported); backend supported_filter_policies=['credential-filter/v1']; build_human_memory_v7 has no supported_filter_policies kwarg
+[PASS] 2-ingest: jobs=1 payload keys=['delivery_key', 'schema_version', 'text']
+  provider: elapsed=6.9s finish=tool_calls model=gpt-5.6-luna usage=ProviderUsage(input_tokens=473, output_tokens=247, total_tokens=720, cache_tokens=None, reasoning_tokens=129) tool_calls=1 text=''
+  raw tool call: {"name": "memory_mutation_propose", "arguments": {"outcome": "mutate", "operations": [{"operation_id": "op-0001", "memory_type": "prospective", "prospective": {"action": "提醒用户提交周报", "trigger_at_iso": "2026-09-04T18:47:49+08:00", "timezone": "Asia/Shanghai"}, "evidence_item_id": "dk-turn-0001", "exact_quote": "从今以后每周五提醒我提交周报", "reason_code": "user_requested_recurring_reminder"}]}}
+  base_revision from analysis_apply_heads (raw SQL) = 1
+  compile_memory_mutation_plan: 1 ops OK
+[PASS] 3-validator: run_once=['applied']+idle; provider calls=1; llm_invocations=[('f4ae88a3', 'analysis_validator_accepted', 'accepted')]; accepted_analysis_plans=1; plans with ops=1; derivation_failures=[]
+  step4: counting heads
+  step4: read_outbox(placeholder)
+[PASS] 4-not-materialized: after runner APPLIED x2: cognitive_memory_heads=0; pending outbox=[]; analysis_apply_heads=2
+  step5: apply plan for job cdd607df base_revision=1
+  step5: read_outbox(host_principal)
+[PASS] 5-apply-materialize: apply results=[('cdd607df', 'committed', <MemoryMutationApplyReasonCode.COMMITTED: 'memory_mutation_committed'>)]; evidence_authority.resolve calls=1; cognitive_memory_heads=1; pending outbox=['memory.prospective.registration.requested', 'memory.cognitive.committed']; contents=[["prospective", {"action": "提醒用户提交周报", "memory_type": "prospective", "trigger": {"timezone": "Asia/Shanghai", "trigger_at": 1788518869.0, "trigger_kind": "time"}}]]
+  heads: analysis_apply_heads= 2  cognitive_apply_heads= 2
+[PASS] 7-nonverbatim: paraphrased quote -> quote_not_verbatim
+SUMMARY:
+  1-host-policy: FAIL
+  2-ingest: PASS
+  3-validator: PASS
+  4-not-materialized: PASS
+  5-apply-materialize: PASS
+  7-nonverbatim: PASS

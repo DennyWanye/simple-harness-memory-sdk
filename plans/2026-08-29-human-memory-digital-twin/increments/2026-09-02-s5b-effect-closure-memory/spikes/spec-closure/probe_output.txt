@@ -1,0 +1,28 @@
+{
+ "P1_observer_next_sequence_from_ingested_receipts": 2,
+ "P1_terminal_watermark": {
+  "durable": 2,
+  "terminal": 2
+ },
+ "P1_late_row_seq2": "REJECTED:execution_source_sequence_conflict",
+ "P1_late_row_seq3": "REJECTED:execution_after_terminal_rejected",
+ "P1_terminal_gate_after_loss": {
+  "durable": 2,
+  "terminal": 2,
+  "verdict": "GATE PASSES while 2 Harness rows permanently lost"
+ },
+ "P2_cross_run_plan": {
+  "accepted": true,
+  "committed_revision": 2
+ },
+ "P2_no_mutation_bumps_revision": {
+  "base": 2,
+  "committed_revision": 3
+ },
+ "P3_ops_after_task_complete": {
+  "accepted": true,
+  "status_after": "complete",
+  "revision": 5
+ },
+ "P4_plan_id_replay_same_receipt": true
+}

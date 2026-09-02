@@ -1,0 +1,72 @@
+{
+ "cluster": {
+  "cluster_id": "cluster-analysis-idempotency-lineage",
+  "parent_finding_ids": [
+   "analysis-request-lineage-worker-config-not-run-binding",
+   "analysis-idempotency-key-attempt-bound-and-sent-unknown-unconfirmable",
+   "analysis-adapter-rebuild-after-provider-config-change"
+  ],
+  "specialty": "data-state",
+  "question": "在 Memory 0.6.0 request_hash 内含 attempt、batch_attempt 每次重试递增、provider/model 来自 worker 常量的既定契约下，Host `request_hash+attempt` 账本与 D7 unknown-call 三分类能否兑现 AC-2③「已 succeeded/unknown 后确认者 Provider 计数 0」与硬契约 96-97 的 Run 绑定血缘？对无回查 API 的 OpenAI 兼容 provider，`sent_unknown` 的可执行终态是什么？绑定不可重建时 job 的终态是什么？",
+  "required_evidence": [
+   "sqlite_v5.py claim_analysis_batch 完整逻辑（attempt/request 构造、retry 后 envelope 是否保留）与 test_durable_memory_jobs_v5.py:1816/2064 的断言前提",
+   "Host execution/provider_invocations.py ProviderInvocationCoordinator 对 unknown 的既有处理（是否存在 resend 策略）",
+   "provider.py ProductProviderAdapter.invoke 是否能拿到 provider response id 的时机（流式/非流式）",
+   "MemoryJobWorkerConfig 与多 Run 绑定并存时的 worker 生命周期设计"
+  ],
+  "specialist_required": true
+ },
+ "parent_findings": [
+  {
+   "id": "analysis-request-lineage-worker-config-not-run-binding",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-2",
+    "S5B-AC-6"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-PROTOCOL-REPLAY",
+    "TRUST-AUTH-CONTEXT",
+    "FAIL-COMPOSITION-FALLBACK"
+   ],
+   "evidence": "memory backends/sqlite_v5.py claim_analysis_batch (MemoryAnalysisRequest 构造 :10272 附近): request.provider_id/model_id 取 `config.provider_id`/`config.model_id`（worker 常量），run_id 取 batch 成员 evidence 的 run_id 且跨 run 抛 `analysis batch authority differs`; core/jobs.py:62-102 MemoryJobWorkerConfig 全字段必填、单 worker 单配置; plan.md:155 Task 4 ⑤ 写「MemoryJobWorkerConfig（provider/model/config_hash 来自 Run 绑定）」; program plan 硬契约 96-97 要求 request/result/receipt 用发起 Run 的主模型配置且永久可审计",
+   "status": "open",
+   "root_cause": "Memory 0.6.0 的 analysis request 血缘（provider/model/config_hash）来自 worker 级常量，而 Host executor 按 originating Run 的 durable SdkRunBindingV1 重建 adapter；两者在用户换模型/换 provider 后必然分叉——要么 Memory 审计记录与真实调用不一致，要么 Host 必须按绑定拒绝/分 worker。plan 把这两个来源写成同一个，composition 里 worker 生命周期与绑定变化的关系未定义。"
+  },
+  {
+   "id": "analysis-idempotency-key-attempt-bound-and-sent-unknown-unconfirmable",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-2"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-PROVIDER-IDEMPOTENCY",
+    "FAIL-DUPLICATE-PROVIDER-CALL",
+    "ADV-DUPLICATE-DELIVERY"
+   ],
+   "evidence": "harness runtime/evidence_protocol.py MemoryAnalysisRequest (:2109 起): to_json 含 `attempt`，request_hash = canonical_hash(to_json) ⇒ 每个 attempt 的 request_hash 都不同; sqlite_v5.py claim_analysis_batch: batch_attempt = max(member attempt_count+1) 每次重试递增; core/jobs.py:427-439 executor 抛任何 Exception → fail_analysis_batch(analysis_executor_failed) → retry 后以新 attempt 再次调用 analyze_memory; acceptance.md:61 AC-2③「unknown 后经 provider response id 确认成功者返回同一行且 Provider 调用计数为 0」; acceptance.md:102-104 D7 `sent_unknown` 只能按 provider response id/幂等键确认; Host provider 为 OpenAI 兼容 chat completions（HANDOFF §6.1 `https://ai.svtun.cn/v1`），无按 id 回查响应或请求级幂等键的 API",
+   "status": "open",
+   "root_cause": "Host 幂等键 `request_hash+attempt` 与 Memory 的 attempt 语义耦合：request_hash 已内含 attempt，Memory 重试必然产生新键，Host 账本结构上无法把「同一 evidence 集合的第二次请求」映射回已成功/未知的旧行；同时 D7 的 `sent_unknown` 对无回查 API 的 provider 没有任何可执行的确认手段，只能永久挂起或盲重发，二者都违反 maximum_acceptable_impact「任何情况下不重复调用 Provider」或让 job 永不完成。"
+  },
+  {
+   "id": "analysis-adapter-rebuild-after-provider-config-change",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-2"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-DATA-LOSS",
+    "ASSET-RAW-EVIDENCE"
+   ],
+   "evidence": "notes-investigation-task7.md:46 main.py:7526-7567 由 binding 重建 adapter 并校验 provider_incarnation_id/config_revision; plan.md:155 Task 4 ③「incarnation/config_revision 校验同 main.py:7526」; program 硬契约 96-97 要求发起 Run 的主模型配置; plan 无「绑定不可重建时的 attempt 终态/dead-letter reason」条目",
+   "status": "advisory",
+   "root_cause": "用户更换 provider/key/模型后，所有尚未 analysis 的旧 Run job 因绑定不可重建而永远无法执行；plan 未把它定义为显式的 dead-letter reason 与用户可见状态，存在无限重试或静默堆积风险（原始证据不丢但记忆永不形成）。"
+  }
+ ]
+}

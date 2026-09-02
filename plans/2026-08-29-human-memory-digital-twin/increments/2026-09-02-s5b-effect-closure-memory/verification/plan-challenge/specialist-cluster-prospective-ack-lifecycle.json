@@ -1,0 +1,137 @@
+{
+ "cluster_id": "cluster-prospective-ack-lifecycle",
+ "parent_finding_ids": [
+  "prospective-ack-channel-undefined",
+  "occurrence-presented-dual-table-state",
+  "prospective-registration-accepted-signal-step-missing"
+ ],
+ "specialty": "data-state",
+ "findings": [
+  {
+   "id": "prospective-ack-channel-undefined",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-4"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-SCHEDULER-DUPLICATE",
+    "ADV-LLM-PAYLOAD",
+    "ADV-AMBIGUOUS-NL"
+   ],
+   "evidence": "CONFIRMED root cause, refined with the exact deterministic channel that exists and the one that does not. (1) No Host→Memory ack/settle signal exists: simple_harness/runtime/prospective_signal_protocol.py:43-48 ProspectiveSignalKind = {registration_accepted, registration_invalidated, time_due, event_occurred, expired}; :140-149 the two ack kinds must carry outbox_id+payload_hash and may NOT change lifecycle; Memory TRIGGERED→{in_progress,completed,rescheduled,cancelled} is reachable only through a MemoryMutationPlan (memory-sdk core/mutations.py:195-201), never through apply_prospective_signal. So the Host occurrence settle is Host-only; Memory keeps returning the matched/triggered entry in read_occurrence_inbox until a plan/suppression moves the intent (probe.log line 'inbox after expire'). (2) The DTO the plan names does not carry an ack: task_scope_protocol.py:261-275 TaskScopeMutationPlan fields = plan_id, run_id, subject, task_scope_id, base_revision, outcome, operations, closure_reason, source_turn_id, disclosure_context, evidence_refs, idempotency_key — no acknowledged_occurrences; SDK 0.7.1 frozen (OOS-SDK-CHANGE). (3) Option (a) 'snapshot receipt + business terminal ⇒ acknowledged' is deterministic but cannot separate 'model refused / did not mention' from 'model handled it' — it marks every completed run as processed, which is literally the FAIL-SCHEDULER-DUPLICATE clause '模型拒绝被标 processed'; rejected as the ack INPUT (it remains valid as the settled(acknowledged) DRIVER after an ack, via foreground_queue.record_sdk_terminal terminal_commit_hooks, plan.md:97). (4) Option (b) Host tool is implementable without DTO change: precedent context_route is a Host-composed direct-kernel tool (sdk_adapters/tool_authority.py:76-97 SDK_DIRECT_TOOL_KERNEL; sdk_adapters/tools.py:39 HOST_COMPOSED_TOOL_NAMES; :50-58 PROJECTLESS_SAFE_TOOL_NAMES) with a durable idempotent invocation ledger (context_authority.py:584-640 context_route_tool_invocations keyed by invocation_hash, UNIQUE(sdk_run_id,effect_id)); a new tool with SDK default policy (NON_PROJECT_EFFECT/OPTIONAL/OPTIONAL, tool_authority.py:60-64 comment) is callable on all five routes including memory_standalone/direct_standalone, which is where a Prospective turn lands. The model already receives the exact occurrence_key in the Host-authored SYSTEM inbox message (context_authority.py:686-710 entries[].occurrence_key, ≤8 entries) so the tool payload is a verbatim 64-hex echo validated by exact membership, not NL parsing; a wrong/hallucinated key is a stable reject and the occurrence stays presented (ADV-LLM-PAYLOAD fail-closed). (5) TC-HM-04 step 4 (testcase/human-memory-program/TC-HM-04-procedure-prospective.md:25) and program plan.md:102-103 ('no_recall 只在 mandatory inbox 已清空后成立') require 'cleared', not 'displayed'; a tool ack is the only structured 'cleared' event available.",
+   "status": "open",
+   "root_cause": "presented→acknowledged has no deterministic input in the plan: acceptance defines ack by '终答提及' (NL judgement, forbidden), plan.md:169 points at a field that does not exist in the frozen TaskScopeMutationPlan and at a tool that is absent on memory_standalone/direct_standalone turns. Required fix (definite): add Host tool `prospective_ack` (strict schema {occurrence_key: 64-hex}; direct kernel; HOST_COMPOSED + PROJECTLESS_SAFE; default NON_PROJECT_EFFECT policy so it is exposed on every route) whose handler, in ONE state.db transaction, (i) verifies occurrence_key ∈ prospective_occurrences WHERE state='presented' for the local subject, (ii) CAS presented→acknowledged with run_id/provider_turn_ordinal/receipt, (iii) inserts the occurrence_presented projection row, (iv) writes an idempotent invocation row keyed (sdk_run_id, occurrence_key) so a lost-ACK replay returns the same receipt. 'processed' MUST mean 'a durable prospective_ack receipt exists for this occurrence_key' (or a Memory-side lifecycle exit/suppression/invalidation, see prospective-triggered-intent-has-no-host-exit); absence of the tool call — including refusal, silence, timeout, failed run — leaves the occurrence presented and re-presentable next turn. settled(acknowledged) is then driven deterministically by the acking run's terminal commit (terminal_commit_hooks) or, if that run never reaches terminal, by the next terminal that observes an acknowledged row."
+  },
+  {
+   "id": "prospective-processed-definition-acceptance-wording",
+   "severity": "P1",
+   "scope_relation": "scope-change-proposal",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-4"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-SCHEDULER-DUPLICATE",
+    "ADV-AMBIGUOUS-NL"
+   ],
+   "evidence": "acceptance.md S5B-AC-4③ '模型终答未提及/拒绝 → 不标 processed' and ⑤ '模型终答提及 → ack' define the deterministic gate outcome by a natural-language property of the final answer. Program constraint (acceptance.md 矛盾分析 '不靠关键词' + primary finding) forbids keyword/regex/NL judgement, and no structured artefact of the frozen SDK carries the mention (see prospective-ack-channel-undefined). The sentence is therefore not verifiable as written by any deterministic oracle; only the manual_required real-provider lane S5B-S5 (quality_bar) can check the mention. Proposed replacement wording for user approval (D8): 'processed ⇔ durable `prospective_ack` receipt for the occurrence_key exists (Host tool, strict schema, exact membership check). No receipt — whether the model refused, ignored, timed out, or the Run failed — ⇒ occurrence stays presented and is re-presented next turn; no_recall stays blocked. The real-provider lane additionally checks by human review that the final answer mentions the reminder (quality_bar), not as a machine gate.'",
+   "status": "open",
+   "root_cause": "The acceptance oracle for AC-4③/⑤ was written in terms of the model's prose instead of a Host-observable event; the plan cannot satisfy it deterministically without an approved rewording that names the structured ack event. This is an acceptance-text change, so it needs the user's approval and must not be silently absorbed into plan.md."
+  },
+  {
+   "id": "occurrence-presented-dual-table-state",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-4"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-SCHEDULER-DUPLICATE",
+    "ASSET-SUPPRESSION-ORDER",
+    "FAIL-PROTOCOL-REPLAY"
+   ],
+   "evidence": "UPGRADED P2→P1: the plan's write point is wrong, not merely undocumented. (1) S5a read contract: context_authority.py:539-551 presented_occurrence_keys = every row with presented_at IS NOT NULL (any run); human_memory_v7.py:87-134 pending_occurrences EXCLUDES any key in that set (:128-129) — i.e. a row with presented_at makes the occurrence disappear from the next snapshot and re-opens no_recall (context_authority.py:955-964; tests/sdk_adapters/test_no_recall_gate.py:472-489 'presented membership opens the gate'). (2) plan.md:169 ③ writes occurrence_presented at 'snapshot reconcile 读到 pending → presented'. Under (1) that directly violates AC-4③ '模型终答未提及/拒绝 → 不标 processed，下一轮继续 pending' — the unacked occurrence is gone next turn — and loses the pending on a crash between prepare_snapshot and the provider call (FAIL-SCHEDULER-DUPLICATE 'pending 丢失') because presented_at is monotonic and cannot be re-presented in another run (v45 trigger occurrence_presented_guard, migrations/037_context_route_ledger_v45.sql:94-110; probe_v45.log 'presented -> re-present different run -> occurrence_presented_monotonic'). (3) v45 table cannot host the full S5b lifecycle: CHECK(settled_at IS NULL OR presented_at IS NOT NULL) (:82) forbids settled(suppressed) for an occurrence that was suppressed before presentation (probe_v45.log 'settle without presented -> CHECK constraint failed'); there is no acknowledged column; and an additive v46 ALTER TABLE ADD COLUMN is accepted but NOT protected by the v45 guard trigger (probe_v45.log 'acknowledged_at 1->2 OK') so a column-add would silently weaken append-only unless a new trigger is added. (4) Occurrence identity is Memory-canonical: prospective_signal_protocol.py:183-196 occurrence_key hashes subject/memory_id/revision/signal_id/signal_kind/signal_receipt_hash/scheduler_registration_ref/registration_revision; memory prospective_trigger_events.occurrence_key is UNIQUE (notes-investigation-task7.md:24) and read_occurrence_inbox is the only feed (sqlite_v5.py:770-840). (5) All Host-side tables (run_context_snapshot_receipts, occurrence_presented, prospective_occurrences, context_route_tool_invocations, terminal facts) live in the same state.db, so same-transaction writes are feasible (record_snapshot_receipt already BEGIN IMMEDIATE + idempotent on (run, turn, payload_hash), context_authority.py:386-410).",
+   "status": "open",
+   "root_cause": "The plan treats 'presented' as one fact stored twice; in reality the S5a gate consumes 'presented' as 'cleared from the mandatory inbox', which S5b's acceptance equates with 'processed'. Definite fix: (a) canonical Host lifecycle table = v46 `prospective_occurrences` (PK occurrence_key from Memory inbox; memory_id, prospective_revision, event_id, state ∈ claimed|presented|acknowledged|settled, settled_reason ∈ acknowledged|suppressed|superseded|expired, presented_run_id/snapshot_id, ack_run_id/ack_receipt, append-only event rows + monotonic head or event-sourced); (b) `occurrence_presented` (v45, schema untouched as plan.md:85 already says) becomes a pure GATE PROJECTION: its row is inserted only when the occurrence leaves the mandatory inbox — i.e. on acknowledged (prospective_ack commit) or on settled(superseded|expired) — in the SAME state.db transaction as the prospective_occurrences transition; it is never written at snapshot injection; suppressed occurrences never get a row (the reconcile predicate already drops suppressed entries, human_memory_v7.py:125-126, so no gate row is needed and the v45 CHECK is never hit). This keeps the S5a query and its receipted tests byte-identical and satisfies '未处理 → 下一轮继续 pending' and 'no_recall 只在 mandatory inbox 已清空后成立'. The column name presented_at then reads as 'cleared_at'; record that re-labelling in plan.md Task 6 and the v46 design freeze (Task 0) rather than adding columns to the v45 table. (c) claimed rows must be sourced from read_occurrence_inbox entries with outcome='matched' (never from the apply_prospective_signal result — see kill-point map), and the snapshot-injection step records presented_run_id/snapshot_id in prospective_occurrences in the same transaction as record_snapshot_receipt so replay stays hash-stable."
+  },
+  {
+   "id": "prospective-registration-accepted-signal-step-missing",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-4"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-SCHEDULER-DUPLICATE",
+    "FAIL-PROTOCOL-REPLAY",
+    "FAIL-HALF-STATE"
+   ],
+   "evidence": "UPGRADED P2→P1: the step is mandatory, not optional. sqlite_v5.py:5697-5705 calls _verify_live_prospective_registration_unlocked for every non-ack signal that is not stale/duplicate; :9628-9648 requires the newest prospective_scheduler_registrations row for (memory_id, target_revision, registration_revision, scheduler_registration_ref) to be state='accepted' with the same trigger_hash and no 'invalidated' row, else MemoryValidationError('prospective_scheduler_registration_not_live'). Without a prior REGISTRATION_ACCEPTED bound to the exact outbox row (:9579-9625 checks topic, payload_hash, principal, command, memory_id, revisions, trigger_hash) NO occurrence can ever be produced → AC-4② unreachable. Probe (scratchpad/spec-prosp/probe_replay.py, probe_replay.log, wheel 0.6.0): A1 same authority ref replayed → identical ProspectiveSignalApplyResult, resolver called once; A2 REGISTRATION_ACCEPTED re-issued with a NEW signal_id/authority (what a naive crash-replay does) → MemoryValidationError('prospective_signal_replayed') — that reason is the sqlite3.IntegrityError mapping at sqlite_v5.py:5889 (UNIQUE(memory_id,prospective_revision,registration_revision,state), notes-investigation-task7.md:24), i.e. Memory stays consistent (exactly one accepted row) but the Host receives an error instead of a result; C after TIME_DUE the Memory outbox holds memory.prospective.invalidation.requested for the previous revision (sqlite_v5.py:9227-9241) and ALL outbox rows stay state='pending' forever — the consumer never claims/settles (manager.py:294, notes-investigation-task7.md:34) so the Host cursor is the only progress marker. Replay identity is keyed by authority_id+intent_hash+nonce+issuer_ref (prospective_signal_protocol.py:310-318) and intent_hash covers signal_id, signal_receipt_id/hash, scheduler_registration_ref, registration_revision, observed_at, run_id, operation_id (:200-240).",
+   "status": "open",
+   "root_cause": "plan.md:169 ② goes straight from 'claim registration' to apply_prospective_signal(TIME_DUE/EVENT) and omits the REGISTRATION_ACCEPTED hand-shake and the identity discipline it implies. Definite fix for Task 6: (1) outbox consumption = one state.db transaction inserting prospective_scheduler_registrations(outbox_id PK, memory_id, prospective_revision, registration_revision, trigger_json, trigger_hash, payload_hash, state=received) AND advancing prospective_outbox_cursor (created_at, outbox_id) — '游标独立持久' in plan.md:169 must read 'own table, same transaction'; (2) then issue REGISTRATION_ACCEPTED with DETERMINISTIC identity derived from outbox_id (signal_id, signal_receipt_id/hash, scheduler_registration_ref, authority_id, nonce, operation_id all = stable hashes of outbox_id; observed_at = the durable received_at, not wall clock) or persisted in Host before the Memory call, so a crash-replay re-sends the same ref and hits Memory's replay path; treat 'prospective_signal_replayed' as terminal-already-accepted only after re-reading Memory's registration state; record state=accepted with the returned decision/result ids; (3) consume memory.prospective.invalidation.requested the same way with REGISTRATION_INVALIDATED (transition PENDING→PENDING on the OLD revision, outbox-bound) and mark the Host registration invalidated so tick never fires it again (AC-4② 'invalidation 后不再触发'); (4) tick issues TIME_DUE/EVENT_OCCURRED only for state=accepted registrations, with signal identity derived from (scheduler_registration_ref, event identity: clock bucket = trigger_at, or Host event id) so the Memory occurrence_key is reproducible across replays."
+  },
+  {
+   "id": "prospective-triggered-intent-has-no-host-exit",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-4"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-SCHEDULER-DUPLICATE"
+   ],
+   "evidence": "Probe E (probe_replay.log): after TIME_DUE moved the intent to revision 2 / triggered, EXPIRED(TRIGGERED→EXPIRED) on revision 2 raised 'prospective_scheduler_registration_not_live' because the trigger transaction appends only an invalidation for the old revision and no registration for the new one (sqlite_v5.py:9227-9241: registration rows are emitted only for pending/rescheduled). Hence no Host signal can move a triggered intent: the only exits are a MemoryMutationPlan transition (core/mutations.py:195-201: in_progress/completed/rescheduled/cancelled), suppression (inbox 'suppressed' flag, sqlite_v5.py:790-799), or a later revision superseding it. Memory keeps the matched/triggered inbox entry forever (probe 'inbox after expire'); human_memory_v7.py:35-37 _NON_PRESENTABLE_STATES = {cancelled, expired, forgotten, completed, superseded} is how the Host would notice a Memory-side exit. acceptance AC-4③ lists settled(expired); TC-HM-04:25 says '意图状态按 pending→triggered/settled 演化'.",
+   "status": "open",
+   "root_cause": "plan.md:169 names settled(acknowledged|suppressed|superseded|expired) without saying who drives Memory-side completion or what 'expired' means for a triggered-but-never-acked occurrence. Definite refinement: (a) Host settled(*) is Host-local and never fabricates a Memory transition; (b) settled(superseded|expired|suppressed) are DERIVED from Memory facts observed via the inbox/outbox (lifecycle_state ∈ _NON_PRESENTABLE_STATES, suppressed=true, or an invalidation outbox row for the presented revision) inside the scheduler tick, in one state.db transaction with the occurrence_presented projection row where a gate row is required; (c) Memory-side triggered→completed, if wanted for HM-AC-5 audit, is produced only by the post-turn analysis plan of the acking turn (validated by Memory's transition table; llm_payload_driven, not Host NL parsing) — record this as an explicit non-goal or goal in Task 6/7; (d) a Host expiry policy for presented-never-acked occurrences (if any) must be an explicit bounded rule in the v46 design freeze, otherwise 'pending 不丢' means the inbox message recurs every turn and no_recall stays blocked until ack — acceptable per program plan.md:102-103 but must be stated."
+  },
+  {
+   "id": "prospective-kill-point-transaction-map",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-4"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-PROTOCOL-REPLAY",
+    "FAIL-HALF-STATE"
+   ],
+   "evidence": "V0 SPIKE-CROSS-DB-TRIGGER (spikes/run_protocol_spikes.py:292-388; manifests/spike-manifest.json fault_points registration_commit/occurrence_commit/snapshot_commit/ack_commit; required one_occurrence_per_revision_event, pending_not_lost, snapshot_hash_replay, suppression_fail_closed) modelled a single Host table `occurrences(state pending→presented→acknowledged, snapshot_hash)` + `event_cursor` with INSERT OR IGNORE. Mapping to the real two-database design (Memory human_memory_v7.db vs Host state.db, no cross-DB ACID — acceptance 同事务边界): registration_commit = {Memory: outbox row (already durable, never mutated)} → {Host tx1: prospective_scheduler_registrations(received)+cursor} → {Memory tx: REGISTRATION_ACCEPTED consumption+registration event} → {Host tx2: state=accepted}; kill between tx1 and Memory tx replays the same deterministic ref (probe A1 identical result); kill between Memory tx and tx2 with a non-deterministic ref yields 'prospective_signal_replayed' (probe A2) — Host must not treat that as failure. occurrence_commit = {Memory tx: TIME_DUE/EVENT → trigger_event(occurrence_key)+revision bump+invalidation outbox} → {Host tx: prospective_occurrences(claimed) sourced from read_occurrence_inbox outcome='matched'}; a Host crash after the Memory commit followed by a fresh-identity re-issue is NOT a duplicate occurrence (probe B2: outcome ignored/prospective_signal_stale, extra inbox row with outcome='ignored' that the predicate drops, exactly one 'matched' per revision) but a Host that wrote 'claimed' from the IGNORED result would create a phantom row — the claim MUST come from the inbox entry. snapshot_commit = {Host tx: run_context_snapshot_receipts + prospective_occurrences.presented(run_id, snapshot_id)}: because presented does not enter the reconcile predicate (gate projection is written only at ack/settle), replay of prepare_snapshot recomputes the same pending list (ordered by occurred_at,event_id, first 8) and record_snapshot_receipt is idempotent on (run, turn, payload_hash) → snapshot_hash_replay holds; if the plan instead wrote occurrence_presented here, a kill after that write and before the provider call would drop the occurrence from the replayed snapshot (hash differs) and lose the pending. ack_commit = {Host tx: prospective_ack invocation row (sdk_run_id, occurrence_key) + prospective_occurrences.acknowledged + occurrence_presented projection}; lost tool ACK replays to the same receipt; the SDK tool-result → terminal path then drives settled(acknowledged) at record_sdk_terminal (foreground_queue.py:1853-1990 single BEGIN…commit, plan.md:73/97 terminal_commit_hooks). Suppression: reconcile predicate drops suppressed entries before they are ever pending (human_memory_v7.py:125-126) and the projection row is never written → content never enters Context (ASSET-SUPPRESSION-ORDER) regardless of kill point.",
+   "status": "open",
+   "root_cause": "The plan lists the four kill points but does not bind them to concrete tables/transactions; the V0 spike's single-table model hides the two-database boundary. Definite fix: write the above map into plan.md Task 6 (and the fault lane `prospective-occurrence` seams) with the three invariants that make it replay-safe — deterministic signal identity, inbox-sourced claims, and gate projection written only at inbox-clearing transitions."
+  }
+ ],
+ "cross_cluster_refs": [
+  {
+   "cross_cluster_ref": "cluster-closure-terminal-window",
+   "finding_ids": [
+    "prospective-ack-channel-undefined"
+   ],
+   "reason": "task_scope_update / TaskScopeMutationPlan is NOT the ack carrier (frozen fields, absent on standalone routes); settled(acknowledged) should ride the same record_sdk_terminal terminal_commit_hooks seam that cluster owns, so the hook contract must accept a prospective settle writer alongside closure/outbox writers."
+  },
+  {
+   "cross_cluster_ref": "cluster-testability-fault-lanes",
+   "finding_ids": [
+    "prospective-kill-point-transaction-map",
+    "prospective-registration-accepted-signal-step-missing"
+   ],
+   "reason": "The prospective-occurrence fault lane runner (plan.md:46 does not exist yet) must inject at the two-database seams mapped here (Host tx1/tx2 around each Memory apply_prospective_signal, snapshot receipt, ack tool commit) and assert 'ignored' inbox rows are not claimed and 'prospective_signal_replayed' is handled."
+  },
+  {
+   "cross_cluster_ref": "cluster-analysis-idempotency-lineage",
+   "finding_ids": [
+    "evidence-authority-principal-registration-missing"
+   ],
+   "reason": "The registration outbox only appears after the accepted plan is materialized (spike A2 step 4b) and read_outbox/read_occurrence_inbox reject the Host principal until the owner row is upgraded (spike A2 fact 10); the scheduler's outbox cursor loop is therefore blocked at cold start until Task 5's register_principal_owner lands — the scheduler must fail-closed (not fail-open) on short_horizon_principal_rejected."
+  }
+ ],
+ "conclusion": {
+  "status": "refined",
+  "summary": "Root causes of all three parents confirmed against the frozen SDK, the Memory wheel (0.6.0, two throwaway probes) and the v45 migration; two upgraded to P1 with definite fixes and one acceptance-wording scope-change-proposal added. Deterministic design: (1) ack INPUT = new Host tool `prospective_ack{occurrence_key}` (direct kernel, projectless-safe, default effect policy so it is exposed on all five routes), validated by exact membership of the 64-hex key the Host itself placed in the inbox message; terminal-based ack (option a) is rejected as input because it would mark refusals processed, but the acking run's terminal commit is the settled(acknowledged) driver. 'processed' must be redefined as 'durable prospective_ack receipt exists' (acceptance AC-4③/⑤ rewording needs user approval). (2) Canonical tables: Memory prospective_trigger_events/read_occurrence_inbox = occurrence identity; Host v46 prospective_occurrences = lifecycle claimed→presented→acknowledged→settled; v45 occurrence_presented = gate projection written ONLY when the occurrence leaves the mandatory inbox (ack or settled superseded/expired), in the same state.db transaction — never at snapshot injection, never for suppressed — which keeps the S5a read query and tests untouched and makes 'unacked → next turn still pending' and snapshot_hash_replay hold. (3) REGISTRATION_ACCEPTED (outbox-bound) is a hard prerequisite for any occurrence; Host must consume registration+invalidation outbox rows with a same-transaction cursor and deterministic signal identity so crash replays hit Memory's replay path instead of 'prospective_signal_replayed'/'stale'. (4) No Host signal can exit a triggered intent (EXPIRED is not_live after trigger); Memory-side completion is analysis-plan-only and Host settled(*) must be derived from inbox/outbox facts."
+ }
+}

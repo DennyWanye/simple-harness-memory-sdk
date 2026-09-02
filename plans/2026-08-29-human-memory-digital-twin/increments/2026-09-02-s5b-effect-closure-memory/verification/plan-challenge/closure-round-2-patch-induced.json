@@ -1,0 +1,71 @@
+{
+ "review_mode": "diff",
+ "note": "patch-induced P2 findings from closure round 2; gate requires closure set == canonical set, so kept here for audit; all five fixed in plan e5c61436…",
+ "findings": [
+  {
+   "id": "release-unit-task-count-mismatch",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "patch-induced",
+   "violated_acceptance_ids": [],
+   "assurance_contract_ids": [],
+   "evidence": "plan.md:163 says `check-release-unit（MUST AC=6、Task=11 含 4a/8b、高风险=3）`, but the task headings enumerate 12 tasks: 0, 1, 2, 3, 4a, 4, 5, 6, 7, 8, 8b, 9 (plan.md:160-231; `grep -n '^### Task' plan.md` → 12 hits). verification/plan-challenge-manifest.json still records task_count 10 and plan_lines 195 while the revised plan has 240 lines (≤ 2000, fine). The release-unit check in Task 0 must be re-run with Task=12 and the manifest release_unit refreshed; the high-risk count 3 is unchanged pending A11.",
+   "status": "open",
+   "root_cause": "The revision inserted two tasks (4a, 8b) but updated the release-unit count by only one; a stale number feeds the gate's release-unit check."
+  },
+  {
+   "id": "host-run-fault-event-kind-outside-recorder-allowlist",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "patch-induced",
+   "violated_acceptance_ids": [
+    "S5B-AC-1"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-TASKSCOPE-CANONICAL-STATE"
+   ],
+   "evidence": "Revised Task 1 maps the three Run-fault codes to 'durable FAILED + `host.run_fault` 事件' (plan.md:168) and Task 1 verification asserts 'durable FAILED + 稳定码' (plan.md:171). The S4 recorder rejects any event kind outside {host.turn, host.file, host.test} (backend/deskpet/task_scope/store.py:185; convenience wrappers :657-663), and the frozen material/trivial mapping table in the plan (plan.md:81) has no `host.run_fault` entry, while Task 2 requires mapping-table exhaustiveness (plan.md:178) and AC-1① requires every event kind to map deterministically. As written, emitting `host.run_fault` either fails at the recorder or leaves an unclassified kind. Fix (definite): either (a) extend the recorder allowlist + mapping table (`host.run_fault` = trivial) in Task 1/2 and the Task 0 design freeze, or (b) record the fault only as the foreground run's durable FAILED observation (foreground_runs) without a task_scope event, and drop the event from Task 1.",
+   "status": "open",
+   "root_cause": "The revision introduced a new Host objective-event kind without adding it to the S4 recorder allowlist or the frozen dirty-flag mapping table."
+  },
+  {
+   "id": "task-4a-host-wiring-precedes-evidence-authority-module",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "patch-induced",
+   "violated_acceptance_ids": [
+    "S5B-AC-6"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-COMPOSITION-FALLBACK"
+   ],
+   "evidence": "Task 4a (dependency: Task 0 only; '可与 Task 1–3 分兵，Memory 仓', plan.md:192; execution mode plan.md:234 claims file sets are disjoint) also changes Host files: `human_memory_v7.py` passes `supported_filter_policies`/evidence authority/first-build registration and deletes the fail-open branch, and bumps the Host pin (plan.md:189). But the Host evidence-authority module `backend/deskpet/memory/evidence_authority.py` is created in Task 4 (plan.md:195), which depends on 4a (plan.md:200) — a cycle in the Host wiring; and the Host pin bump changes the shared backend `.venv` wheel under Task 1–3 while they are still validated on 0.6.0. Fix: keep Task 4a Memory-repo-only (0.6.1 code, tests, wheel, manifest) and move the Host-side items (pin bump, supported_filter_policies, evidence authority wiring, register_principal_owner call, fail-open deletion + first-conversation regression) to the head of Task 4; alternatively create `evidence_authority.py` in Task 4a and state the venv switch point explicitly.",
+   "status": "open",
+   "root_cause": "Splitting the 0.6.1 core into Task 4a left Host-side wiring in the Memory-repo task while its Host dependency was placed in the later Task 4."
+  },
+  {
+   "id": "ac1-outbox-wording-vs-reservation-design",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "patch-induced",
+   "violated_acceptance_ids": [
+    "S5B-AC-1"
+   ],
+   "assurance_contract_ids": [],
+   "evidence": "CURRENT S5B-AC-1① reads 'Harness Provider/Tool/Context/Route 证据由 Host 侧 source-ledger outbox 按 source_event_id+payload_hash 幂等导入并推进 task_scope_run_watermarks'. The revised plan deletes the outbox/worker (plan.md:84, 153) and replaces it with same-transaction ingest plus `harness_evidence_reservations` (plan.md:118, 124, 177). All verifiable properties of the clause are preserved (source_event_id+payload_hash idempotency via `ExecutionEvidenceIngress.ingest`, watermark advance, four Harness kinds, run_terminal last), so this is a mechanism-noun drift rather than a semantic violation, but none of A1–A12 covers the wording. Fix: add an amendment (A13) rewording 'source-ledger outbox' to 'source-ledger reservation + same-transaction ingest', or record the interpretation in the Task 0 verification-spec oracle notes so the gate does not read the plan as diverging from acceptance.",
+   "status": "open",
+   "root_cause": "The revision changed the Harness-evidence import mechanism named in the acceptance text without proposing the corresponding acceptance amendment."
+  },
+  {
+   "id": "plan-lane-count-narrative-stale",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "patch-induced",
+   "violated_acceptance_ids": [],
+   "assurance_contract_ids": [],
+   "evidence": "plan.md:52 (investigation item 7, untouched by the revision) still states '本增量兑现前三条' for the fault-matrix lanes, while the revised file table (plan.md:141) and Task 0 (plan.md:161) commit to four lanes including `taskscope-init-binding`. The contradiction that finding `fault-runners-built-after-they-are-needed` named ('lane 数量在 plan 内自相矛盾') therefore survives in the narrative section. Fix: change plan.md:52 to '本增量兑现四条'.",
+   "status": "open",
+   "root_cause": "The revision fixed the lane count in the normative sections but left the investigation narrative stale."
+  }
+ ]
+}

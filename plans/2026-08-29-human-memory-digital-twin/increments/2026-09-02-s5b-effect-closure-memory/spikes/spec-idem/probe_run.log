@@ -1,0 +1,19 @@
+2026-09-02 18:35:13 [info     ] memory.evidence_ingested       envelope_hash=80a39eeea71f0c6a5be696bb69341abf2e7370fb70b94eb5a216875854bfa3b3 evidence_id_hash=46b66565e7f174d4eabdf87aaa04ba4850413b5de258500a138601c5a99b013d source_ref_hash=3cecf9026aefccbd5ce2ab173f8847eb8175c32fd9250d2769af2d70a56879d1
+P1 first run_once -> retry_scheduled request: {"job_id": "analysis-batch-65017aa0b1e9c", "attempt": 1, "request_hash": "5e465a7edef1", "idempotency_key": "analysis-batch-65017aa0b1e9c", "evidence": ["evidence-1"], "provider_id": "worker-const-provider", "model_id": "worker-const-model", "evidence_set_key": "bf3822cf34ec"}
+   batches: [('analysis-batch-65017aa0b1e9c', 1, 'failed')]
+   jobs: [('evidence-mutation-job-9b5560', 'pending', 1, 103.0)]
+2026-09-02 18:35:13 [info     ] memory.evidence_ingested       envelope_hash=dc51646038522b47b9082ba134c77e86c3b354b552484f9419a539156ff3fc48 evidence_id_hash=0c9f4ab1aeaabc9d389c9641396e4b9680014c4de850181f64e1800bd9069dfe source_ref_hash=a713dffeb4a25e691f89a1a8ecbd0bfdcfe09080e978ce5e308f0c27fb72a117
+P1/P2 retry run_once -> retry_scheduled request: {"job_id": "analysis-batch-29a53765591e0", "attempt": 2, "request_hash": "be9048aa8254", "idempotency_key": "analysis-batch-29a53765591e0", "evidence": ["evidence-2", "evidence-1"], "provider_id": "worker-const-provider", "model_id": "worker-const-model", "evidence_set_key": "2399f0a40ba3"}
+   same batch_id? False | same request_hash? False | same idempotency_key? False | same evidence_set_key? False
+   batches: [('analysis-batch-65017aa0b1e9c', 1, 'failed'), ('analysis-batch-29a53765591e0', 2, 'failed')]
+   provider_calls: 0
+2026-09-02 18:35:13 [info     ] memory.evidence_ingested       envelope_hash=80a39eeea71f0c6a5be696bb69341abf2e7370fb70b94eb5a216875854bfa3b3 evidence_id_hash=46b66565e7f174d4eabdf87aaa04ba4850413b5de258500a138601c5a99b013d source_ref_hash=3cecf9026aefccbd5ce2ab173f8847eb8175c32fd9250d2769af2d70a56879d1
+P1b same-membership retries -> last outcome dead_letter attempts [1, 2, 3] distinct request_hash 3 distinct evidence_set_key 1
+   jobs: [('evidence-mutation-job-9b5560', 'dead_letter', 3, 'analysis_executor_failed')]
+2026-09-02 18:35:13 [info     ] memory.evidence_ingested       envelope_hash=80a39eeea71f0c6a5be696bb69341abf2e7370fb70b94eb5a216875854bfa3b3 evidence_id_hash=46b66565e7f174d4eabdf87aaa04ba4850413b5de258500a138601c5a99b013d source_ref_hash=3cecf9026aefccbd5ce2ab173f8847eb8175c32fd9250d2769af2d70a56879d1
+P3 host crashed mid-call; jobs: [('evidence-mutation-job-9b5560', 'claimed', 1, 310.0)]
+P3 reclaim run_once -> retry_scheduled | same batch_id? True | same request_hash? True | same attempt? True
+   events: [('provider_handoff', 'analysis_provider_handoff'), ('reclaimed', 'analysis_lease_reclaimed'), ('retry_scheduled', 'analysis_executor_failed')]
+P4 after refusal run_once -> retry_scheduled | new attempt 2 | same request_hash as crashed? False | same evidence_set_key? True
+P4 third -> dead_letter jobs: [('evidence-mutation-job-9b5560', 'dead_letter', 3, 'analysis_executor_failed')] outbox: [('memory.mutation.requested', 'dead_letter')]
+   total Host provider_calls across all executors: 0

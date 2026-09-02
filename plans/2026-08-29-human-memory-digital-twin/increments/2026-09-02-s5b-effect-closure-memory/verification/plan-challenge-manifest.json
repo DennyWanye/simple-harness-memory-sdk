@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.5.0",
+  "acceptance_file": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/acceptance.md",
+  "repo_root": "/Users/taiwan/PROJECTS/SimplaHarness/simple-harness-memory-sdk",
+  "source_request_text": "HANDOFF-S5b：从 S5b 起接手 human-memory program（Task 5 effect gate / Task 6 semantic closure / Task 7 Memory analysis+outbox+Prospective+即时操作）直至收官；本账本只承载 plan challenge loop，验收 run 另开",
+  "flow_tier": {"value": "FULL", "rationale": "v46 迁移 + 公共 Provider 后台调用 + 跨三仓 + LLM 载荷驱动状态机 + 共享生产 composition", "decided_by": "agent"},
+  "applicability": {
+    "input_sensitive": {"value": true, "rationale": "closure/analysis/Prospective/forget 正确性随自然语言语义变化", "decided_by": "agent"},
+    "llm_payload_driven": {"value": true, "rationale": "TaskScopeMutationPlan/MemoryMutationPlan/memory tool 载荷驱动 Host 与 Memory 状态机", "decided_by": "agent"},
+    "stateful_init": {"value": true, "rationale": "v46 新持久化状态 + fresh userdata 冷启动直达对话", "decided_by": "agent"}
+  },
+  "executor_engine": "claude-fable-5.1",
+  "challenger_engine": "claude",
+  "auditor_engine": "opus-4.8",
+  "active_run_required": false,
+  "release_unit": {"slice_id": "S5B-EFFECT-CLOSURE-MEMORY", "parent_program": "human-memory-digital-twin", "must_ac_count": 6, "task_count": 10, "plan_lines": 195, "high_risk_subsystems": 3, "concurrent_layer_kinds": 3},
+  "scenarios": [
+    {"scenario_id": "S5B-S1-REAL-EFFECT-CLOSURE-MEMORY", "required": true, "gate_type": "positive-value", "input_class": "real-provider-effect-closure-memory", "ui": true, "manual_required": true, "min_root_runs": 2, "cold_start": false, "expected_run_created": true},
+    {"scenario_id": "S5B-S2-CLOSURE-FAULT-MATRIX", "required": true, "gate_type": "negative-safety", "input_class": "deterministic-closure-faults", "ui": false, "manual_required": false, "min_root_runs": 1, "cold_start": false, "expected_run_created": true},
+    {"scenario_id": "S5B-S3-ANALYSIS-IDEMPOTENCY-FAULTS", "required": true, "gate_type": "negative-safety", "input_class": "deterministic-analysis-idempotency", "ui": false, "manual_required": false, "min_root_runs": 1, "cold_start": false, "expected_run_created": false},
+    {"scenario_id": "S5B-S4-EFFECT-GATE", "required": true, "gate_type": "negative-safety", "input_class": "deterministic-effect-gate", "ui": false, "manual_required": false, "min_root_runs": 1, "cold_start": false, "expected_run_created": true},
+    {"scenario_id": "S5B-S5-REAL-PROSPECTIVE", "required": true, "gate_type": "positive-value", "input_class": "real-provider-prospective", "ui": true, "manual_required": true, "min_root_runs": 2, "cold_start": false, "expected_run_created": true},
+    {"scenario_id": "S5B-S6-REAL-REMEMBER-FORGET", "required": true, "gate_type": "positive-value", "input_class": "real-provider-remember-forget", "ui": true, "manual_required": true, "min_root_runs": 2, "cold_start": false, "expected_run_created": true},
+    {"scenario_id": "S5B-S7-COLDSTART-COMPOSITION-PAYLOAD", "required": true, "gate_type": "negative-safety", "input_class": "cold-start-composition-payload", "ui": true, "manual_required": true, "min_root_runs": 1, "cold_start": true, "expected_run_created": true},
+    {"scenario_id": "S5B-REG-FULL", "required": true, "gate_type": "negative-safety", "input_class": "regression", "ui": false, "manual_required": false, "min_root_runs": 1, "cold_start": false, "expected_run_created": false}
+  ]
+}

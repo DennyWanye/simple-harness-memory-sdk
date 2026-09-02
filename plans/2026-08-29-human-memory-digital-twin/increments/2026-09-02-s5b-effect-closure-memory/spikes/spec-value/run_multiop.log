@@ -1,0 +1,10 @@
+[two-ops] run_once=['MemoryWriterConflict:analysis_audit_decisions_differ', 'idle']; jobs=['claimed']; batches=['audit_pending']; plan op order=[['remember-location-hangzhou-binjiang', 'remember-python-backend']]; decision_records ORDER BY decision_id=[('a090febc73', 'remember-python-backend'), ('2e6c1d9584', 'remember-location-hangzhou-binjiang')]
+[two-ops-swapped-ids] run_once=['applied', 'idle']; jobs=['applied']; batches=['applied']; plan op order=[['op-a', 'op-b']]; decision_records ORDER BY decision_id=[('1064d8651e', 'op-a'), ('403c7b9f7f', 'op-b')]
+[two-ops-sorted-ids] run_once=['MemoryWriterConflict:analysis_audit_decisions_differ', 'idle']; jobs=['claimed']; batches=['audit_pending']; plan op order=[['op-a', 'op-b']]; decision_records ORDER BY decision_id=[('77447aace9', 'op-b'), ('05f0ca596f', 'op-a')]
+[one-op-reads] run_once=['applied', 'idle']; jobs=['applied']; batches=['applied']; plan op order=[['op-1']]; decision_records ORDER BY decision_id=[('b2e00cc27c', 'op-1')]
+  [one-op-reads] count heads: 0
+  [one-op-reads] read_outbox placeholder: OutboxPageV1
+  [one-op-reads] read_occurrence_inbox placeholder: OccurrenceInboxPageV1
+  [one-op-reads] recall_short_horizon placeholder: ShortHorizonRecallResult
+  [one-op-reads] apply 125a8264: TimeoutError: 
+  [one-op-reads] heads after apply: 0 analysis_head: 2 cognitive_head: None

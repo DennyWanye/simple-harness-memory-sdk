@@ -1,0 +1,88 @@
+{
+ "cluster": {
+  "cluster_id": "cluster-closure-terminal-window",
+  "parent_finding_ids": [
+   "harness-evidence-outbox-async-vs-run-terminal-ordering",
+   "closure-fallback-window-durable-state-and-recovery",
+   "pending-closure-bound-to-scope-not-conversation",
+   "task-scope-update-projectless-safe-vs-dirty-exposure"
+  ],
+  "specialty": "failure-recovery",
+  "question": "SDK terminal 与 Host record_sdk_terminal（同时是 lease 释放）之间插入的 closure 兜底窗口，在 crash/lease 到期/重放下是否有 durable 状态保证「恰一次 Provider 调用、不半状态」？Harness 证据经 Host 内 outbox+异步 worker 导入与 run_terminal 的 next_sequence/连续 seq 约束如何排序而不丢行？semantic_closure_pending 归属于 scope 时，后续轮路由到 standalone/其它 scope 时债务如何终止？",
+  "required_evidence": [
+   "foreground_runtime.py:700-934 reconcile 分支对「SDK terminal 已到、Host 未终态、post_turn_invocation_attempts 有 reserved/handed_off 行」的处理设计",
+   "evidence_ingress.py ingest/authorize_terminal 与 plan 的 harness_evidence_outbox worker 的排序/阻塞契约",
+   "SDK checkpoint tool_batch_reserved 在 Host recovery fence 下的行为（是否重放已保留 effect）",
+   "pending closure 跨 Run/跨路由的 base_revision、evidence_refs、终止条件设计"
+  ],
+  "specialist_required": true
+ },
+ "parent_findings": [
+  {
+   "id": "harness-evidence-outbox-async-vs-run-terminal-ordering",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-1"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-HALF-STATE",
+    "FAIL-PROTOCOL-REPLAY",
+    "ASSET-FOREGROUND-RUN-ORDER"
+   ],
+   "evidence": "execution/evidence_ingress.py:53-127 ingest 要求 per-run 连续 source_sequence、terminal 后拒绝、run_terminal 必须最后; foreground_runtime.py:1233-1260 terminal observer 同步以 authority[next_sequence] 合成并 ingest run_terminal 后立即 authorize_terminal; plan.md:141 Task 2 ② 把 provider/tool/snapshot/route 证据先写 `harness_evidence_outbox` 再由「ingest worker 顺序导入并推进水位」，`run_terminal` 由既有 observer 最后写; plan.md:142 只把乱序/缺口归为 TerminalWatermarkPending，未定义 observer 与 worker 的同步/排空关系; 这些 Harness 证据的生产者全在 Host 进程内（provider.py adapter、tool executor、context_authority、route ledger），并非跨库",
+   "status": "open",
+   "root_cause": "为 Host 进程内自产的 Harness 证据引入 outbox+异步 worker 间接层，使 run_terminal 的 next_sequence 分配与 worker 导入之间出现竞争：terminal 先到则后续 worker 行被「terminal 后拒」永久丢弃或 sequence 冲突，worker 先到则 terminal 必须等待其排空——plan 未定义哪一方阻塞、上界与 crash 后重放顺序；既有 ExecutionEvidenceIngress 已是同步直写路径，间接层是无必要的失败域扩张。"
+  },
+  {
+   "id": "closure-fallback-window-durable-state-and-recovery",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-1"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-SEMANTIC-CLOSURE",
+    "FAIL-HALF-STATE",
+    "ASSET-FOREGROUND-RUN-ORDER",
+    "FAIL-DUPLICATE-PROVIDER-CALL"
+   ],
+   "evidence": "foreground_queue.py record_sdk_terminal (:1853-1990) 单事务且同事务 UPDATE foreground_run_heads owner_id=NULL, lease_expires_at=NULL（终态提交 = lease 释放）; plan.md:148 Task 3 ③④: 终态门在 record_sdk_terminal 钩子内查 closure receipt，兜底调用发生在「观察者收到 SDK terminal 之后、record_sdk_terminal 之前」（deadline = provider timeout，A1 实测 16.6-33.9s: spikes/a1/RESULT.md:6）; foreground_runtime.py:884-934 _observe_with_heartbeats → record_sdk_terminal; foreground_runtime.py:700-918 runtime-reconcile 分支（missing/pre-start/start-missing/terminal）无 closure-in-flight 分支; spikes/a3/RESULT.md:65 Host authority 异常逃出 ReActLoop 时 checkpoint 停在 tool_batch_reserved——同类「SDK 终态与 Host 终态之间」的窗口已被证实存在",
+   "status": "open",
+   "root_cause": "closure 兜底调用被插入 SDK terminal 与 Host terminal commit 之间的窗口，而该窗口在 Host 只有 lease 心跳没有 durable 「closure attempt in flight」状态：plan 未定义 crash-restart 时 reconcile 如何区分「兜底未发/已发未知/已成功未写 receipt」、lease 到期后另一 worker 是否会重复兜底（第二次 Provider 调用）、以及 SDK 侧 Run fault 留下 tool_batch_reserved checkpoint 时 recovery fence 是否会尝试恢复已保留的 effect batch。"
+  },
+  {
+   "id": "pending-closure-bound-to-scope-not-conversation",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-1"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-TASKSCOPE-CANONICAL-STATE",
+    "FAIL-SEMANTIC-CLOSURE"
+   ],
+   "evidence": "acceptance.md:60 AC-1③「下一轮 initial snapshot 携带 pending 要求」; plan.md:148 Task 3 ① Host 从 envelope/route receipt 填 task_scope_id 等字段，模型只填 outcome/base_revision/operations/closure_reason/evidence_refs/idempotency_key; plan.md:148 ④「下一轮 snapshot 继续注入」; task_scope/store.py:234-338 apply_mutation_plan 校验 refs 属本 scope + CAS base_revision（notes-investigation-task6.md:26）; 五路路由（program HM-AC-4）下一轮可能是 direct_standalone/memory_standalone/其它 scope",
+   "status": "open",
+   "root_cause": "semantic_closure_pending 是某个 TaskScope 的债务，但补交通道 task_scope_update 的 scope 身份来自「当前轮」route receipt；下一轮若路由到 standalone 或另一 scope，pending 既无法在该轮补交，也没有任何机制保证用户回到该 scope，导致 STATUS 与真实文件变更长期不一致——恰是主要矛盾要否定的状态；plan 未定义 pending 的归属、跨 Run 的 base_revision/evidence_refs 口径与终止条件（如 close/resume 时强制收口）。"
+  },
+  {
+   "id": "task-scope-update-projectless-safe-vs-dirty-exposure",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-1"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-TASKSCOPE-CANONICAL-STATE"
+   ],
+   "evidence": "plan.md:146 把 task_scope_update 加入 PROJECTLESS_SAFE_TOOL_NAMES（Run 级投影常量，sdk_adapters/tools.py:50）; plan.md:148 ② 同时要求只在 dirty/pending 时把它放入暴露集; direct_standalone/memory_standalone 轮次无 scope 可更新",
+   "status": "advisory",
+   "root_cause": "工具的暴露来源在 plan 内有两个互相冲突的口径（Run 级 safe 集合 vs per-turn dirty 条件），且未定义 standalone 轮次模型调用它时的稳定拒绝 reason。"
+  }
+ ]
+}

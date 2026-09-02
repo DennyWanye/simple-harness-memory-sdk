@@ -1,0 +1,99 @@
+{
+  "verdict": "LEAN",
+  "mode": "plan-pass",
+  "plan_sha256": "e5c61436c8a93eeb7bef60834949c2726124b4099e58dc2adc86e8cc45dd55b7",
+  "acceptance_basis": "acceptance.md + acceptance-amendments-proposed.md A1–A13 视为目标验收；challenge-synthesis 28 条 decision 绑定项未提议删除",
+  "checked_and_kept": [
+    "v46 表 task_scope_closure_receipts / harness_evidence_reservations / memory_ingestion_outbox(+_evidence_links) / post_turn_invocation_attempts(+_members) / prospective_scheduler_registrations / prospective_outbox_cursor / prospective_occurrences / effect_gate_rejections / host_pre_admission_audit：各自绑定 AC-1①③(A13)、AC-2①③(A10)、AC-4①③(A7/A8)、AC-3④、AC-6④ 或 challenge decision，未提议删除",
+    "新工具 task_scope_update / prospective_ack：AC-1②、A7 decision 绑定",
+    "新模块 effect_gate / semantic_closure / post_turn_invoker / analysis_proposal / analysis_executor / memory_ingestion_outbox / evidence_authority / prospective_scheduler / prospective_ack / task_scope_mutation：每个都有 AC 或 decision 绑定；RunBoundInvoker 为三消费者共用（非单实现抽象）",
+    "Memory 0.6.1 API ①–⑥：A2/A9/AC-6③ 绑定；base_revision 端口因 Host 不可回读 Memory backend（死锁已观测）不可替代",
+    "ProviderInvocationCoordinator 整体复用已被 plan 正确否决（绑定 workflow ProviderInvocationUnitOfWork + ProviderFenceLease/stream_epoch，适配成本高于最小自实现）；ReminderScheduler 实例复用因跨库事务被 D4 否决；Task 8b / 四 lane runner 前移 / route-aware 隐藏均为 decision 或 A4/A12 要求"
+  ],
+  "findings": [
+    {
+      "id": "min-1",
+      "tag": "merge",
+      "target": "文件影响清单 `backend/deskpet/execution/harness_evidence.py`（新）/ Task 2 ②③",
+      "current": "新建模块负责 Harness 证据同事务直写、`harness_evidence_reservations` 预留、terminal observer 排空与 `next_sequence=MAX(reservations∪receipts)+1`；而既有 `ExecutionEvidenceIngress`（`backend/deskpet/execution/evidence_ingress.py`，240 行）已独占 `task_scope_execution_ingest_receipts`、`ingest()`、`authorize_terminal()`、`_advance_watermark_tx()`、`_watermark_tx()`，两处将各自持有水位规则",
+      "replacement": "不建新文件：在 `ExecutionEvidenceIngress` 上加 `reserve_tx(db, *, run_id, source_sequence, source_event_id)`、`ingest_tx(db, ...)`（把现有 `ingest()` 体拆成 tx 版 + 自开事务壳）、`drain_reserved_tx(db, run_id)`（ingest 或 tombstone status=abandoned），并把 `next_sequence` 规则改在 `_watermark_tx` 内统一为 MAX(reservations ∪ receipts)+1；Task 2 的 provider.py/context_authority.py/context_route.py 各提交点直接调用 tx 版方法",
+      "preserves_acceptance": ["S5B-AC-1①(A13)", "S5B-AC-1③"],
+      "risk_impact": "none（同一类持有 receipts + reservations + watermark，消除 probe A9 型两处水位口径漂移的机会）",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    },
+    {
+      "id": "min-2",
+      "tag": "reuse",
+      "target": "文件影响清单 `effect_gate.py` 的 `ObjectiveEventRecorder` / Task 2 ①",
+      "current": "在 effect_gate.py 内新建 `ObjectiveEventRecorder`（工具→事件映射 + material/trivial 分类 + 写 host.file/host.test 事件与 evidence 行）；既有 `TaskEventRecorder`（`backend/deskpet/task_scope/store.py:650`，record_turn/record_file/record_test → `CanonicalTaskScopeStore.append_host_event`，source_event_id 幂等）零生产调用，AC-1① 原文即要求『由 Host 直接写 S4 recorder』",
+      "replacement": "映射表与 material/trivial 分类作为冻结常量（`EFFECT_EVENT_MAP`）留在 effect_gate.py；写入路径复用 `TaskEventRecorder.record_file/record_test`（source_event_id=`effect:{effect_id}`），如需同事务写 `human_memory_evidence` 行则给 `CanonicalTaskScopeStore.append_host_event` 加可选 `evidence=` 参数（内部已有 `_append_event_tx`/`_link_refs_tx` 原语），不新增 recorder 类",
+      "preserves_acceptance": ["S5B-AC-1①", "S5B-AC-6（recorder 进生产）"],
+      "risk_impact": "none（幂等与事件集合 {host.turn,host.file,host.test} 由既有 store 校验保持）",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    },
+    {
+      "id": "min-3",
+      "tag": "delete",
+      "target": "Task 5 / 文件影响清单 memory-sdk 0.6.1 第⑦项 `AnalysisExecutorPermanentError`（可选）",
+      "current": "0.6.1 公共 API 面追加一个可选的永久错误类型供 executor 短路 dead-letter；plan 自身在 Task 4 ③⑤ 已把 `binding_unrebuildable:*` 归为 `not_sent`（0 Provider 调用）并由 worker 把 finalize/永久失败映射为 Memory failed/dead_letter + Host `memory.analysis.dead_letter` 事件；challenge decision 原文为『Memory dead_letter（或 0.6.1 AnalysisExecutorPermanentError）』，二者择一",
+      "replacement": "从 0.6.1 API 面删除⑦，只走既有 job 状态机 failed→dead_letter（有界重试，重试期间 executor 仍在发送前返回 not_sent，Provider 计数恒 0）；Task 0 设计冻结的『Memory 0.6.1 API 面（七项）』改为六项；Task 5 只剩 pre-admission audit、BLOCKED_UNTIL_S5 翻转与 cutover 子项",
+      "preserves_acceptance": ["S5B-AC-2①⑥", "S5B-AC-6③", "A2"],
+      "risk_impact": "有界的零调用重试后才 dead-letter（延迟到达 dead_letter，无重复 Provider 调用、无半状态）",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    },
+    {
+      "id": "min-4",
+      "tag": "merge",
+      "target": "v46 表 `prospective_ack_invocations(sdk_run_id, occurrence_key UNIQUE)` / Task 6 ⑤",
+      "current": "ack 幂等用独立表记录；同一迁移里 `prospective_occurrences`（occurrence_key PK，state claimed|presented|acknowledged|settled，已含 `ack_run_id/ack_receipt` 列）已承载同一事实，两表在 occurrence_key 上 1:1",
+      "replacement": "删除 `prospective_ack_invocations`；`prospective_ack` handler 单事务：CAS `state presented→acknowledged` 并写 `ack_run_id/ack_receipt/acknowledged_at`，以 v45 `occurrence_presented_guard` 同款单调触发器保证 ack 字段一经写入不可变；重放（同 run 或不同 run）命中 state=acknowledged 时返回既有 receipt、不再写；投影行 `occurrence_presented` 照常同事务写",
+      "preserves_acceptance": ["S5B-AC-4③(A7)", "S5B-AC-4④"],
+      "risk_impact": "none（decision `prospective-ack-channel-undefined` 要求的『幂等调用行』由 occurrence 行的 ack 列 + 单调触发器承载，durable receipt 语义不变）",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    },
+    {
+      "id": "min-5",
+      "tag": "delete",
+      "target": "v46 表 `post_turn_invocation_attempts_events`",
+      "current": "五态 attempt 主表之外再建 `_events` 子表记录状态迁移；同批 v46 的其它状态表（`prospective_occurrences`、`prospective_scheduler_registrations`）均以行内 state + 单调触发器表达迁移，且五态机 reserved→handed_off→succeeded|failed|unknown 每状态至多进入一次，事件表无额外信息",
+      "replacement": "删除 `_events`；主表加 `reserved_at/handed_off_at/settled_at`、`request_hash/request_public_hash/result_hash/validator_receipt_hash`、`unknown_class`、`provider_request_id` 列，单调触发器禁止回退与改写已写列（沿用 v45 guard 模式）；lane `memory-mutation-plan` 的『attempt 五态 reconcile』seam 断言改查主表列",
+      "preserves_acceptance": ["S5B-AC-2②③(A10)", "S5B-AC-2⑥"],
+      "risk_impact": "none（每次迁移的时间戳与 receipt hash 仍永久落盘；ASSET-PROVIDER-IDEMPOTENCY 由 UNIQUE(request_hash,attempt_ordinal)+members 索引承载，不依赖事件表）",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    },
+    {
+      "id": "min-6",
+      "tag": "merge",
+      "target": "Complexity inventory『新后台任务』：ingestion outbox worker / `DurableMemoryJobRunner` 驱动 / prospective scheduler tick 三个独立 asyncio 循环（Task 4 ⑤、Task 6 `main.py`（tick 任务）、`memory_ingestion_outbox.py` worker）",
+      "current": "三个后台组件各自 create_task + 各自 stop/drain/close 生命周期，main.py 需登记三处任务集与三处关停路径",
+      "replacement": "一个 Host `MemoryAsyncLane`（单 asyncio task，沿用 `product_outbox.py:267-296` `_run/drain/close` 骨架：run-once→无工作则等 poll/stop 事件、close 时有界 drain）按固定顺序每轮调用 `scheduler.tick()` → `ingestion_outbox.run_once()` → `job_runner.run_once()`；三个组件对象仍分别注入且逐缺件 startup fail（AC-6①），只是共享一个驱动与一个生命周期；`_MEMORY_LANE_ENABLED` 之类开关不新增",
+      "preserves_acceptance": ["S5B-AC-2①②", "S5B-AC-4②", "S5B-AC-6①", "ASSET-FOREGROUND-RUN-ORDER"],
+      "risk_impact": "scheduler tick 最坏延后一次 analysis 调用时长（实测 16–34s）；交付通道只有『下一轮 Context』且 tick 排在每轮最前，对可观察行为无影响；如需隔离可把 job_runner 独立、其余两者合并（仍少一个任务）",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    },
+    {
+      "id": "min-7",
+      "tag": "inline",
+      "target": "文件影响清单 `backend/deskpet/memory/pre_admission_audit.py`（新）/ Task 5",
+      "current": "为『Harness 拒绝的非法载荷写 `host_pre_admission_audit` 行』新建一个只含单一 append 函数的模块，再从各拒绝点接线",
+      "replacement": "不建文件：在本增量唯一的两个 Host 侧 pre-admission 拒绝点就地写入——`tools/memory_tools.py` 真实 handler 的载荷校验失败分支、`memory/analysis_executor.py` 的 proposal 编译/validator 拒绝分支——通过同一个 state.db 写入原语（`CanonicalTaskScopeStore` 或 `foreground_queue` 的 append 方法）落 `host_pre_admission_audit` 行；表与 TC-HM-08 oracle 不变",
+      "preserves_acceptance": ["S5B-AC-6④", "S5B-S7 pre-admission audit 行"],
+      "risk_impact": "none",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    }
+  ]
+}

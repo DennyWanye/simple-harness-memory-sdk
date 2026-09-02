@@ -1,0 +1,450 @@
+........................................................................ [  1%]
+........................................................................ [  2%]
+........................................................................ [  3%]
+..................................................F.F................... [  4%]
+........................................................................ [  5%]
+................................................F....................... [  6%]
+........................................................................ [  7%]
+........................................................................ [  9%]
+..................s.sssssssss........................................... [ 10%]
+........................................................................ [ 11%]
+........................................................................ [ 12%]
+........................................................................ [ 13%]
+...............................................F........................ [ 14%]
+........................................................................ [ 15%]
+........................................................................ [ 17%]
+........................................................................ [ 18%]
+........................................................................ [ 19%]
+........................................................................ [ 20%]
+........................................................................ [ 21%]
+........................................................................ [ 22%]
+...................................F.................................... [ 23%]
+........................................................................ [ 24%]
+........................................................................ [ 26%]
+........................................................................ [ 27%]
+........................................................................ [ 28%]
+........................................................................ [ 29%]
+........................................................................ [ 30%]
+........................................................................ [ 31%]
+........................................................................ [ 32%]
+........................................................................ [ 34%]
+........................................................................ [ 35%]
+........................................................................ [ 36%]
+............................s........................................... [ 37%]
+........................................................................ [ 38%]
+........................................................................ [ 39%]
+........................................................................ [ 40%]
+........................................................................ [ 42%]
+........................................................................ [ 43%]
+........................................................................ [ 44%]
+........................................................................ [ 45%]
+........................................................................ [ 46%]
+........................................................................ [ 47%]
+.................s.....s..sss.............................F............. [ 48%]
+........................................................................ [ 49%]
+.........................ssssss......................................... [ 51%]
+........................................................................ [ 52%]
+........................................................................ [ 53%]
+........................................................................ [ 54%]
+........................................................................ [ 55%]
+........................................................................ [ 56%]
+..ss.................................................................... [ 57%]
+..................................s..................................... [ 59%]
+........................................................................ [ 60%]
+........................................................................ [ 61%]
+........................................................................ [ 62%]
+........................................................................ [ 63%]
+.................................................ssssssss............... [ 64%]
+........................................................................ [ 65%]
+........................................................................ [ 67%]
+.........................................................sssssss..ssssss [ 68%]
+s....................................................................... [ 69%]
+........................................................................ [ 70%]
+........................................................................ [ 71%]
+........................................................................ [ 72%]
+...................................................F.................... [ 73%]
+........................................................................ [ 74%]
+........................................................................ [ 76%]
+....................................................s................... [ 77%]
+........................................................................ [ 78%]
+........................................................................ [ 79%]
+........................................................................ [ 80%]
+........................................................................ [ 81%]
+........................................................................ [ 82%]
+........................................................................ [ 84%]
+........................................................................ [ 85%]
+.................................................................s...... [ 86%]
+........................................................................ [ 87%]
+..................s..................................................... [ 88%]
+........................................................................ [ 89%]
+........................................................................ [ 90%]
+........................................................................ [ 92%]
+........................................................................ [ 93%]
+........................................................................ [ 94%]
+........................................................................ [ 95%]
+........................................................................ [ 96%]
+........................................................................ [ 97%]
+........................................................................ [ 98%]
+........................................................................ [ 99%]
+...                                                                      [100%]
+=================================== FAILURES ===================================
+_________ test_atomic_publisher_install_update_rollback_and_uninstall __________
+
+tmp_path = PosixPath('/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-273/test_atomic_publisher_install_0')
+
+    @pytest.mark.asyncio
+    async def test_atomic_publisher_install_update_rollback_and_uninstall(
+        tmp_path,
+    ) -> None:
+        lock = asyncio.Lock()
+        manager, store, registry, _publisher = await _runtime(
+            tmp_path,
+            publish_lock=lock,
+        )
+        hub = CapabilityHub(
+            store=store,
+            registry_source=ToolRegistryCatalogSource(registry),
+            publish_lock=lock,
+        )
+        v1 = _write_pack(tmp_path / "v1", version="1.0.0", revision="r1")
+        first = await manager.install(
+            v1,
+            scope="user",
+            scope_key="default",
+            idempotency_key="install-v1",
+            expected_pack_id="godot",
+        )
+        first_snapshot = await hub.snapshot_and_acquire_lease(
+            run_id="run-v1",
+            root_run_id="root-v1",
+            scope=CapabilityScope(),
+        )
+        projected = first_snapshot.get("godot")
+>       assert projected is not None and projected.executable
+E       AssertionError: assert (CapabilityDescriptor(version=CapabilityVersionDescriptor(capability_id='godot', display_name='Godot', version='1.0.0',...n=1, skill_revision=0, mcp_revision=0, fingerprint='451c856bc85e870adc6ffcc49a00024d077dbb23d54b06c8a31e061b98c81e39')) is not None and False)
+E        +  where False = CapabilityDescriptor(version=CapabilityVersionDescriptor(capability_id='godot', display_name='Godot', version='1.0.0',...n=1, skill_revision=0, mcp_revision=0, fingerprint='451c856bc85e870adc6ffcc49a00024d077dbb23d54b06c8a31e061b98c81e39')).executable
+
+tests/capabilities/test_registry_publisher.py:213: AssertionError
+----------------------------- Captured stderr call -----------------------------
+{"event": "capability_registry_tool_excluded_missing_build_identity name=godot__check", "level": "info", "logger": "deskpet.capabilities.hub", "timestamp": "2026-09-02T09:45:26.727847Z"}
+{"event": "capability_registry_tool_excluded_missing_build_identity name=godot__check", "level": "info", "logger": "deskpet.capabilities.hub", "timestamp": "2026-09-02T09:45:26.730019Z"}
+------------------------------ Captured log call -------------------------------
+INFO     deskpet.capabilities.hub:hub.py:114 capability_registry_tool_excluded_missing_build_identity name=godot__check
+INFO     deskpet.capabilities.hub:hub.py:114 capability_registry_tool_excluded_missing_build_identity name=godot__check
+____________ test_shared_publish_lock_never_exposes_mixed_snapshot _____________
+
+tmp_path = PosixPath('/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-273/test_shared_publish_lock_never0')
+
+    @pytest.mark.asyncio
+    async def test_shared_publish_lock_never_exposes_mixed_snapshot(tmp_path) -> None:
+        entered = asyncio.Event()
+        release = asyncio.Event()
+    
+        async def pause(point: str) -> None:
+            if point == "after:catalog_swapped":
+                entered.set()
+                await release.wait()
+    
+        lock = asyncio.Lock()
+        manager, store, registry, _publisher = await _runtime(
+            tmp_path,
+            fault_injector=pause,
+            publish_lock=lock,
+        )
+        hub = CapabilityHub(
+            store=store,
+            registry_source=ToolRegistryCatalogSource(registry),
+            publish_lock=lock,
+        )
+        source = _write_pack(tmp_path / "v1", version="1.0.0", revision="r1")
+        install_task = asyncio.create_task(
+            manager.install(
+                source,
+                scope="user",
+                scope_key="default",
+                idempotency_key="paused-publish",
+                expected_pack_id="godot",
+            )
+        )
+        await asyncio.wait_for(entered.wait(), timeout=2.0)
+        snapshot_task = asyncio.create_task(hub.snapshot(CapabilityScope()))
+        await asyncio.sleep(0.05)
+        assert not snapshot_task.done()
+    
+        release.set()
+        await asyncio.wait_for(install_task, timeout=2.0)
+        snapshot = await asyncio.wait_for(snapshot_task, timeout=2.0)
+        projected = snapshot.get("godot")
+>       assert projected is not None and projected.executable
+E       AssertionError: assert (CapabilityDescriptor(version=CapabilityVersionDescriptor(capability_id='godot', display_name='Godot', version='1.0.0',...n=1, skill_revision=0, mcp_revision=0, fingerprint='451c856bc85e870adc6ffcc49a00024d077dbb23d54b06c8a31e061b98c81e39')) is not None and False)
+E        +  where False = CapabilityDescriptor(version=CapabilityVersionDescriptor(capability_id='godot', display_name='Godot', version='1.0.0',...n=1, skill_revision=0, mcp_revision=0, fingerprint='451c856bc85e870adc6ffcc49a00024d077dbb23d54b06c8a31e061b98c81e39')).executable
+
+tests/capabilities/test_registry_publisher.py:336: AssertionError
+----------------------------- Captured stderr call -----------------------------
+{"event": "capability_registry_tool_excluded_missing_build_identity name=godot__check", "level": "info", "logger": "deskpet.capabilities.hub", "timestamp": "2026-09-02T09:45:26.887875Z"}
+{"event": "capability_registry_tool_excluded_missing_build_identity name=godot__check", "level": "info", "logger": "deskpet.capabilities.hub", "timestamp": "2026-09-02T09:45:26.891811Z"}
+------------------------------ Captured log call -------------------------------
+INFO     deskpet.capabilities.hub:hub.py:114 capability_registry_tool_excluded_missing_build_identity name=godot__check
+INFO     deskpet.capabilities.hub:hub.py:114 capability_registry_tool_excluded_missing_build_identity name=godot__check
+________ test_workflow_fresh_schema_installs_capability_v2_idempotently ________
+
+tmp_path = PosixPath('/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-273/test_workflow_fresh_schema_ins0')
+
+    @pytest.mark.asyncio
+    async def test_workflow_fresh_schema_installs_capability_v2_idempotently(
+        tmp_path,
+    ) -> None:
+        path = tmp_path / "workflow.db"
+        await initialize_workflow_db(path)
+        await initialize_workflow_db(path)
+        async with aiosqlite.connect(path) as db:
+            workflow_version = await (
+                await db.execute("PRAGMA user_version")
+            ).fetchone()
+            capability_version = await (
+                await db.execute(
+                    "SELECT schema_version FROM capability_schema_state"
+                )
+            ).fetchone()
+            columns = await (
+                await db.execute("PRAGMA table_info(capability_bindings)")
+            ).fetchall()
+        assert workflow_version == (WORKFLOW_SCHEMA_VERSION,)
+>       assert capability_version == (2,)
+E       assert (4,) == (2,)
+E         
+E         At index 0 diff: 4 != 2
+E         Use -v to get more diff
+
+tests/companion/test_capability_owner_scope.py:224: AssertionError
+_____ test_exact_pinned_sdk_062_reopens_twice_and_rejects_recoverable_runs _____
+
+tmp_path = PosixPath('/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-273/test_exact_pinned_sdk_062_reop0')
+
+    def test_exact_pinned_sdk_062_reopens_twice_and_rejects_recoverable_runs(
+        tmp_path: Path,
+    ) -> None:
+        from simple_harness.execution.sqlite import Database
+    
+        path = tmp_path / "sdk.sqlite3"
+        Database.open(path).close()
+        environment = tmp_path / "sdk-062-venv"
+        uv = shutil.which("uv")
+        assert uv is not None
+        subprocess.run(
+            [uv, "venv", "--python", sys.executable, str(environment)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        python = environment / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+        isolated_site = subprocess.run(
+            [str(python), "-c", "import site; print(site.getsitepackages()[0])"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        Path(isolated_site, "app-runtime-dependencies.pth").write_text(
+            site.getsitepackages()[0] + "\n", encoding="utf-8"
+        )
+        wheel = Path(__file__).resolve().parents[2] / "vendor/simple_harness_sdk-0.6.2-py3-none-any.whl"
+>       subprocess.run(
+            [uv, "pip", "install", "--offline", "--python", str(python), "--no-deps", str(wheel)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+tests/product_state/test_host_control_downgrade.py:205: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = True, timeout = None, check = True
+popenargs = (['/Users/taiwan/.local/bin/uv', 'pip', 'install', '--offline', '--python', '/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-273/test_exact_pinned_sdk_062_reop0/sdk-062-venv/bin/python', ...],)
+kwargs = {'stderr': -1, 'stdout': -1, 'text': True}
+process = <Popen: returncode: 1 args: ['/Users/taiwan/.local/bin/uv', 'pip', 'install'...>
+stdout = ''
+stderr = 'Using Python 3.12.14 environment at: /private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest...e because the network was disabled. When the network is disabled, registry packages may only be read from the cache.\n'
+retcode = 1
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output & stderr attributes if those streams
+        were captured.
+    
+        If timeout (seconds) is given and the process takes too long,
+         a TimeoutExpired exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+>               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['/Users/taiwan/.local/bin/uv', 'pip', 'install', '--offline', '--python', '/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-273/test_exact_pinned_sdk_062_reop0/sdk-062-venv/bin/python', '--no-deps', '/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/vendor/simple_harness_sdk-0.6.2-py3-none-any.whl']' returned non-zero exit status 1.
+
+../../../../.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/subprocess.py:571: CalledProcessError
+_________ test_dev_reset_rebuilds_three_databases_and_removes_sidecars _________
+
+tmp_path = PosixPath('/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-273/test_dev_reset_rebuilds_three_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1323d11c0>
+
+    @pytest.mark.asyncio
+    async def test_dev_reset_rebuilds_three_databases_and_removes_sidecars(tmp_path, monkeypatch):
+        data = tmp_path / "userdata" / "data"
+        state = data / "state.db"
+        execution = data / "simple-harness-sdk" / "execution-v1.sqlite3"
+        memory = data / "memory.db"
+        session = SessionDB(state)
+        await session.initialize()
+        await session.append_message("session-a", "user", "stale-pending", user_id="user-a")
+        await session.close()
+        for database in (state, execution, memory):
+            database.parent.mkdir(parents=True, exist_ok=True)
+            Path(f"{database}-wal").write_bytes(b"stale")
+            Path(f"{database}-shm").write_bytes(b"stale")
+        monkeypatch.setenv("DESKPET_DEV_MODE", "1")
+        await reset_storage_set(
+            state_db=str(state), execution_db=str(execution), memory_db=str(memory)
+        )
+        assert all(path.is_file() for path in (state, execution, memory))
+        assert all(not Path(f"{path}-shm").exists() for path in (state, execution, memory))
+        with sqlite3.connect(state) as db:
+            assert db.execute("SELECT count(*) FROM product_memory_outbox").fetchone()[0] == 0
+            assert db.execute("PRAGMA user_version").fetchone()[0] == 34
+        with sqlite3.connect(execution) as db:
+>           assert db.execute("SELECT max(version) FROM sdk_schema_migrations").fetchone()[0] == 6
+E           assert 7 == 6
+
+tests/test_agent_storage_reset.py:38: AssertionError
+----------------------------- Captured stderr call -----------------------------
+{"event": "state.db backed up before migration: /private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-273/test_dev_reset_rebuilds_three_0/userdata/data/state.db.bak.2026-09-02T09-46-50", "level": "info", "logger": "deskpet.memory.schema", "timestamp": "2026-09-02T09:46:50.463882Z"}
+{"event": "state.db fresh (user_version=0), running all migrations", "level": "info", "logger": "deskpet.memory.migrator", "timestamp": "2026-09-02T09:46:50.464267Z"}
+{"event": "state.db migrations applied: ['001_p4_initial_v9.sql', '002_p4s20_summarize_archive.sql', '003_p4s22_code_todos.sql', '004_p4s24_reasoning_content.sql', '005_p4s25_code_sessions.sql', '006_p5s1_supervisor_hints.sql', '007_p5s2_code_session_provider.sql', '008_p5s2_code_session_model_params.sql', '009_memory_v2_v17.sql', '010_context_os_v18.sql', '011_message_projection_visibility_v19.sql', '012_task_conversation_scope_v20.sql', '013_companion_projection.sql', '014_context_usage_history_v22.sql', '015_provider_binding_lifecycle_v23.sql', '016_context_usage_authority_v24.sql', '017_provider_workload_audit_v25.sql', '018_message_archive_projection_v26.sql', '019_provider_fault_correlation_v27.sql', '020_sdk_context_authority_v28.sql', '021_sdk_provider_projection_sequence_v29.sql', '022_agent_runtime_memory_v30.sql', '023_official_memory_integration_v31.sql', '024_project_scoped_sessions_v32.sql', '025_legacy_session_reset_v33.sql', '026_automatic_session_workspace_v34.sql']", "level": "info", "logger": "deskpet.memory.schema", "timestamp": "2026-09-02T09:46:50.505476Z"}
+{"event": "state.db user_version=34 >= 34, applying any pending incremental migrations", "level": "info", "logger": "deskpet.memory.migrator", "timestamp": "2026-09-02T09:46:50.521412Z"}
+{"event": "SessionDB ready (db=/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-273/test_dev_reset_rebuilds_three_0/userdata/data/state.db, vec=on)", "level": "info", "logger": "deskpet.memory.session_db", "timestamp": "2026-09-02T09:46:50.531511Z"}
+{"event": "state.db backed up before migration: /private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-273/test_dev_reset_rebuilds_three_0/userdata/data/state.db.bak.2026-09-02T09-46-50", "level": "info", "logger": "deskpet.memory.schema", "timestamp": "2026-09-02T09:46:50.535286Z"}
+{"event": "state.db fresh (user_version=0), running all migrations", "level": "info", "logger": "deskpet.memory.migrator", "timestamp": "2026-09-02T09:46:50.535651Z"}
+{"event": "state.db migrations applied: ['001_p4_initial_v9.sql', '002_p4s20_summarize_archive.sql', '003_p4s22_code_todos.sql', '004_p4s24_reasoning_content.sql', '005_p4s25_code_sessions.sql', '006_p5s1_supervisor_hints.sql', '007_p5s2_code_session_provider.sql', '008_p5s2_code_session_model_params.sql', '009_memory_v2_v17.sql', '010_context_os_v18.sql', '011_message_projection_visibility_v19.sql', '012_task_conversation_scope_v20.sql', '013_companion_projection.sql', '014_context_usage_history_v22.sql', '015_provider_binding_lifecycle_v23.sql', '016_context_usage_authority_v24.sql', '017_provider_workload_audit_v25.sql', '018_message_archive_projection_v26.sql', '019_provider_fault_correlation_v27.sql', '020_sdk_context_authority_v28.sql', '021_sdk_provider_projection_sequence_v29.sql', '022_agent_runtime_memory_v30.sql', '023_official_memory_integration_v31.sql', '024_project_scoped_sessions_v32.sql', '025_legacy_session_reset_v33.sql', '026_automatic_session_workspace_v34.sql']", "level": "info", "logger": "deskpet.memory.schema", "timestamp": "2026-09-02T09:46:50.577609Z"}
+{"event": "state.db user_version=34 >= 34, applying any pending incremental migrations", "level": "info", "logger": "deskpet.memory.migrator", "timestamp": "2026-09-02T09:46:50.593515Z"}
+{"event": "SessionDB ready (db=/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-273/test_dev_reset_rebuilds_three_0/userdata/data/state.db, vec=on)", "level": "info", "logger": "deskpet.memory.session_db", "timestamp": "2026-09-02T09:46:50.603467Z"}
+{"db_path_hash": "3bc716868797b930", "event": "memory.backend_initialized", "fts5": true, "level": "info", "logger": "simple_harness_memory.backends.sqlite", "schema_version": 4, "sqlite_version": "3.53.1", "timestamp": "2026-09-02T09:46:50.616544Z"}
+{"db_path_hash": "3bc716868797b930", "event": "memory.backend_closed", "level": "info", "logger": "simple_harness_memory.backends.sqlite", "timestamp": "2026-09-02T09:46:50.617228Z"}
+------------------------------ Captured log call -------------------------------
+INFO     deskpet.memory.schema:schema.py:812 state.db backed up before migration: /private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-273/test_dev_reset_rebuilds_three_0/userdata/data/state.db.bak.2026-09-02T09-46-50
+INFO     deskpet.memory.migrator:migrator.py:1074 state.db fresh (user_version=0), running all migrations
+INFO     deskpet.memory.schema:schema.py:822 state.db migrations applied: ['001_p4_initial_v9.sql', '002_p4s20_summarize_archive.sql', '003_p4s22_code_todos.sql', '004_p4s24_reasoning_content.sql', '005_p4s25_code_sessions.sql', '006_p5s1_supervisor_hints.sql', '007_p5s2_code_session_provider.sql', '008_p5s2_code_session_model_params.sql', '009_memory_v2_v17.sql', '010_context_os_v18.sql', '011_message_projection_visibility_v19.sql', '012_task_conversation_scope_v20.sql', '013_companion_projection.sql', '014_context_usage_history_v22.sql', '015_provider_binding_lifecycle_v23.sql', '016_context_usage_authority_v24.sql', '017_provider_workload_audit_v25.sql', '018_message_archive_projection_v26.sql', '019_provider_fault_correlation_v27.sql', '020_sdk_context_authority_v28.sql', '021_sdk_provider_projection_sequence_v29.sql', '022_agent_runtime_memory_v30.sql', '023_official_memory_integration_v31.sql', '024_project_scoped_sessions_v32.sql', '025_legacy_session_reset_v33.sql', '026_automatic_session_workspace_v34.sql']
+INFO     deskpet.memory.migrator:migrator.py:1083 state.db user_version=34 >= 34, applying any pending incremental migrations
+INFO     deskpet.memory.session_db:session_db.py:321 SessionDB ready (db=/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-273/test_dev_reset_rebuilds_three_0/userdata/data/state.db, vec=on)
+INFO     deskpet.memory.schema:schema.py:812 state.db backed up before migration: /private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-273/test_dev_reset_rebuilds_three_0/userdata/data/state.db.bak.2026-09-02T09-46-50
+INFO     deskpet.memory.migrator:migrator.py:1074 state.db fresh (user_version=0), running all migrations
+INFO     deskpet.memory.schema:schema.py:822 state.db migrations applied: ['001_p4_initial_v9.sql', '002_p4s20_summarize_archive.sql', '003_p4s22_code_todos.sql', '004_p4s24_reasoning_content.sql', '005_p4s25_code_sessions.sql', '006_p5s1_supervisor_hints.sql', '007_p5s2_code_session_provider.sql', '008_p5s2_code_session_model_params.sql', '009_memory_v2_v17.sql', '010_context_os_v18.sql', '011_message_projection_visibility_v19.sql', '012_task_conversation_scope_v20.sql', '013_companion_projection.sql', '014_context_usage_history_v22.sql', '015_provider_binding_lifecycle_v23.sql', '016_context_usage_authority_v24.sql', '017_provider_workload_audit_v25.sql', '018_message_archive_projection_v26.sql', '019_provider_fault_correlation_v27.sql', '020_sdk_context_authority_v28.sql', '021_sdk_provider_projection_sequence_v29.sql', '022_agent_runtime_memory_v30.sql', '023_official_memory_integration_v31.sql', '024_project_scoped_sessions_v32.sql', '025_legacy_session_reset_v33.sql', '026_automatic_session_workspace_v34.sql']
+INFO     deskpet.memory.migrator:migrator.py:1083 state.db user_version=34 >= 34, applying any pending incremental migrations
+INFO     deskpet.memory.session_db:session_db.py:321 SessionDB ready (db=/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-273/test_dev_reset_rebuilds_three_0/userdata/data/state.db, vec=on)
+INFO     simple_harness_memory.backends.sqlite:sqlite.py:525 {'db_path_hash': '3bc716868797b930', 'schema_version': 4, 'sqlite_version': '3.53.1', 'fts5': True, 'event': 'memory.backend_initialized', 'logger': 'simple_harness_memory.backends.sqlite', 'level': 'info', 'timestamp': '2026-09-02T09:46:50.616544Z'}
+INFO     simple_harness_memory.backends.sqlite:sqlite.py:2235 {'db_path_hash': '3bc716868797b930', 'event': 'memory.backend_closed', 'logger': 'simple_harness_memory.backends.sqlite', 'level': 'info', 'timestamp': '2026-09-02T09:46:50.617228Z'}
+_______________________ test_health_check_timeout_values _______________________
+
+    @pytest.mark.asyncio
+    async def test_health_check_timeout_values():
+        """Verify health check timeout constants are set correctly."""
+    
+        # Read the controlWs.ts file
+>       with open('/Users/denny/projects/simple_harness/tauri-app/src/code-panel/controlWs.ts', 'r') as f:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/Users/denny/projects/simple_harness/tauri-app/src/code-panel/controlWs.ts'
+
+tests/test_error_handling_fixes.py:111: FileNotFoundError
+_________________________ test_process_list_with_query _________________________
+
+    @pytest.mark.asyncio
+    async def test_process_list_with_query():
+        """Test that process_list works with a query filter."""
+        result = await process_list(
+            args={"query": "python", "max_entries": 5},
+            task_id="test_task_002",
+        )
+    
+        payload = json.loads(result)
+        assert payload["ok"] is True
+>       assert all("python" in item["name"].casefold() for item in payload["processes"])
+E       assert False
+E        +  where False = all(<generator object test_process_list_with_query.<locals>.<genexpr> at 0x134cb6cf0>)
+
+tests/test_process_list_error.py:34: AssertionError
+=============================== warnings summary ===============================
+observability/crash_reports.py:74
+  /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/observability/crash_reports.py:74: DeprecationWarning: There is no current event loop
+    loop = asyncio.get_event_loop()
+
+tests/test_extreme_scenarios.py:238
+  /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/tests/test_extreme_scenarios.py:238: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.timeout(30)  # 30秒超时保护
+
+tests/test_metrics_event_endpoint.py::test_metrics_event_rejects_invalid_json
+  /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/httpx/_models.py:408: DeprecationWarning: Use 'content=<...>' to upload raw bytes/text content.
+    headers, stream = encode_request(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/capabilities/test_registry_publisher.py::test_atomic_publisher_install_update_rollback_and_uninstall
+FAILED tests/capabilities/test_registry_publisher.py::test_shared_publish_lock_never_exposes_mixed_snapshot
+FAILED tests/companion/test_capability_owner_scope.py::test_workflow_fresh_schema_installs_capability_v2_idempotently
+FAILED tests/product_state/test_host_control_downgrade.py::test_exact_pinned_sdk_062_reopens_twice_and_rejects_recoverable_runs
+FAILED tests/test_agent_storage_reset.py::test_dev_reset_rebuilds_three_databases_and_removes_sidecars
+FAILED tests/test_error_handling_fixes.py::test_health_check_timeout_values
+FAILED tests/test_process_list_error.py::test_process_list_with_query - asser...
+7 failed, 6282 passed, 50 skipped, 5 deselected, 3 warnings in 386.67s (0:06:26)
+EXIT=

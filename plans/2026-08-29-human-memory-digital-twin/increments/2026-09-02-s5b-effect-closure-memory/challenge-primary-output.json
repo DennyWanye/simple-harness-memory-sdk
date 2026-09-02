@@ -1,0 +1,335 @@
+{
+  "round": {
+    "review_mode": "breadth",
+    "coverage": {
+      "acceptance_coverage": true,
+      "entry_and_trust_chain": true,
+      "data_flow_and_persistence": true,
+      "identity_permissions_concurrency_cleanup": true,
+      "failure_and_recovery": true,
+      "tests_and_evidence": true,
+      "release_and_rollback": true,
+      "trusted_boundary_stop": true
+    },
+    "findings": [
+      {
+        "id": "pc-milestone-stops-at-accepted-plan",
+        "severity": "P0",
+        "scope_relation": "in-scope",
+        "origin": "pre-existing",
+        "violated_acceptance_ids": ["S5B-AC-2", "S5B-AC-3"],
+        "assurance_contract_ids": ["FAIL-HALF-STATE", "TRUST-SDK-WHEELS", "ASSET-WORKSPACE-AUTHORITY"],
+        "evidence": "acceptance.md:10-12 主要矛盾 = 沉淀为「任务档案语义状态与长期记忆」; acceptance.md:23-28 / plan.md:8-14 里程碑终点 = 「被记忆库接受的 MemoryMutationPlan」; spikes/a2/RESULT.md:45 + run_final.log:8 step 4a FAIL: 0.6.0 runner APPLIED 后 cognitive_memory_heads=0、无 prospective registration outbox（accepted ≠ 长期记忆，typed recall/snapshot 读不到）; plan.md:157 边界声明把物化推到 Task 5（里程碑之后）; plan.md:131-136 Task 1 在里程碑前承载完整 TC-HM-09 步骤3-6 矩阵（六类拒绝/inode 漂移/Auto/exposure-follows-route/durable reject），而最小动作只需 write_file 经 envelope + host.file 事件",
+        "status": "open",
+        "root_cause": "主要矛盾质询 2/3 不满足：里程碑终点定义在仓储审计状态（accepted_analysis_plans + job applied）而非用户可观察的价值（下一轮能召回/沉淀为 cognitive head），于是价值的直接依赖（Memory 0.6.1 物化，Task 5）被排在里程碑之后，同时非直接依赖（AC-3 次要矩阵的全部拒绝/漂移/Auto 断言）被排在里程碑之前。主要矛盾本身单一且价值在前，但最小验证动作既不最小也不验证价值：在 0.6.0 上它只证明「记忆库收下了一份计划」，S5B-S1 quality_bar「每条记忆可回指对话原句」在无物化时不可检查。"
+      },
+      {
+        "id": "analysis-result-schema-and-span-derivation-missing",
+        "severity": "P1",
+        "scope_relation": "in-scope",
+        "origin": "pre-existing",
+        "violated_acceptance_ids": ["S5B-AC-2"],
+        "assurance_contract_ids": ["FAIL-LLM-PAYLOAD", "ADV-LLM-PAYLOAD", "ASSET-CREDENTIALS"],
+        "evidence": "grep prompt_version/result_schema_version/EvidenceSpanRef/analysis_prompt 于 memory core/jobs.py、core/port.py、core/manager.py 与 Host memory/human_memory_v7.py、human_memory_service.py: 只有 MemoryJobWorkerConfig 字段 (jobs.py:73-74)，无任何 prompt/结果 schema/span 派生实现; spikes/a2/RESULT.md:64 (fact 7) EvidenceSpanRef 需 envelope_hash/sanitized_hash/admission receipt/JSON pointer/byte range/quote_hash——模型不可能自算; spike A2 用 fake executor (RESULT.md:44) ，A1 只证明 TaskScopeMutationPlan 形状 (spikes/a1/run2.log) ，无任何真实 provider → accepted MemoryMutationPlan 的 spike; Host 真实 turn payload 键为 `text` (human_memory_service.py:786-790) 而 A2 配方假设 `public_text`/`item_id`; plan.md:155 Task 4 ③ 只写「解析结构化 MemoryMutationPlan（strict）」，文件影响清单 (plan.md:83-107) 无 prompt/schema/span 派生模块",
+        "status": "open",
+        "root_cause": "价值里程碑最后一跳（真实主模型 → 记忆库 accepted 的 MemoryMutationPlan）依赖尚不存在且未被任何 spike 证明的 Host 侧 analysis prompt、result schema（模型可填的形状）与确定性 EvidenceSpanRef 派生层；plan 把它当作已存在的解析步骤，任务清单与 spike 表均未覆盖。"
+      },
+      {
+        "id": "analysis-request-lineage-worker-config-not-run-binding",
+        "severity": "P1",
+        "scope_relation": "in-scope",
+        "origin": "pre-existing",
+        "violated_acceptance_ids": ["S5B-AC-2", "S5B-AC-6"],
+        "assurance_contract_ids": ["FAIL-PROTOCOL-REPLAY", "TRUST-AUTH-CONTEXT", "FAIL-COMPOSITION-FALLBACK"],
+        "evidence": "memory backends/sqlite_v5.py claim_analysis_batch (MemoryAnalysisRequest 构造 :10272 附近): request.provider_id/model_id 取 `config.provider_id`/`config.model_id`（worker 常量），run_id 取 batch 成员 evidence 的 run_id 且跨 run 抛 `analysis batch authority differs`; core/jobs.py:62-102 MemoryJobWorkerConfig 全字段必填、单 worker 单配置; plan.md:155 Task 4 ⑤ 写「MemoryJobWorkerConfig（provider/model/config_hash 来自 Run 绑定）」; program plan 硬契约 96-97 要求 request/result/receipt 用发起 Run 的主模型配置且永久可审计",
+        "status": "open",
+        "root_cause": "Memory 0.6.0 的 analysis request 血缘（provider/model/config_hash）来自 worker 级常量，而 Host executor 按 originating Run 的 durable SdkRunBindingV1 重建 adapter；两者在用户换模型/换 provider 后必然分叉——要么 Memory 审计记录与真实调用不一致，要么 Host 必须按绑定拒绝/分 worker。plan 把这两个来源写成同一个，composition 里 worker 生命周期与绑定变化的关系未定义。"
+      },
+      {
+        "id": "analysis-idempotency-key-attempt-bound-and-sent-unknown-unconfirmable",
+        "severity": "P1",
+        "scope_relation": "in-scope",
+        "origin": "pre-existing",
+        "violated_acceptance_ids": ["S5B-AC-2"],
+        "assurance_contract_ids": ["ASSET-PROVIDER-IDEMPOTENCY", "FAIL-DUPLICATE-PROVIDER-CALL", "ADV-DUPLICATE-DELIVERY"],
+        "evidence": "harness runtime/evidence_protocol.py MemoryAnalysisRequest (:2109 起): to_json 含 `attempt`，request_hash = canonical_hash(to_json) ⇒ 每个 attempt 的 request_hash 都不同; sqlite_v5.py claim_analysis_batch: batch_attempt = max(member attempt_count+1) 每次重试递增; core/jobs.py:427-439 executor 抛任何 Exception → fail_analysis_batch(analysis_executor_failed) → retry 后以新 attempt 再次调用 analyze_memory; acceptance.md:61 AC-2③「unknown 后经 provider response id 确认成功者返回同一行且 Provider 调用计数为 0」; acceptance.md:102-104 D7 `sent_unknown` 只能按 provider response id/幂等键确认; Host provider 为 OpenAI 兼容 chat completions（HANDOFF §6.1 `https://ai.svtun.cn/v1`），无按 id 回查响应或请求级幂等键的 API",
+        "status": "open",
+        "root_cause": "Host 幂等键 `request_hash+attempt` 与 Memory 的 attempt 语义耦合：request_hash 已内含 attempt，Memory 重试必然产生新键，Host 账本结构上无法把「同一 evidence 集合的第二次请求」映射回已成功/未知的旧行；同时 D7 的 `sent_unknown` 对无回查 API 的 provider 没有任何可执行的确认手段，只能永久挂起或盲重发，二者都违反 maximum_acceptable_impact「任何情况下不重复调用 Provider」或让 job 永不完成。"
+      },
+      {
+        "id": "harness-evidence-outbox-async-vs-run-terminal-ordering",
+        "severity": "P1",
+        "scope_relation": "in-scope",
+        "origin": "pre-existing",
+        "violated_acceptance_ids": ["S5B-AC-1"],
+        "assurance_contract_ids": ["FAIL-HALF-STATE", "FAIL-PROTOCOL-REPLAY", "ASSET-FOREGROUND-RUN-ORDER"],
+        "evidence": "execution/evidence_ingress.py:53-127 ingest 要求 per-run 连续 source_sequence、terminal 后拒绝、run_terminal 必须最后; foreground_runtime.py:1233-1260 terminal observer 同步以 authority[next_sequence] 合成并 ingest run_terminal 后立即 authorize_terminal; plan.md:141 Task 2 ② 把 provider/tool/snapshot/route 证据先写 `harness_evidence_outbox` 再由「ingest worker 顺序导入并推进水位」，`run_terminal` 由既有 observer 最后写; plan.md:142 只把乱序/缺口归为 TerminalWatermarkPending，未定义 observer 与 worker 的同步/排空关系; 这些 Harness 证据的生产者全在 Host 进程内（provider.py adapter、tool executor、context_authority、route ledger），并非跨库",
+        "status": "open",
+        "root_cause": "为 Host 进程内自产的 Harness 证据引入 outbox+异步 worker 间接层，使 run_terminal 的 next_sequence 分配与 worker 导入之间出现竞争：terminal 先到则后续 worker 行被「terminal 后拒」永久丢弃或 sequence 冲突，worker 先到则 terminal 必须等待其排空——plan 未定义哪一方阻塞、上界与 crash 后重放顺序；既有 ExecutionEvidenceIngress 已是同步直写路径，间接层是无必要的失败域扩张。"
+      },
+      {
+        "id": "closure-fallback-window-durable-state-and-recovery",
+        "severity": "P1",
+        "scope_relation": "in-scope",
+        "origin": "pre-existing",
+        "violated_acceptance_ids": ["S5B-AC-1"],
+        "assurance_contract_ids": ["FAIL-SEMANTIC-CLOSURE", "FAIL-HALF-STATE", "ASSET-FOREGROUND-RUN-ORDER", "FAIL-DUPLICATE-PROVIDER-CALL"],
+        "evidence": "foreground_queue.py record_sdk_terminal (:1853-1990) 单事务且同事务 UPDATE foreground_run_heads owner_id=NULL, lease_expires_at=NULL（终态提交 = lease 释放）; plan.md:148 Task 3 ③④: 终态门在 record_sdk_terminal 钩子内查 closure receipt，兜底调用发生在「观察者收到 SDK terminal 之后、record_sdk_terminal 之前」（deadline = provider timeout，A1 实测 16.6-33.9s: spikes/a1/RESULT.md:6）; foreground_runtime.py:884-934 _observe_with_heartbeats → record_sdk_terminal; foreground_runtime.py:700-918 runtime-reconcile 分支（missing/pre-start/start-missing/terminal）无 closure-in-flight 分支; spikes/a3/RESULT.md:65 Host authority 异常逃出 ReActLoop 时 checkpoint 停在 tool_batch_reserved——同类「SDK 终态与 Host 终态之间」的窗口已被证实存在",
+        "status": "open",
+        "root_cause": "closure 兜底调用被插入 SDK terminal 与 Host terminal commit 之间的窗口，而该窗口在 Host 只有 lease 心跳没有 durable 「closure attempt in flight」状态：plan 未定义 crash-restart 时 reconcile 如何区分「兜底未发/已发未知/已成功未写 receipt」、lease 到期后另一 worker 是否会重复兜底（第二次 Provider 调用）、以及 SDK 侧 Run fault 留下 tool_batch_reserved checkpoint 时 recovery fence 是否会尝试恢复已保留的 effect batch。"
+      },
+      {
+        "id": "pending-closure-bound-to-scope-not-conversation",
+        "severity": "P1",
+        "scope_relation": "in-scope",
+        "origin": "pre-existing",
+        "violated_acceptance_ids": ["S5B-AC-1"],
+        "assurance_contract_ids": ["ASSET-TASKSCOPE-CANONICAL-STATE", "FAIL-SEMANTIC-CLOSURE"],
+        "evidence": "acceptance.md:60 AC-1③「下一轮 initial snapshot 携带 pending 要求」; plan.md:148 Task 3 ① Host 从 envelope/route receipt 填 task_scope_id 等字段，模型只填 outcome/base_revision/operations/closure_reason/evidence_refs/idempotency_key; plan.md:148 ④「下一轮 snapshot 继续注入」; task_scope/store.py:234-338 apply_mutation_plan 校验 refs 属本 scope + CAS base_revision（notes-investigation-task6.md:26）; 五路路由（program HM-AC-4）下一轮可能是 direct_standalone/memory_standalone/其它 scope",
+        "status": "open",
+        "root_cause": "semantic_closure_pending 是某个 TaskScope 的债务，但补交通道 task_scope_update 的 scope 身份来自「当前轮」route receipt；下一轮若路由到 standalone 或另一 scope，pending 既无法在该轮补交，也没有任何机制保证用户回到该 scope，导致 STATUS 与真实文件变更长期不一致——恰是主要矛盾要否定的状态；plan 未定义 pending 的归属、跨 Run 的 base_revision/evidence_refs 口径与终止条件（如 close/resume 时强制收口）。"
+      },
+      {
+        "id": "effect-exposure-hiding-unverified-and-standalone-run-fault",
+        "severity": "P1",
+        "scope_relation": "in-scope",
+        "origin": "pre-existing",
+        "violated_acceptance_ids": ["S5B-AC-3"],
+        "assurance_contract_ids": ["ASSET-WORKSPACE-AUTHORITY", "FAIL-EFFECT-AUTHORITY-DRIFT", "ADV-LLM-PAYLOAD"],
+        "evidence": "harness runtime/drivers/react_loop.py _preflight_tool_batch (≈:660-695): policy = tool_exposure.execution_policy(run_id, call.name) —— Run 级 exposure，无按 snapshot.tools 的 unknown-tool 拒绝; react_loop.py:164-178 无 authority + PROJECT_EFFECT 硬失败; spikes/a3/RESULT.md:65 + run_output.txt:2-7 routed_standalone 下 Host 异常逃出 ReActLoop（checkpoint tool_batch_reserved），SDK 没有 model-visible rejection 路径; Host sdk_adapters/context_authority.py:860-861 tools = exposure.provider_specs(request.run_id)（只按 run_id，无 route state 入参）; sdk_adapters/tools.py:606-682 filter_sdk_catalog_for_workspace 在 Run 冻结时按 workspace_resolution_kind 一次性决定 projectless/project_bound 投影（notes-investigation-task5.md:23 foreground_runtime_ports.py:305-341）; plan.md:134 ⑤ 与 plan.md:135「模型仍调用未暴露写工具 → SDK unknown-tool rejection 而非 Run fault」互相矛盾; acceptance.md:92-93 D2 承诺 standalone 下「被拒绝」且模型可先 create_new 再写",
+        "status": "open",
+        "root_cause": "plan 用「暴露随路由」承接 A3 的设计约束，但 (1) SDK 冻结 preflight 只看 Run 级 catalog policy，per-turn 隐藏对模型幻觉调用无约束力，写工具在 standalone 下的唯一后果仍是整 Run fault，与 D2 的「被拒绝」语义及 plan 自身的验证断言不一致；(2) 投影在 Run 冻结时按 workspace 状态一次决定，Run 起始无 active/bound scope 时写工具整 Run 缺席，D2「先 create_new/continue/resume 再写」在同一 Run 内无法成立——plan 未声明该限制或其处理。"
+      },
+      {
+        "id": "prospective-ack-channel-undefined",
+        "severity": "P1",
+        "scope_relation": "in-scope",
+        "origin": "pre-existing",
+        "violated_acceptance_ids": ["S5B-AC-4"],
+        "assurance_contract_ids": ["FAIL-SCHEDULER-DUPLICATE", "ADV-LLM-PAYLOAD", "ADV-AMBIGUOUS-NL"],
+        "evidence": "acceptance.md:63 AC-4③「模型终答未提及/拒绝 → 不标 processed」、⑤「模型终答提及 → ack」; plan.md:169 Task 6 ②「终答后 Host 检查模型是否 ack（task_scope_update/终答 receipt 里的 acknowledged_occurrences，由 Host 从 tool 载荷解析，不解析自然语言）」; harness runtime/task_scope_protocol.py:261-312 TaskScopeMutationPlan 字段集（notes-investigation-task6.md:4）无 acknowledged_occurrences；SDK 0.7.1 冻结（OOS-SDK-CHANGE）; memory_standalone 路由（Prospective 触发的典型下一轮）不会有 task_scope_update；plan 未定义任何承载 ack 的工具或 receipt 结构",
+        "status": "open",
+        "root_cause": "occurrence 生命周期 presented→acknowledged 的状态迁移没有确定性输入：acceptance 用「终答提及」定义 ack（自然语言判断，program 明令禁止关键词/正则），plan 改写为「tool 载荷解析」却指向一个冻结 DTO 中不存在的字段，且在无 TaskScope 的轮次没有任何工具可承载；结果是 acknowledged/settled 不可达或只能靠猜。"
+      },
+      {
+        "id": "evidence-authority-and-principal-registration-absent-from-composition",
+        "severity": "P1",
+        "scope_relation": "in-scope",
+        "origin": "pre-existing",
+        "violated_acceptance_ids": ["S5B-AC-2", "S5B-AC-6"],
+        "assurance_contract_ids": ["FAIL-COMPOSITION-FALLBACK", "FAIL-HALF-STATE"],
+        "evidence": "spikes/a2/RESULT.md:68 (GOTCHA A) 物化路径调用 evidence_authority.resolve_admitted_evidence（计数 0→1），Host 必须提供 AdmittedEvidenceAuthority 解析; spikes/a2/RESULT.md:70 (GOTCHA B) read_outbox/read_occurrence_inbox 在首次 caller-principal 写之前拒绝 Host principal; plan.md:100 human_memory_v7.py 改动只列「analysis delivery / prospective signal / memory action authority」，无 evidence_authority; plan.md:162 Task 5 「以 repository 生成的 application capability 编译并物化 plan——复用 apply_memory_mutation_plan 的 compile/apply 内核」未声明该内核是否仍需 caller 侧 evidence authority; acceptance.md:65 AC-6① 逐项移除任一 → startup fail 的清单同样不含 evidence_authority; plan.md:105 register_principal_owner 只在 Memory 侧新增，Host 何时调用（首次 v7 构建/每次启动/迁移）未写",
+        "status": "open",
+        "root_cause": "spike A2 已证明物化与 Host principal 可读性各依赖一个 Host 侧组件（evidence authority 解析器、属主注册调用点），plan 的 composition 注入表与 startup-fail 清单都没有它们；Task 5 在仓储内物化的设计若仍走 compile/apply 内核则同样需要 evidence authority，若不走则需说明审计血缘如何保持一致。"
+      },
+      {
+        "id": "fault-runners-built-after-they-are-needed",
+        "severity": "P1",
+        "scope_relation": "in-scope",
+        "origin": "pre-existing",
+        "violated_acceptance_ids": ["S5B-AC-1", "S5B-AC-2", "S5B-AC-4"],
+        "assurance_contract_ids": ["FAIL-HALF-STATE", "FAIL-PROTOCOL-REPLAY", "FAIL-SCHEDULER-DUPLICATE"],
+        "evidence": "notes-investigation-task6.md:48 / task7.md:60 / plan.md:45-47: `backend/tests/faults/*` 四 lane runner 均不存在; plan.md:149 Task 3 验证「kill 在 semantic-closure-commit/terminal-watermark seam → 重放收敛」、plan.md:156 Task 4 验证「fault lane memory-mutation-plan 六 seam」、plan.md:170 Task 6「fault lane prospective-occurrence 四 seam」均在 Task 9 (plan.md:186) 才建 runner; plan.md:47 写「兑现前三条」而 plan.md:106/186 列四条 lane; acceptance.md:119-120 S5B-S2/S3 为决定性 negative-safety 场景",
+        "status": "open",
+        "root_cause": "决定性 negative-safety 场景的 oracle（fault-matrix runner、seam 注入点、before/after hash 契约）被排在全部实现之后，Task 3/4/6 的验证条目引用尚不存在的 runner，等于实现期没有可执行的失败矩阵；lane 数量在 plan 内自相矛盾。"
+      },
+      {
+        "id": "release-unit-third-subsystem-packing",
+        "severity": "P1",
+        "scope_relation": "scope-change-proposal",
+        "origin": "pre-existing",
+        "violated_acceptance_ids": ["S5B-AC-4", "S5B-AC-5", "S5B-AC-6"],
+        "assurance_contract_ids": ["ASSET-FOREGROUND-RUN-ORDER", "FAIL-COMPOSITION-FALLBACK"],
+        "evidence": "program acceptance.md:57-58「不能一次修改超过三个高风险子系统后再统一测试」; acceptance.md:98-100 D5 把 outbox + analysis executor + Prospective scheduler + 即时操作 计为 1 个子系统，另加 Memory 0.6.1 上游发布（plan.md:161-164 Task 5：仓储物化 + 新公共 API + wheel/manifest/pin）与 v46 九张表 (plan.md:85); plan-challenge-manifest.json release_unit: must_ac_count 6, task_count 10, high_risk_subsystems 3, concurrent_layer_kinds 3; plan.md:190 执行模式：Task 5 后 Task 6/7 串行，全部在 Task 9 才做统一验收矩阵",
+        "status": "open",
+        "root_cause": "高风险子系统计数为 3 是通过把三个独立状态机（Host↔Memory outbox+executor、Prospective scheduler/occurrence、suppression 即时操作）与一次上游 SDK 版本发布打包成「第 ③ 项」达成的；统一验收在 Task 9 意味着 6 条 MUST AC 在同一 release unit 内统一测试，与 program 级 release-unit 门限精神冲突。是否采用 D5 Ponytail（AC-4/5 拆 S5c）需要用户批准，非 challenger 可裁决。"
+      },
+      {
+        "id": "task-scope-update-projectless-safe-vs-dirty-exposure",
+        "severity": "P2",
+        "scope_relation": "in-scope",
+        "origin": "pre-existing",
+        "violated_acceptance_ids": ["S5B-AC-1"],
+        "assurance_contract_ids": ["ASSET-TASKSCOPE-CANONICAL-STATE"],
+        "evidence": "plan.md:146 把 task_scope_update 加入 PROJECTLESS_SAFE_TOOL_NAMES（Run 级投影常量，sdk_adapters/tools.py:50）; plan.md:148 ② 同时要求只在 dirty/pending 时把它放入暴露集; direct_standalone/memory_standalone 轮次无 scope 可更新",
+        "status": "advisory",
+        "root_cause": "工具的暴露来源在 plan 内有两个互相冲突的口径（Run 级 safe 集合 vs per-turn dirty 条件），且未定义 standalone 轮次模型调用它时的稳定拒绝 reason。"
+      },
+      {
+        "id": "occurrence-presented-dual-table-state",
+        "severity": "P2",
+        "scope_relation": "in-scope",
+        "origin": "pre-existing",
+        "violated_acceptance_ids": ["S5B-AC-4"],
+        "assurance_contract_ids": ["FAIL-SCHEDULER-DUPLICATE", "ASSET-SUPPRESSION-ORDER"],
+        "evidence": "memory/migrations/037_*.sql:72-83 occurrence_presented(occurrence_key PK, presented_at, settled_at, settled_reason) + append-only/单调触发器; sdk_adapters/context_authority.py:539-551 presented_occurrence_keys 为 S5a reconcile 门唯一读源（注释「S5a: zero rows by design」）; plan.md:85 新增 prospective_occurrences（claimed→presented→acknowledged→settled）且「occurrence_presented 不改 schema」、plan.md:101 scheduler 同时写 occurrence_presented",
+        "status": "advisory",
+        "root_cause": "同一 presented/settled 事实将存在于两张表，S5a 门读旧表、S5b 生命周期写新表；plan 未声明两者必须同事务且以哪一张为 canonical，suppressed → settled(suppressed) 是否同步反映到 occurrence_presented 影响 no_recall 门。"
+      },
+      {
+        "id": "analysis-adapter-rebuild-after-provider-config-change",
+        "severity": "P2",
+        "scope_relation": "in-scope",
+        "origin": "pre-existing",
+        "violated_acceptance_ids": ["S5B-AC-2"],
+        "assurance_contract_ids": ["FAIL-DATA-LOSS", "ASSET-RAW-EVIDENCE"],
+        "evidence": "notes-investigation-task7.md:46 main.py:7526-7567 由 binding 重建 adapter 并校验 provider_incarnation_id/config_revision; plan.md:155 Task 4 ③「incarnation/config_revision 校验同 main.py:7526」; program 硬契约 96-97 要求发起 Run 的主模型配置; plan 无「绑定不可重建时的 attempt 终态/dead-letter reason」条目",
+        "status": "advisory",
+        "root_cause": "用户更换 provider/key/模型后，所有尚未 analysis 的旧 Run job 因绑定不可重建而永远无法执行；plan 未把它定义为显式的 dead-letter reason 与用户可见状态，存在无限重试或静默堆积风险（原始证据不丢但记忆永不形成）。"
+      },
+      {
+        "id": "real-ui-harness-not-a-task",
+        "severity": "P2",
+        "scope_relation": "in-scope",
+        "origin": "pre-existing",
+        "violated_acceptance_ids": ["S5B-AC-1", "S5B-AC-2", "S5B-AC-4", "S5B-AC-5"],
+        "assurance_contract_ids": ["TRUST-S5A-RECEIPT"],
+        "evidence": "HANDOFF-S5b.md §6.3: computer-use 驱动不了 dev 窗口，可用通道依赖 identity_harness.py/shim_proxy.py/tauri_shim.js（临时目录可能已清）; acceptance.md:118-124 四个 manual_required 场景，S1/S5/S6 各 ≥2 root run，S1 其一 ≥20 turn; HANDOFF §7.3 任一失败 root run 使场景永久 FLAKY; plan.md:186 Task 9 仅写「按交接 §6.3 通道」，无重建该通道的任务与预演",
+        "status": "advisory",
+        "root_cause": "真实桌面 UI 验收通道是外部前置条件而非 plan 任务，重建成本与失败率直接影响 7 个 positive-value root run 的稳定性判定。"
+      },
+      {
+        "id": "memory-061-cutover-schema-and-pin",
+        "severity": "P2",
+        "scope_relation": "in-scope",
+        "origin": "pre-existing",
+        "violated_acceptance_ids": ["S5B-AC-6"],
+        "assurance_contract_ids": ["TRUST-SDK-WHEELS", "FAIL-DATA-LOSS"],
+        "evidence": "plan.md:105/162 Memory 0.6.1：仓储物化 + register_principal_owner + wheel/manifest + Host pin; plan.md:81/85 cutover 义务只覆盖 Host v46; spikes/a2/RESULT.md:70 principals 行形状由 DO NOTHING/DO UPDATE 决定（数据形状变化无 schema 版本）; plan 未写 Memory DB schema 版本是否变化、0.6.0 已写 DB 被 0.6.1 打开的行为、Host pin 更新后 exact-hash 回归",
+        "status": "advisory",
+        "root_cause": "cutover receipt 只按 Host v46 定义，Memory 0.6.0→0.6.1 的数据兼容/schema 版本/pin hash 变更没有独立的前向/拒绝/回滚断言。"
+      },
+      {
+        "id": "prospective-registration-accepted-signal-step-missing",
+        "severity": "P2",
+        "scope_relation": "in-scope",
+        "origin": "pre-existing",
+        "violated_acceptance_ids": ["S5B-AC-4"],
+        "assurance_contract_ids": ["FAIL-SCHEDULER-DUPLICATE"],
+        "evidence": "spikes/a2/RESULT.md:48/72 step 6：先 REGISTRATION_ACCEPTED（绑定 outbox_id+payload_hash）→ acknowledged，再 TIME_DUE → triggered；plan.md:169 Task 6 ② 只写「到期/事件 → claim registration → apply_prospective_signal」，未列 REGISTRATION_ACCEPTED 信号及其与 outbox 游标推进的事务关系",
+        "status": "advisory",
+        "root_cause": "Memory 侧 registration 状态机需要 Host 先回签 accepted 信号；plan 的 scheduler 生命周期漏掉这一步，registration 与 occurrence 之间的 kill 点（registration-commit）语义因此不完整。"
+      }
+    ]
+  },
+  "clusters": {
+    "primary_contradiction": {
+      "id": "pc-value-milestone-accepted-vs-materialized",
+      "summary": "主要矛盾（真实发生的事确定性沉淀为任务档案语义状态与长期记忆）本身单一且价值在前，但最小验证动作不最小也不验证价值：里程碑终点停在 Memory 0.6.0 的「accepted plan」（spike A2 证明该状态下无 cognitive head、无 registration outbox、不可召回），价值的直接依赖（0.6.1 物化）被排在里程碑之后，AC-3 次要矩阵被排在里程碑之前；里程碑最后一跳（真实主模型 → accepted MemoryMutationPlan）无 prompt/schema/span 派生实现且无 spike。",
+      "acceptance_ids": ["S5B-AC-2", "S5B-AC-1", "S5B-AC-3"]
+    },
+    "challenge_clusters": [
+      {
+        "cluster_id": "cluster-value-milestone-boundary",
+        "parent_finding_ids": [
+          "pc-milestone-stops-at-accepted-plan",
+          "analysis-result-schema-and-span-derivation-missing",
+          "evidence-authority-and-principal-registration-absent-from-composition"
+        ],
+        "specialty": "architecture",
+        "question": "把「被记忆库接受的 MemoryMutationPlan」作为价值里程碑终点是否诚实——在 0.6.0 上 accepted 状态能否被任何用户可观察路径（typed recall / snapshot / occurrence）读到？里程碑的直接依赖边界应画在哪里（Task 1 的哪些断言、Task 5 的物化、Host analysis prompt/result schema/EvidenceSpanRef 派生、evidence_authority 与属主注册调用点）？真实主模型能否在 Host 的 sanitized payload 形状（键 `text`）上产出被 0.6.x validator accepted 的 plan？",
+        "required_evidence": [
+          "sqlite_v5.py prepare_analysis_application/finalize_analysis_application accepted 分支与 apply_memory_mutation_plan compile/apply 内核对 evidence_authority 的依赖",
+          "Host 侧 analysis prompt / result schema / span 派生的设计或 spike：真实 provider 对一条含事实的 Host 真实 turn payload 产出 accepted MemoryMutationPlan 的原始输出",
+          "typed_recall / initial snapshot 在 accepted-but-not-materialized 状态下的读取结果",
+          "Task 1 中哪些断言是 write_file→host.file 事件的直接依赖"
+        ],
+        "specialist_required": true
+      },
+      {
+        "cluster_id": "cluster-closure-terminal-window",
+        "parent_finding_ids": [
+          "harness-evidence-outbox-async-vs-run-terminal-ordering",
+          "closure-fallback-window-durable-state-and-recovery",
+          "pending-closure-bound-to-scope-not-conversation",
+          "task-scope-update-projectless-safe-vs-dirty-exposure"
+        ],
+        "specialty": "failure-recovery",
+        "question": "SDK terminal 与 Host record_sdk_terminal（同时是 lease 释放）之间插入的 closure 兜底窗口，在 crash/lease 到期/重放下是否有 durable 状态保证「恰一次 Provider 调用、不半状态」？Harness 证据经 Host 内 outbox+异步 worker 导入与 run_terminal 的 next_sequence/连续 seq 约束如何排序而不丢行？semantic_closure_pending 归属于 scope 时，后续轮路由到 standalone/其它 scope 时债务如何终止？",
+        "required_evidence": [
+          "foreground_runtime.py:700-934 reconcile 分支对「SDK terminal 已到、Host 未终态、post_turn_invocation_attempts 有 reserved/handed_off 行」的处理设计",
+          "evidence_ingress.py ingest/authorize_terminal 与 plan 的 harness_evidence_outbox worker 的排序/阻塞契约",
+          "SDK checkpoint tool_batch_reserved 在 Host recovery fence 下的行为（是否重放已保留 effect）",
+          "pending closure 跨 Run/跨路由的 base_revision、evidence_refs、终止条件设计"
+        ],
+        "specialist_required": true
+      },
+      {
+        "cluster_id": "cluster-analysis-idempotency-lineage",
+        "parent_finding_ids": [
+          "analysis-request-lineage-worker-config-not-run-binding",
+          "analysis-idempotency-key-attempt-bound-and-sent-unknown-unconfirmable",
+          "analysis-adapter-rebuild-after-provider-config-change"
+        ],
+        "specialty": "data-state",
+        "question": "在 Memory 0.6.0 request_hash 内含 attempt、batch_attempt 每次重试递增、provider/model 来自 worker 常量的既定契约下，Host `request_hash+attempt` 账本与 D7 unknown-call 三分类能否兑现 AC-2③「已 succeeded/unknown 后确认者 Provider 计数 0」与硬契约 96-97 的 Run 绑定血缘？对无回查 API 的 OpenAI 兼容 provider，`sent_unknown` 的可执行终态是什么？绑定不可重建时 job 的终态是什么？",
+        "required_evidence": [
+          "sqlite_v5.py claim_analysis_batch 完整逻辑（attempt/request 构造、retry 后 envelope 是否保留）与 test_durable_memory_jobs_v5.py:1816/2064 的断言前提",
+          "Host execution/provider_invocations.py ProviderInvocationCoordinator 对 unknown 的既有处理（是否存在 resend 策略）",
+          "provider.py ProductProviderAdapter.invoke 是否能拿到 provider response id 的时机（流式/非流式）",
+          "MemoryJobWorkerConfig 与多 Run 绑定并存时的 worker 生命周期设计"
+        ],
+        "specialist_required": true
+      },
+      {
+        "cluster_id": "cluster-effect-gate-exposure",
+        "parent_finding_ids": [
+          "effect-exposure-hiding-unverified-and-standalone-run-fault"
+        ],
+        "specialty": "security-privacy",
+        "question": "在冻结 SDK preflight 只看 Run 级 catalog policy、投影在 Run 冻结时一次决定的前提下，「暴露随路由」能否满足 D2 与 AC-3① 的「被拒绝」语义（而非整 Run fault）？Run 起始无 bound scope 时同一 Run 内 create_new→write 是否可能？每次项目 effect 的重验（envelope 血缘 + inode + scope lifecycle + _CONFIRM_ONLY 不变）与 Auto 豁免边界是否有显式断言与稳定 reason？",
+        "required_evidence": [
+          "react_loop.py _preflight_tool_batch 与 tool_exposure.execution_policy 对 snapshot 未列工具的行为（spike：模型调用 per-turn 隐藏但 catalog 内的 PROJECT_EFFECT 工具）",
+          "tool_authority.py resolve_exposure/CatalogRunToolExposure.provider_specs 是否可按 route state 过滤而不改 catalog fingerprint",
+          "foreground_runtime_ports.py:305-341 冻结时 root 选择与 Run 内 binding 变化的关系",
+          "TC-HM-09 rev4 步骤 3-6 对同一 Run 内 create→append→write 的要求"
+        ],
+        "specialist_required": true
+      },
+      {
+        "cluster_id": "cluster-prospective-ack-lifecycle",
+        "parent_finding_ids": [
+          "prospective-ack-channel-undefined",
+          "occurrence-presented-dual-table-state",
+          "prospective-registration-accepted-signal-step-missing"
+        ],
+        "specialty": "data-state",
+        "question": "occurrence presented→acknowledged→settled 的每个迁移各由什么确定性输入触发（不解析自然语言、不改冻结 DTO）？registration accepted 回签、outbox 游标、occurrence_presented（S5a 读源）与新 prospective_occurrences 表之间的事务边界与 canonical 归属是什么？",
+        "required_evidence": [
+          "Memory prospective 状态机对 REGISTRATION_ACCEPTED 的要求（test_prospective_signal_repository_v5.py）",
+          "S5a reconcile/no_recall 门对 occurrence_presented 的读写契约（context_authority.py:539-551, 878-883, 955-970）",
+          "可承载 ack 的工具/receipt 结构提案与其 Host 校验"
+        ],
+        "specialist_required": true
+      },
+      {
+        "cluster_id": "cluster-testability-fault-lanes",
+        "parent_finding_ids": [
+          "fault-runners-built-after-they-are-needed",
+          "real-ui-harness-not-a-task"
+        ],
+        "specialty": "testability-evidence",
+        "question": "决定性 negative-safety 场景的 runner/seam 契约与真实 UI 通道应在哪个任务前就绪，才能让 Task 3/4/6 的验证条目可执行？",
+        "required_evidence": [
+          "testcase fault-matrix lane 定义与 runner_contract",
+          "HANDOFF §6.3 通道脚本现状"
+        ],
+        "specialist_required": false
+      },
+      {
+        "cluster_id": "cluster-release-unit-and-cutover",
+        "parent_finding_ids": [
+          "release-unit-third-subsystem-packing",
+          "memory-061-cutover-schema-and-pin"
+        ],
+        "specialty": "release-rollback",
+        "question": "6 MUST AC / 10 任务 / 三个被打包计为 1 的状态机 + 一次上游 wheel 发布是否仍满足 program release-unit 门限；Memory 0.6.0→0.6.1 的数据/schema/pin cutover 是否需要独立 receipt？",
+        "required_evidence": [
+          "用户对 D5 Ponytail 的裁决",
+          "Memory 0.6.1 对既有 0.6.0 DB 的打开行为与 schema 版本声明"
+        ],
+        "specialist_required": false
+      }
+    ]
+  }
+}

@@ -1,0 +1,559 @@
+{
+ "acceptance_file": "/Users/taiwan/PROJECTS/SimplaHarness/simple-harness-memory-sdk/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/acceptance.md",
+ "assurance_contract": "/Users/taiwan/PROJECTS/SimplaHarness/simple-harness-memory-sdk/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/assurance-contract.json",
+ "testcase_inventory": "testcase/index.json",
+ "reuse_report": "testcase/human-memory-program/s5b-effect-closure-memory-reuse-report.json",
+ "manifest": {
+  "repo_root": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness",
+  "source_request_text": "HANDOFF-S5b 接手 human-memory program：S5b = effect gate + TaskScope 语义收口 + 终态 outbox/主模型 analysis/Memory 0.6.1（用户 2026-09-02 批准 acceptance+A1–A13；A6/A7/A11 委托裁决：AC-4/5 移交 S5c）",
+  "flow_tier": {
+   "value": "FULL",
+   "rationale": "v46 迁移 + 公共 Provider 后台调用 + 跨三仓 + LLM 载荷驱动状态机 + 共享生产 composition",
+   "decided_by": "agent"
+  },
+  "applicability": {
+   "input_sensitive": {
+    "value": true,
+    "rationale": "closure/analysis 正确性随自然语言语义变化；真实 provider 场景 ≥2 root",
+    "decided_by": "agent"
+   },
+   "llm_payload_driven": {
+    "value": true,
+    "rationale": "TaskScopeMutationPlan 与 MemoryMutationPlan（analysis 结果）载荷驱动 Host/Memory 状态机",
+    "decided_by": "agent"
+   },
+   "stateful_init": {
+    "value": true,
+    "rationale": "v46 新持久化状态 + Memory 0.6.1 + fresh userdata 冷启动直达对话",
+    "decided_by": "agent"
+   },
+   "cold_start": {
+    "value": true,
+    "rationale": "S5B-S7 为 fresh userdata 冷启动场景",
+    "decided_by": "agent"
+   }
+  },
+  "machine_gate": {
+   "value": true,
+   "rationale": "FULL + 高外部性（durable authority + 真实 provider + 跨仓 pin）"
+  },
+  "executor_engine": "claude-fable-5.1",
+  "challenger_engine": "claude",
+  "auditor_engine": "opus-4.8",
+  "release_unit": {
+   "slice_id": "S5B-EFFECT-CLOSURE-MEMORY",
+   "parent_program": "human-memory-digital-twin",
+   "must_ac_count": 4,
+   "task_count": 10,
+   "plan_lines": 224,
+   "high_risk_subsystems": 3,
+   "concurrent_layer_kinds": 3
+  },
+  "related_run_dirs": [],
+  "behavior_changes": [
+   {
+    "behavior_change_id": "bc-s5b-tchm09-step6-single-root-scope",
+    "testcase_id": "TC-HM-09",
+    "old": "TC-HM-09 rev4 步骤 6：在同一多根 scope 的每个 root 执行不同 canary effect，每个 envelope 绑定 exact task_scope_id/root ref/当时 revision",
+    "new": "每个 canary root 一个单根 scope 逐一执行（envelope 绑定同上并留逐 root hash）；追加断言 ≥2 root scope 的写工具不出现在 snapshot tools，强制调用 → durable FAILED + 稳定码，两根 canary hash 均不变；Run 内任何 binding 追加后 head≠receipt → workspace_binding_receipt_superseded（strict）",
+    "approval": {
+     "message_sha256": "2a99dd6aabeee8485b1453b7371170bef6a04ff2990165079f31c691f4ad75f7",
+     "delegated_decision_path": "/Users/taiwan/PROJECTS/SimplaHarness/simple-harness-memory-sdk/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/verification/plan-challenge/delegated-decisions-A6-A7-A11.md",
+     "delegated_decision_sha256": "d7ca07d8cec362422485da0aa15dfe380c927e291da1566d0ef480d80bbdb8e3",
+     "scope": [
+      "S5b",
+      "S5c",
+      "S6"
+     ],
+     "expiry": "多 root 选择协议被独立验收之日",
+     "approved_at": "2026-09-02"
+    }
+   }
+  ]
+ },
+ "obligations": [
+  {
+   "obligation_id": "S5B-TO-CLOSURE",
+   "ac_ids": [
+    "S5B-AC-1"
+   ]
+  },
+  {
+   "obligation_id": "S5B-TO-ANALYSIS",
+   "ac_ids": [
+    "S5B-AC-2"
+   ]
+  },
+  {
+   "obligation_id": "S5B-TO-EFFECT-GATE",
+   "ac_ids": [
+    "S5B-AC-3"
+   ]
+  },
+  {
+   "obligation_id": "S5B-TO-COMPOSITION",
+   "ac_ids": [
+    "S5B-AC-6"
+   ]
+  },
+  {
+   "obligation_id": "S5B-TO-REGRESSION",
+   "ac_ids": [
+    "S5B-AC-6"
+   ]
+  }
+ ],
+ "scenarios": [
+  {
+   "scenario_id": "S5B-S1-REAL-EFFECT-CLOSURE-MEMORY",
+   "obligation_ids": [
+    "S5B-TO-CLOSURE",
+    "S5B-TO-ANALYSIS"
+   ],
+   "required": true,
+   "testcase_ids": [
+    "TC-HM-11"
+   ],
+   "testcase_revisions": {
+    "TC-HM-11": 6
+   },
+   "gate_type": "positive-value",
+   "input_class": "real-provider-effect-closure-memory",
+   "ui": true,
+   "manual_required": true,
+   "min_root_runs": 2,
+   "cold_start": false,
+   "expected_run_created": true,
+   "impact_paths": [
+    "backend/deskpet/sdk_adapters/**",
+    "backend/deskpet/execution/**",
+    "backend/deskpet/task_scope/**",
+    "backend/deskpet/memory/**",
+    "backend/main.py",
+    "backend/tests/sdk_adapters/**",
+    "backend/tests/faults/**",
+    "backend/pyproject.toml",
+    "backend/vendor/**",
+    "../simple-harness-memory-sdk/src/**"
+   ],
+   "oracle_pins": {
+    "tc_hm_08_sha256": "463f0dd31d72cf743e49ad06500a68e82c9cf600d0ac1cb3e9ff246a146345cf",
+    "tc_hm_09_sha256": "f1b75788477aae53deef29639bca64761627286e011c10618b425cda57d4604f",
+    "tc_hm_11_sha256": "eb678dbd732bba427101063de84275c28268f2e99b6b1de9b5d90302298ccd74",
+    "tc_hm_14_sha256": "44d1791a640b8b6744d87d1f7b667975550571d33c8d77d3f3192150fe496efb",
+    "fault_matrix_sha256": "b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da",
+    "metric_formulas_sha256": "27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a"
+   },
+   "evidence_contract": {
+    "producer_types": [
+     "gate-exec",
+     "runtime-probe"
+    ],
+    "required_artifact_kinds": [
+     "business-result",
+     "execution-log",
+     "ui-capture"
+    ],
+    "required_identity": [
+     "root_run_id",
+     "session_id"
+    ],
+    "required_timestamps": true,
+    "required_business_facts": [
+     "business_terminal",
+     "write_file_envelope_verified",
+     "host_file_event_recorded",
+     "closure_receipt_mutate",
+     "outbox_delivered_same_tx",
+     "analysis_applied_and_materialized",
+     "next_turn_typed_recall_hit",
+     "provider_call_count_bounded",
+     "single_foreground_run"
+    ]
+   }
+  },
+  {
+   "scenario_id": "S5B-S2-CLOSURE-FAULT-MATRIX",
+   "obligation_ids": [
+    "S5B-TO-CLOSURE"
+   ],
+   "required": true,
+   "testcase_ids": [
+    "TC-HM-11",
+    "TC-HM-08"
+   ],
+   "testcase_revisions": {
+    "TC-HM-11": 6,
+    "TC-HM-08": 5
+   },
+   "gate_type": "negative-safety",
+   "input_class": "deterministic-closure-faults",
+   "ui": false,
+   "manual_required": false,
+   "min_root_runs": 1,
+   "required_lanes": [
+    "temporal-fault"
+   ],
+   "cold_start": false,
+   "expected_run_created": true,
+   "impact_paths": [
+    "backend/deskpet/sdk_adapters/**",
+    "backend/deskpet/execution/**",
+    "backend/deskpet/task_scope/**",
+    "backend/deskpet/memory/**",
+    "backend/main.py",
+    "backend/tests/sdk_adapters/**",
+    "backend/tests/faults/**",
+    "backend/pyproject.toml",
+    "backend/vendor/**"
+   ],
+   "oracle_pins": {
+    "tc_hm_08_sha256": "463f0dd31d72cf743e49ad06500a68e82c9cf600d0ac1cb3e9ff246a146345cf",
+    "tc_hm_09_sha256": "f1b75788477aae53deef29639bca64761627286e011c10618b425cda57d4604f",
+    "tc_hm_11_sha256": "eb678dbd732bba427101063de84275c28268f2e99b6b1de9b5d90302298ccd74",
+    "tc_hm_14_sha256": "44d1791a640b8b6744d87d1f7b667975550571d33c8d77d3f3192150fe496efb",
+    "fault_matrix_sha256": "b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da",
+    "metric_formulas_sha256": "27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a"
+   },
+   "evidence_contract": {
+    "producer_types": [
+     "gate-exec",
+     "runtime-probe"
+    ],
+    "required_artifact_kinds": [
+     "execution-log",
+     "fault-recovery-log"
+    ],
+    "required_identity": [
+     "root_run_id"
+    ],
+    "required_timestamps": true,
+    "required_business_facts": [
+     "multi_tool_batch_single_receipt",
+     "missed_call_fallback_once",
+     "refusal_timeout_pending",
+     "unknown_zero_resend",
+     "cas_conflict_retryable",
+     "duplicate_plan_same_receipt",
+     "projection_failure_no_rollback",
+     "observer_drain_no_row_loss",
+     "lease_second_owner_zero_call",
+     "standalone_update_rejected",
+     "recovered_state"
+    ]
+   }
+  },
+  {
+   "scenario_id": "S5B-S3-ANALYSIS-IDEMPOTENCY-FAULTS",
+   "obligation_ids": [
+    "S5B-TO-ANALYSIS"
+   ],
+   "required": true,
+   "testcase_ids": [
+    "TC-HM-08"
+   ],
+   "testcase_revisions": {
+    "TC-HM-08": 5
+   },
+   "gate_type": "negative-safety",
+   "input_class": "deterministic-analysis-idempotency",
+   "ui": false,
+   "manual_required": false,
+   "min_root_runs": 1,
+   "required_lanes": [
+    "temporal-fault"
+   ],
+   "cold_start": false,
+   "expected_run_created": false,
+   "impact_paths": [
+    "backend/deskpet/sdk_adapters/**",
+    "backend/deskpet/execution/**",
+    "backend/deskpet/task_scope/**",
+    "backend/deskpet/memory/**",
+    "backend/main.py",
+    "backend/tests/sdk_adapters/**",
+    "backend/tests/faults/**",
+    "backend/pyproject.toml",
+    "backend/vendor/**",
+    "../simple-harness-memory-sdk/src/**"
+   ],
+   "oracle_pins": {
+    "tc_hm_08_sha256": "463f0dd31d72cf743e49ad06500a68e82c9cf600d0ac1cb3e9ff246a146345cf",
+    "tc_hm_09_sha256": "f1b75788477aae53deef29639bca64761627286e011c10618b425cda57d4604f",
+    "tc_hm_11_sha256": "eb678dbd732bba427101063de84275c28268f2e99b6b1de9b5d90302298ccd74",
+    "tc_hm_14_sha256": "44d1791a640b8b6744d87d1f7b667975550571d33c8d77d3f3192150fe496efb",
+    "fault_matrix_sha256": "b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da",
+    "metric_formulas_sha256": "27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a"
+   },
+   "evidence_contract": {
+    "producer_types": [
+     "gate-exec",
+     "runtime-probe"
+    ],
+    "required_artifact_kinds": [
+     "execution-log",
+     "fault-recovery-log"
+    ],
+    "required_identity": [
+     "root_run_id"
+    ],
+    "required_timestamps": true,
+    "required_business_facts": [
+     "five_state_attempts",
+     "three_key_lookup_zero_provider_call",
+     "unknown_taxonomy_terminal",
+     "multi_op_finalize_converges",
+     "audit_pending_seam_dead_letter",
+     "reconciliation_observer_confirmed",
+     "lease_reclaim_in_flight_zero_call",
+     "membership_growth_refused",
+     "memory_unavailable_dead_letter",
+     "raw_evidence_conserved",
+     "recovered_state"
+    ]
+   }
+  },
+  {
+   "scenario_id": "S5B-S4-EFFECT-GATE",
+   "obligation_ids": [
+    "S5B-TO-EFFECT-GATE"
+   ],
+   "required": true,
+   "testcase_ids": [
+    "TC-HM-09"
+   ],
+   "testcase_revisions": {
+    "TC-HM-09": 5
+   },
+   "gate_type": "negative-safety",
+   "input_class": "deterministic-effect-gate",
+   "ui": false,
+   "manual_required": false,
+   "min_root_runs": 1,
+   "cold_start": false,
+   "expected_run_created": true,
+   "impact_paths": [
+    "backend/deskpet/sdk_adapters/**",
+    "backend/deskpet/execution/**",
+    "backend/deskpet/task_scope/**",
+    "backend/deskpet/memory/**",
+    "backend/main.py",
+    "backend/tests/sdk_adapters/**",
+    "backend/tests/faults/**",
+    "backend/pyproject.toml",
+    "backend/vendor/**"
+   ],
+   "oracle_pins": {
+    "tc_hm_08_sha256": "463f0dd31d72cf743e49ad06500a68e82c9cf600d0ac1cb3e9ff246a146345cf",
+    "tc_hm_09_sha256": "f1b75788477aae53deef29639bca64761627286e011c10618b425cda57d4604f",
+    "tc_hm_11_sha256": "eb678dbd732bba427101063de84275c28268f2e99b6b1de9b5d90302298ccd74",
+    "tc_hm_14_sha256": "44d1791a640b8b6744d87d1f7b667975550571d33c8d77d3f3192150fe496efb",
+    "fault_matrix_sha256": "b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da",
+    "metric_formulas_sha256": "27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a"
+   },
+   "evidence_contract": {
+    "producer_types": [
+     "gate-exec",
+     "runtime-probe"
+    ],
+    "required_artifact_kinds": [
+     "execution-log"
+    ],
+    "required_identity": [
+     "root_run_id"
+    ],
+    "required_timestamps": true,
+    "required_business_facts": [
+     "project_effect_list_frozen",
+     "root_resolver_single_root",
+     "per_effect_reverify_codes",
+     "six_rejections",
+     "inode_drift_rejected",
+     "same_batch_barrier",
+     "forged_authority_rejected",
+     "run_fault_three_codes",
+     "frozen_root_split_rejected",
+     "auto_destructive_requires_user",
+     "single_root_per_canary",
+     "two_root_scope_fail_closed"
+    ]
+   }
+  },
+  {
+   "scenario_id": "S5B-S7-COLDSTART-COMPOSITION-PAYLOAD",
+   "obligation_ids": [
+    "S5B-TO-COMPOSITION"
+   ],
+   "required": true,
+   "testcase_ids": [
+    "TC-HM-14",
+    "TC-HM-08"
+   ],
+   "testcase_revisions": {
+    "TC-HM-14": 4,
+    "TC-HM-08": 5
+   },
+   "gate_type": "negative-safety",
+   "input_class": "cold-start-composition-payload",
+   "ui": true,
+   "manual_required": true,
+   "min_root_runs": 1,
+   "cold_start": true,
+   "expected_run_created": true,
+   "impact_paths": [
+    "backend/deskpet/sdk_adapters/**",
+    "backend/deskpet/execution/**",
+    "backend/deskpet/task_scope/**",
+    "backend/deskpet/memory/**",
+    "backend/main.py",
+    "backend/tests/sdk_adapters/**",
+    "backend/tests/faults/**",
+    "backend/pyproject.toml",
+    "backend/vendor/**",
+    "../simple-harness-memory-sdk/src/**"
+   ],
+   "oracle_pins": {
+    "tc_hm_08_sha256": "463f0dd31d72cf743e49ad06500a68e82c9cf600d0ac1cb3e9ff246a146345cf",
+    "tc_hm_09_sha256": "f1b75788477aae53deef29639bca64761627286e011c10618b425cda57d4604f",
+    "tc_hm_11_sha256": "eb678dbd732bba427101063de84275c28268f2e99b6b1de9b5d90302298ccd74",
+    "tc_hm_14_sha256": "44d1791a640b8b6744d87d1f7b667975550571d33c8d77d3f3192150fe496efb",
+    "fault_matrix_sha256": "b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da",
+    "metric_formulas_sha256": "27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a"
+   },
+   "evidence_contract": {
+    "producer_types": [
+     "gate-exec",
+     "runtime-probe"
+    ],
+    "required_artifact_kinds": [
+     "execution-log",
+     "ui-capture"
+    ],
+    "required_identity": [
+     "root_run_id",
+     "session_id"
+    ],
+    "required_timestamps": true,
+    "required_business_facts": [
+     "fresh_userdata_v46_direct_chat",
+     "composition_missing_startup_fail",
+     "old_runtime_rejects_v46",
+     "payload_mutations_fail_closed",
+     "pre_admission_audit_row",
+     "memory_061_forward_open",
+     "wrong_wheel_hash_fail_closed"
+    ]
+   }
+  },
+  {
+   "scenario_id": "S5B-S8-REAL-UI-CHANNEL",
+   "obligation_ids": [
+    "S5B-TO-COMPOSITION"
+   ],
+   "required": true,
+   "testcase_ids": [
+    "TC-HM-11"
+   ],
+   "testcase_revisions": {
+    "TC-HM-11": 6
+   },
+   "gate_type": "negative-safety",
+   "input_class": "real-ui-channel-rehearsal",
+   "ui": true,
+   "manual_required": true,
+   "min_root_runs": 1,
+   "cold_start": false,
+   "expected_run_created": true,
+   "impact_paths": [
+    "scripts/**",
+    "tauri-app/src/**"
+   ],
+   "oracle_pins": {
+    "tc_hm_08_sha256": "463f0dd31d72cf743e49ad06500a68e82c9cf600d0ac1cb3e9ff246a146345cf",
+    "tc_hm_09_sha256": "f1b75788477aae53deef29639bca64761627286e011c10618b425cda57d4604f",
+    "tc_hm_11_sha256": "eb678dbd732bba427101063de84275c28268f2e99b6b1de9b5d90302298ccd74",
+    "tc_hm_14_sha256": "44d1791a640b8b6744d87d1f7b667975550571d33c8d77d3f3192150fe496efb",
+    "fault_matrix_sha256": "b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da",
+    "metric_formulas_sha256": "27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a"
+   },
+   "evidence_contract": {
+    "producer_types": [
+     "gate-exec",
+     "runtime-probe"
+    ],
+    "required_artifact_kinds": [
+     "execution-log",
+     "ui-capture"
+    ],
+    "required_identity": [
+     "root_run_id",
+     "session_id"
+    ],
+    "required_timestamps": true,
+    "required_business_facts": [
+     "ui_channel_one_turn_real_provider"
+    ]
+   }
+  },
+  {
+   "scenario_id": "S5B-REG-FULL",
+   "obligation_ids": [
+    "S5B-TO-REGRESSION"
+   ],
+   "required": true,
+   "testcase_ids": [
+    "TC-HM-11",
+    "TC-HM-14"
+   ],
+   "testcase_revisions": {
+    "TC-HM-11": 6,
+    "TC-HM-14": 4
+   },
+   "gate_type": "regression",
+   "input_class": "full-backend-and-memory-suites",
+   "ui": false,
+   "manual_required": false,
+   "min_root_runs": 1,
+   "cold_start": false,
+   "expected_run_created": false,
+   "impact_paths": [
+    "backend/deskpet/sdk_adapters/**",
+    "backend/deskpet/execution/**",
+    "backend/deskpet/task_scope/**",
+    "backend/deskpet/memory/**",
+    "backend/main.py",
+    "backend/tests/sdk_adapters/**",
+    "backend/tests/faults/**",
+    "backend/pyproject.toml",
+    "backend/vendor/**",
+    "../simple-harness-memory-sdk/src/**"
+   ],
+   "oracle_pins": {
+    "tc_hm_08_sha256": "463f0dd31d72cf743e49ad06500a68e82c9cf600d0ac1cb3e9ff246a146345cf",
+    "tc_hm_09_sha256": "f1b75788477aae53deef29639bca64761627286e011c10618b425cda57d4604f",
+    "tc_hm_11_sha256": "eb678dbd732bba427101063de84275c28268f2e99b6b1de9b5d90302298ccd74",
+    "tc_hm_14_sha256": "44d1791a640b8b6744d87d1f7b667975550571d33c8d77d3f3192150fe496efb",
+    "fault_matrix_sha256": "b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da",
+    "metric_formulas_sha256": "27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a"
+   },
+   "evidence_contract": {
+    "producer_types": [
+     "gate-exec",
+     "runtime-probe"
+    ],
+    "required_artifact_kinds": [
+     "execution-log"
+    ],
+    "required_identity": [
+     "root_run_id"
+    ],
+    "required_timestamps": true,
+    "required_business_facts": [
+     "host_full_suite_baseline_or_better",
+     "memory_full_suite_green",
+     "exactly_seven_known_red"
+    ]
+   }
+  }
+ ]
+}

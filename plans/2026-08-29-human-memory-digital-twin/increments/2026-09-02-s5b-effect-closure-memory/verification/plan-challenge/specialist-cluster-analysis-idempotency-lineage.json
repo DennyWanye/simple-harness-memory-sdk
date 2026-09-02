@@ -1,0 +1,90 @@
+{
+ "cluster_id": "cluster-analysis-idempotency-lineage",
+ "parent_finding_ids": [
+  "analysis-request-lineage-worker-config-not-run-binding",
+  "analysis-idempotency-attempt-bound-unknown",
+  "analysis-adapter-rebuild-after-provider-config-change"
+ ],
+ "specialty": "data-state",
+ "findings": [
+  {
+   "id": "analysis-idempotency-attempt-bound-unknown",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-2"
+   ],
+   "assurance_contract_ids": [
+    "ASSET-PROVIDER-IDEMPOTENCY",
+    "FAIL-DUPLICATE-PROVIDER-CALL",
+    "ADV-DUPLICATE-DELIVERY",
+    "FAIL-PROTOCOL-REPLAY"
+   ],
+   "evidence": "REAL-WHEEL PROBE (simple-harness-memory-sdk==0.6.0, scratchpad/spec-idem/probe_idem.py, log probe_run.log): (P1) executor raises -> fail_analysis_batch -> jobs pending attempt_count=1 -> next claim builds NEW batch: job_id/idempotency_key analysis-batch-65017aa0b1e9c -> analysis-batch-29a53765591e0, attempt 1->2, request_hash 5e465a7edef1->be9048aa8254 (same batch_id? False | same request_hash? False | same idempotency_key? False). (P1b) three same-membership retries: attempts [1,2,3], distinct request_hash 3, distinct evidence_set_key 1, terminal jobs.state=dead_letter last_error_code=analysis_executor_failed, provider_calls 0. (P2) evidence-2 ingested between retries with batch_size=2 -> retry batch members [evidence-2, evidence-1] -> evidence_set_key changes (bf3822cf34ec -> 2399f0a40ba3): membership can GROW across retries. (P3) BaseException mid-executor (Host crash) leaves jobs 'claimed' lease_expires_at=310; after lease expiry a new worker reclaims via recover_row path: same batch_id? True | same request_hash? True | same attempt? True; events provider_handoff -> reclaimed(analysis_lease_reclaimed) -> retry_scheduled(analysis_executor_failed). (P4) after Host refusal Memory issues attempt 2 with NEW request_hash but same evidence_set_key (True) -> third refusal -> dead_letter; outbox memory.mutation.requested=dead_letter; total Host provider_calls 0. CODE: sqlite_v5.py:10262-10286 batch_attempt=max(attempt_count+1), batch_id=_stable_id(subject,batch_key,member_identity{job_id,attempt}), request(job_id=batch_id, attempt=batch_attempt, idempotency_key=batch_id); :10152-10180 recover_row reclaim keeps batch/request; :11190-11275 fail_analysis_batch -> jobs pending, batch 'failed' (old batch never reused); :10976-11015 reject_analysis_result(retry_config) keeps jobs 'claimed' with same lease_token + lease_expires_at=retry_at -> reclaim path -> SAME request re-delivered (this is what tests :1640-1725 and :1816-1875 exercise: replay_authority.provider_calls==0 only because _Executor.deliveries[(request_hash,attempt)] :205-207 returns the durable envelope, i.e. the executor IS called again with identical request and must answer from its ledger). Test :2064-2110 (crash after job.result.after_commit): _read_analysis_claim_unlocked :10366-10400 rebuilds envelope from analysis_batches.result_json and core/jobs.py:421-427 skips the executor entirely (replay_executor.calls==0) -> that zero-call guarantee is Memory-side retention, not the Host ledger. evidence_protocol.py:2109-2199 request_hash=_canonical_hash(to_json()) with to_json containing job_id/attempt/idempotency_key; all other fields (run_id, subject, ordered_evidence_refs[(evidence_id,content_hash,ordinal)], prompt/schema/policy versions, provider/model/config_hash, budget, disclosure_context) are attempt-independent -> stable evidence-set key derivable. UNKNOWN TAXONOMY: SDK openai_compatible.py:96-97 endpoint '/chat/completions', :142 single non-streaming POST, :250 provider_request_id = response.headers['x-request-id'] or payload['id'] -> id exists ONLY when a response body arrived; Host reconciliation.py:53-68 ProductProviderReconciliationAdapter default observation = STILL_UNKNOWN; SDK dispatch.py:563-583 reconcile_incomplete never replays a STILL_UNKNOWN invocation; Host provider_invocations.py:456-520 start_and_ack distinguishes transport_entered (DispatchNotStarted vs DispatchStartUnknown), :640-700 ConnectTimeout -> transport_not_sent, any error after handoff -> _mark_unknown and raise ProviderDispatchUnknownError; no Host code path resends an unknown invocation (grep deskpet/execution, deskpet/harness). LEASE RACE: plan.md non-functional 'analysis worker lease 30s' vs spike A1 real provider latency 16.6-33.9s (plan.md:71) and TEST/spike budgets deadline_ms=30_000; sqlite_v5.py:10152-10158 reclaims any batch whose jobs.lease_expires_at<=now regardless of an in-flight executor call; 0.6.0 exposes no lease-renew API.",
+   "status": "open",
+   "root_cause": "Refined root cause (parent confirmed). Memory 0.6.0 re-delivers the IDENTICAL MemoryAnalysisRequest only on lease reclaim / authority-transient retry of the same batch; every executor failure creates a new batch whose request_hash, attempt, job_id and idempotency_key all change while the evidence set stays the same (or grows). A Host ledger keyed only by (request_hash, attempt) therefore (a) correctly dedups reclaim/authority retries, but (b) cannot see a prior `sent_unknown` when Memory retries with attempt+1 -> blind resend of the same evidence set, violating ASSET-PROVIDER-IDEMPOTENCY. Second facet: with a non-streaming OpenAI-compatible chat/completions endpoint the provider response id is only known once the response arrived, the Host reconciliation adapter is a constant STILL_UNKNOWN and the SDK never replays, so `sent_unknown -> sent_confirmed` has NO executable production path; AC-2 (3)'s 'unknown then confirmed by provider response id' branch is exercisable only through an injected test reconciliation observer. Third facet: the plan's 30 s Memory lease is shorter than real analysis latency, so 0.6.0 will reclaim and re-deliver a request while the Host's provider call is still in flight; only a Host durable `handed_off` row (refuse/await, never re-dispatch) prevents a concurrent duplicate call. EXECUTABLE DESIGN the plan must state: (1) ledger table post_turn_invocation_attempts UNIQUE(request_hash, attempt) PLUS attempt-independent evidence_set_key = sha256(canonical(request.to_json() minus {job_id, attempt, idempotency_key})) PLUS a member index (subject, run_id, evidence_id, attempt_row_id) because membership grows between retries (probe P2); pre-dispatch rule: any member evidence with an open handed_off/sent_unknown row -> refuse without provider call. (2) Classification reuses Host dispatch handoff facts: transport not entered / ConnectTimeout -> not_sent (resend allowed as attempt+1); anything after handoff without a parsed response -> sent_unknown; parsed response persisted in the SAME transaction as state=succeeded together with provider_response_id/provider_response_hash (so there is no window in which a response exists but is not durable). (3) Terminal state of sent_unknown for this provider = Host executor raises a definite AnalysisAttemptBlocked(sent_unknown_unresolved) on every re-delivery (0 provider calls); Memory burns its retry schedule and dead-letters with last_error_code=analysis_executor_failed (probe P1b/P4); Host writes a durable event memory.analysis.blocked{reason, evidence_set_key} so the user-visible reason is not lost behind Memory's coarse code; raw evidence untouched (outbox row dead_letter, evidence_envelopes intact). Optional 0.6.1 addition (same wheel as Task 5): AnalysisExecutorPermanentError -> immediate dead_letter carrying the Host reason instead of N retries and N failed batch rows. (4) Confirm branch: keep `sent_confirmed` reachable only via an injected ProviderReconciliationObservation(COMPLETED) in the deterministic S5B-S3 lane; document that production has no confirm path. (5) lease_seconds must be >= analysis_budget.deadline_ms/1000 + provider timeout margin (e.g. 120 s), and the Host ledger must treat a re-delivery of a row in handed_off as 'await/refuse', never as a fresh dispatch."
+  },
+  {
+   "id": "analysis-request-lineage-worker-config-not-run-binding",
+   "severity": "P1",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-2",
+    "S5B-AC-6"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-PROTOCOL-REPLAY",
+    "TRUST-AUTH-CONTEXT",
+    "FAIL-COMPOSITION-FALLBACK"
+   ],
+   "evidence": "sqlite_v5.py:10273-10286 MemoryAnalysisRequest(..., config.prompt_version, config.result_schema_version, config.policy_version, config.provider_id, config.model_id, config.model_config_hash, batch_attempt, config.analysis_budget, disclosure, batch_id) -> provider/model/config_hash are worker constants (probe: request.provider_id='worker-const-provider' for every batch regardless of evidence); :529-534 mutation_batch_key=_stable_id('evidence-analysis-batch-key', principal, envelope.run_id, disclosure.context_hash) -> a batch never spans Runs (lineage would be uniform per batch by construction); :10186-10206 claim picks the oldest eligible (principal,batch_key) group with NO filter on config/provider -> a worker with config X will claim batches whose originating Run used binding Y; :11120-11126 and record_memory_analysis persist claim.request.provider_id/model_id/model_config_hash into llm_invocations (permanent audit). core/jobs.py:62-102 MemoryJobWorkerConfig requires provider_id/model_id/model_config_hash (64 hex) and the runner holds ONE config (:398-412). Host: run_bindings.py:32-48 SdkRunBindingV1(provider_id, provider_incarnation_id, provider_config_revision, model_id, model_params, ...); main.py:7526-7540 rebuild requires entry.incarnation_id == binding.provider_incarnation_id and config_revision equal, adapter built with model=binding.model_id, model_params=binding.model_params; llm/provider_registry.py:278,414,427-428 incarnation_id/config_revision are persisted in the registry file (durable across restarts). plan.md:156 Task 4 (5) 'MemoryJobWorkerConfig（provider/model/config_hash 来自 Run 绑定）' conflates the two sources; plan.md:163 Task 5 already ships Memory 0.6.1. program plan.md:96-97 requires the analysis to use the originating Run's main-model configuration with request/result/receipt permanently auditable.",
+   "status": "open",
+   "root_cause": "Confirmed. In 0.6.0 the audited request lineage is a worker constant while the Host executor must dial the originating Run's binding; the two diverge the moment the user changes provider/model, and there is no claim-side filter, so 'one worker per binding fingerprint' is NOT workable (workers race on the same FIFO batch; the wrong-config worker burns attempts) and 'config from the batch's originating run binding' is impossible because config is fixed before the claim reveals the batch (peeking Memory's jobs table is raw SQL, not a port). WORKABLE COMPOSITION: (A) Memory 0.6.1 (Task 5, same wheel already planned): bind lineage at ingest -- ingest_committed_evidence(envelope, receipt, *, analysis_lineage=AnalysisLineage(provider_id, model_id, model_config_hash)) persisted per evidence row; claim_analysis_batch derives request.provider_id/model_id/model_config_hash from the members (assert uniform, mirroring the run_id/disclosure 'analysis batch authority differs' check) and MemoryJobWorkerConfig keeps only prompt/schema/policy/validator/budget/lease fields (or keeps provider fields as non-authoritative defaults). Host: model_config_hash = sha256(canonical{provider_id, provider_incarnation_id, provider_config_revision, model_id, model_params, endpoint_identity}) computed from the durable SdkRunBindingV1 at terminal commit (same transaction as the ingestion outbox row) and passed through the outbox worker to ingest; the executor rebuilds the adapter from foreground_run_sdk_bindings and REFUSES (definite failure, 0 provider calls) when request lineage != rebuilt binding hash. Audit consequence: Memory llm_invocations and the Host attempt ledger carry the same true provider/model/config hash + binding_fingerprint -> contract 96-97 satisfied and cross-checkable. (B) 0.6.0-only interim for the Task 4 milestone: single worker whose config mirrors the CURRENT provider binding; executor verifies request lineage == H(binding of request.run_id); jobs from Runs bound to a different provider/model are blocked (0 provider calls) and dead-letter after max_attempts -- acceptable only as the explicitly documented milestone interim, because it silently loses memory formation for pre-switch turns. Plan edits: Task 4 (5) must say 'interim B on 0.6.0'; Task 5 must add the lineage-at-ingest API + uniform-lineage assert + tests; S5B-S1 root run on 0.6.1 must assert llm_invocations.provider_id/model_id == originating Run binding."
+  },
+  {
+   "id": "analysis-adapter-rebuild-after-provider-config-change",
+   "severity": "P2",
+   "scope_relation": "in-scope",
+   "origin": "pre-existing",
+   "violated_acceptance_ids": [
+    "S5B-AC-2"
+   ],
+   "assurance_contract_ids": [
+    "FAIL-DATA-LOSS",
+    "ASSET-RAW-EVIDENCE"
+   ],
+   "evidence": "main.py:7526-7534 raises RuntimeError('SDK bound Provider incarnation changed') when registry entry incarnation_id/config_revision differ from the binding, and 'SDK bound Provider incarnation is unavailable' when the provider was removed; llm/provider_registry.py:427-428 incarnation_id is minted once and persisted (:278), config_revision bumps on edit -> a plain Host restart does NOT invalidate old bindings; only provider removal/re-add or a config edit does. core/jobs.py:427-439 maps ANY executor Exception to fail_analysis_batch('analysis_executor_failed') with the retry schedule; probe P1b: 3 attempts -> jobs.state=dead_letter, last_error_code=analysis_executor_failed, outbox dead_letter, evidence rows intact, 0 provider calls. No 'permanent failure' signal exists in 0.6.0.",
+   "status": "open",
+   "root_cause": "Refined: not infinite retry (bounded by max_attempts) and not triggered by restart, but the terminal is silent and mislabelled. Terminal state to write into the plan: Host executor classifies the attempt as not_sent(reason=binding_unrebuildable: provider_removed | incarnation_changed | config_revision_changed) with 0 provider calls, raises a definite error each re-delivery; Memory dead-letters after max_attempts with analysis_executor_failed (or immediately via the optional 0.6.1 AnalysisExecutorPermanentError); Host writes durable event memory.analysis.dead_letter{run_id, evidence_set_key, reason} for S6 visibility; raw evidence and the Host memory_ingestion_outbox row are retained (append-only). Re-analysis under the new binding is NOT automatic (would violate contract 96-97 'originating Run configuration'); it is a future explicit user/operator action creating a new idempotency group, out of S5b scope."
+  }
+ ],
+ "cross_cluster_refs": [
+  {
+   "cross_cluster_ref": "cluster-testability-fault-lanes",
+   "finding_ids": [
+    "fault-runners-built-after-they-are-needed"
+   ],
+   "reason": "S5B-S3 lane must inject a ProviderReconciliationObservation(COMPLETED) observer to exercise the sent_unknown->sent_confirmed branch (no production path exists), must include a lease-reclaim-during-in-flight-call seam (Memory lease < provider latency) and an evidence-membership-growth retry case; without these the AC-2(3) oracle cannot be exercised deterministically."
+  },
+  {
+   "cross_cluster_ref": "cluster-release-unit-and-cutover",
+   "finding_ids": [
+    "memory-061-cutover-schema-and-pin"
+   ],
+   "reason": "Memory 0.6.1 scope grows by two items from this cluster: analysis lineage bound at ingest (new ingest kwarg + evidence column + claim derivation + uniform-lineage assert) and an optional AnalysisExecutorPermanentError; both change the wheel hash and the v7 schema and must be in the same cutover receipt as materialization/owner registration."
+  },
+  {
+   "cross_cluster_ref": "cluster-value-milestone-boundary",
+   "finding_ids": [
+    "pc-milestone-stops-at-accepted-plan"
+   ],
+   "reason": "The Task 4 milestone on 0.6.0 can only run with the interim composition (single worker config mirroring the current binding, executor verifying lineage); the milestone declaration must say so, and the 0.6.1 root run must re-assert Run-bound lineage in llm_invocations."
+  }
+ ],
+ "conclusion": {
+  "status": "refined",
+  "summary": "Both P1 parents confirmed on the real 0.6.0 wheel and refined into executable designs. Probe facts: Memory re-delivers the identical request only on lease reclaim / authority-transient retry (same batch_id, request_hash, attempt); every executor failure creates a new batch with new request_hash/attempt/job_id/idempotency_key while the evidence set is unchanged or grows; crash-after-result-commit needs no executor call at all (Memory retains the envelope). Hence the Host ledger must be keyed by (request_hash, attempt) AND an attempt-independent evidence_set_key with a per-member evidence index; sent_unknown has no production confirm path for a non-streaming OpenAI-compatible endpoint (response id exists only with a response; Host reconciliation adapter is constant STILL_UNKNOWN; SDK never replays), so its executable terminal is 'refuse every re-delivery with 0 provider calls -> Memory dead_letter (analysis_executor_failed) + Host durable blocked event', with sent_confirmed exercisable only via an injected test observer; the 30 s lease is shorter than measured analysis latency and must be raised above the analysis deadline. Lineage: 0.6.0 audits worker constants and claim has no config filter, so per-binding workers cannot work; the workable composition is Memory 0.6.1 lineage-bound-at-ingest (Host passes binding-derived model_config_hash in the terminal-commit outbox row; executor verifies request lineage == rebuilt binding, else blocked) with a documented 0.6.0 interim for the milestone. Binding-unrebuildable terminal: bounded retries -> dead_letter with Host-visible reason, raw evidence retained, restart does not trigger it (incarnation_id is persisted). No further spike required; plan edits to Task 4 (5), Task 5, S5B-S3 lane and the non-functional lease bound are needed before closure."
+ }
+}

@@ -1,0 +1,22 @@
+[
+ {
+  "job_id": "analysis-batch-1f27be6dfe1b32c9119e10483fd71bd6bdf1f8d50c12a202c2f82f7ccdd607df",
+  "proposal": {
+   "outcome": "mutate",
+   "operations": [
+    {
+     "operation_id": "op-0001",
+     "memory_type": "prospective",
+     "prospective": {
+      "action": "提醒用户提交周报",
+      "trigger_at_iso": "2026-09-04T18:47:49+08:00",
+      "timezone": "Asia/Shanghai"
+     },
+     "evidence_item_id": "dk-turn-0001",
+     "exact_quote": "从今以后每周五提醒我提交周报",
+     "reason_code": "user_requested_recurring_reminder"
+    }
+   ]
+  }
+ }
+]

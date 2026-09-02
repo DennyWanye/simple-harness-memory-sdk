@@ -1,0 +1,26 @@
+
+[A] exception: TaskExecutionAuthorityError('sdk_task_execution_route_authority_missing')
+[A] handler calls: ['context_route']
+[A] write_file handler invocations: 0
+[A] issue_envelope requests: 2 errors: ['sdk_task_execution_route_authority_missing']
+[A] write_file tool messages: []
+[A] checkpoint route_state: routed_standalone phase: tool_batch_reserved
+.
+[A2] write_file tool messages: ['{"error_code":"ROUTE_BARRIER_NOT_OBSERVED","outcome":"rejected","public_message":"Observe a Context route before executing this Tool.","value":null}']
+[A2] handler calls: [] issue_envelope requests: 0
+.
+[A3-same-batch] write_file tool messages: ['{"error_code":"ROUTE_BARRIER_NOT_OBSERVED","outcome":"rejected","public_message":"Observe a Context route before executing this Tool.","value":null}']
+.
+[B] issue_envelope tool_names: ['context_route', 'write_file', 'write_file']
+[B] envelope: {'schema_version': 1, 'run_id': 'run-spike-a3', 'call_id': 'call-47d7b22c9d87d6e17b4da7ccf56e9500c6676aeed297bfa52a4304d420514d7b', 'effect_id': 'effect-47d7b22c9d87d6e17b4da7ccf56e9500c6676aeed297bfa52a4304d420514d7b', 'raw_call_id': 'raw-write', 'turn_ordinal': 2, 'call_ordinal': 0, 'tool_name': 'write_file', 'capability_id': 'builtin:write_file', 'capability_fingerprint': 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd', 'route_receipt_id': '1c3a93f1-0e90-5e1b-a32e-4142e49aec60', 'route_receipt_hash': 'a8255bffd99150e04b7f20b9cb3014670886b722560c243af5904cc6434c2f8c', 'task_scope_id': '322eb89c-b858-5671-a57a-4750a633b2a8', 'root_id': 'root-322eb89c-b858-5671-a57a-4750a633b2a8', 'root_identity_hash': 'c06af3be5f9ffde6589942a98df869cebe110e8bc8996068a6a1c3718697b4d8', 'binding_set_revision': 1, 'binding_set_receipt_id': '69f3629a-b74e-541c-8bfd-741b9f308ddb', 'binding_set_receipt_hash': 'ec9dcbfc853aa8f76417dbcbefedc7b5fcd1121e6d1a601fdbf78262a8de0d0d', 'idempotency_key': 'effect-47d7b22c9d87d6e17b4da7ccf56e9500c6676aeed297bfa52a4304d420514d7b'}
+[B] envelope: {'schema_version': 1, 'run_id': 'run-spike-a3', 'call_id': 'call-33fe134187787be22b8253238223c0bae0147c932a8bfd4ac57c2ba5c621deac', 'effect_id': 'effect-33fe134187787be22b8253238223c0bae0147c932a8bfd4ac57c2ba5c621deac', 'raw_call_id': 'raw-write-2', 'turn_ordinal': 3, 'call_ordinal': 0, 'tool_name': 'write_file', 'capability_id': 'builtin:write_file', 'capability_fingerprint': 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd', 'route_receipt_id': '1c3a93f1-0e90-5e1b-a32e-4142e49aec60', 'route_receipt_hash': 'a8255bffd99150e04b7f20b9cb3014670886b722560c243af5904cc6434c2f8c', 'task_scope_id': '322eb89c-b858-5671-a57a-4750a633b2a8', 'root_id': 'root-322eb89c-b858-5671-a57a-4750a633b2a8', 'root_identity_hash': 'c06af3be5f9ffde6589942a98df869cebe110e8bc8996068a6a1c3718697b4d8', 'binding_set_revision': 1, 'binding_set_receipt_id': '69f3629a-b74e-541c-8bfd-741b9f308ddb', 'binding_set_receipt_hash': 'ec9dcbfc853aa8f76417dbcbefedc7b5fcd1121e6d1a601fdbf78262a8de0d0d', 'idempotency_key': 'effect-33fe134187787be22b8253238223c0bae0147c932a8bfd4ac57c2ba5c621deac'}
+[B] verify_task_execution_envelope -> root-322eb89c-b858-5671-a57a-4750a633b2a8 1
+.
+[C:task_execution_envelope] write_file tool messages: ['{"error_code":"MODEL_AUTHORITY_FIELD_FORBIDDEN","outcome":"rejected","public_message":"Observe a Context route before executing this Tool.","value":null}']
+.
+[C:binding_set_revision] write_file tool messages: ['{"error_code":"MODEL_AUTHORITY_FIELD_FORBIDDEN","outcome":"rejected","public_message":"Observe a Context route before executing this Tool.","value":null}']
+.
+[D] exception: TaskExecutionAuthorityError('sdk_task_execution_root_authority_unavailable')
+[D] handler calls: ['context_route']
+.
+7 passed in 1.72s

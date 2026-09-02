@@ -1,0 +1,4 @@
+{
+ "analysis-idempotency-key-attempt-bound-and-sent-unknown-unconfirmable": "analysis-idempotency-attempt-bound-unknown",
+ "evidence-authority-and-principal-registration-absent-from-composition": "evidence-authority-principal-registration-missing"
+}

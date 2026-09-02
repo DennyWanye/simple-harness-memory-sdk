@@ -1,0 +1,41 @@
+target: spike-provider gpt-5.6-luna
+[FAIL] 1-host-policy: ingest_committed_evidence(host-public-turn/v1) -> MemoryValidationError(evidence_filter_policy_unsupported); backend supported_filter_policies=['credential-filter/v1']; build_human_memory_v7 has no supported_filter_policies kwarg
+2026-09-02 18:43:25 [info     ] memory.evidence_ingested       envelope_hash=b72d58f0d5d2b78ecc2a6d38c570c990fa333f15b455c17e4fab332799252da6 evidence_id_hash=10d59307a714456aeba52b0f59dd17ae521159ab2a2983c186782759af75831b source_ref_hash=7c126de49201ed166b16df1b010a52c5de0242183ab679d897e8fd97d784fcb3
+2026-09-02 18:43:25 [info     ] memory.evidence_ingested       envelope_hash=144ca21ae0e3eb431aac57de0a2ff2ce14ef01e1fa1ec34ed70246fdb8c22a9b evidence_id_hash=a00f2dc5b581e28a1e2113c133c6fdf17f182a026cb93e79a1acad9c49b02451 source_ref_hash=0f89d01105f7feba6f05fca595ff11af5aa8a880ccc9a68616eb4a71aa9eda08
+[PASS] 2-ingest: jobs=2 payload keys=['delivery_key', 'schema_version', 'text']
+  provider: elapsed=29.8s finish=tool_calls model=gpt-5.6-luna usage=ProviderUsage(input_tokens=473, output_tokens=230, total_tokens=703, cache_tokens=None, reasoning_tokens=108) tool_calls=1 text=''
+  raw tool call: {"name": "memory_mutation_propose", "arguments": {"outcome": "mutate", "operations": [{"operation_id": "op-0001", "memory_type": "prospective", "prospective": {"action": "提醒我提交周报（每周五）", "trigger_at_iso": "2026-09-04T09:00:00+08:00", "timezone": "Asia/Shanghai"}, "evidence_item_id": "dk-turn-0001", "exact_quote": "从今以后每周五提醒我提交周报", "reason_code": "explicit_recurring_reminder"}]}}
+  base_revision from analysis_apply_heads (raw SQL) = 1
+  compile_memory_mutation_plan: 1 ops OK
+2026-09-02 18:43:55 [info     ] memory.analysis_invocation_recorded invocation_id_hash=aed39c6d7d7cbf522353f8bd4a36d0406b1c5d2bf35ea07c0e8ea3b5b1bcaf9c request_hash=9bb96f613759acf866df98d1ec7828bb4fc65df224f760a30f011fd365c84a04 validation_status=accepted
+  provider: elapsed=8.9s finish=tool_calls model=gpt-5.6-luna usage=ProviderUsage(input_tokens=4792, output_tokens=205, total_tokens=4997, cache_tokens=4608, reasoning_tokens=42) tool_calls=1 text=''
+  raw tool call: {"name": "memory_mutation_propose", "arguments": {"outcome": "mutate", "operations": [{"operation_id": "remember-location-hangzhou-binjiang", "evidence_item_id": "dk-turn-0002", "exact_quote": "我住在杭州滨江", "reason_code": "explicit_user_fact", "memory_type": "semantic", "semantic": {"subject_entity": "user", "predicate": "residence_location", "object_value": "杭州滨江"}}, {"operation_id": "remember-python-backend", "evidence_item_id": "dk-turn-0002", "exact_quote": "平时主要用 Python 写后端服务", "reason_code": "explicit_user_fact", "memory_type": "semantic", "semantic": {"subject_entity": "user", "predicate": "primary_technical_work", "object_value": "使用 Python 编写后端服务"}}]}}
+  base_revision from analysis_apply_heads (raw SQL) = 2
+  compile_memory_mutation_plan: 2 ops OK
+2026-09-02 18:44:03 [info     ] memory.analysis_invocation_recorded invocation_id_hash=2716013582faf472f9d1a422e384d59843ae165cd97528c2512407a1d6d9a473 request_hash=6c7323bfc30476f20b4657f78955c4ead7420998e7097a93e059b2ecf97c4f37 validation_status=accepted
+2026-09-02 18:44:03 [info     ] memory.manager_closed          backend_type=SQLiteHumanMemoryBackend
+Traceback (most recent call last):
+  File "/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-value/spike_value_last_hop.py", line 328, in <module>
+    code = asyncio.run(main())
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/taiwan/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/84cdd128-88f2-4c7d-9db9-64a64b8ed54e/scratchpad/spec-value/spike_value_last_hop.py", line 283, in main
+    outcomes.append(str(await runner.run_once()))
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness_memory/core/jobs.py", line 569, in run_once
+    finalized = await self._repository.finalize_analysis_application(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/simple_harness_memory/backends/sqlite_v5.py", line 11661, in finalize_analysis_application
+    raise MemoryWriterConflict("analysis_audit_decisions_differ")
+simple_harness_memory.core.errors.MemoryWriterConflict: analysis_audit_decisions_differ
+SUMMARY:
+  1-host-policy: FAIL
+  2-ingest: PASS
