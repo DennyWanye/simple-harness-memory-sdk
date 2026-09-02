@@ -71,6 +71,7 @@ from simple_harness_memory.core.jobs import (
     DurableMemoryJobRunner,
     MemoryJobWorkerConfig,
     WorkerRunOutcome,
+    current_analysis_apply_head,
 )
 from simple_harness_memory.core.mutations import InformationClassificationPolicy
 from simple_harness_memory.embedders.mock import HashEmbedder
@@ -312,6 +313,7 @@ class _HostExecutor:
         self.verification_calls = 0
         self.plans: dict[str, MemoryMutationPlan] = {}
         self.requests: list[MemoryAnalysisRequest] = []
+        self.observed_heads: list[int] = []
         self.deliveries: dict[tuple[str, int], MemoryAnalysisResultEnvelope] = {}
 
     async def _operation(self, spec: dict[str, Any], ordinal: int) -> MemoryMutationOperation:
@@ -375,17 +377,16 @@ class _HostExecutor:
             operations = tuple(
                 [await self._operation(spec, index) for index, spec in enumerate(self.ops, 1)]
             )
-            async with self.backend.connection.execute(
-                "SELECT revision FROM analysis_apply_heads WHERE principal_id=?",
-                (request.subject,),
-            ) as cursor:
-                head = await cursor.fetchone()
+            # §8.6：base_revision 取自本次 claim 的 analysis_apply_head（runner contextvar）。
+            head = current_analysis_apply_head()
+            assert head is not None, "runner must expose the claim's analysis_apply_head"
+            self.observed_heads.append(head)
             plan = MemoryMutationPlan(
                 plan_id=f"plan-{request.job_id[-12:]}",
                 run_id=request.run_id,
                 turn_id=_stable_id("analysis-batch-turn", request.job_id),
                 subject=request.subject,
-                base_revision=1 if head is None else int(head[0]),
+                base_revision=head,
                 outcome=MemoryMutationPlanOutcome.MUTATE,
                 operations=operations,
                 disclosure_context=request.disclosure_context,
@@ -1054,3 +1055,162 @@ def test_analysis_lineage_validates_and_round_trips() -> None:
         AnalysisLineage("", "model", "b" * 64)
     with pytest.raises(MemoryValidationError):
         AnalysisLineage("provider", "model", "not-a-digest")
+
+
+# --------------------------------------------------------------------------- §8.6
+
+
+@pytest.mark.asyncio
+async def test_claim_carries_analysis_apply_head_fresh_and_after_materialization(
+    tmp_path: Path,
+) -> None:
+    clock = [100.0]
+    executor = _HostExecutor(_semantic_ops("op-1"))
+    authority = _HostEvidenceAuthority()
+    manager, runner = await _build_pipeline(
+        tmp_path / "apply-head.db",
+        executor,
+        evidence_authority=authority,
+        now=lambda: clock[0],
+    )
+    backend = cast(Any, manager.backend)
+    try:
+        await _ingest(manager, _evidence(1), authority)
+        first = await backend.claim_analysis_batch(WORKER_CONFIG, "worker-probe")
+        assert first is not None and first.analysis_apply_head == 1
+        # claim 只读 head（既有不变量：应用前 analysis_apply_heads 无行）。
+        assert await _rows(manager, "SELECT revision FROM analysis_apply_heads") == []
+        # 探针 lease 交还（记一次失败重试），推进时钟后由 runner 完成物化。
+        await backend.fail_analysis_batch(first, "probe_abandoned", WORKER_CONFIG)
+        clock[0] += 5.0
+        assert await runner.run_once() is WorkerRunOutcome.APPLIED
+        assert await _rows(manager, "SELECT revision FROM analysis_apply_heads") == [(2,)]
+        assert await _rows(manager, "SELECT revision FROM cognitive_apply_heads") == [(2,)]
+        await _ingest(manager, _evidence(2), authority)
+        second = await backend.claim_analysis_batch(WORKER_CONFIG, "worker-probe")
+        assert second is not None and second.analysis_apply_head == 2
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_claim_aligns_analysis_head_with_host_direct_apply(tmp_path: Path) -> None:
+    """Host 直接 apply_memory_mutation_plan 只推进 cognitive head；claim 时 analysis head 对齐。"""
+
+    executor = _HostExecutor(_semantic_ops("op-1"))
+    authority = _HostEvidenceAuthority()
+    manager, _ = await _build_pipeline(
+        tmp_path / "apply-head-align.db", executor, evidence_authority=authority
+    )
+    backend = cast(Any, manager.backend)
+    try:
+        envelope, receipt = _evidence(1)
+        await _ingest(manager, (envelope, receipt), authority)
+        operation = await executor._operation(_semantic_ops("host-op")[0], 1)
+        plan = MemoryMutationPlan(
+            plan_id="host-plan-1",
+            run_id="run-1",
+            turn_id="turn-host-1",
+            subject=SUBJECT,
+            base_revision=1,
+            outcome=MemoryMutationPlanOutcome.MUTATE,
+            operations=(operation,),
+            disclosure_context=_disclosure(),
+            evidence_refs=(EvidenceRef(envelope.evidence_id, envelope.envelope_hash, 1),),
+            idempotency_key="host-direct-1",
+        )
+        result = await manager.apply_memory_mutation_plan(
+            principal=_placeholder_principal(), scope=MemoryScope.personal(SUBJECT), plan=plan
+        )
+        assert str(result.outcome) == "committed"
+        assert await _rows(manager, "SELECT revision FROM cognitive_apply_heads") == [(2,)]
+        assert await _rows(manager, "SELECT revision FROM analysis_apply_heads") == []
+        claim = await backend.claim_analysis_batch(WORKER_CONFIG, "worker-probe")
+        assert claim is not None and claim.analysis_apply_head == 2
+        assert await _rows(manager, "SELECT revision FROM analysis_apply_heads") == []
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_prepare_aligns_analysis_head_to_cognitive_head_before_materializing(
+    tmp_path: Path,
+) -> None:
+    executor = _HostExecutor(_semantic_ops("op-1"))
+    authority = _HostEvidenceAuthority()
+    manager, runner = await _build_pipeline(
+        tmp_path / "apply-head-align-prepare.db", executor, evidence_authority=authority
+    )
+    backend = cast(Any, manager.backend)
+    try:
+        envelope, receipt = _evidence(1)
+        await _ingest(manager, (envelope, receipt), authority)
+        operation = await executor._operation(_semantic_ops("host-op")[0], 1)
+        plan = MemoryMutationPlan(
+            plan_id="host-plan-1",
+            run_id="run-1",
+            turn_id="turn-host-1",
+            subject=SUBJECT,
+            base_revision=1,
+            outcome=MemoryMutationPlanOutcome.MUTATE,
+            operations=(operation,),
+            disclosure_context=_disclosure(),
+            evidence_refs=(EvidenceRef(envelope.evidence_id, envelope.envelope_hash, 1),),
+            idempotency_key="host-direct-1",
+        )
+        await manager.apply_memory_mutation_plan(
+            principal=_placeholder_principal(), scope=MemoryScope.personal(SUBJECT), plan=plan
+        )
+        assert await runner.run_once() is WorkerRunOutcome.APPLIED
+        assert await _rows(manager, "SELECT revision FROM analysis_apply_heads") == [(3,)]
+        assert await _rows(manager, "SELECT revision FROM cognitive_apply_heads") == [(3,)]
+        assert await _rows(
+            manager, "SELECT base_revision,committed_revision FROM accepted_analysis_plans"
+        ) == [(2, 3)]
+        assert executor.observed_heads == [2]
+        assert backend is not None
+    finally:
+        await manager.close()
+
+
+def test_analysis_batch_claim_requires_analysis_apply_head() -> None:
+    from dataclasses import MISSING, fields
+
+    from simple_harness_memory.core.jobs import AnalysisBatchClaim
+
+    head = next(item for item in fields(AnalysisBatchClaim) if item.name == "analysis_apply_head")
+    assert head.kw_only and head.default is MISSING
+    with pytest.raises(MemoryValidationError, match="analysis_apply_head_invalid"):
+        replace(_claim_stub(), analysis_apply_head=0)
+
+
+def _claim_stub() -> Any:
+    from simple_harness_memory.core.jobs import AnalysisBatchClaim
+
+    request = MemoryAnalysisRequest(
+        "batch-1",
+        "run-1",
+        SUBJECT,
+        (EvidenceRef("evidence-1", "a" * 64, 1),),
+        "prompt-v1",
+        "result-v1",
+        "policy-v1",
+        "provider",
+        "model",
+        "b" * 64,
+        1,
+        AnalysisBudget(4096, 1024, 30_000, 1_000_000),
+        _disclosure(),
+        "batch-1",
+    )
+    return AnalysisBatchClaim(
+        "batch-1",
+        SUBJECT,
+        "key-1",
+        "evidence-1",
+        ("job-1",),
+        "lease-1",
+        1000.0,
+        request,
+        analysis_apply_head=1,
+    )

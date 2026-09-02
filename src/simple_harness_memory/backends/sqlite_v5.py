@@ -10348,6 +10348,13 @@ class SQLiteHumanMemoryBackend:
                     recover_row = await cursor.fetchone()
                 if recover_row is not None:
                     batch_id = str(recover_row["batch_id"])
+                    async with self._db.execute(
+                        "SELECT principal_id FROM analysis_batches WHERE batch_id=?",
+                        (batch_id,),
+                    ) as cursor:
+                        recover_batch = await cursor.fetchone()
+                    if recover_batch is None:
+                        raise MemoryCorruptionError("reclaimable analysis batch disappeared")
                     await self._db.execute(
                         "UPDATE jobs SET lease_owner=?,lease_token=?,lease_expires_at=?,"
                         "updated_at=? WHERE job_id IN (SELECT job_id FROM analysis_batch_members "
@@ -10642,6 +10649,30 @@ class SQLiteHumanMemoryBackend:
             request,
             envelope,
             application,
+            analysis_apply_head=await self._read_aligned_apply_head_unlocked(
+                str(batch["principal_id"])
+            ),
+        )
+
+    async def _read_aligned_apply_head_unlocked(self, subject: str) -> int:
+        """只读取 claim 时的对齐 head（0.6.1 §8.6）：max(analysis, cognitive)，缺省 1。
+
+        claim 不写 head 行（既有不变量：应用前 analysis_apply_heads 为空）；真正的对齐写入
+        发生在 ``prepare_analysis_application`` 的 ``_align_apply_heads_unlocked``，二者同规则。
+        """
+
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT revision FROM analysis_apply_heads WHERE principal_id=?", (subject,)
+        ) as cursor:
+            analysis_row = await cursor.fetchone()
+        async with self._db.execute(
+            "SELECT revision FROM cognitive_apply_heads WHERE principal_id=?", (subject,)
+        ) as cursor:
+            cognitive_row = await cursor.fetchone()
+        return max(
+            1 if analysis_row is None else int(analysis_row["revision"]),
+            1 if cognitive_row is None else int(cognitive_row["revision"]),
         )
 
     async def _append_batch_events_unlocked(

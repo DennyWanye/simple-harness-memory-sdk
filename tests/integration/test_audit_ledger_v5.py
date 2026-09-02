@@ -223,6 +223,7 @@ async def _record_memory_analysis(
         f"audit-lease-{request.request_hash}",
         1000.0,
         request,
+        analysis_apply_head=1,
     )
     authority_state = _AUDIT_AUTHORITIES.get(id(backend))
     if authority_state is None or authority_state[0] is not backend:
