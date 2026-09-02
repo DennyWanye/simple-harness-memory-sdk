@@ -7,7 +7,7 @@
 
 认知记忆 SDK，为运行时 consumer 提供独立、product-neutral 的持久记忆系统。
 
-当前 source candidate：**0.6.1**（Python 3.11–3.13；尚未发布；已发布 fallback 为 0.5.1）。
+当前 source candidate：**0.6.2**（Python 3.11–3.13；尚未发布；已发布 fallback 为 0.5.1）。
 
 **原始证据 + 五类长期记忆系统 + 跨系统过程 + 认知投影；工作记忆由 Host Context 承担。**
 

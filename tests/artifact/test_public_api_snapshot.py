@@ -10,29 +10,64 @@ import simple_harness_memory.migrations as migrations
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_public_api_0_6_1_snapshot_is_frozen_and_0_6_0_is_preserved() -> None:
-    snapshot_path = Path(__file__).with_name("public-api-0.6.1.json")
+def test_public_api_0_6_2_snapshot_is_frozen_and_0_6_1_is_preserved() -> None:
+    snapshot_path = Path(__file__).with_name("public-api-0.6.2.json")
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
     previous = json.loads(
-        Path(__file__).with_name("public-api-0.6.0.json").read_text(encoding="utf-8")
+        Path(__file__).with_name("public-api-0.6.1.json").read_text(encoding="utf-8")
     )
+    base = json.loads(Path(__file__).with_name("public-api-0.6.0.json").read_text(encoding="utf-8"))
     older = json.loads(
         Path(__file__).with_name("public-api-0.5.2.json").read_text(encoding="utf-8")
     )
     assert snapshot["package"] == "simple-harness-memory-sdk"
-    assert snapshot["version"] == simple_harness_memory.__version__ == "0.6.1"
+    assert snapshot["version"] == simple_harness_memory.__version__ == "0.6.2"
     assert snapshot["root"] == sorted(simple_harness_memory.__all__)
     assert snapshot["migrations"] == sorted(migrations.__all__)
-    assert previous["version"] == "0.6.0" and older["version"] == "0.5.2"
-    # 0.6.1 只增不减（preserve-approved）：0.6.0 根导出全部保留。
-    assert set(previous["root"]) <= set(snapshot["root"])
-    assert set(snapshot["root"]) - set(previous["root"]) == {
+    assert previous["version"] == "0.6.1" and base["version"] == "0.6.0"
+    assert older["version"] == "0.5.2"
+    # 0.6.2 只修缺陷、不动公共面（preserve-approved）：根导出与 0.6.1 完全一致。
+    assert snapshot["root"] == previous["root"]
+    # 0.6.1 只增不减：0.6.0 根导出全部保留，仅新增两项。
+    assert set(base["root"]) <= set(previous["root"])
+    assert set(previous["root"]) - set(base["root"]) == {
         "AnalysisLineage",
         "PrincipalRegistrationReceipt",
     }
-    assert snapshot["migrations"] == previous["migrations"] == older["migrations"]
+    assert snapshot["migrations"] == previous["migrations"] == base["migrations"]
+    assert snapshot["migrations"] == older["migrations"]
     assert snapshot["removed_public_methods"] == previous["removed_public_methods"]
+    assert previous["removed_public_methods"] == base["removed_public_methods"]
     assert "ConversationMemoryAdapter" not in snapshot["root"]
+
+
+def test_0_6_1_public_surface_is_reachable_from_0_6_2_root() -> None:
+    """0.6.1 §8 新增公共面在 0.6.2 仍可达：根导出 + 方法/关键字/函数（只读核对）。"""
+
+    import inspect
+
+    from simple_harness_memory import (
+        AnalysisLineage,
+        MemoryManager,
+        PrincipalRegistrationReceipt,
+    )
+    from simple_harness_memory.core.jobs import (
+        AnalysisBatchClaim,
+        current_analysis_apply_head,
+    )
+
+    assert AnalysisLineage.__module__.endswith("core.jobs")
+    assert PrincipalRegistrationReceipt.__module__.endswith("core.identity")
+    assert callable(MemoryManager.register_principal_owner)
+    assert (
+        "supported_filter_policies"
+        in inspect.signature(MemoryManager.build_human_memory_v7).parameters
+    )
+    assert (
+        "analysis_lineage" in inspect.signature(MemoryManager.ingest_committed_evidence).parameters
+    )
+    assert current_analysis_apply_head() is None
+    assert "analysis_apply_head" in AnalysisBatchClaim.__dataclass_fields__
 
 
 def test_root_exports_construct_public_facade_contracts() -> None:
@@ -110,7 +145,7 @@ def test_root_exports_construct_public_facade_contracts() -> None:
     assert receipt.to_json()["operations"] == [operation.to_json()]
 
 
-def test_0_6_1_candidate_sources_and_docs_are_consistent() -> None:
+def test_0_6_2_candidate_sources_and_docs_are_consistent() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert pyproject["project"]["dynamic"] == ["version"]
     assert pyproject["tool"]["hatch"]["version"]["path"] == (
@@ -122,8 +157,9 @@ def test_0_6_1_candidate_sources_and_docs_are_consistent() -> None:
     assert "simple-harness-sdk>=0.7,<0.8" in pyproject["project"]["dependencies"]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "当前 source candidate：**0.6.1**" in readme
+    assert "当前 source candidate：**0.6.2**" in readme
     assert "已发布 fallback 为 0.5.1" in readme
+    assert "## [0.6.2] - 2026-09-03" in changelog
     assert "## [0.6.1] - 2026-09-02" in changelog
     assert "## [0.6.0] - 2026-08-30" in changelog
     assert "## [0.5.1] - 2026-08-24" in changelog

@@ -5,14 +5,14 @@ SPDX-License-Identifier: BUSL-1.1
 
 # 0.6 candidate build and verification runbook
 
-This is the current operator procedure for `simple-harness-memory-sdk` 0.6.1. The Task 6 boundary is
+This is the current operator procedure for `simple-harness-memory-sdk` 0.6.2. The Task 6 boundary is
 candidate-only: build and verify artifacts, but do not create or move a tag, push a release commit, upload
 assets, or publish the candidate. `.github/workflows/release.yml` remains the read-only 0.5.1 historical
 publisher and must not be used for 0.6.
 
 ## Current invariants
 
-- Memory version is exactly `0.6.1`; base and `[harness]` metadata both require
+- Memory version is exactly `0.6.2`; base and `[harness]` metadata both require
   `simple-harness-sdk>=0.7,<0.8`.
 - The Harness input is exact source commit `8f1027d2d64ca3a7e7a4d161833507eadac9552b`, built once as
   a 0.7.0 wheel with `SOURCE_DATE_EPOCH=315532800`; its required SHA-256 is
@@ -99,7 +99,7 @@ import inspect
 
 from simple_harness_memory import MemoryManager, __version__
 
-assert __version__ == "0.6.1"
+assert __version__ == "0.6.2"
 assert metadata.version("simple-harness-sdk") == "0.7.0"
 for name in ("enable_facts", "fact_extractor", "auto_extract_facts"):
     assert name not in inspect.signature(MemoryManager.build).parameters

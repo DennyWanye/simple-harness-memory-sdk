@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.6.2] - 2026-09-03（S5b Task 5：Memory 0.6.1 余项）
+
+- **缺陷修复**（Host Task 4 真实/确定性车道发现）：多 evidence 的 analysis batch 中，只引用
+  **非首条** evidence 的 operation 被 `decision_evidence_refs_ordinal_invalid` 拒绝。根因：
+  `prepare_analysis_application` COMMIT 后构造 decision 时，把按 batch ordinal 过滤出的
+  `plan.evidence_refs` 子集（如 ordinal=2）直接交给 `DecisionLedgerEntry`，而其 `_refs` 契约要求
+  ordinal 恰为 1..n；异常在事务提交之后抛出，batch 卡在 `audit_pending`。修法：decision 的
+  evidence_refs 按 batch 顺序过滤后重编 ordinal 为 1..n；成员集合仍由 prepare 内
+  `plan.evidence_refs == request.ordered_evidence_refs` 校验，引用成员集合外 evidence 的 plan
+  继续 `analysis_validator_rejected`。oracle：
+  `tests/integration/test_memory_062_analysis_evidence_refs.py`。
+- cutover：无 DDL 变化，schema 保持 **v7.1**（`SCHEMA_VERSION_LABEL="7.1"`，checksum 与 0.6.1
+  相同并在 `tests/integration/test_memory_062_schema_cutover.py` 钉死）；0.6.1 写出的库打开不
+  迁移、receipt/meta 稳定；0.6.0 写出的库（真实 v7.0 DDL）打开仍按 0.6.1 规则一次前向加列到 v7.1。
+- 公共 API 快照 `tests/artifact/public-api-0.6.2.json`：根导出与 0.6.1 完全一致（不增不减）；
+  `register_principal_owner`、`supported_filter_policies`、`analysis_lineage`、
+  `current_analysis_apply_head()` 可达性由快照测试只读核对。
+- 版本 `0.6.2`（`pyproject` 动态取 `src/simple_harness_memory/__init__.py::__version__`）；候选
+  wheel `uv build --no-sources` 两次 clean build 字节一致：见 `docs/build-and-release.md`
+  「0.6.2 candidate manifest」。
+
 ## [0.6.1] - 2026-09-02（S5b Task 4a：Memory 0.6.1 核心）
 
 依据 `plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/design-freeze.md` §8。
