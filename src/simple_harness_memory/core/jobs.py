@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol, cast
 
-from simple_harness.contracts import canonical_json
+from simple_harness.contracts import JsonValue, canonical_json
 from simple_harness.runtime import (
     AnalysisBudget,
     MemoryAnalysisDeliveryAuthorityPort,
@@ -112,6 +112,48 @@ class MemoryJobWorkerConfig:
         object.__setattr__(self, "max_batch_wait_seconds", float(self.max_batch_wait_seconds))
         object.__setattr__(self, "lease_seconds", float(self.lease_seconds))
         object.__setattr__(self, "retry_delays_seconds", delays)
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisLineage:
+    """逐 evidence 持久的分析血缘（0.6.1 §8.5）。
+
+    Host 在 ingest 时给出该 evidence 应由哪个 provider/model/config 分析；
+    ``claim_analysis_batch`` 从成员派生 ``MemoryAnalysisRequest`` 的同名字段，成员不一致
+    → ``analysis_batch_lineage_differs``；成员均无血缘时回落 ``MemoryJobWorkerConfig``。
+    """
+
+    provider_id: str
+    model_id: str
+    model_config_hash: str
+
+    def __post_init__(self) -> None:
+        _identifier(self.provider_id, "analysis_lineage_provider_id")
+        _identifier(self.model_id, "analysis_lineage_model_id")
+        if (
+            not isinstance(self.model_config_hash, str)
+            or len(self.model_config_hash) != 64
+            or any(character not in "0123456789abcdef" for character in self.model_config_hash)
+        ):
+            raise MemoryValidationError("analysis_lineage_model_config_hash_invalid")
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "schema_version": 1,
+            "provider_id": self.provider_id,
+            "model_id": self.model_id,
+            "model_config_hash": self.model_config_hash,
+        }
+
+    @classmethod
+    def from_json(cls, value: object) -> AnalysisLineage:
+        if not isinstance(value, dict) or value.get("schema_version") != 1:
+            raise MemoryValidationError("analysis_lineage_wire_invalid")
+        return cls(
+            str(value.get("provider_id", "")),
+            str(value.get("model_id", "")),
+            str(value.get("model_config_hash", "")),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -587,6 +629,7 @@ class DurableMemoryJobRunner:
 __all__ = (
     "AnalysisApplication",
     "AnalysisBatchClaim",
+    "AnalysisLineage",
     "AnalysisDeliveryAuthorityTransientError",
     "AnalysisResultCommit",
     "AnalysisResultCommitOutcome",

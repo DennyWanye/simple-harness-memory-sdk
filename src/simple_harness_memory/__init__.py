@@ -44,6 +44,7 @@ from simple_harness_memory.core.identity import (
     ScopeKind,
 )
 from simple_harness_memory.core.jobs import (
+    AnalysisLineage,
     DurableMemoryJobRunner,
     MemoryJobWorkerConfig,
     WorkerRunOutcome,
@@ -127,6 +128,7 @@ __all__ = [
     "MemoryManager",
     "build_human_memory_v7",
     "build_human_memory_v6",
+    "AnalysisLineage",
     "DurableMemoryJobRunner",
     "MemoryJobWorkerConfig",
     "WorkerRunOutcome",

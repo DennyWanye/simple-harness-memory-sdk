@@ -26,6 +26,7 @@
     "SQLiteMemoryBackend.recover_fact_jobs"
   ],
   "root": [
+    "AnalysisLineage",
     "AuditAccessAuthorityPort",
     "AuditAccessAuthorityRefV1",
     "AuditAggregateMetricsV1",

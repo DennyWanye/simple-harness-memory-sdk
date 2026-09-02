@@ -70,6 +70,7 @@ if TYPE_CHECKING:
     )
 
     from simple_harness_memory.cognitive.twin_builder import TwinGraphView
+    from simple_harness_memory.core.jobs import AnalysisLineage
     from simple_harness_memory.core.recall import TypedRecallExecution
     from simple_harness_memory.core.short_horizon import (
         ShortHorizonGenerationBuildResult,
@@ -130,8 +131,14 @@ class MemoryManager:
         self,
         envelope: SanitizedEvidenceEnvelope,
         receipt: SanitizedEvidenceReceipt,
+        *,
+        analysis_lineage: AnalysisLineage | None = None,
     ) -> EvidenceIngestionReceipt:
-        return await self._backend.ingest_committed_evidence(envelope, receipt)
+        if analysis_lineage is None:
+            return await self._backend.ingest_committed_evidence(envelope, receipt)
+        return await self._backend.ingest_committed_evidence(
+            envelope, receipt, analysis_lineage=analysis_lineage
+        )
 
     async def register_conversation_evidence(self, reference: object) -> object:
         return await self._backend.register_conversation_evidence(reference)

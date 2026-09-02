@@ -24,6 +24,8 @@ if TYPE_CHECKING:
         RecallResultPageV1,
     )
 
+    from simple_harness_memory.core.jobs import AnalysisLineage
+
 from simple_harness_memory.cognitive.twin_builder import TwinGraphView
 from simple_harness_memory.core.audit import (
     AuditAccessAuthorityRefV1,
@@ -320,7 +322,11 @@ class CognitiveMemoryBackend(Protocol):
     ) -> MemoryMutationReceiptView: ...
 
     async def ingest_committed_evidence(
-        self, envelope: object, receipt: object
+        self,
+        envelope: object,
+        receipt: object,
+        *,
+        analysis_lineage: AnalysisLineage | None = None,
     ) -> EvidenceIngestionReceipt: ...
 
     async def register_principal_owner(

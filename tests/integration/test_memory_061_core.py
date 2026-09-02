@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -54,8 +56,16 @@ from simple_harness.runtime import (
     VerificationState,
 )
 
-from simple_harness_memory import MemoryManager, PrincipalRegistrationReceipt
-from simple_harness_memory.core.errors import MemoryOwnershipConflict, MemoryValidationError
+from simple_harness_memory import (
+    AnalysisLineage,
+    MemoryManager,
+    PrincipalRegistrationReceipt,
+)
+from simple_harness_memory.core.errors import (
+    MemoryIdempotencyConflict,
+    MemoryOwnershipConflict,
+    MemoryValidationError,
+)
 from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
 from simple_harness_memory.core.jobs import (
     DurableMemoryJobRunner,
@@ -923,3 +933,124 @@ async def test_materialization_uses_registered_owner_shape(tmp_path: Path) -> No
         ]
     finally:
         await manager.close()
+
+
+# --------------------------------------------------------------------------- §8.5
+
+
+LINEAGE_A = AnalysisLineage("host-provider", "host-model", "b" * 64)
+LINEAGE_B = AnalysisLineage("host-provider", "host-model-next", "c" * 64)
+BATCH_CONFIG = replace(WORKER_CONFIG, batch_size=2)
+
+
+@pytest.mark.asyncio
+async def test_analysis_lineage_is_persisted_per_evidence_and_derives_request(
+    tmp_path: Path,
+) -> None:
+    executor = _HostExecutor(_semantic_ops("op-1"))
+    manager, runner = await _build_pipeline(tmp_path / "lineage-same.db", executor)
+    runner = DurableMemoryJobRunner(
+        cast(Any, manager.backend), executor, executor, BATCH_CONFIG, "worker-1", time.time
+    )
+    try:
+        for index in (1, 2):
+            await manager.ingest_committed_evidence(*_evidence(index), analysis_lineage=LINEAGE_A)
+        stored = await _rows(
+            manager, "SELECT evidence_id,analysis_lineage_json FROM evidence_envelopes ORDER BY 1"
+        )
+        assert [item[0] for item in stored] == ["evidence-1", "evidence-2"]
+        assert all(json.loads(str(item[1])) == LINEAGE_A.to_json() for item in stored)
+        assert await runner.run_once() is WorkerRunOutcome.APPLIED
+        request = executor.requests[0]
+        assert len(request.ordered_evidence_refs) == 2
+        assert (request.provider_id, request.model_id, request.model_config_hash) == (
+            "host-provider",
+            "host-model",
+            "b" * 64,
+        )
+        stored_request = await _rows(manager, "SELECT request_json FROM analysis_batches")
+        assert '"provider_id":"host-provider"' in str(stored_request[0][0])
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_claim_rejects_batch_with_mixed_lineage(tmp_path: Path) -> None:
+    executor = _HostExecutor(_semantic_ops("op-1"))
+    manager, _ = await _build_pipeline(tmp_path / "lineage-mixed.db", executor)
+    runner = DurableMemoryJobRunner(
+        cast(Any, manager.backend), executor, executor, BATCH_CONFIG, "worker-1", time.time
+    )
+    try:
+        await manager.ingest_committed_evidence(*_evidence(1), analysis_lineage=LINEAGE_A)
+        await manager.ingest_committed_evidence(*_evidence(2), analysis_lineage=LINEAGE_B)
+        with pytest.raises(MemoryValidationError, match="analysis_batch_lineage_differs"):
+            await runner.run_once()
+        assert executor.calls == 0
+        assert await _rows(manager, "SELECT DISTINCT state FROM jobs") == [("pending",)]
+        assert await _count(manager, "SELECT COUNT(*) FROM analysis_batches") == 0
+        assert not cast(Any, manager.backend).connection.in_transaction
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_claim_rejects_batch_mixing_lineage_and_missing_lineage(tmp_path: Path) -> None:
+    executor = _HostExecutor(_semantic_ops("op-1"))
+    manager, _ = await _build_pipeline(tmp_path / "lineage-partial.db", executor)
+    runner = DurableMemoryJobRunner(
+        cast(Any, manager.backend), executor, executor, BATCH_CONFIG, "worker-1", time.time
+    )
+    try:
+        await manager.ingest_committed_evidence(*_evidence(1), analysis_lineage=LINEAGE_A)
+        await manager.ingest_committed_evidence(*_evidence(2))
+        with pytest.raises(MemoryValidationError, match="analysis_batch_lineage_differs"):
+            await runner.run_once()
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_claim_falls_back_to_worker_config_without_lineage(tmp_path: Path) -> None:
+    executor = _HostExecutor(_semantic_ops("op-1"))
+    manager, runner = await _build_pipeline(tmp_path / "lineage-none.db", executor)
+    try:
+        await manager.ingest_committed_evidence(*_evidence(1))
+        assert await _rows(manager, "SELECT analysis_lineage_json FROM evidence_envelopes") == [
+            (None,)
+        ]
+        assert await runner.run_once() is WorkerRunOutcome.APPLIED
+        request = executor.requests[0]
+        assert (request.provider_id, request.model_id, request.model_config_hash) == (
+            WORKER_CONFIG.provider_id,
+            WORKER_CONFIG.model_id,
+            WORKER_CONFIG.model_config_hash,
+        )
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_ingest_replay_keeps_lineage_and_rejects_conflicting_lineage(
+    tmp_path: Path,
+) -> None:
+    manager = await _build(tmp_path / "lineage-replay.db")
+    try:
+        first = await manager.ingest_committed_evidence(*_evidence(1), analysis_lineage=LINEAGE_A)
+        replay = await manager.ingest_committed_evidence(*_evidence(1), analysis_lineage=LINEAGE_A)
+        assert replay == first
+        bare = await manager.ingest_committed_evidence(*_evidence(1))
+        assert bare == first
+        with pytest.raises(MemoryIdempotencyConflict, match="evidence_lineage_replay_conflict"):
+            await manager.ingest_committed_evidence(*_evidence(1), analysis_lineage=LINEAGE_B)
+        assert await _count(manager, "SELECT COUNT(*) FROM evidence_envelopes") == 1
+    finally:
+        await manager.close()
+
+
+def test_analysis_lineage_validates_and_round_trips() -> None:
+    assert AnalysisLineage.from_json(LINEAGE_A.to_json()) == LINEAGE_A
+    with pytest.raises(MemoryValidationError):
+        AnalysisLineage("", "model", "b" * 64)
+    with pytest.raises(MemoryValidationError):
+        AnalysisLineage("provider", "model", "not-a-digest")

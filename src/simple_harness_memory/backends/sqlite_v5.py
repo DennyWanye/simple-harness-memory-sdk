@@ -29,8 +29,11 @@ from simple_harness.contracts import FrozenJsonValue, JsonValue, canonical_json,
 from simple_harness_memory.backends.schema_v5 import (
     REQUIRED_TABLES,
     SCHEMA_CHECKSUM,
+    SCHEMA_CHECKSUM_V7_0,
     SCHEMA_EPOCH,
     SCHEMA_VERSION,
+    SCHEMA_VERSION_LABEL,
+    V7_1_ADDED_COLUMNS,
     InitializationReceipt,
     ddl_statements,
 )
@@ -111,6 +114,7 @@ if TYPE_CHECKING:
     from simple_harness_memory.core.jobs import (
         AnalysisApplication,
         AnalysisBatchClaim,
+        AnalysisLineage,
         AnalysisResultCommit,
         MemoryJobWorkerConfig,
         RejectedAnalysisAudit,
@@ -473,6 +477,8 @@ class SQLiteHumanMemoryBackend:
                 self._acquire_writer_lease()
                 self._db = await aiosqlite.connect(str(self._secure_path), isolation_level=None)
                 self._db.row_factory = aiosqlite.Row
+                if classification == "v7.0-migratable":
+                    await self._migrate_v7_0_to_v7_1()
                 current = await self._classify_open_connection()
                 if current is not None:
                     if probed_receipt is not None and current != probed_receipt:
@@ -531,18 +537,31 @@ class SQLiteHumanMemoryBackend:
         self,
         envelope: SanitizedEvidenceEnvelope,
         receipt: SanitizedEvidenceReceipt,
+        *,
+        analysis_lineage: AnalysisLineage | None = None,
     ) -> EvidenceIngestionReceipt:
-        """Atomically admit immutable public evidence and its first mutation work."""
+        """Atomically admit immutable public evidence and its first mutation work.
+
+        ``analysis_lineage``（0.6.1 §8.5）逐 evidence 持久到 ``evidence_envelopes.
+        analysis_lineage_json``；replay 时给出与已存不同的血缘 →
+        ``MemoryIdempotencyConflict("evidence_lineage_replay_conflict")``，未给出则回放通过。
+        """
 
         from simple_harness_memory.core.evidence import (
             EvidenceIngestionReceipt,
             validate_sanitized_evidence,
         )
+        from simple_harness_memory.core.jobs import AnalysisLineage
 
         span = validate_sanitized_evidence(
             envelope,
             receipt,
             supported_filter_policies=tuple(self._supported_filter_policies),
+        )
+        if analysis_lineage is not None and type(analysis_lineage) is not AnalysisLineage:
+            raise TypeError("analysis_lineage must use AnalysisLineage")
+        lineage_json = (
+            None if analysis_lineage is None else canonical_json(analysis_lineage.to_json())
         )
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
@@ -595,6 +614,17 @@ class SQLiteHumanMemoryBackend:
         async with self._write_lock:
             existing = await self._read_ingestion_by_source(principal_id, envelope.source_ref)
             if existing is not None:
+                if lineage_json is not None:
+                    async with self._db.execute(
+                        "SELECT analysis_lineage_json FROM evidence_envelopes WHERE evidence_id=?",
+                        (existing.evidence_id,),
+                    ) as cursor:
+                        stored_lineage = await cursor.fetchone()
+                    # 血缘随首次 ingest 固定：回放给出不同血缘或试图事后补写均拒绝。
+                    if stored_lineage is None or (
+                        stored_lineage[0] is None or str(stored_lineage[0]) != lineage_json
+                    ):
+                        raise MemoryIdempotencyConflict("evidence_lineage_replay_conflict")
                 return _verify_replay(existing, envelope)
             admitted = await self._read_ingestion_by_admission_receipt(receipt.receipt_id)
             if admitted is not None:
@@ -616,8 +646,9 @@ class SQLiteHumanMemoryBackend:
                     "INSERT INTO evidence_envelopes("
                     "evidence_id,principal_id,run_id,subject,source_kind,source_ref,source_hash,"
                     "sanitized_hash,envelope_hash,filter_policy_version,disclosure_json,"
-                    "disclosure_hash,removed_spans_json,sanitized_payload,created_at) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "disclosure_hash,removed_spans_json,sanitized_payload,created_at,"
+                    "analysis_lineage_json) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         envelope.evidence_id,
                         principal_id,
@@ -634,6 +665,7 @@ class SQLiteHumanMemoryBackend:
                         removed_spans_json,
                         payload_json,
                         accepted_at,
+                        lineage_json,
                     ),
                 )
                 self._fault("ingestion.after_envelope")
@@ -10290,7 +10322,7 @@ class SQLiteHumanMemoryBackend:
     ) -> AnalysisBatchClaim | None:
         from simple_harness.runtime import DisclosureContext, EvidenceRef, MemoryAnalysisRequest
 
-        from simple_harness_memory.core.jobs import MemoryJobWorkerConfig
+        from simple_harness_memory.core.jobs import AnalysisLineage, MemoryJobWorkerConfig
 
         if type(config) is not MemoryJobWorkerConfig:
             raise TypeError("config must use MemoryJobWorkerConfig")
@@ -10366,6 +10398,7 @@ class SQLiteHumanMemoryBackend:
                 run_id: str | None = None
                 disclosure: DisclosureContext | None = None
                 member_attempts: list[int] = []
+                member_lineages: list[str | None] = []
                 for ordinal, job_row in enumerate(job_rows, start=1):
                     payload = json.loads(str(job_row["payload"]))
                     if not isinstance(payload, dict) or not isinstance(
@@ -10382,13 +10415,18 @@ class SQLiteHumanMemoryBackend:
                     evidence_id = str(payload["evidence_id"])
                     async with self._db.execute(
                         "SELECT run_id,subject,sanitized_hash,disclosure_json,source_ref,"
-                        "envelope_hash,source_hash "
+                        "envelope_hash,source_hash,analysis_lineage_json "
                         "FROM evidence_envelopes WHERE evidence_id=?",
                         (evidence_id,),
                     ) as cursor:
                         evidence_row = await cursor.fetchone()
                     if evidence_row is None or str(evidence_row["subject"]) != subject:
                         raise MemoryCorruptionError("analysis job evidence is unavailable")
+                    member_lineages.append(
+                        None
+                        if evidence_row["analysis_lineage_json"] is None
+                        else str(evidence_row["analysis_lineage_json"])
+                    )
                     expected_payload: dict[str, JsonValue] = {
                         "schema_version": 1,
                         "evidence_id": evidence_id,
@@ -10416,6 +10454,21 @@ class SQLiteHumanMemoryBackend:
                     )
                     member_attempts.append(int(job_row["attempt_count"]) + 1)
                 assert run_id is not None and disclosure is not None
+                # 0.6.1 §8.5：request 的 provider/model/config_hash 从成员血缘派生；
+                # 成员不一致（含部分缺失）→ 拒绝；全部缺失 → 回落 worker config。
+                distinct_lineages = set(member_lineages)
+                if len(distinct_lineages) != 1:
+                    raise MemoryValidationError("analysis_batch_lineage_differs")
+                lineage_value = next(iter(distinct_lineages))
+                if lineage_value is None:
+                    provider_id = config.provider_id
+                    model_id = config.model_id
+                    model_config_hash = config.model_config_hash
+                else:
+                    lineage = AnalysisLineage.from_json(json.loads(lineage_value))
+                    provider_id = lineage.provider_id
+                    model_id = lineage.model_id
+                    model_config_hash = lineage.model_config_hash
                 batch_attempt = max(member_attempts)
                 member_identity = canonical_json(
                     [
@@ -10432,9 +10485,9 @@ class SQLiteHumanMemoryBackend:
                     config.prompt_version,
                     config.result_schema_version,
                     config.policy_version,
-                    config.provider_id,
-                    config.model_id,
-                    config.model_config_hash,
+                    provider_id,
+                    model_id,
+                    model_config_hash,
                     batch_attempt,
                     config.analysis_budget,
                     disclosure,
@@ -14582,6 +14635,82 @@ class SQLiteHumanMemoryBackend:
         meta = await _async_meta(self._db)
         return await _async_receipt(self._db, meta)
 
+    async def _migrate_v7_0_to_v7_1(self) -> None:
+        """0.6.0 写出的 v7.0 库前向迁移到 v7.1（一个事务；幂等）。
+
+        规则：追加 ``V7_1_ADDED_COLUMNS``；``initialization_receipts``/``schema_meta`` 的
+        ``schema_checksum`` 与 ``initialization_receipt_hash`` 按 v7.1 值重算
+        （receipt_id/created_at/cursor authority 不变）；随后按 v7.1 checksum 常规校验。
+        """
+
+        assert self._db is not None
+        await self._db.execute("BEGIN IMMEDIATE")
+        committed = False
+        try:
+            for table, column, declaration in V7_1_ADDED_COLUMNS:
+                async with self._db.execute(f"PRAGMA table_info({table})") as cursor:
+                    columns = {str(row[1]) for row in await cursor.fetchall()}
+                if column not in columns:
+                    await self._db.execute(
+                        f"ALTER TABLE {table} ADD COLUMN {column} {declaration}"
+                    )
+            async with self._db.execute("SELECT * FROM initialization_receipts") as cursor:
+                rows = list(await cursor.fetchall())
+            if len(rows) != 1:
+                raise MemoryCorruptionError("initialization receipt cardinality differs")
+            row = rows[0]
+            if str(row["schema_checksum"]) == SCHEMA_CHECKSUM_V7_0:
+                legacy_payload = {
+                    "receipt_id": str(row["receipt_id"]),
+                    "schema_version": int(row["schema_version"]),
+                    "schema_epoch": str(row["schema_epoch"]),
+                    "schema_checksum": SCHEMA_CHECKSUM_V7_0,
+                    "audit_cursor_authority_hash": str(row["audit_cursor_authority_hash"]),
+                    "created_at": float(row["created_at"]),
+                }
+                legacy_hash = hashlib.sha256(
+                    json.dumps(
+                        legacy_payload,
+                        ensure_ascii=True,
+                        allow_nan=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()
+                if str(row["receipt_hash"]) != legacy_hash:
+                    raise MemoryCorruptionError("legacy initialization receipt hash differs")
+                receipt = InitializationReceipt(
+                    receipt_id=str(row["receipt_id"]),
+                    created_at=float(row["created_at"]),
+                    audit_cursor_authority_hash=str(row["audit_cursor_authority_hash"]),
+                    schema_version=int(row["schema_version"]),
+                    schema_epoch=str(row["schema_epoch"]),
+                )
+                await self._db.execute(
+                    "UPDATE initialization_receipts SET schema_checksum=?,receipt_hash=? "
+                    "WHERE singleton=1",
+                    (receipt.schema_checksum, receipt.receipt_hash),
+                )
+                await self._db.execute(
+                    "UPDATE schema_meta SET value=? WHERE key='schema_checksum'",
+                    (receipt.schema_checksum,),
+                )
+                await self._db.execute(
+                    "UPDATE schema_meta SET value=? WHERE key='initialization_receipt_hash'",
+                    (receipt.receipt_hash,),
+                )
+            await self._db.execute("COMMIT")
+            committed = True
+            logger.info(
+                "memory.schema_forward_migrated",
+                from_version="7.0",
+                to_version=SCHEMA_VERSION_LABEL,
+            )
+        finally:
+            if not committed:
+                with suppress(Exception):
+                    await self._db.execute("ROLLBACK")
+
     async def _initialize_fresh(self) -> InitializationReceipt:
         assert self._db is not None
         audit_cursor_hmac_key = secrets.token_bytes(32)
@@ -17333,6 +17462,9 @@ def _probe_existing_read_only(
         if tables != REQUIRED_TABLES:
             return "unsupported", None
         meta = _sync_meta(connection)
+        if _is_v7_0_migratable(connection, meta):
+            # 0.6.0 写出的 v7.0 库：打开后先前向迁移，再按 v7.1 receipt 校验。
+            return "v7.0-migratable", None
         return "v5", _sync_receipt(connection, meta)
     except (MemoryCorruptionError, sqlite3.Error, TypeError, ValueError) as exc:
         raise MemoryLegacySchemaUnsupported() from exc
@@ -17352,6 +17484,21 @@ def _absolute_safe_probe_path(raw_path: Path) -> Path:
     if path.exists() and not path.is_file():
         raise MemoryValidationError("database path must be a regular file")
     return path
+
+
+def _is_v7_0_migratable(connection: sqlite3.Connection, meta: dict[str, str]) -> bool:
+    if meta.get("schema_checksum") != SCHEMA_CHECKSUM_V7_0:
+        return False
+    if (meta.get("schema_version"), meta.get("schema_epoch")) != (
+        str(SCHEMA_VERSION),
+        SCHEMA_EPOCH,
+    ):
+        return False
+    for table, column, _ in V7_1_ADDED_COLUMNS:
+        columns = {str(row[1]) for row in connection.execute(f"PRAGMA table_info({table})")}
+        if column in columns:
+            return False
+    return True
 
 
 def _sync_table_names(connection: sqlite3.Connection) -> set[str]:

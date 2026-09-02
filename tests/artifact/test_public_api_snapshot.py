@@ -29,15 +29,10 @@ def test_public_api_0_6_1_snapshot_is_frozen_and_0_6_0_is_preserved() -> None:
     assert set(snapshot["root"]) - set(previous["root"]) == {
         "AnalysisLineage",
         "PrincipalRegistrationReceipt",
-    } - _NOT_YET_EXPORTED
+    }
     assert snapshot["migrations"] == previous["migrations"] == older["migrations"]
     assert snapshot["removed_public_methods"] == previous["removed_public_methods"]
     assert "ConversationMemoryAdapter" not in snapshot["root"]
-
-
-_NOT_YET_EXPORTED: frozenset[str] = frozenset(
-    name for name in ("AnalysisLineage",) if not hasattr(simple_harness_memory, name)
-)
 
 
 def test_root_exports_construct_public_facade_contracts() -> None:
