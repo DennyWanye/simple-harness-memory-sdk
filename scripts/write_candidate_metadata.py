@@ -11,7 +11,7 @@ from email.parser import BytesParser
 from pathlib import Path
 
 PACKAGE = "simple-harness-memory-sdk"
-VERSION = "0.6.0"
+VERSION = "0.6.1"
 HARNESS_REQUIRES = "simple-harness-sdk<0.8,>=0.7"
 
 

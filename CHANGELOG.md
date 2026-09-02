@@ -1,6 +1,25 @@
 # Changelog
 
-## 0.6.0（S5a 消费面定稿，2026-09-02）
+## [0.6.1] - 2026-09-02（S5b Task 4a：Memory 0.6.1 核心）
+
+依据 `plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/design-freeze.md` §8。
+
+- `MemoryManager.build_human_memory_v7(..., supported_filter_policies=None)` 透传 backend；默认仍只认
+  `credential-filter/v1`（§8.1）。
+- 多 operation analysis finalize 收敛：`_read_decisions(operation_order=...)` 按 accepted plan 的
+  operations 规范序比较，`decision_id`（hash）序不再作比较基准；≥2 op plan 不再卡死 audit_pending（§8.2）。
+- accepted 且 `outcome=mutate` 的 analysis plan 在 `prepare_analysis_application` 同一事务内、以仓储
+  单次签发的内核能力物化（复用 `apply_memory_mutation_plan` 的 compile/apply 内核）：写 cognitive
+  revisions/heads、`memory_mutation_receipts`、`memory.cognitive.committed` 与 prospective registration
+  outbox；`no_mutation` 不物化；replay 幂等；物化失败 SAVEPOINT 回退、plan 转 rejected
+  （`analysis_materialization_rejected`）；`analysis_apply_heads` 与 `cognitive_apply_heads` 对齐到 max 后
+  同步推进到 base+1。前置：backend 绑定 `evidence_authority` 与 `classification_policy`，否则保持 0.6.0
+  审计-only；evidence authority 在写锁内被调用，不得回调 Memory backend 加锁读（§8.3）。
+- `MemoryManager.register_principal_owner(principal, scope) -> PrincipalRegistrationReceipt`：幂等登记
+  属主 deployment/household（修正 ingest 占位形状）；登记后 outbox/inbox/短时域读取不再
+  `short_horizon_principal_rejected`（§8.4）。
+- （§8.5/§8.6 与 schema v7.1、wheel 双 build 校验见本条目后续小节。）
+
 
 - 包根导出 jobs 消费符号（`DurableMemoryJobRunner`/`MemoryJobWorkerConfig`/`WorkerRunOutcome`）。
 - 新增只读 occurrence inbox / outbox 投影（`OccurrenceInboxEntryV1/PageV1`、`OutboxEntryV1/PageV1`）：
