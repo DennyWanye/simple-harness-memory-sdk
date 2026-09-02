@@ -11,3 +11,5 @@
 | F-9 | 终态 `error_code` 只接受稳定码白名单 `^[a-z][a-z0-9_]{2,63}$`，否则 `driver_failed` | `test_terminal_error_code_whitelist` |
 | F-10 | inode 漂移（删目录同名重建）、symlink 根、跨 Run envelope、exposure 无 execution_policy 直通、UNROUTED hidden-tool 整 Run 故障、memo 多 Run 隔离、composition 真构造缺件 | 见审查报告 F-10 五条测试名 |
 | A5/AC-3⑤ | Auto `explicit_only`：`_CONFIRM_ONLY` 类在 Auto 下 REQUIRE_USER；断言 a–d | `test_auto_mode_never_grants_confirm_only` 等 |
+| Task 2 发现 | `migrator.py`：037 不在 `_S4_HUMAN_MIGRATIONS` 集合 → v45 无 marker/迁移链/恢复注册（fence 触发器缺失）；038 已补链，需回补 037 | `test_v45_migration_registered_in_human_chain` |
+| S5a 遗留 | `backend/uv.lock` 仍指 memory 0.5.2（pin 真相在 sdk_candidate.py） | `uv lock` 刷新或记 known-debt |
