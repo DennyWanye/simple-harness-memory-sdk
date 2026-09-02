@@ -141,6 +141,19 @@ git -C "$MEMORY_REPO" worktree remove "$RELEASE_DIR"
 未打 tag、未 push、未发布；Host `pyproject`/`vendor` pin 以 wheel sha256 fail-closed（Task 4 接线）。
 schema v7.1 前向加列规则见 `CHANGELOG.md` [0.6.1] 与 `backends/schema_v5.py` 注释。
 
+## 0.6.2 candidate manifest（S5b Task 5，2026-09-03）
+
+候选构建口径：`uv build --no-sources`（本仓 worktree，源码提交 `06ba9d4`，Python 3.12.14 / uv 0.12.8），
+两次 clean build 到不同输出目录（`scratchpad/wheel062/build1`、`build2`，不入库），字节一致：
+
+| artifact | sha256（build 1 == build 2） |
+|---|---|
+| `simple_harness_memory_sdk-0.6.2-py3-none-any.whl` | `598678c6a90d6dcc0a0b75e4b7ebb8c2fc9ca52c362c6037334f93692bc2bd05` |
+| `simple_harness_memory_sdk-0.6.2.tar.gz` | `dadeb43eb53c8ef1063e967cd4a00e7e27f58e478671cfa8649dc45641312b67` |
+
+未打 tag、未 push、未发布；Host `pyproject`/`vendor` pin 以 wheel sha256 fail-closed。0.6.2 无 DDL 变化，
+schema 保持 v7.1；缺陷修复与 cutover 规则见 `CHANGELOG.md` [0.6.2]。
+
 ## Historical releases
 
 The published 0.5.1 release and its Harness 0.4/0.5 receipts remain historical audit records in
