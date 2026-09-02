@@ -103,7 +103,11 @@ if TYPE_CHECKING:
         EvidenceIngestionReceipt,
         IngestedEvidenceRecord,
     )
-    from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
+    from simple_harness_memory.core.identity import (
+        MemoryPrincipal,
+        MemoryScope,
+        PrincipalRegistrationReceipt,
+    )
     from simple_harness_memory.core.jobs import (
         AnalysisApplication,
         AnalysisBatchClaim,
@@ -858,6 +862,92 @@ class SQLiteHumanMemoryBackend:
             tail = entries[-1]
             next_after = (tail.occurred_at, tail.event_id)
         return OccurrenceInboxPageV1(entries=entries, next_after=next_after)
+
+    async def register_principal_owner(
+        self, principal: MemoryPrincipal, scope: MemoryScope
+    ) -> PrincipalRegistrationReceipt:
+        """幂等登记 subject 属主形状（0.6.1 §8.4）。
+
+        - 行不存在：按调用方 principal 形状创建 ``principals`` 行；
+        - 行为 ingest/analysis 写入的占位形状（deployment=household=actor=subject）：
+          修正为调用方形状（与 ``apply_memory_mutation_plan`` 的升级条件一致）；
+        - 行已是调用方形状：不写，返回同一回执；
+        - 行是其它非占位形状：``MemoryOwnershipConflict("principal_owner_conflict")``。
+        回执由 ``principals`` 行派生（registration_id 稳定、registered_at 取行 created_at），
+        因此重复调用字节一致。登记后 ``read_outbox``/``read_occurrence_inbox``/短时域读取
+        以该形状授权通过。
+        """
+
+        from simple_harness_memory.core.identity import (
+            MemoryPrincipal,
+            MemoryScope,
+            PrincipalRegistrationReceipt,
+        )
+
+        if type(principal) is not MemoryPrincipal:
+            raise TypeError("principal must use MemoryPrincipal")
+        if type(scope) is not MemoryScope:
+            raise TypeError("scope must use MemoryScope")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v7 backend is not initialized")
+        scope.authorize(principal)
+        principal_id = principal.actor_id
+        async with self._write_lock:
+            begun = False
+            committed = False
+            try:
+                await self._db.execute("BEGIN IMMEDIATE")
+                begun = True
+                now = _timestamp(self._now())
+                await self._db.execute(
+                    "INSERT INTO principals(principal_id,deployment_id,household_id,actor_id,"
+                    "created_at) VALUES(?,?,?,?,?) ON CONFLICT(principal_id) DO UPDATE SET "
+                    "deployment_id=excluded.deployment_id,household_id=excluded.household_id,"
+                    "actor_id=excluded.actor_id WHERE principals.deployment_id="
+                    "principals.principal_id AND principals.household_id=principals.principal_id "
+                    "AND principals.actor_id=principals.principal_id",
+                    (
+                        principal_id,
+                        principal.deployment_id,
+                        principal.household_id,
+                        principal.actor_id,
+                        now,
+                    ),
+                )
+                async with self._db.execute(
+                    "SELECT deployment_id,household_id,actor_id,created_at FROM principals "
+                    "WHERE principal_id=?",
+                    (principal_id,),
+                ) as cursor:
+                    row = await cursor.fetchone()
+                if row is None:
+                    raise MemoryCorruptionError("principal row disappeared during registration")
+                if (str(row["deployment_id"]), str(row["household_id"]), str(row["actor_id"])) != (
+                    principal.deployment_id,
+                    principal.household_id,
+                    principal.actor_id,
+                ):
+                    raise MemoryOwnershipConflict("principal_owner_conflict")
+                receipt = PrincipalRegistrationReceipt(
+                    _stable_id(
+                        "principal-registration",
+                        principal_id,
+                        principal.deployment_id,
+                        principal.household_id,
+                    ),
+                    principal_id,
+                    principal.deployment_id,
+                    principal.household_id,
+                    principal.actor_id,
+                    float(row["created_at"]),
+                )
+                await self._db.execute("COMMIT")
+                committed = True
+                return receipt
+            finally:
+                if begun and not committed:
+                    with suppress(Exception):
+                        await self._db.execute("ROLLBACK")
 
     async def read_outbox(
         self,

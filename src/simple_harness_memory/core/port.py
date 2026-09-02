@@ -34,7 +34,11 @@ from simple_harness_memory.core.audit import (
     CanonicalStateManifestAccessV1,
 )
 from simple_harness_memory.core.evidence import EvidenceIngestionReceipt, IngestedEvidenceRecord
-from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
+from simple_harness_memory.core.identity import (
+    MemoryPrincipal,
+    MemoryScope,
+    PrincipalRegistrationReceipt,
+)
 from simple_harness_memory.core.lifecycle_results import (
     ProcedureObservationApplyResult,
     ProspectiveSignalApplyResult,
@@ -318,6 +322,10 @@ class CognitiveMemoryBackend(Protocol):
     async def ingest_committed_evidence(
         self, envelope: object, receipt: object
     ) -> EvidenceIngestionReceipt: ...
+
+    async def register_principal_owner(
+        self, principal: MemoryPrincipal, scope: MemoryScope
+    ) -> PrincipalRegistrationReceipt: ...
 
     async def register_conversation_evidence(self, reference: object) -> object: ...
 

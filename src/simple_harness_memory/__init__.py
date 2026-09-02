@@ -39,29 +39,24 @@ from simple_harness_memory.core.identity import (
     ExportPage,
     MemoryPrincipal,
     MemoryScope,
+    PrincipalRegistrationReceipt,
     PrivacyReceipt,
     ScopeKind,
-)
-from simple_harness_memory.core.lifecycle_results import (
-    LifecycleApplyOutcome,
-    ProcedureObservationApplyResult,
-    ProspectiveSignalApplyResult,
 )
 from simple_harness_memory.core.jobs import (
     DurableMemoryJobRunner,
     MemoryJobWorkerConfig,
     WorkerRunOutcome,
 )
+from simple_harness_memory.core.lifecycle_results import (
+    LifecycleApplyOutcome,
+    ProcedureObservationApplyResult,
+    ProspectiveSignalApplyResult,
+)
 from simple_harness_memory.core.manager import (
     MemoryManager,
     build_human_memory_v6,
     build_human_memory_v7,
-)
-from simple_harness_memory.core.occurrence import (
-    OccurrenceInboxEntryV1,
-    OccurrenceInboxPageV1,
-    OutboxEntryV1,
-    OutboxPageV1,
 )
 from simple_harness_memory.core.models import (
     BoundedRecallResult,
@@ -77,6 +72,12 @@ from simple_harness_memory.core.mutation_receipts import (
 from simple_harness_memory.core.mutations import (
     EffectiveInformationClassification,
     InformationClassificationPolicy,
+)
+from simple_harness_memory.core.occurrence import (
+    OccurrenceInboxEntryV1,
+    OccurrenceInboxPageV1,
+    OutboxEntryV1,
+    OutboxPageV1,
 )
 from simple_harness_memory.core.port import CognitiveMemoryBackend, MemoryBackend
 from simple_harness_memory.core.recall import TypedRecallExecution
@@ -180,6 +181,7 @@ __all__ = [
     "MemoryScope",
     "ScopeKind",
     "ExportPage",
+    "PrincipalRegistrationReceipt",
     "PrivacyReceipt",
     "MemoryOwnershipConflict",
     "MemoryIdempotencyConflict",

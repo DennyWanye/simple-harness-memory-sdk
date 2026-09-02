@@ -31,6 +31,7 @@ from simple_harness_memory.core.identity import (
     ExportPage,
     MemoryPrincipal,
     MemoryScope,
+    PrincipalRegistrationReceipt,
     PrivacyReceipt,
     ScopeKind,
 )
@@ -283,6 +284,17 @@ class MemoryManager:
 
         operation = getattr(self._backend, "read_occurrence_inbox")
         return await operation(principal=principal, after=after, limit=limit)
+
+    async def register_principal_owner(
+        self, principal: MemoryPrincipal, scope: MemoryScope
+    ) -> PrincipalRegistrationReceipt:
+        """幂等登记 subject 的属主形状（deployment/household）；重复调用返回同一回执。"""
+
+        operation = getattr(self._backend, "register_principal_owner", None)
+        if operation is None:
+            raise RuntimeError("backend does not support principal owner registration")
+        result: PrincipalRegistrationReceipt = await operation(principal, scope)
+        return result
 
     async def read_outbox(
         self,

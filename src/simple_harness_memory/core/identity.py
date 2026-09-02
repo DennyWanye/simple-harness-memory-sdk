@@ -7,7 +7,7 @@ Agent Memory entry points translate the canonical Harness DTOs lazily.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from simple_harness_memory.core.errors import MemoryValidationError
@@ -109,10 +109,60 @@ class PrivacyReceipt:
     cancelled_jobs: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class PrincipalRegistrationReceipt:
+    """``register_principal_owner`` 的幂等回执：同一属主形状重复登记返回同一回执。"""
+
+    registration_id: str
+    principal_id: str
+    deployment_id: str
+    household_id: str
+    actor_id: str
+    registered_at: float
+    schema_version: int = 1
+    receipt_hash: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if isinstance(self.schema_version, bool) or self.schema_version != 1:
+            raise MemoryValidationError("principal_registration_schema_unsupported")
+        for name in (
+            "registration_id",
+            "principal_id",
+            "deployment_id",
+            "household_id",
+            "actor_id",
+        ):
+            _identifier(getattr(self, name), name)
+        if self.principal_id != self.actor_id:
+            raise MemoryValidationError("principal_registration_actor_differs")
+        if (
+            isinstance(self.registered_at, bool)
+            or not isinstance(self.registered_at, (int, float))
+            or self.registered_at < 0
+        ):
+            raise MemoryValidationError("principal_registration_time_invalid")
+        object.__setattr__(self, "registered_at", float(self.registered_at))
+        material = "\x1f".join(
+            (
+                str(self.schema_version),
+                self.registration_id,
+                self.principal_id,
+                self.deployment_id,
+                self.household_id,
+                self.actor_id,
+                repr(self.registered_at),
+            )
+        )
+        object.__setattr__(
+            self, "receipt_hash", hashlib.sha256(material.encode("utf-8")).hexdigest()
+        )
+
+
 __all__ = (
     "ExportPage",
     "MemoryPrincipal",
     "MemoryScope",
+    "PrincipalRegistrationReceipt",
     "PrivacyReceipt",
     "ScopeKind",
 )

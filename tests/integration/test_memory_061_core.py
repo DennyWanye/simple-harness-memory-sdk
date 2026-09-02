@@ -54,8 +54,8 @@ from simple_harness.runtime import (
     VerificationState,
 )
 
-from simple_harness_memory import MemoryManager
-from simple_harness_memory.core.errors import MemoryValidationError
+from simple_harness_memory import MemoryManager, PrincipalRegistrationReceipt
+from simple_harness_memory.core.errors import MemoryOwnershipConflict, MemoryValidationError
 from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
 from simple_harness_memory.core.jobs import (
     DurableMemoryJobRunner,
@@ -817,5 +817,109 @@ async def test_materialization_failure_rejects_plan_without_partial_writes(
             manager, "SELECT application_receipt_json FROM analysis_batches"
         )
         assert '"validation_status":"rejected"' in str(receipt[0][0])
+    finally:
+        await manager.close()
+
+
+# --------------------------------------------------------------------------- §8.4
+
+
+def _host_principal() -> MemoryPrincipal:
+    return MemoryPrincipal("deskpet-local", "deskpet-local-household", SUBJECT, "primary")
+
+
+@pytest.mark.asyncio
+async def test_register_principal_owner_on_fresh_db_enables_host_reads(tmp_path: Path) -> None:
+    manager = await _build(tmp_path / "register-fresh.db")
+    try:
+        with pytest.raises(MemoryOwnershipConflict, match="short_horizon_principal_rejected"):
+            await manager.read_outbox(principal=_host_principal(), states=("pending",))
+        first = await manager.register_principal_owner(
+            _host_principal(), MemoryScope.personal(SUBJECT)
+        )
+        assert isinstance(first, PrincipalRegistrationReceipt)
+        assert first.principal_id == SUBJECT
+        assert (first.deployment_id, first.household_id, first.actor_id) == (
+            "deskpet-local",
+            "deskpet-local-household",
+            SUBJECT,
+        )
+        assert len(first.receipt_hash) == 64
+        page = await manager.read_outbox(principal=_host_principal(), states=("pending",))
+        assert page.entries == ()
+        inbox = await manager.read_occurrence_inbox(principal=_host_principal())
+        assert inbox.entries == ()
+        second = await manager.register_principal_owner(
+            _host_principal(), MemoryScope.personal(SUBJECT)
+        )
+        assert second == first
+        assert await _rows(
+            manager, "SELECT deployment_id,household_id,actor_id FROM principals"
+        ) == [("deskpet-local", "deskpet-local-household", SUBJECT)]
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_register_principal_owner_upgrades_placeholder_row_after_ingest(
+    tmp_path: Path,
+) -> None:
+    manager = await _build(tmp_path / "register-after-ingest.db")
+    try:
+        await manager.ingest_committed_evidence(*_evidence(1))
+        assert await _rows(
+            manager, "SELECT deployment_id,household_id FROM principals"
+        ) == [(SUBJECT, SUBJECT)]
+        with pytest.raises(MemoryOwnershipConflict):
+            await manager.read_outbox(principal=_host_principal(), states=("pending",))
+        receipt = await manager.register_principal_owner(
+            _host_principal(), MemoryScope.personal(SUBJECT)
+        )
+        assert receipt.deployment_id == "deskpet-local"
+        page = await manager.read_outbox(
+            principal=_host_principal(), states=("pending", "claimed", "applied", "dead_letter")
+        )
+        assert [entry.topic for entry in page.entries] == ["memory.mutation.requested"]
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_register_principal_owner_rejects_conflicts(tmp_path: Path) -> None:
+    manager = await _build(tmp_path / "register-conflict.db")
+    try:
+        await manager.register_principal_owner(_host_principal(), MemoryScope.personal(SUBJECT))
+        other = MemoryPrincipal("other-deployment", "other-household", SUBJECT, "primary")
+        with pytest.raises(MemoryOwnershipConflict, match="principal_owner_conflict"):
+            await manager.register_principal_owner(other, MemoryScope.personal(SUBJECT))
+        with pytest.raises(MemoryOwnershipConflict):
+            await manager.register_principal_owner(
+                _host_principal(), MemoryScope.personal("someone-else")
+            )
+        assert await _count(manager, "SELECT COUNT(*) FROM principals") == 1
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_materialization_uses_registered_owner_shape(tmp_path: Path) -> None:
+    executor = _HostExecutor(MIXED_OPS)
+    authority = _HostEvidenceAuthority()
+    manager, runner = await _build_pipeline(
+        tmp_path / "register-then-materialize.db", executor, evidence_authority=authority
+    )
+    try:
+        await manager.register_principal_owner(_host_principal(), MemoryScope.personal(SUBJECT))
+        await _ingest(manager, _evidence(1), authority)
+        assert await runner.run_once() is WorkerRunOutcome.APPLIED
+        heads = await _rows(
+            manager, "SELECT DISTINCT deployment_id,household_id FROM cognitive_memory_heads"
+        )
+        assert heads == [("deskpet-local", "deskpet-local-household")]
+        pending = await manager.read_outbox(principal=_host_principal(), states=("pending",))
+        assert sorted(entry.topic for entry in pending.entries) == [
+            "memory.cognitive.committed",
+            "memory.prospective.registration.requested",
+        ]
     finally:
         await manager.close()
