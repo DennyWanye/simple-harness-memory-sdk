@@ -7,7 +7,7 @@
 ## 兑现表（逐条必须 AC）
 | AC | 矛盾地位 | 含 UI | 测试方式 | 驾驶者 | 真机证据 | 状态 |
 |----|----------|------|----------|--------|----------|------|
-| S5A-AC-1 五路 route 生产链 | 决定性 | 是(acceptance manual_required) | 自动化（真 SDK loop + 真 S4 store + 真实 provider 四路正向）| ai | r2-s5a evidence/s3-*.log + s1/s2 real logs + .local-test-evidence transcripts | ✅ 自动化面；⚠️ 真人桌面 UI run 待用户驾驶或批准等价（见遗留） |
+| S5A-AC-1 五路 route 生产链 | 决定性 | 是(acceptance manual_required) | 自动化（真 SDK loop + 真 S4 store + 真实 provider 四路正向）| ai | r3-s5a evidence/exec-*.log + real-ui-session-evidence.txt + .local-test-evidence transcripts | ✅ 自动化面 + 真实 UI 面（用户 2026-09-02 批准 AI 驱动等价，21 轮真实会话，四场景各自入账） |
 | S5A-AC-2 per-turn snapshot 三 hash | 决定性 | 否 | 自动化（loop 级 + kill-replay + 冷启动 DB 断言）| ai | evidence/s5-kill-replay-twin.log、s6-cold-start-e2e.log | ✅ |
 | S5A-AC-3 因果组/冻结预算 | 次要 | 否 | 自动化（常量逐字节 pin + 生产 fail-closed + usage 校准）| ai | evidence/s5-*.log、s2 real usage 断言 | ✅ |
 | S5A-AC-4 no_recall 门 | 次要 | 否 | 自动化（真 v7 生产注入负测试 + suppression 对照 + presented membership + loop 级全接线）| ai | tests/sdk_adapters/test_no_recall_gate.py（6 lane）via s6 组合 log | ✅ |
