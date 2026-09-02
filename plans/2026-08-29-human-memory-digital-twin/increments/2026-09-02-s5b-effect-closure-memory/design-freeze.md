@@ -38,7 +38,7 @@ exhaustiveness 断言：清单内每个名字必须在 manifest 中存在，且�
 
 1. `effect_gate_envelope_missing` / `effect_gate_envelope_identity_mismatch`（run/call/effect/tool 回声）
 2. `effect_gate_route_receipt_rejected`（sticky memo：`effect_gate_rejections(run_id, route_receipt_id, reason, created_at)` 命中即拒，直到新 route receipt）
-3. 冻结 authority 一致性：`effect_gate_frozen_scope_mismatch`（envelope.task_scope_id ≠ Run 冻结 scope）、`effect_gate_projectless_project_effect`（workspace_resolution.kind ≠ project_bound）、`effect_gate_frozen_root_mismatch`（verify 根 canonical_path ≠ 冻结 workspace_root）
+3. 冻结 authority 一致性：`effect_gate_frozen_scope_mismatch`（envelope.task_scope_id ≠ Run 冻结 scope）、`effect_gate_projectless_project_effect`（Run 冻结时无 exact 写根：`workspace_resolution.kind ∈ {projectless, missing}` 或无 effective_root——注意 foreground 单 root 冻结实际 kind=`legacy`+exact effective_root，`foreground_runtime_ports.freeze` 有意绕过 Session validator，Task 1 实装按此语义；修订于 2026-09-02 Task 1）、`effect_gate_frozen_root_mismatch`（verify 根 canonical_path ≠ 冻结 workspace_root）
 4. `WorkspaceBindingAuthorityStore.verify_task_execution_envelope` 的 S4 码集：`workspace_binding_route_authority_missing|stale`、`workspace_binding_envelope_lineage_mismatch`、`workspace_binding_effect_authority_missing|stale`、`workspace_binding_envelope_root_mismatch`、`workspace_root_unavailable`（根被重命名/删除）、`workspace_root_identity_drift`（dev/ino 变化）、`workspace_root_not_canonical`（symlink）、`workspace_root_too_broad`
 5. `workspace_binding_receipt_superseded`（strict：head.revision ≠ receipt.revision，Manual/Auto 同规则，裁决 A6）
 6. `effect_gate_task_scope_not_active`（scope lifecycle ∉ {active, open}）
@@ -96,3 +96,12 @@ proposal 工具 `memory_analysis_proposal`（仅在 post-turn 独立调用中暴
 ## 10. A6 behavior_changes artifact（写入 verification-spec manifest）
 
 `behavior_change_id = bc-s5b-tchm09-step6-single-root-scope`；old = TC-HM-09 rev4 步骤 6 字面"在每个 root 执行不同 canary effect"（同一多根 scope）；new = 每个 canary root 一个单根 scope 逐一执行 + ≥2 root scope 写工具不可见/强制调用 fail-closed 且 canary hash 不变；approval = 用户委托原话 sha256 `2a99dd6aabeee8485b1453b7371170bef6a04ff2990165079f31c691f4ad75f7` + 裁决文件 sha256；scope = S5b/S5c/S6；expiry = 多 root 选择协议独立验收之日。TC-HM-09 文件不改。
+
+
+## 11. Task 1 实装后的冻结修订（2026-09-02）
+
+- §4 第 3 步 projectless 判定改为「无 exact 冻结写根」语义（见上）。
+- 冻结 SDK `run.failed` 只暴露 `driver_failed`：三条整 Run 故障稳定码由 Host 进程内 `RunFaultMemo`（首码优先）携带进 `run_terminal.public_payload.error_code`；进程 crash 后终态证据退回 `driver_failed`（如实标注，不伪造）。
+- legacy（<v35）epoch 无 route 能力，§1 清单 14 工具在该 epoch 下稳定 fail-closed（整 Run 故障）——program 不承诺旧数据兼容，接受。
+- manifest 中 `move_file/file_organize/run_shell/process_start/ppt_create` 的冻结 EffectClass 为 `unknown` → 落 `_CONFIRM_ONLY`（Task 6 Auto 下 REQUIRE_USER）。
+- Task 2 oracle 追加：`test_write_file_effect_commits_execution_effect_row_and_host_file_event_same_tx`（strict xfail 直到 Task 2）。
