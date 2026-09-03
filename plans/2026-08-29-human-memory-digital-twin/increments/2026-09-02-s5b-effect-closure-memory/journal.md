@@ -67,6 +67,42 @@ S5B-AC-1/2 的真实桌面 UI 面按 acceptance **A14 范围缩减**（用户 20
 **LLM 载荷变异**：`task_scope_update` 与 analysis result 的五类载荷变异由
 `test_no_recall_gate.py` / `test_s5b_acceptance_matrix.py` 覆盖（S7 lane，fail-closed 无半状态）。
 
+## 2026-09-04 终验补记：两个新缺陷与一次归因错误
+
+重录场景时（闸门要求代码变更后复验）暴露出**决定性 AC 的通过取决于模型当次选了哪种路径写法**：
+
+- **P0-12（真因）** `tools/file_tools.py::_resolve_within_workspace` 不展开 `~`。
+  `Path("~/x")` 不是绝对路径 → 被拼成 `<root>/~/x` → 既通过 `relative_to(root)` 后代校验，
+  又指向不存在的文件，模型只收到 "file not found" 而无从改正。本项目提示词习惯用
+  `~/SimpleHarnessWorkSpace/...` 表述，这条路径几乎必踩。实测：同一条指令，模型给绝对路径时
+  整轮通过、给 `~` 路径时 `file_read` 连挂 5 次、全程无副作用而 Run 仍 `SETTLED`。
+- **P0-11** 四个 os_tool 路径归一化不一致：`read_file` / `list_directory` 相对路径按进程 cwd
+  解析；`write_file` / `edit_file` 的 `~` 在越界校验**之后**才展开——后者是**越界通道**
+  （`~/x` 被 `write_scope_check` 判成 scope 内，实际却写向 `$HOME/x`）。统一走
+  `os_tools/_scope_paths.normalize_model_path`，次序钉死"先展开、后校验"。
+  变异验证：调换次序 → `test_tilde_path_outside_scope_is_refused_not_smuggled` 立刻转红。
+
+**一次归因错误（自我批评）**：我先改了 `os_tools/read_file.py`，但失败日志里的 `file_read`
+走的是 `tools/file_tools.py`，两者是**不同处理器**。重跑后照样失败才发现。P0-11 的改动本身
+仍然正确（含那条真实的越界次序修复），但它没有触及当次故障路径——已在 P0-12 提交信息里
+写明归因错误，不掩盖。
+
+**终态语义澄清（判读纪律）**：`foreground_turn_heads.current_state = SETTLED` 只表示回合终止，
+**不表示成功**；业务结果由 `foreground_terminal_receipts.terminal_state`（`COMPLETED`/`FAILED`）
+与 `task_scope_closure_receipts` 承载。本轮遇到上游 provider 502 与 60s transport timeout 各一次，
+都得到 `SETTLED` + `terminal_state=FAILED` + 零收口回执——这是**正确行为**。lane 脚本已加终态判读，
+把上游故障判为 `INCONCLUSIVE` 而非业务 FAIL，避免把外部不可用记成被测面的红。
+
+**未能归因的现象（如实记录，不粉饰）**：在**通过**的 root run 中，`file_read` 仍失败 4 次
+（稳定码 `tool_failed`）、`edit_file` 失败 4 次后第 5 次成功。工具参数不落库（隐私设计），
+我**无法从持久证据归因**；最可能是模型去找 README 里提到的 CHANGELOG，但这是推测，未证实。
+→ 列入遗留问题 8（可观测性义务）。
+
+**闸门次序教训**：re-attest 必须在场景记录**之前**。我先记录后 attest，导致 re-attest 把
+文档改动 fail-closed 成行为变更，7 场景全部作废重跑。`ARCHITECTURE/**` 不在默认 doc-only
+白名单内，而自定义 glob **只能收窄不能放宽**（防止被测者自报豁免）——这是闸门的正确设计，
+不是缺陷。
+
 ## 遗留问题清单（不许悬空）
 1. F-5：MCP 写类工具未纳入 PROJECT_EFFECT 分类（仅经 unknown EffectClass → Auto confirm-only 间接收窄；project_bound Run 已排除 filesystem MCP）→ S5c/S6 前处理。
 2. `_drive_claimed` 真实 runtime 端到端用例未补（Task 6 未完成项）。
@@ -75,6 +111,9 @@ S5B-AC-1/2 的真实桌面 UI 面按 acceptance **A14 范围缩减**（用户 20
 5. Prospective/即时操作（AC-4/AC-5）→ S5c；Memory `sent_unknown` 确认通道、`not_sent` 判定依赖 httpx 消息 → SDK 0.8 义务。
 6. 真实 UI 截图 PNG 无法落盘（screencapture 权限/Browser pane 不落盘）→ UI 证据以页面文本捕获 + 日志 + DB 行为形态（与 S5a 一致）。
 7. HM-AC-8 质量门：240 条语料人工复审仍未安排（用户动作）→ `NOT_RUN/BLOCKED`。
+8. **可观测性缺口**：`product_tool.failed tool=%s code=%s` 只记稳定码，丢弃拒因；工具参数不落库。
+   本轮因此三次拖慢定位（每次都要靠探针复现机制）。通过的 root run 里 4 次 `file_read` 失败
+   至今无法归因。→ 建议下一切补一条**不含路径的有界拒因分类**入日志。
 
 ## 终态行
 （phase-final 填写）
