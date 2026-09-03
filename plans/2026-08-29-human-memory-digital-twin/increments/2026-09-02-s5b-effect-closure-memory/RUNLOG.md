@@ -271,3 +271,21 @@
   自然用户语言，AUTO 模式下 Agent 在既定 workspace 自建并绑定任务目录。
 - **本轮共修 7 个既有缺陷**（`1206929d` / `5cba5e9e` / `1d9e5596` / `1c5c8cc8` / `b08924d6` /
   `26e6c1fb` / `34ea5274`），全部因「前台执行流程在 pytest 里零覆盖」而长期潜伏。
+- **r3-s5b 全量重录完成（Host `399b3891`）：7 场景全 PASS**
+  | 场景 | lane | 结果 |
+  |---|---|---|
+  | S5B-S1 | 生产入口 ×2（prod-lane-05 / prod-lane-08） | PASS（全链闭环，business-result + execution-log 已挂） |
+  | S5B-S2 | temporal-fault（11 seam） | PASS（fault-recovery-log 11 行） |
+  | S5B-S3 | temporal-fault（11 seam）+ 负向断言 | PASS |
+  | S5B-S4 | s4-effect-gate（11 seam） | PASS |
+  | S5B-S7 | 确定性 + 冷启动真实 UI | PASS（0→46 迁移 + 1-turn 终答） |
+  | S5B-S8 | 真实 UI 通道 1-turn | PASS（ui-capture + execution-log + 路由行） |
+  | S5B-REG-FULL | Host 全量 + Memory 全量 + 负向断言 | PASS（6459 passed / 恰好 7 已知红 / 零意外） |
+  已登记 all-ai-driving 批准（hash `7a84b793…`）、active-run 绑定 r3。
+- **收尾卡在一个环形依赖（需用户一句话）**：`finalize --check-only` 仅剩
+  `SIBLING_RUN_UNRESOLVED`（r1-s5b / r2-s5b 未交代）。但 `retire` 要求继任 run 已
+  **SHIPPABLE**，而 SHIPPABLE 需要先 finalize，finalize 又被这两轮挡住——**死锁**。
+  gate 给的另一条合法出口是 `acknowledge`（用户显式确认放弃该轮验证），它**要求用户批准原文的 hash**。
+  故需用户一句话确认：作废 r1-s5b 与 r2-s5b 这两轮验证记录（原因分别为「REG root fail 粘性 +
+  此后代码大幅变更」与「执行者并发写导致 integrity 链断裂」），由 r3-s5b 承接。
+  两轮的账本与证据**原样保留**，不删除。
