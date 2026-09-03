@@ -1,6 +1,22 @@
 # PROJECT STATUS — simple-harness-memory-sdk
 
-> 最后更新：2026-09-02
+> 最后更新：2026-09-04
+
+## 2026-09-04 S5b：effect gate / 语义收口 / 记忆分析（验收中）
+
+- **本仓在 S5b Task 7 无代码改动**：`src/` 最后一次变更是 0.6.2 cutover（`06ba9d4`，已入
+  CHANGELOG，schema 保持 v7.1）。Task 7 的 9 处缺陷修复全部落在 Host 侧前台执行链，
+  因此本仓**不新增 CHANGELOG 版本条目**——没有可发布的代码变化就不编造版本。
+- **Host 侧里程碑**：human-memory 前台任务执行链首次在**生产入口**跑通
+  （控制通道 `queue.enqueue` → `_drive_claimed` → SDK ReActLoop → 终态提交同事务写
+  Memory ingestion outbox → analysis → 认知记忆物化）。该链此前从未在生产上跑通，
+  因为 `_drive_claimed` 在 pytest 里零覆盖，测试基座手工推进状态机把生产装配缺口全补上了。
+- **对本仓消费面的实证**：`memory_ingestion_outbox` + `memory_ingestion_evidence_links`
+  在终态同事务各落 1 行，`cognitive_memory_heads` 物化 1 条 episode——0.6.2 的 analysis
+  lineage 与 apply head 契约在真实 provider 下按预期工作。
+- **S5a 遗留的两条上游义务仍未闭环**：属主注册 API（本仓）、SDK assistant `tool_calls`
+  作为一等 transcript 字段（`simple-harness-sdk` 仓，冻结中）。均顺延。
+- **移交下一切（S6）**：该链没有任何桌面 UI 入口，前端零调用 `queue.enqueue`。
 
 ## 2026-09-02 S5a：0.6 消费面定稿 + Host 生产接入
 
