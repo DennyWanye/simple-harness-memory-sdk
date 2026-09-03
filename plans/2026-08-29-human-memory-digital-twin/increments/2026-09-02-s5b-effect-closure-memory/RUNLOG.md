@@ -79,3 +79,20 @@
   - **代码已变更 → r2 账本（已因并发写断链）无论如何都要作废**：待 provider 恢复、UI-B/UI-C 补齐后，
     在最终 HEAD 上 `init r3-s5b`（`related_run_dirs=[r1-s5b, r2-s5b]`，spec 已更新）全量重录 7 场景，
     r1/r2 均 `retire --superseded-by r3-s5b`。
+- **修复的连带处理与自查（Host `0c907b04` → 空串收窄提交）**：
+  - 全量回归在最终 HEAD 上先报 **9 红**（基线 7 红），两条增量均由本次改动引起且都已归零：
+    ① `test_checked_manifest_is_canonical_and_current`——改了 `deskpet/tools/tool_search.py`，
+    `core.tool_search.v1` / `core.tool_describe.v1` / `core.tool_activate.v1` 三个 handler 的
+    `build_digest` 变化，按脚本 `--write` 重建 `execution_build_manifest.json`；语义 diff 已核对：
+    72 个 handler 无增删、其余 69 个 digest 不变（commit `790dab64`）。
+    ② `test_public_narration_prompt_matches_optional_tolerant_tool_schema`——原断言
+    `deskpet_public_progress` 不在 `schema["required"]` 里，必填下沉后发布 schema 已无 `required`
+    故 KeyError。改为断言发布 schema 无 `required`，并新增行为不变量测试（只给
+    `deskpet_public_progress` 不给 `path` → 按缺 `path` 拒绝且处理器不被调用；给了 `path` 不给
+    `deskpet_public_progress` → 正常放行）。不变量本身未变（commit `0c907b04`）。
+  - **自查发现并修正一处自己引入的风险**：首版 `_missing_required_arguments` 把空串一并当缺参，
+    会误拒 `write_file(content="")` 这类合法的「写空文件」请求。已收窄为**仅缺失或显式 `None`**
+    才算缺参；各工具对空值的语义（如 `tool_search` 空 query 无意义）留在各自处理器。
+    新增 `test_empty_string_is_a_valid_required_value` 锁住（`content=""` 放行并原样传到处理器，
+    `content=None` 仍按缺参拒绝）。
+  - Memory 仓库全量 **1113 passed / 8 skipped**（未受影响）。
