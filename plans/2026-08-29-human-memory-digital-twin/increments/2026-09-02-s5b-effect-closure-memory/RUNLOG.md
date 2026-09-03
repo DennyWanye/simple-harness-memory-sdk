@@ -140,3 +140,28 @@
 - **当前判定：BLOCKED**（S5B-S1 的 UI 面缺正向价值样本）。已验证面：Host 全量 6451 passed / 恰好 7 条
   已知环境红、零意外；Memory 1113 passed；真实 provider 里程碑 pytest 车道在最终 HEAD 上独立跑通 2 次；
   UI-A 冷启动（S8 + S7 cold_start）在 `1c511a66` 上 PASS。
+- **S5B-UI-F3 修复复验通过**（Host `620a6f18`，证据 `20260903T1300-uiB`）：模型只调用一次 `agent`，
+  拿到稳定码 `delegation_unavailable` + 替代路径后**立刻改走** `tool_search → tool_describe(builtin:edit_file)
+  → tool_activate`（成功），不再反复重试委派直到 `react_max_turns_exceeded`。
+- **里程碑做不出来的根因查清：不是缺陷，是 UI 入口不存在**。模型激活 `edit_file`/`read_file` 后，
+  `context_route` 以 `workspace_binding_current_run_authority_missing` 失败
+  （`task_scope/runtime_binding_authority.py:288`，因 `foreground.current_snapshot` 返回 None）。链路核实：
+  ① S5b 生产链由 `enqueue_turn` 驱动（`memory/human_memory_service.py:794`）；
+  ② 其生产入口只有 WebSocket `human_memory_request` + `operation:"queue.enqueue"`
+  （`memory/human_memory_api.py:207`，`main.py:14883`）；
+  ③ 桌面 UI 普通聊天走 `chat_v2` **从不入队**，全仓 `after_enqueue` 只在 `main.py:11011` 启动恢复处调一次；
+  ④ 前端**没有任何** `human_memory_request` / `queue.enqueue` 代码；
+  ⑤ 4 个真实 UI run 的 `foreground_runs` 表全为 0 行。
+  → 该 UI 入口属 **S6（全部 UI）**，而 S6 在本增量 plan/acceptance 里本就是范围外与停止追踪点；
+  S5B-S1 当初标 `manual_required=是（真实桌面 chat UI）` 属起草时的范围错误。
+- **A14 范围缩减（用户 2026-09-03 显式批准）**：原话「判定 UI 面移交下一切」，sha256
+  `6086418dcc44ba2e7f4be13c9ced929cc7241f614cc16662bfa25e3fc3c2c41b`，原文存
+  `verification/plan-challenge/user-approval-scope-reduction-2026-09-03.txt`。
+  这是 plan-test DoD 允许的第二类合法出口（用户 chat 显式批准缩减 + 回写 acceptance + 结论按缩减后范围表述）。
+  已回写：`acceptance.md` 新增「A14 范围缩减」节 + 场景矩阵行 + 适用性声明 + DoD 摘要第 1 条；
+  Host `testcase/.../s5b-effect-closure-memory-verification-spec.json` 里 S5B-S1 的
+  `ui`/`manual_required` 改 false、`required_artifact_kinds` 去掉 `ui-capture`、附 `scope_note`。
+  **只缩两项**：S5B-S1 的真实桌面 UI 驱动面、≥20 turn 长上下文会话（均移交 S6，登记为 S6-OB-1/OB-2）。
+  **业务判据一字未改**；S5B-S7 冷启动与 S5B-S8 真实 UI 通道两条 UI 面照旧 required 且已 PASS。
+  **结论措辞纪律**：交付结论必须写明「真实桌面 UI 面移交 S6」，不得用 S7/S8 的 UI PASS 或 pytest 车道
+  PASS 暗示 S5B-S1 的 UI 面已验证。

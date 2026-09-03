@@ -107,7 +107,9 @@
 ## 适用性声明
 
 - `input_sensitive=true`：closure / analysis 的正确性随自然语言语义变化；场景矩阵引用 program 冻结
-  HM-S3/S9/S11（decided_by=user）。真实主模型 root run ≥2 轮独立完整跑，其一在 ≥20 turn 长上下文会话中（program STOCHASTIC 规则）。
+  HM-S3/S9/S11（decided_by=user）。真实主模型 root run ≥2 轮独立完整跑（program STOCHASTIC 规则）。
+  **≥20 turn 长上下文会话随 S5B-S1 的 UI 面一并移交 S6**（A14）：该长会话在 S5a 是经真实桌面 UI 完成的，
+  而 S5b 生产链在桌面 UI 上无入口（见 A14），本增量内不存在可驱动它的真实入口。
 - `llm_payload_driven=true`：`TaskScopeMutationPlan`、`MemoryMutationPlan`（analysis 结果）载荷驱动 Host/Memory 状态机；
   变异清单引用 program 冻结表，本增量必须补 `task_scope_update` 与 analysis result 的五类变异用例。
 - `stateful_init=true` / `cold_start=true`：v46 新持久化状态 + fresh userdata 冷启动直达对话。
@@ -116,7 +118,7 @@
 
 | scenario_id | 引用 | S5b 口径 | 矛盾地位 | gate_type | required | manual_required | min_root_runs |
 |---|---|---|---|---|---|---|---|
-| S5B-S1-REAL-EFFECT-CLOSURE-MEMORY | HM-S11 步骤5 + HM-S3 | 最小验证动作：真实 provider 改文件 → 客观事件脏标记 → `task_scope_update` mutate（或兜底）→ 同事务 outbox → analysis accepted；一个 Run、一次 attempt、零重复 Provider 调用；STATUS 与文件变更一致（人工检查）。其一在 ≥20 turn 会话 | 决定性 | positive-value | 是 | 是（真实桌面 chat UI） | 2 |
+| S5B-S1-REAL-EFFECT-CLOSURE-MEMORY | HM-S11 步骤5 + HM-S3 | 最小验证动作：真实 provider 改文件 → 客观事件脏标记 → `task_scope_update` mutate（或兜底）→ 同事务 outbox → analysis accepted；一个 Run、一次 attempt、零重复 Provider 调用；STATUS 与文件变更一致（人工检查）。**驱动入口 = 生产 `enqueue_turn`（真实 provider 车道）**；**真实桌面 UI 面移交 S6**（见下方「A14 范围缩减」） | 决定性 | positive-value | 是 | 否（UI 面移交 S6） | 2 |
 | S5B-S2-CLOSURE-FAULT-MATRIX | HM-TO-R8 / TC-HM-11 步骤5 / fault lane `foreground-fifo-closure` | deterministic：多工具批次脏标记、漏调用→兜底、拒绝/timeout/unknown→`semantic_closure_pending`、CAS 冲突、重复 plan、projection 失败；六 seam kill/replay + observer next_sequence 竞争、attempt 五态 reconcile、跨 Run plan、lease 到期第二 owner 零重发（A12） | 决定性 | negative-safety | 是 | 否 | 1 |
 | S5B-S3-ANALYSIS-IDEMPOTENCY-FAULTS | TC-HM-08 步骤3 / fault lane `memory-mutation-plan` | deterministic：五态 attempt、账本三键先查后调（Provider 计数 0）、unknown 三分类（含注入 reconciliation observer 的 `sent_confirmed`）、≥2 op finalize、audit_pending 卡死 seam、lease-reclaim in-flight、membership growth、Host commit/claim/result/apply 各 kill 点、duplicate payload、Memory unavailable→dead-letter、raw evidence 守恒（A12） | 决定性 | negative-safety | 是 | 否 | 1 |
 | S5B-S4-EFFECT-GATE | HM-S9 / TC-HM-09 步骤3–6 / lane `taskscope-init-binding` | deterministic：PROJECT_EFFECT 清单、root 签发、per-effect 重验（reason-code 表）、六类拒绝、root inode 漂移、same-batch pre-route、伪造 auto/envelope、Run fault 三稳定码、frozen-root 分裂、Auto+DESTRUCTIVE → REQUIRE_USER、单 root-per-canary 口径（A6/A12） | 次要 | negative-safety | 是 | 否 | 1 |
@@ -137,9 +139,52 @@ analysis 产出的记忆条目每条可回指对话原句、无臆造（S5/S6 �
 - 最大可接受影响：收口失败只能导致 `semantic_closure_pending`（可重试）与保守终答，不得伪造状态；effect 校验失败只能拒绝执行；
   analysis 失败只能 dead-letter 并保留原始证据；任何情况下不重复调用 Provider、不越权召回、不丢原始证据。
 
+## A14 范围缩减：S5B-S1 的真实桌面 UI 面移交 S6（用户 2026-09-03 显式批准）
+
+**用户决定**：原话「判定 UI 面移交下一切」，sha256
+`6086418dcc44ba2e7f4be13c9ced929cc7241f614cc16662bfa25e3fc3c2c41b`，
+原文存 `verification/plan-challenge/user-approval-scope-reduction-2026-09-03.txt`。
+本条是 plan-test DoD 允许的第二类合法出口（「用户 chat 显式批准缩减，已回写 acceptance，
+结论按缩减后范围表述」），据此回写本文件。
+
+**事实依据**（Host `620a6f18` 实测，8 次真实桌面 UI run）：
+1. S5b 生产链（前台队列准入 → 工作区绑定 → EffectGate → 语义收口 → Memory analysis）由
+   `HumanMemoryHostService.enqueue_turn` 驱动（`memory/human_memory_service.py:794`）。
+2. `enqueue_turn` 生产上只有一个入口：WebSocket `human_memory_request` +
+   `operation:"queue.enqueue"`（`memory/human_memory_api.py:207`，`main.py:14883` 分发）。
+3. 桌面 UI 普通聊天走 `chat_v2`，**从不入队**；全仓 `after_enqueue` 只在 `main.py:11011`
+   的启动恢复处调用一次。
+4. 前端**没有任何**发送 `human_memory_request` / `queue.enqueue` 的代码；只在 run projection
+   里展示 `task_scope_id`，没有「对某个 TaskScope 发起一轮」的界面动作。
+5. 实测佐证：4 个真实 UI run 的 `foreground_runs` 表全为 0 行；项目会话里模型激活
+   `edit_file`/`read_file` 后，`context_route` 以 `workspace_binding_current_run_authority_missing`
+   失败（`task_scope/runtime_binding_authority.py:288`，因 `current_snapshot` 返回 None）。
+
+**定性**：这不是产品缺陷，也不是本增量改动引起——该链路的 UI 入口属 **S6（全部 UI）**，
+而 S6 在本增量 plan/acceptance 里本就是明确的范围外与停止追踪点。S5B-S1 当初标
+`manual_required=是（真实桌面 chat UI）` 属起草时的范围错误。
+
+**缩减后的边界（只缩这些，其余不动）**：
+- S5B-S1 的**驱动入口**改为生产 `enqueue_turn` 真实 provider 车道；`manual_required` 改为否。
+- 随之移交 S6 的还有 **≥20 turn 长上下文会话**（S5a 是经真实桌面 UI 完成的，S5b 无此入口）。
+- **不缩减**：S5B-S1 的业务判据一字不改（真实 provider 改文件 → 客观事件脏标记 →
+  `task_scope_update` 收口 → 同事务 outbox → analysis accepted；≥2 独立 root run；
+  一个 Run、一次 attempt、零重复 Provider 调用；STATUS 与文件变更一致）。
+- **不缩减**：S5B-S7 冷启动与 S5B-S8 真实 UI 通道两条 UI 面**照旧 required 且已 PASS**
+  （证据 `.local-test-evidence/real-ui-channel/20260903T030437-uiA` 与 `20260903T1130-uiA`）。
+
+**结论措辞纪律**：S5b 的交付结论必须写明「真实桌面 UI 面移交 S6」并给出本节链接；
+不得以 S5B-S7/S8 的 UI PASS 或 pytest 车道 PASS 暗示 S5B-S1 的 UI 面已验证。
+
+**移交 S6 的义务（不许悬空）**：
+- **S6-OB-1**：为 S5b 生产链建 UI 入口（对 TaskScope 发起一轮，走 `queue.enqueue`），
+  然后在真实桌面 UI 上补跑 S5B-S1 的最小验证动作与 ≥20 turn 长会话。
+- **S6-OB-2**：把「生产链没有 UI 入口」本身记为可见性缺口——当前桌面 UI 用户无法触达 S4/S5b
+  的任务域执行链，只能得到 `workspace_binding_current_run_authority_missing` 这类内部码。
+
 ## 完成的定义（DoD 摘要）
 
-1. 决定性 S5B-AC-1/2 实测达成（MUST = AC-1/2/3/6，AC-4/5 移交 S5c）（最小验证动作在真实 provider + 真实桌面 UI 上 PASS，≥2 独立 root run，其一 ≥20 turn）——此二条 FAIL 时其余 PASS 不救场；
+1. 决定性 S5B-AC-1/2 实测达成（MUST = AC-1/2/3/6，AC-4/5 移交 S5c）（最小验证动作在**真实 provider + 生产 `enqueue_turn` 入口**上 PASS，≥2 独立 root run；**真实桌面 UI 面与 ≥20 turn 长会话移交 S6**，见 A14）——此二条 FAIL 时其余 PASS 不救场；
 2. 全部必须 AC 有 required 证据；HM-AC-8 质量门如实记 `NOT_RUN/BLOCKED`（外部人工语料前置）；
 3. 机器门 `finalize` exit 0 + receipt（MACHINE_GATE 启用）；
 4. 三仓文档回写（Host ARCHITECTURE/PROJECT_STATUS、Memory CHANGELOG/PROJECT_STATUS、本增量 RUNLOG/journal/retro）；
