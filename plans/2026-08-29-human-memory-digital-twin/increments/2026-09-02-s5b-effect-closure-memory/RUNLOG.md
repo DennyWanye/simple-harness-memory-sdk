@@ -96,3 +96,20 @@
     新增 `test_empty_string_is_a_valid_required_value` 锁住（`content=""` 放行并原样传到处理器，
     `content=None` 仍按缺参拒绝）。
   - Memory 仓库全量 **1113 passed / 8 skipped**（未受影响）。
+- **最终 HEAD `674e00e3` 的验证结果**：Host 全量回归 **6451 passed / 恰好 7 条已知环境红 / 零意外**；
+  Memory 全量 **1113 passed / 8 skipped**；真实 provider 里程碑 pytest 车道（S5B-S1 主闸）在该 HEAD 上
+  **独立跑通 2 次**（transcript `run-1788400628.json` / `run-1788400690.json`）。
+- **真实 UI 里程碑仍未闭环，但阻塞点已定性且设置已就绪**（证据 `20260903T1000-uiB`）：
+  - 前几轮写不进 README 的根因**不是缺陷**，而是 S5b 的安全属性——`effect_gate_frozen_scope_mismatch`：
+    Run 只能在准入时冻结的任务域/工作区内产生副作用，中途 `context_route` 不授予对另一任务域的权限；
+    产品 UI 亦明示「项目只在新 Session 创建时绑定，之后不能改绑」。同一轮模型**终答如实告知失败**、
+    未编造成功，属 negative-safety 正向证据。
+  - 已改用产品自带的「添加项目 → 选择文件夹 → 注册为独立项目 → 创建项目 Session」完成绑定；
+    纯浏览器通道缺原生文件夹选择器，故给 `tauri_shim.js` 增补 `open_directory_dialog`，
+    返回值经 `shim_proxy.py --project-dir-file` 服务端注入（不进 URL/仓库）。
+    绑定生效实证：项目会话里 `file_grep(README.md)` **succeeded**、`builtin:edit_file` 已激活。
+  - 两次写入尝试均在落笔前被上游 **provider 60 秒 transport_timeout** 打断（Run 落
+    `provider_outcome_unknown` 不恢复）。**环境阻塞**，通道与绑定设置已完全就绪，provider 稳定后可直接复跑。
+- **下一步（待 provider 稳定）**：复跑 UI-B 拿到 README 1.1.3→1.2.0 的真实 UI 证据 + UI-C（≥20 turn）；
+  然后在最终 HEAD 上 `init r3-s5b`（`related_run_dirs=[r1-s5b, r2-s5b]`，spec 已更新）全量重录 7 场景，
+  r1/r2 `retire --superseded-by r3-s5b`；再走独立 full-audit → 文档回写 → re-attest → finalize。

@@ -120,6 +120,22 @@ README 至今未被真实 UI 改成 1.2.0。两个产品缺陷都已修并各自
 因此 S5B-S1 的**真实 UI 补充证据仍缺**；S1 的主闸是 pytest 真实车道（已 ×2 PASS），S8/S7 由 UI-A 冷启动
 PASS 覆盖。建议 provider 恢复后按上面的 `--workspace` 设置重跑一次 UI-B（以及 ≥20 turn 的 UI-C）。
 
+## 四之二、跨任务域写入被 gate 正确拒绝（重要定性）
+第五、六轮把 README 放进会话目录后仍写不进去，根因不是缺陷而是 S5b 的安全属性：
+`effect_gate_frozen_scope_mismatch` —— **Run 只能在准入时冻结的任务域/工作区内产生副作用**，
+中途 `context_route` 只改上下文、不授予对另一个任务域的权限。产品 UI 也明说
+「项目只在新 Session 创建时绑定，之后不能改绑」。同一轮里模型的**终答如实告知失败**
+（「README 的写入被项目保护机制连续拒绝了，文件没有被修改」），没有编造成功——
+这本身是 negative-safety 面的有效证据。
+
+据此改用产品自带流程完成绑定：「添加项目」→ 选择文件夹 → 勾选「将所选子目录注册为独立项目」
+→「创建项目 Session」。原生文件夹选择器在纯浏览器通道不可用，故给 `tauri_shim.js` 增补
+`open_directory_dialog`，返回值由 `shim_proxy.py --project-dir-file` 在服务端注入
+（与 secret 同法，不进 URL、不进仓库）。**绑定生效的实证**：项目会话里
+`file_grep(path="README.md", pattern="1\\.1\\.3")` succeeded，模型随后成功激活 `builtin:edit_file`。
+两次写入尝试都在落笔前被 provider 60 秒超时打断，故 README 仍是 1.1.3。
+通道与项目绑定设置现已完全就绪，provider 稳定后可直接复跑。
+
 ## 五、证据目录（均保留，`.local-test-evidence/real-ui-channel/`）
 | 目录 | Host HEAD | 结果 |
 |---|---|---|
@@ -129,3 +145,4 @@ PASS 覆盖。建议 provider 恢复后按上面的 `--workspace` 设置重跑�
 | `20260903T0700-uiB` | `e46b1629` | F2 首版修复后；被 provider 60s 超时挂起 |
 | `20260903T0710-uiB` | `e46b1629` | 路由链全通；`context_route {}` 证伪首版修复覆盖面 → 扩面 |
 | `20260903T0730-uiB` | `38ff5e9a` | F2 扩面修复**真实 UI 验证通过**（六次空参数全部可见拒绝、Run 存活）；里程碑被 provider 超时阻断 |
+| `20260903T1000-uiB` | `674e00e3`（最终） | gate 正确拒绝跨域写入且模型如实报告；改用项目 Session 绑定后 `file_grep` 成功、`edit_file` 已激活；两次写入尝试均被 provider 超时打断 |
