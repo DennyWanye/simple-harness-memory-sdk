@@ -115,7 +115,23 @@ S5B-AC-1/2 的真实桌面 UI 面按 acceptance **A14 范围缩减**（用户 20
 5. Prospective/即时操作（AC-4/AC-5）→ S5c；Memory `sent_unknown` 确认通道、`not_sent` 判定依赖 httpx 消息 → SDK 0.8 义务。
 6. 真实 UI 截图 PNG 无法落盘（screencapture 权限/Browser pane 不落盘）→ UI 证据以页面文本捕获 + 日志 + DB 行为形态（与 S5a 一致）。
 7. HM-AC-8 质量门：240 条语料人工复审仍未安排（用户动作）→ `NOT_RUN/BLOCKED`。
-8. **可观测性缺口**：`product_tool.failed tool=%s code=%s` 只记稳定码，丢弃拒因；工具参数不落库。
+8. ~~**可观测性缺口**~~ **已修**：`file_read`/`file_write` 的拒绝已补不含路径的稳定分类码
+   （`fa0f250b`）。补上当轮即当场归因出 `file_not_found`，此前"无法归因"的推测已撤回。
+   仍欠：成功的工具调用不记 tool_name（要从 `task_scope_events` 的 `public_payload` 反查）。
+9. **独立终审 P2 项**（不阻断 finalize，登记为下一切义务）：
+   - `verification-spec` 的 7 个场景 impact_paths **不覆盖 `backend/deskpet/tools/**`**——
+     P0-11/P0-12 正落在该目录。本轮之所以触发重录，是因为 `execution/**` 恰好也改了。
+     若下次只改文件工具，闸门不会要求任何场景重录。**本轮不改**：改 impact_paths 会重置
+     attestation 并触发全量重测，应在下一切开轮时改。
+   - `run_shell` 的 `exit_code=127/129` 被记为客观事件 `outcome=succeeded` → 脏标记无法区分
+     "命令真动了文件"与"命令根本没跑起来"。
+   - S1 evidence 的 `root_run_id`/`session_id` 填的是车道标签而非真实 `sdk_run_id`/`host_run_id`
+     （真实 id 只在 gitignored 的 run 目录与 production-entry.log 里）。
+   - 「独立裁决 D」缺可核对的独立产物文件，只有执行者自撰回执（弱于 A6/A7/A11 的带 hash 范式）。
+   - `run_shell` 客观事件 `command_head=null`（shell=True 时）+ `targets=[]`：模型用 shell 改文件时，
+     账本里不存在把该 effect 与被改文件关联起来的持久事实。**这是有意的隐私权衡**，
+     但应在 acceptance 里显式承认，而不是让 `write_file_envelope_verified` 去承担它兑现不了的语义。
+10. **可观测性缺口**：`product_tool.failed tool=%s code=%s` 只记稳定码，丢弃拒因；工具参数不落库。
    本轮因此三次拖慢定位（每次都要靠探针复现机制）。通过的 root run 里 4 次 `file_read` 失败
    至今无法归因。→ 建议下一切补一条**不含路径的有界拒因分类**入日志。
 
