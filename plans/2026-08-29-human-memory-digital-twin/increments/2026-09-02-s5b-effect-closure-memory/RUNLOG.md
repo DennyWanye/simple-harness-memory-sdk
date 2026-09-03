@@ -188,3 +188,25 @@
   并作为已批准行为的显式缩减入账，需用户批准）属技术选型，**需另开独立裁决**。
 - **OBL-1 → S6**、**OBL-3 → 本增量 retro**（起草检查表缺「入口可达性」一问）已一并写入 acceptance A14 节。
 - **当前判定：BLOCKED**，卡点两条：① OBL-2 这个 P0 未定出路；② S5B-S1 缺「生产 WS 入口」的正向价值样本。
+- **用户 2026-09-03 决定并已实施：AUTO 模式下 Agent 自建任务目录并绑定，非 AUTO 弹窗确认**
+  （原话「这个改成让Agent自己按照任务在制定的workspace里面建立目录，在auto模式下agent不需要用户授权，
+  非auto模式下则需要弹出弹窗，让用户同意」）。Host commit `1206929d`：
+  ① `_append_auto` 在没有前台 Run 时走 pre-admission bootstrap——合成确定性
+  `CurrentRunBindingAuthority` 登记在 `_pre_admission` 表，store 的
+  `_verify_current_run_authority` 仍逐字段核对身份与血缘（校验不放宽，只承认「还没有前台 Run」
+  这一合法状态），用完即清；② `append_binding` 入口先 `_ensure_task_directory`，只在既定
+  workspace root 的真实后代位置建目录（`canonical_workspace_root` 用 `resolve(strict=True)`，
+  目录不存在就绑不了）；③ 非 AUTO 路径完全不变，仍走 `propose_manual_binding` 弹窗。
+  决定性测试：无前台 Run 时绑定成功且目录被建出、revision≥1；workspace 之外的根照旧拒绝且不建目录。
+  受影响套件 **557 passed**。
+- **生产入口车道进展（`.local-test-evidence/real-ui-channel/20260903T16{20,40}-wsentry`）**：
+  新增 `tools/production_entry_run.py`，对**真实运行后端**经控制 WebSocket 依次发
+  `primary.open → task_scope.create → binding.append → queue.enqueue`（与将来 S6 按钮同一段代码）。
+  死锁解开后 **前四步全部成功**（binding `status=bound`、`binding_set_revision=1`）。
+- **暴露前台链第二个缺口（S5B-P0-2，未修）**：前台 Run 起不来，`foreground.runtime.failed`
+  错误码 `conversation_entrypoint_required`。根因：冻结 SDK `runtime/kernel.py:729-733` 规定
+  启用 Agent Memory 时 `start()` 必须带 `conversation`，而
+  `execution/foreground_runtime.py:821-830` 调 `self._ingress.start(...)` 时**没有传 conversation**
+  （`sdk_adapters/ingress.py:130` 的 `conversation is not None` 分支因此永不进入）。
+  已先 `primary.open` 建出主对话（`primary_ref` 返回）仍无用——前台运行时根本没把它传下去。
+  → S5b 的前台执行链在生产上**从未真正启动过一个 SDK Run**；pytest 车道用基座自建 runtime，绕过了这里。
