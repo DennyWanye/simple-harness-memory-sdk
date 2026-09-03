@@ -240,6 +240,34 @@ S5b 同样是 FULL 档 + MACHINE_GATE，会再走一遍 gate。以下是 S5a 交
 | changed-surface lint 小项（`context_route.py` SIM102、real-provider 测试 F811/F841） | 清理 | S5b |
 | 240 条路由语料人工复审 | **必须真人** | 见 §5 |
 | 三仓 push / tag / 发布 | 用户决策 | 待用户 |
+| **前台任务链的「下一轮 typed recall 可读到」** | **结构性缺口**（见下方 §8.1） | **S5c/S6（用户 2026-09-04 决定移交，hash `ead12cfb…`）** |
+
+### 8.1 typed recall 在前台任务链上不可达（S5b 未闭合，已移交）
+
+acceptance 的最小验证动作以加粗的「**下一轮 typed recall 可读到**」收尾。S5b 终验实测**未能满足**，
+且查明**不是运气问题、不是模型抖动**：
+
+- 10 轮真实 provider 验证（`.local-test-evidence/real-ui-channel/`，其中 5 轮业务全链通过）：
+  `human_memory_v7.db` 的 **`typed_recall_attempts` 每一轮都是 0 行**。
+- 后端日志里 **`context_route` 出现 0 次**——模型从未调用过该工具。
+- 两轮的路由决策都是 Host 自签的 **`origin=host_initial` / `route=resume_existing`**
+  （`context_route_decisions` 表）。
+
+**机制**：typed recall 只在 `context_route(memory_standalone)` 被选中时才执行
+（`main.py::recall_executor=_human_memory_v7.typed_recall` → `sdk_adapters/context_route.py:302-315`）。
+而前台任务链在首轮由 Host 自签路由回执（这正是 S5b Task 7 的 9 处修复之一：
+`foreground_runtime_ports.py::verify_initial_route` 记 `origin=host_initial`），模型没有机会去选
+`memory_standalone`。**试过的两种测法都无效**：同一 scope 发续轮（模型在上下文里就看得到上一轮，
+没有召回动机）、新建 scope 提问过往工作（路由仍由 Host 自签）。
+
+**已经成立的部分**（不受此影响）：analysis 产出被记忆库接受并物化为 `cognitive_memory_heads`
+1 行 episode，内容逐句可回指用户原话、无臆造。缺的只是「下一轮读得到」这一环的可达路径。
+
+**移交范围**：让前台任务链在有可用记忆时走召回路由（或由 Host 在上下文装配阶段直接注入 typed recall），
+属**新增接线**而非缺陷修复。
+
+**交付纪律**：S5b 的交付结论必须写明这一环未闭合，**不得**用「记忆已物化」暗示「下一轮读得到」，
+也不得用其他场景的 PASS 稀释这一点。
 
 ### 两个宿主侧兜底分支的来龙去脉（S5b 若做掉上游义务，记得删）
 

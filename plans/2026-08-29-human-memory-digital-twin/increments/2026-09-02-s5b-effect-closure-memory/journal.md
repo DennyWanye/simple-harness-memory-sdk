@@ -108,6 +108,12 @@ S5B-AC-1/2 的真实桌面 UI 面按 acceptance **A14 范围缩减**（用户 20
 不是缺陷。
 
 ## 遗留问题清单（不许悬空）
+0. **「下一轮 typed recall 可读到」未闭合（决定性 AC 的一环）** —— 用户 2026-09-04 显式批准移交下一切
+   （hash `ead12cfb…`，acceptance **A15**，义务登记在 `HANDOFF-S5b.md` §8 / §8.1）。
+   实测 10 轮真实 provider、其中 5 轮业务全链通过，`typed_recall_attempts` **每轮均为 0 行**；
+   `context_route` 后端日志出现 0 次；路由恒为 Host 自签 `origin=host_initial`。
+   属**结构性不可达**（typed recall 只在模型选 `memory_standalone` 时执行，而前台链首轮由 Host 自签路由），
+   非执行缺失，补它属新增接线。**交付结论必须写明这一环未闭合。**
 1. F-5：MCP 写类工具未纳入 PROJECT_EFFECT 分类（仅经 unknown EffectClass → Auto confirm-only 间接收窄；project_bound Run 已排除 filesystem MCP）→ S5c/S6 前处理。
 2. `_drive_claimed` 真实 runtime 端到端用例未补（Task 6 未完成项）。
 3. `backend/uv.lock` 仍指 memory 0.5.2（pin 真相在 `sdk_candidate.py`）→ known-debt。

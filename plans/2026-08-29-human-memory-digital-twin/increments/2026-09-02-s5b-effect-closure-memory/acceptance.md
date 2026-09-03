@@ -118,7 +118,7 @@
 
 | scenario_id | 引用 | S5b 口径 | 矛盾地位 | gate_type | required | manual_required | min_root_runs |
 |---|---|---|---|---|---|---|---|
-| S5B-S1-REAL-EFFECT-CLOSURE-MEMORY | HM-S11 步骤5 + HM-S3 | 最小验证动作：真实 provider 改文件 → 客观事件脏标记 → `task_scope_update` mutate（或兜底）→ 同事务 outbox → analysis accepted；一个 Run、一次 attempt、零重复 Provider 调用；STATUS 与文件变更一致（人工检查）。**驱动入口 = 生产 `enqueue_turn`（真实 provider 车道）**；**真实桌面 UI 面移交 S6**（见下方「A14 范围缩减」） | 决定性 | positive-value | 是 | 否（UI 面移交 S6） | 2 |
+| S5B-S1-REAL-EFFECT-CLOSURE-MEMORY | HM-S11 步骤5 + HM-S3 | 最小验证动作：真实 provider 改文件 → 客观事件脏标记 → `task_scope_update` mutate（或兜底）→ 同事务 outbox → analysis accepted；一个 Run、一次 attempt、零重复 Provider 调用；STATUS 与文件变更一致（人工检查）。**驱动入口 = 生产 `enqueue_turn`（真实 provider 车道）**；**真实桌面 UI 面移交 S6**（见下方「A14 范围缩减」）；**「下一轮 typed recall 可读到」移交下一切**（结构性不可达，见「A15 范围缩减」） | 决定性 | positive-value | 是 | 否（UI 面移交 S6） | 2 |
 | S5B-S2-CLOSURE-FAULT-MATRIX | HM-TO-R8 / TC-HM-11 步骤5 / fault lane `foreground-fifo-closure` | deterministic：多工具批次脏标记、漏调用→兜底、拒绝/timeout/unknown→`semantic_closure_pending`、CAS 冲突、重复 plan、projection 失败；六 seam kill/replay + observer next_sequence 竞争、attempt 五态 reconcile、跨 Run plan、lease 到期第二 owner 零重发（A12） | 决定性 | negative-safety | 是 | 否 | 1 |
 | S5B-S3-ANALYSIS-IDEMPOTENCY-FAULTS | TC-HM-08 步骤3 / fault lane `memory-mutation-plan` | deterministic：五态 attempt、账本三键先查后调（Provider 计数 0）、unknown 三分类（含注入 reconciliation observer 的 `sent_confirmed`）、≥2 op finalize、audit_pending 卡死 seam、lease-reclaim in-flight、membership growth、Host commit/claim/result/apply 各 kill 点、duplicate payload、Memory unavailable→dead-letter、raw evidence 守恒（A12） | 决定性 | negative-safety | 是 | 否 | 1 |
 | S5B-S4-EFFECT-GATE | HM-S9 / TC-HM-09 步骤3–6 / lane `taskscope-init-binding` | deterministic：PROJECT_EFFECT 清单、root 签发、per-effect 重验（reason-code 表）、六类拒绝、root inode 漂移、same-batch pre-route、伪造 auto/envelope、Run fault 三稳定码、frozen-root 分裂、Auto+DESTRUCTIVE → REQUIRE_USER、单 root-per-canary 口径（A6/A12） | 次要 | negative-safety | 是 | 否 | 1 |
@@ -138,6 +138,38 @@ analysis 产出的记忆条目每条可回指对话原句、无臆造（S5/S6 �
   Provider 调用幂等（零重复计费/零重复副作用）、suppression 的即时生效、S4 单 foreground Run/FIFO、凭据不落盘。
 - 最大可接受影响：收口失败只能导致 `semantic_closure_pending`（可重试）与保守终答，不得伪造状态；effect 校验失败只能拒绝执行；
   analysis 失败只能 dead-letter 并保留原始证据；任何情况下不重复调用 Provider、不越权召回、不丢原始证据。
+
+## A15 范围缩减：S5B-S1 的「下一轮 typed recall 可读到」移交下一切（用户 2026-09-04 显式批准）
+
+**用户决定**：原话「移交下一切，把这个记录在followup中」，sha256
+`ead12cfb135375eece8c2449658f33947af73d1b8e2ba52909190a9712c972ac`，
+原文存 `verification/plan-challenge/user-approval-scope-reduction-2026-09-04.txt`。
+与 A14 同为 plan-test DoD 第二类合法出口（用户 chat 显式批准缩减 → 回写 acceptance →
+结论按缩减后范围表述）。
+
+**事实依据**（Host `2b32fcb7` 实测，10 轮真实 provider 验证）：
+
+- `typed_recall_attempts` **10/10 轮均为 0 行**；其中 5 轮业务全链通过（README 改写、
+  收口回执 `outcome=mutate`、outbox/links、episode 物化）——即**业务成功也不产生召回**。
+- 后端日志 `context_route` 出现 **0 次**：模型从未调用该工具。
+- `context_route_decisions` 两轮均为 Host 自签 `origin=host_initial` / `route=resume_existing`。
+
+**机制**：typed recall 仅在 `context_route(memory_standalone)` 被选中时执行
+（`main.py::recall_executor` → `sdk_adapters/context_route.py:302-315`）。前台任务链首轮由
+Host 自签路由回执（`foreground_runtime_ports.py::verify_initial_route` 记 `origin=host_initial`），
+模型无机会选择 `memory_standalone`。**该要求在当前接线下不可满足**，与提示词措辞、
+是否新建 scope 均无关（两种测法都试过且都为 0）。
+
+**这不是执行缺失，是 plan 层缺口**：plan 从未为这一环安排可达路径或 oracle。补它属**新增接线**
+（让前台链在有可用记忆时走召回路由，或由 Host 在上下文装配阶段直接注入 typed recall），
+不是缺陷修复。
+
+**对 S5B-S1 证据契约的影响**：`required_business_facts` 的 `next_turn_typed_recall_hit`
+在本增量记为 **`NOT_MEASURED`（结构性不可达）**，并附上述实测数字与机制说明；
+**不得**填写「已物化，可供下一轮 typed_recall」这类推断措辞——独立终审正是据此判 P1。
+
+**交付纪律**：S5b 结论必须写明这一环未闭合，不得用「记忆已物化」暗示「下一轮读得到」，
+也不得用其他场景的 PASS 稀释。义务登记在 `HANDOFF-S5b.md` §8 与 §8.1。
 
 ## A14 范围缩减：S5B-S1 的真实桌面 UI 面移交 S6（用户 2026-09-03 显式批准）
 
