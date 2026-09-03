@@ -252,3 +252,22 @@
   `foreground_runtime.py:1189` 的 `self._terminal.observe`。
 - **全量回归**（Host `26e6c1fb`）：`6458 passed`，8 红 = 7 条已知环境红 + manifest 过期
   （已随 edit_file 改动重建并提交）。
+- **断点 9 已修（`34ea5274`）**：前台驱动在观察到 `BOUND_WAITING`（等用户授权）后 return，
+  而它只被 `after_enqueue` / `after_control` 唤醒——**`after_control` 在生产上零调用者**
+  （全仓只有 `tests/execution/test_foreground_runtime.py` 调）。用户批准后没有任何东西叫醒驱动，
+  SDK Run 跑完了前台回合却永远停在 CLAIMED，终态提交不执行，而 Memory ingestion outbox 行
+  正写在终态事务里。修复：`_signal_product_harness_decision` 在决策落地后调
+  `after_control`；唤醒失败只记 warning，不影响决策落地。
+- **S5B-S1 全链闭环 PASS，≥2 独立 root run**（满足 acceptance `min_root_runs=2`）：
+  | root | 证据 | 指令 | 结果 |
+  |---|---|---|---|
+  | 1 | `real-ui-channel/prod-lane-05` | 「把项目里 README.md 的版本号从 1.1.3 改成 1.2.0…」 | 全链 PASS |
+  | 2 | `real-ui-channel/prod-lane-08` | 「请把项目 README.md 里的版本号更新到 1.2.0…」 | 全链 PASS |
+
+  每次均：README `1.1.3→1.2.0` 真实写入 → 客观事件（39/41 行）→ 语义收口回执 1 行
+  `outcome=mutate` → 前台回合 **SETTLED** → `memory_ingestion_outbox` 1 行 +
+  `memory_ingestion_evidence_links` 1 行 → `cognitive_memory_heads` 1 行（episode）。
+  驱动入口 = 生产 `queue.enqueue`（与将来 S6 界面按钮同一段代码），真实 provider gpt-5.6-luna，
+  自然用户语言，AUTO 模式下 Agent 在既定 workspace 自建并绑定任务目录。
+- **本轮共修 7 个既有缺陷**（`1206929d` / `5cba5e9e` / `1d9e5596` / `1c5c8cc8` / `b08924d6` /
+  `26e6c1fb` / `34ea5274`），全部因「前台执行流程在 pytest 里零覆盖」而长期潜伏。
