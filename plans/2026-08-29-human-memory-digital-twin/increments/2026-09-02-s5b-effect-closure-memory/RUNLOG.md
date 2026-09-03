@@ -53,3 +53,29 @@
 - **UI-B 两次失败定性为真实产品缺陷（S5B-UI-F1，待修）**：真实 UI 下模型对「继续任务：把 README 里的版本号改成 1.2.0」不走 `context_route`，直接 `tool_search` → 命中 `mcp:filesystem:*`（deferred）→ `tool_describe` 成功 → `tool_activate`（参数与 describe 返回完全一致）连续失败，模型只见到不透明的 `tool_failed/"Tool execution failed."`，反复重试至 `react_repeated_tool_exceeded` 整 Run 失败（两次 HEAD 9b0744dd / af9fdc7a 同一轨迹）。真实异常被 `tool_search.py::activate_handler`（异常→`{"error":…}`）与 `sdk_adapters/tools.py::_result`（`error`→统一 `tool_failed`，无日志）两层吞没。pytest 真实车道 S1 PASS 是因为基座把 `write_file` 直接放进目录、没走产品的 deferred 披露/激活路径——正是 UI 场景要抓的差异。已停掉残留通道进程（证据目录保留），派出 Task 7b 修复代理：确定性复现拿到准确异常 → 最小修复（不可激活的能力不披露或带原因；拒绝给稳定 error_code + next_action；Host 结构化日志）→ 决定性测试 → ARCHITECTURE 同步 → `notes-investigation-task7b.md`。修复落地后 UI-B/UI-C 在新 HEAD 重跑，REG/S1/S4 按 re-attest 结果重录。
 - **REG-FULL r2 root PASS**（Host `af9fdc7a`：`7 failed, 6438 passed, 50 skipped`，恰好 7 条已知环境红、零意外；Memory `be0ab91`：`1113 passed, 8 skipped`；exec log `r2-s5b/artifacts/exec-S5B-REG-FULL-0007.log`）。同时 UI-A 的 S8/S7 root run 已记入 r2（`--run-id-under-test product-sdk-08e72106…`，session `d5eea36c…`）。
 - **r2 账本完整性链断裂（执行者操作错误，如实记录）**：REG record-run（约 9 分钟）被放到后台执行，期间又在同一 run-dir 上执行了 record-approval / 两条 record-run，gate 的读-改-写不支持并发，结果 `finalize --check-only` 报 `LEDGER_TAMPERED: integrity 链只有 19 条，账本里的事实至少需要 20 条`。按 gate 规则不手改账本、不用新记录覆盖；处置：待 Task 7b 修复落地（代码变更本就要求 re-attest 重录）后 `init r3-s5b`（`related_run_dirs=[r1-s5b, r2-s5b]`），在最终 HEAD 上全量重录 7 场景（含 UI-A/UI-B/UI-C 真实 UI），r1/r2 均 `retire --superseded-by r3-s5b`。r2 的 UI-A 证据文件（`r2-s5b/artifacts/ui-a/`）与 exec 日志原样保留，r3 重新 attach。教训已写入个人记忆（gate 写操作必须串行）。
+- **2026-09-03 上午：真实桌面 UI 抓到并修掉两个真实产品缺陷（Task 7b）**。详见 `notes-investigation-task7b.md`。
+  - **S5B-UI-F1**（修复 `951538bd`）：project-bound Run 里 `mcp:filesystem` 被判 `workspace_unscoped`，但
+    `tool_search`/`tool_describe` 与普通 deferred 工具毫无区别，`tool_activate` 抛出的
+    `tool_unavailable:workspace_unscoped` 被 `activate_handler` 与 `_result` 两层压成不透明 `tool_failed` 且无日志 →
+    真实模型原样重试三次 → `react_repeated_tool_exceeded` **整 Run 死**。修复：披露侧标 `activatable=false` +
+    `availability_reason` + `next_action` 且可激活项排前；拒绝侧给白名单稳定码 + `next_action` + 结构化日志。
+    **真实 UI 复验通过**（`20260903T0600-uiB-fix`：`tool_describe` 返回 `activatable: true`、`tool_activate` 成功）。
+  - **S5B-UI-F2**（首版 `e46b1629`，扩面 `38ff5e9a`）：模型漏填必填参数时，冻结 SDK 在
+    `ToolRegistry.validate` 于**进入处理器之前**抛 `MalformedToolArgumentsError`，kernel 把**整个 Run** 判
+    `driver_failed`，模型无从自纠。真实 `gpt-5.6-luna` 先后用 `tool_search {}` 与 `context_route {}` 各打掉一个 Run
+    （后者当场证伪了只覆盖三件套的首版修复）。最终方案：必填校验统一下沉到 Host 的 `_sdk_tool` 包装层，
+    `required` 从发布给 SDK 的 schema 取出、由 Host 执行，缺项返回 `missing_required_argument` + 指名缺失参数，
+    记 `tool_arguments.missing`；语义未放宽，类型校验仍由 SDK 负责。**真实 UI 复验通过**
+    （`20260903T0730-uiB`：同一 Run 内六次空参数调用全部变成模型可见拒绝，Run 每次都存活）。
+    动态 MCP 工具 schema 由远端提供，Host 无法接管，仍登记为上游 SDK 义务 + known-debt。
+  - 两条契约均已在同一交付内写入 `ARCHITECTURE/AGENT_HARNESS.md`；决定性测试
+    `backend/tests/sdk_adapters/test_tool_activate_unavailable_disclosure.py`（11 条，回退产品代码后变红）。
+  - **UI 里程碑仍未跑通（如实记录）**：README 至今未被真实 UI 改成 1.2.0。两个阻塞点——① 种子任务域原绑
+    `<run>/workspace` 与 Run 准入冻结的会话项目目录不一致（**种子设置问题，非产品缺陷**，已给
+    `seed_task_scope.py` 加 `--workspace`）；② 本机时间 09:2x 起上游 `ai.svtun.cn` 反复 60 秒
+    `transport_timeout`，SDK 按 `sent_unknown` 不重发，Run 挂在 `provider_outcome_unknown` 不恢复（环境因素 +
+    既有 SDK 0.8 义务）。S5B-S1 主闸是 pytest 真实车道（已 ×2 PASS），S8/S7 由 UI-A 冷启动 PASS 覆盖；
+    真实 UI 的里程碑补充证据待 provider 恢复后按新 `--workspace` 设置重跑。
+  - **代码已变更 → r2 账本（已因并发写断链）无论如何都要作废**：待 provider 恢复、UI-B/UI-C 补齐后，
+    在最终 HEAD 上 `init r3-s5b`（`related_run_dirs=[r1-s5b, r2-s5b]`，spec 已更新）全量重录 7 场景，
+    r1/r2 均 `retire --superseded-by r3-s5b`。
