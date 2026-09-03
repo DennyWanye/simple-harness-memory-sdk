@@ -210,3 +210,20 @@
   （`sdk_adapters/ingress.py:130` 的 `conversation is not None` 分支因此永不进入）。
   已先 `primary.open` 建出主对话（`primary_ref` 返回）仍无用——前台运行时根本没把它传下去。
   → S5b 的前台执行链在生产上**从未真正启动过一个 SDK Run**；pytest 车道用基座自建 runtime，绕过了这里。
+- **前台链缺口二已修（Host `5cba5e9e`）**：`ForegroundRuntimeExecutionAuthority` 新增可选
+  `conversation_entrypoint` 构造器并在 `ingress.start` 前传入；`main.py` 用与 chat 路径
+  （`:10409`/`:10475`）同一套 `memory_identity_authority` + `sdk_context_source_repository` 实现。
+  未接线时保持 None，既有测试基座行为不变。sdk_adapters+faults **460 passed**。
+  实测（`20260903T1700-wsentry`）：`conversation_entrypoint_required` 消失，换成下一个错误。
+- **暴露前台链缺口三（S5B-P0-3，未修）**：`foreground.runtime.failed` /
+  `IntegrityError` / FOREIGN KEY constraint failed。根因：`memory/identity.py:76-79` 的
+  `memory_session_identities.session_id` 有 `REFERENCES sessions(id)` 外键，而前台链传给
+  身份绑定的是 `foreground_runtime.py:207-209` 从 host_run_id 派生的
+  `foreground-execution-<sha256>`，**该 id 不在 `sessions` 表里**；主对话 id
+  （`4d5a6efc…`）同样不在。即前台 Run 没有可用于 Memory 身份绑定的真实会话行。
+  → 需要决定前台 Run 的会话身份口径（复用主对话并为其建 sessions 行 / 放宽该外键 /
+  由前台链自建执行会话行），属架构取舍。
+- **可观测性顺带修复**：`_run_driver` 的失败审计此前只记 `error_code`，SQLite 异常退化成
+  一个类名。已追加 `error_type` / `error_detail`（截断，只进 Host 日志）。
+  另记一个日志脱敏误报：`TraceRedactor` 把 "FOREIGN KEY constraint failed" 里的 KEY 当敏感词，
+  实测输出为 `FOREIGN [REDACTED]`——排障时会误导，建议收窄该规则（S6 候选）。
