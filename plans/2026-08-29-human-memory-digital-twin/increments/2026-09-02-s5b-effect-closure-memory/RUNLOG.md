@@ -113,3 +113,30 @@
 - **下一步（待 provider 稳定）**：复跑 UI-B 拿到 README 1.1.3→1.2.0 的真实 UI 证据 + UI-C（≥20 turn）；
   然后在最终 HEAD 上 `init r3-s5b`（`related_run_dirs=[r1-s5b, r2-s5b]`，spec 已更新）全量重录 7 场景，
   r1/r2 `retire --superseded-by r3-s5b`；再走独立 full-audit → 文档回写 → re-attest → finalize。
+
+## 2026-09-03 下午：/plan-test 续跑（phase-4）
+- **独立代码审查（CODE_REVIEW 硬门，执行者不自审）**：对 `32d7849c..674e00e3` 派独立 challenger 审查，
+  **VERDICT FAIL**（P0=0 / P1=4 / P2=4 / P3=6）。P1 全部闭环（commit `efbe201e` + `e2639f00`）：
+  - **F-1**：我把 `required` 从发布 schema 摘掉，使 **66/77** 个工具对模型呈现为「全可选」，反而放大漏填
+    概率，且属已批准的模型可见契约缩水 → **已还原**，`required` 重新对模型可见。
+  - **F-2/F-3/F-4**：嵌套 required、类型/枚举/范围错、多余属性、动态 MCP 工具全都绕过了首版修复 →
+    收口点下沉到 `ProductToolsAdapter.validate`（commit `64a8a30c`），本轮补齐覆盖测试。
+  - **F-5/F-6（P2）**：新增日志用 `extra=` 传字段，本项目 structlog 的 `foreign_pre_chain` 没有
+    `ExtraAdder`，字段在渲染阶段被**整体丢弃**；配套断言读的是渲染前的 LogRecord 属性，属**假绿** →
+    字段改为拼进 message，断言改到渲染后的消息上。
+  - 审查另给一条 WIP 预警（ContextVar 跨 context 删除不回写 → 长 Run 泄漏）→ 改为模块级有界表。
+  - 受影响套件 **657 passed**；`test_every_manifest_required_argument_is_enforced_by_the_host_wrapper`
+    把断言绑到真实工具清单，防止清单换源后必填静默消失。
+- **真实 UI 复验（Host `e2639f00`）**：Run 以 `react_max_turns_exceeded` **干净收尾**而非 `driver_failed`；
+  模型多次空参数调用全部得到指名道姓的 `missing_required_argument`，Run 每次存活。修复成立。
+- **新发现 S5B-UI-F3（未修，移交 S5c/S6）**：委派类工具 `agent` / `agent_parallel` / `spawn_team` /
+  `spawn_subagents` 在产品目录里注册的是占位处理器 `boundary_only`
+  （`tools/code_tools/spawn_subagents_tool.py:69-70`，恒抛
+  `RuntimeError("delegation tool escaped the ReAct ChildRun boundary")`），设计上应由 Harness 在
+  ReAct ChildRun 边界拦截执行，但 SDK 前台 Run 路径上**没有被拦截** → 每次调用都是不透明
+  `tool_handler_failed`，模型无从判断其不可用，持续重试直到轮次耗尽。与 S5B-UI-F1 同一缺陷类，
+  但属委派子系统、超出本增量范围。
+  **对验收的直接影响：S5B-S1 的真实 UI 里程碑因此拿不到**——模型首选委派路径，而委派在本通道恒失败。
+- **当前判定：BLOCKED**（S5B-S1 的 UI 面缺正向价值样本）。已验证面：Host 全量 6451 passed / 恰好 7 条
+  已知环境红、零意外；Memory 1113 passed；真实 provider 里程碑 pytest 车道在最终 HEAD 上独立跑通 2 次；
+  UI-A 冷启动（S8 + S7 cold_start）在 `1c511a66` 上 PASS。
