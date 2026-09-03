@@ -164,8 +164,23 @@ analysis 产出的记忆条目每条可回指对话原句、无臆造（S5/S6 �
 而 S6 在本增量 plan/acceptance 里本就是明确的范围外与停止追踪点。S5B-S1 当初标
 `manual_required=是（真实桌面 chat UI）` 属起草时的范围错误。
 
+**独立裁决（2026-09-03，裁决 D）修正了本节初稿的两处过头**，以裁决为准：
+1. **不接受**「pytest 真实车道即本 AC 主证据」。该车道替换了多处生产接缝——
+   `s5b_milestone_harness.py:83-89` 用 `h.freeze_run` 代替 `ProductForegroundToolPort.freeze`、
+   用 `make_bound_scope` 绕过 `context_route → append_binding`、手工 `claim_and_bind` 绕过
+   `ForegroundRuntimeExecutionAuthority`；`s5b_effect_gate_harness.py:473-490` 配 `_ManualAuthority()` 桩。
+   本增量自己的 `notes-investigation-task7b.md` 已承认该盲区（"基座把 `write_file` 直接放进
+   ReActLoop 目录，根本没走产品的 deferred 披露/激活路径"——S5B-UI-F1 正是这么漏掉的）。
+   它是很强的组件级真实证据，但不是 `MANUAL_MIN_POSITIVE_SAMPLES` 要求的"真实**入口**"端到端。
+2. **实质要求不降级**：缩的只是"真人桌面点击"这个**载体**，改由**唯一现存生产入口**兑现——
+   对真实运行后端经同一条控制 WebSocket 发 `human_memory_request` / `queue.enqueue`
+   （`memory/human_memory_api.py:207-214`，未来 S6 那个按钮必然调用的同一段代码），
+   自然用户语言 + 真实 provider + 真实文件 diff + 人工核对达 quality_bar。
+   **补不上这条 → 本增量退化为 BLOCKED**，不得以 pytest 车道顶替。
+
 **缩减后的边界（只缩这些，其余不动）**：
-- S5B-S1 的**驱动入口**改为生产 `enqueue_turn` 真实 provider 车道；`manual_required` 改为否。
+- S5B-S1 的**载体面**（真人桌面点击）移交 S6；`manual_required` 改为
+  「真实生产入口 WS `queue.enqueue` + 真实后端进程」，业务判据与 `min_root_runs=2` 不变。
 - 随之移交 S6 的还有 **≥20 turn 长上下文会话**（S5a 是经真实桌面 UI 完成的，S5b 无此入口）。
 - **不缩减**：S5B-S1 的业务判据一字不改（真实 provider 改文件 → 客观事件脏标记 →
   `task_scope_update` 收口 → 同事务 outbox → analysis accepted；≥2 独立 root run；
@@ -176,11 +191,28 @@ analysis 产出的记忆条目每条可回指对话原句、无臆造（S5/S6 �
 **结论措辞纪律**：S5b 的交付结论必须写明「真实桌面 UI 面移交 S6」并给出本节链接；
 不得以 S5B-S7/S8 的 UI PASS 或 pytest 车道 PASS 暗示 S5B-S1 的 UI 面已验证。
 
-**移交 S6 的义务（不许悬空）**：
-- **S6-OB-1**：为 S5b 生产链建 UI 入口（对 TaskScope 发起一轮，走 `queue.enqueue`），
-  然后在真实桌面 UI 上补跑 S5B-S1 的最小验证动作与 ≥20 turn 长会话。
-- **S6-OB-2**：把「生产链没有 UI 入口」本身记为可见性缺口——当前桌面 UI 用户无法触达 S4/S5b
-  的任务域执行链，只能得到 `workspace_binding_current_run_authority_missing` 这类内部码。
+**登记的义务（不许悬空；编号按裁决）**：
+- **OBL-1 → S6（S5b 侧为 P1 交付缺口）**：human-memory 前台队列在桌面端无用户入口。
+  S6 acceptance 必须显式写明：① 主对话发送打到 `queue.enqueue` 而非 `chat_v2`；
+  ② 有 UI 承接 `binding.manual.decide` 的挑战确认（该操作同样仅 WS 可达）。
+  S6 的 required 真人 E2E 应把 S5B-S1 的最小验证动作原样纳入。
+  **定性**：在它建成前，S5b 交付的整条能力链**用户价值为零**。
+- **OBL-2 → 本增量自己（P0 / 回归级，已实测证实）**：**PROJECT_EFFECT 工具在桌面聊天会话中
+  结构性不可达**。AC-3④ 预设「普通聊天 Run 可先建 TaskScope、下一轮写入」，而
+  `context_route._create_new → append_binding → _append_auto`
+  （`task_scope/runtime_binding_authority.py:288`）硬依赖前台 Run 快照，`chat_v2` Run 永远拿不到。
+  决定性测试 `backend/tests/sdk_adapters/test_chat_session_project_effect_reachability.py`
+  在**生产装配**（真实 `WorkspaceBindingRuntimeAuthority` + 真实 `ForegroundQueueStore`）下
+  **已证实**：无前台 Run 时 `append_binding` 抛 `workspace_binding_current_run_authority_missing`；
+  对照组（走生产 `enqueue_turn` 拿到前台 Run）前置条件满足。与 8 次真实 UI 实测一致。
+  **与 `BEHAVIOR_POLICY = preserve-approved` 冲突**（写文件是已交付能力），不得推给 S6。
+  两条出路属技术选型，需另开独立裁决：① 让 `_append_auto` 接受非前台 Run 的准入权威；
+  ② 明确「桌面聊天会话在 S6 前不提供项目写入」并作为**已批准行为的显式缩减**入账（需用户批准）。
+  **不允许沉默现状。**
+- **OBL-3 → 本增量 retro（流程义务）**：验收矩阵起草期缺一道「该场景的最小验证动作，在本增量
+  **起点 HEAD** 上是否存在可达的生产入口」的检查。S5B-S1 与本文件「S6 全部 UI 范围外」在**同一份
+  文档内**自相矛盾，却通过了 challenge / minimality 两道审。建议写入 plan-test 起草检查表：
+  **每个 `manual_required=true` 的场景，必须给出该入口的 file:line，或标注「入口由本增量交付（Task N）」。**
 
 ## 完成的定义（DoD 摘要）
 

@@ -165,3 +165,26 @@
   **业务判据一字未改**；S5B-S7 冷启动与 S5B-S8 真实 UI 通道两条 UI 面照旧 required 且已 PASS。
   **结论措辞纪律**：交付结论必须写明「真实桌面 UI 面移交 S6」，不得用 S7/S8 的 UI PASS 或 pytest 车道
   PASS 暗示 S5B-S1 的 UI 面已验证。
+- **独立裁决回执（2026-09-03，裁决 D）**：同意「真实桌面 UI」这个**载体**要求属起草期范围错误、移交 S6
+  （并复核出更硬的依据：S5B-S1 所需入口逐字就是 `slices/S6-ui-and-program-verification.md:16-17,29-40`
+  的 Task 1/2 交付物，而 S6 UI 在本增量 plan/acceptance 里同时被列为范围外——**起草日即成立的自相矛盾**）。
+  但**推翻了我 A14 初稿的两处过头**，已按裁决修正 acceptance 与验证规格：
+  1. **不接受 pytest 里程碑车道作该 AC 主证据**——它替换了 `ProductForegroundToolPort.freeze`、
+     `context_route → append_binding`、`ForegroundRuntimeExecutionAuthority` 等多处生产接缝
+     （`s5b_milestone_harness.py:83-89`、`s5b_effect_gate_harness.py:473-490`），
+     S5B-UI-F1 正是由此漏检（本增量 `notes-investigation-task7b.md` 已自述该盲区）。
+  2. **实质要求不降级**：缩的只是「真人点击」载体，改由**唯一现存生产入口**兑现——对真实运行后端经
+     控制 WebSocket 发 `human_memory_request` / `queue.enqueue`（未来 S6 按钮必然调用的同一段代码），
+     自然用户语言 + 真实 provider + 真实文件 diff + 人工核对。**补不上则本增量退化为 BLOCKED。**
+- **OBL-2 已实测证实（P0，归属本增量而非 S6）**：新增决定性测试
+  `backend/tests/sdk_adapters/test_chat_session_project_effect_reachability.py`（Host `e391da93`），
+  在**生产装配**（真实 `WorkspaceBindingRuntimeAuthority` + 真实 `ForegroundQueueStore` + 真实 state.db，
+  零替身授权）下证实：无前台 Run 时 `append_binding` 抛 `workspace_binding_current_run_authority_missing`；
+  对照组走生产 `enqueue_turn` 拿到前台 Run 后前置条件满足。即失败成因精确落在
+  **「桌面聊天会话没有前台 Run」**，与 8 次真实 UI 实测一致。
+  **定性**：acceptance AC-3④ 预设的产品行为（普通聊天 Run 先建 TaskScope、下一轮写入）在本增量实现下
+  不可达，且与 `BEHAVIOR_POLICY = preserve-approved` 冲突（写文件是已交付能力）→ **不得推给 S6**。
+  两条出路（① 让 `_append_auto` 接受非前台 Run 的准入权威；② 明确「桌面聊天在 S6 前不提供项目写入」
+  并作为已批准行为的显式缩减入账，需用户批准）属技术选型，**需另开独立裁决**。
+- **OBL-1 → S6**、**OBL-3 → 本增量 retro**（起草检查表缺「入口可达性」一问）已一并写入 acceptance A14 节。
+- **当前判定：BLOCKED**，卡点两条：① OBL-2 这个 P0 未定出路；② S5B-S1 缺「生产 WS 入口」的正向价值样本。
