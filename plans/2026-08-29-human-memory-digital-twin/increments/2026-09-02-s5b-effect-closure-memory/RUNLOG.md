@@ -227,3 +227,28 @@
   一个类名。已追加 `error_type` / `error_detail`（截断，只进 Host 日志）。
   另记一个日志脱敏误报：`TraceRedactor` 把 "FOREIGN KEY constraint failed" 里的 KEY 当敏感词，
   实测输出为 `FOREIGN [REDACTED]`——排障时会误导，建议收窄该规则（S6 候选）。
+
+## 2026-09-03 下午：前台链一次性排障，生产入口首次跑通业务动作
+- 用户要求「先把整条链的断点一次查清再动手」。派独立调查员做**基座 vs 生产装配**逐处比对
+  （16 条接缝清单），同时用临时探针把链路往下推。据此一次性修掉 **6 个既有缺陷**：
+  | # | 缺陷 | commit |
+  |---|---|---|
+  | 1 | 首次 workspace binding 死锁（绑定要 Run、Run 要绑定） | `1206929d` |
+  | 2 | `ingress.start` 不传 conversation → `conversation_entrypoint_required` | `5cba5e9e` |
+  | 3 | 派生执行会话缺 `sessions` 行 → Memory 身份绑定外键失败 | `1d9e5596` |
+  | 4 | context source 载荷缺 `provider_messages` → Run 起不来 | `1c5c8cc8` |
+  | 5 | Host 首轮路由回执不落账 → 首轮永远无活跃任务域，模型连挂 10 次 | `b08924d6` |
+  | 6 | `edit_file` 拒绝不透明 + 相对路径按**进程 cwd** 解析（真实原因是文件找不到） | `26e6c1fb` |
+  这些全部是**既有缺陷**，最早可追到项目初始提交；能一直藏着是因为**整个前台执行流程在 pytest 里
+  零覆盖**——基座手工按序调七八个方法推进任务，`_drive_claimed` 全流程一步没走。
+- **生产入口首次跑通业务动作**（证据 `real-ui-channel/prod-lane-04`，另 probe-10 / prod-lane-02
+  独立复现，共 3 次）：真实 provider 经 `queue.enqueue` 把 README `1.1.3 → 1.2.0` 真实写入；
+  **语义收口回执 1 条 `outcome=mutate`**；客观事件 38 条；SDK Run 终态 `completed`；
+  路由账本 1 行 `resume_existing / host_initial`。
+- **仍缺最后一环（断点 9，未修）**：`memory_ingestion_outbox` 0 行、`cognitive_memory_heads` 0 行。
+  定位：前台回合停在 `CLAIMED`，**终态提交未执行**（`foreground.runtime` 日志只到 `bound`，
+  无 `closure_settled` / `record_sdk_terminal`），而 outbox 行正是在终态提交事务里写
+  （`foreground_queue.py:2026-2027`）。即驱动循环在 SDK Run 已 `completed` 后卡在
+  `foreground_runtime.py:1189` 的 `self._terminal.observe`。
+- **全量回归**（Host `26e6c1fb`）：`6458 passed`，8 红 = 7 条已知环境红 + manifest 过期
+  （已随 edit_file 改动重建并提交）。
