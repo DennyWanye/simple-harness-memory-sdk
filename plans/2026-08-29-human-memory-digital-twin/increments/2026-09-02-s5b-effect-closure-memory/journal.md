@@ -1,4 +1,4 @@
-# S5b journal（phase-4 验收记录；机器账本 = Host 仓 `plans/.../increments/2026-09-02-s5b-effect-closure-memory/verification/r1-s5b`）
+# S5b journal（phase-4 验收记录；机器账本 = Host 仓 `plans/.../increments/2026-09-02-s5b-effect-closure-memory/verification/r3-s5b`）
 
 > 完成判定依据：机器门 `finalize` exit code 与 receipt（MACHINE_GATE 启用）；本 journal 为人读视图。
 
@@ -15,7 +15,8 @@
   WebSocket 走 `primary.open → task_scope.create → binding.append → queue.enqueue`
   （`memory/human_memory_api.py:207`，与将来 S6 界面按钮同一段代码），真实 provider
   `gpt-5.6-luna`，自然用户语言，AUTO 模式下 Agent 在既定 workspace 自建并绑定任务目录。
-  证据 `prod-lane-05` / `prod-lane-08`：README `1.1.3→1.2.0` → 客观事件 39/41 行 →
+  证据 `final-lane-01` / `final-lane-02`（`prod-lane-05`/`08` 与 `r3b-lane-01`/`02` 已入
+  账本 `superseded_evidence`，不再作为现行证据）：README `1.1.3→1.2.0` → 客观事件 48/32 行 →
   语义收口回执 1 行 `outcome=mutate` → 前台回合 `SETTLED` → `memory_ingestion_outbox` +
   `memory_ingestion_evidence_links` 各 1 行 → `cognitive_memory_heads` 1 行（episode）。
 
@@ -23,7 +24,7 @@
 
 | AC | 矛盾地位 | 含 UI | 测试方式 | 驾驶者 | 真机证据 | 状态 |
 |----|----------|------|----------|--------|----------|------|
-| S5B-AC-1 语义收口生产链 | 决定性 | 否（UI 面按 A14 移交 S6） | **生产入口车道**（控制 WS `queue.enqueue` → 真实后端 → 真实 provider）×2 独立 root | ai（用户 2026-09-03 批准全 AI 驾驶，hash `7a84b793…`） | `.local-test-evidence/real-ui-channel/prod-lane-05`、`prod-lane-08`：README 1.1.3→1.2.0、`task_scope_events` 39/41、`task_scope_closure_receipts` 1 行 `outcome=mutate`、前台回合 `SETTLED` | ✅ |
+| S5B-AC-1 语义收口生产链 | 决定性 | 否（UI 面按 A14 移交 S6） | **生产入口车道**（控制 WS `queue.enqueue` → 真实后端 → 真实 provider）×2 独立 root | ai（用户 2026-09-03 批准全 AI 驾驶，hash `7a84b793…`） | `final-lane-01`、`final-lane-02`：README 1.1.3→1.2.0、`task_scope_events` 48/32、`task_scope_closure_receipts` 1 行 `outcome=mutate`（`reason_code=model_closure`，模型主路径而非 Host 兜底）、`foreground_terminal_receipts.terminal_state=COMPLETED` | ✅ |
 | S5B-AC-2 analysis 与 outbox | 决定性 | 否（同上） | 同上（终态同事务 outbox → analysis → 物化） | ai | 同上两目录：`memory_ingestion_outbox` 1 行 + `memory_ingestion_evidence_links` 1 行 → `cognitive_memory_heads` 1 行（episode）；日志 `memory_outbox.claimed` / `.applied` | ✅ |
 | S5B-AC-3 effect gate | 次要 | 否 | 自动化 fault lane `taskscope-init-binding`（11 seam）+ effect gate 套件 | ai | r3 `artifacts/faults/s4-fault-runner.log`（11 行，含 run-fault 三稳定码、frozen-root-split、auto-destructive）；exec 日志 `exec-S5B-S4-EFFECT-GATE-*.log` | ✅ |
 | S5B-AC-6 composition/cutover/遗留 | 次要 | 部分（冷启动真实桌面） | 自动化（v46 cutover + composition + no_recall gate）+ 冷启动真实 UI 1-turn | ai | r3 `artifacts/ui-a/`：fresh userdata `user_version` 0→46、`product_sdk_runtime_ready` 无 skipped、Browser pane 真实点击终答非空、`context_route_decisions` 1 行 `direct_standalone/no_recall` | ✅ |
@@ -47,8 +48,8 @@ S5B-AC-1/2 的真实桌面 UI 面按 acceptance **A14 范围缩减**（用户 20
 
 | # | 类别 | 输入（自然语言） | 入口 | 业务终态 |
 |---|---|---|---|---|
-| 1 | 项目文件副作用 + 语义收口 + 记忆分析 | 「把项目里 README.md 的版本号从 1.1.3 改成 1.2.0，改完告诉我新版本号」 | 生产 `queue.enqueue` | ✅ 全链闭环（prod-lane-05） |
-| 2 | 同一意图的**不等价改写**（措辞、动词、回报要求均不同） | 「请把项目 README.md 里的版本号更新到 1.2.0，完成后回报最终版本号」 | 生产 `queue.enqueue` | ✅ 全链闭环（prod-lane-08） |
+| 1 | 项目文件副作用 + 语义收口 + 记忆分析 | 「把项目里 README.md 的版本号从 1.1.3 改成 1.2.0，改完告诉我新版本号」 | 生产 `queue.enqueue` | ✅ 全链闭环（final-lane-01） |
+| 2 | 同一意图的**不等价改写**（措辞、动词、回报要求均不同） | 「请把项目 README.md 里的版本号更新到 1.2.0，完成后回报最终版本号」 | 生产 `queue.enqueue` | ✅ 全链闭环（final-lane-02） |
 | 3 | 无项目副作用的闲聊直达 | 「今天想去公园散步」 | 真实桌面 UI（Browser pane） | ✅ 终答非空；路由 `direct_standalone/no_recall`，**未触发任何项目 effect** |
 
 **负例（`MANUAL_REQUIRE_NEGATIVE_CLASS`，不计入类别数）**：
@@ -93,10 +94,13 @@ S5B-AC-1/2 的真实桌面 UI 面按 acceptance **A14 范围缩减**（用户 20
 都得到 `SETTLED` + `terminal_state=FAILED` + 零收口回执——这是**正确行为**。lane 脚本已加终态判读，
 把上游故障判为 `INCONCLUSIVE` 而非业务 FAIL，避免把外部不可用记成被测面的红。
 
-**未能归因的现象（如实记录，不粉饰）**：在**通过**的 root run 中，`file_read` 仍失败 4 次
-（稳定码 `tool_failed`）、`edit_file` 失败 4 次后第 5 次成功。工具参数不落库（隐私设计），
-我**无法从持久证据归因**；最可能是模型去找 README 里提到的 CHANGELOG，但这是推测，未证实。
-→ 列入遗留问题 8（可观测性义务）。
+**先前"未能归因"一条的订正（独立审计指出，我核实后确认它说错了）**：我曾写"通过的 root run 里
+`file_read` 失败 4 次、`edit_file` 失败 4 次后第 5 次成功，无法归因"。**那描述的是已作废的轮次**；
+最终两轮里 `file_read` 出现 0 次，`edit_file` 只失败 1 次且完全可归因——backend.log 记着
+`tool_arguments.missing tool=edit_file missing=path, old_string, new_string`，`task_scope_events`
+也记了 `error_code="missing_required_argument"`，是模型少发字段，不是我猜的"去找 CHANGELOG"。
+补上稳定拒因码之后，后续轮次里 `file_read` 的失败也当场归因为 `file_not_found`（模型在探不存在的
+文件）——**不是路径解析缺陷**。原先那条推测就此撤回。
 
 **闸门次序教训**：re-attest 必须在场景记录**之前**。我先记录后 attest，导致 re-attest 把
 文档改动 fail-closed 成行为变更，7 场景全部作废重跑。`ARCHITECTURE/**` 不在默认 doc-only

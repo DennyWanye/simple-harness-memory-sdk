@@ -289,3 +289,37 @@
   故需用户一句话确认：作废 r1-s5b 与 r2-s5b 这两轮验证记录（原因分别为「REG root fail 粘性 +
   此后代码大幅变更」与「执行者并发写导致 integrity 链断裂」），由 r3-s5b 承接。
   两轮的账本与证据**原样保留**，不删除。
+
+## 2026-09-04 P0-9~P0-12 与两轮重录（终验阶段）
+
+- **P0-9**（`34ea5274`）：授权决策落地后无人唤醒前台驱动（`after_control` 生产零调用者）→
+  回合永停 CLAIMED，终态提交此前**从未执行**。
+- **P0-10**（`301b0762` / `a234284d`）：唤醒修好后驱动可重入，两处启动观察幂等键不含 Run 版本
+  → `foreground_execution_start_observation_idempotency_conflict`。两处键补 `:v<version>`。
+- **P0-11**（`c6f56ddc`）：四个 os_tool 路径归一化不一致——`read_file`/`list_directory` 相对
+  路径按进程 cwd 解析；`write_file`/`edit_file` 的 `~` 在越界校验**之后**展开（越界通道）。
+  统一走 `_scope_paths.normalize_model_path`，次序钉死"先展开、后校验"。
+- **P0-12**（`cde6708c`）：**P0-11 归因错误的订正**。日志里的 `file_read` 走
+  `tools/file_tools.py`，不是 `os_tools/read_file.py`，两者是不同处理器。真因是
+  `_resolve_within_workspace` 不展开 `~` → `<root>/~/x` → 通过后代校验却指向不存在的文件。
+- **重录 r3b @ `d0483023`**：7 场景全绿，但 re-attest 时发现**次序反了**——我先记录后 attest，
+  文档改动被 fail-closed 判成行为变更，7 场景全部作废。
+- **重录 final @ `c2531298`**：先冻结代码 → re-attest → 跑场景 → 记录。`STATE: VALIDATED`。
+- **独立终审（full-audit）判 FAIL，7 条 P1**。审计员未采信任何 business-result 摘要，
+  直接打开两个 root run 的原始 SQLite 逐表核验。其中两条是我漏掉的真代码缺陷：
+  - 读取类工具（`os_tools.read_file`/`list_directory`）**完全没有 workspace 边界**，
+    实测可读出 `~/.ssh/id_rsa` 明文；而 acceptance AC-3① 明写读取类"仍受 workspace 投影过滤"。
+    已补同根同判据的包含性校验 + 5 条负例（`647987fc`）。
+  - `~nosuchuser/x` 从新加的两处 `expanduser()` 抛**未捕获 RuntimeError**，稳定拒绝退化成异常。
+    已加兜底（`647987fc`）。
+  - 另修可观测性欠账：`file_read`/`file_write` 的拒绝补**不含路径的**稳定分类码（`fa0f250b`），
+    补上后 `file_read` 的失败当场归因为 `file_not_found`（模型探不存在的文件），
+    此前 journal 里"无法归因"的推测据此撤回。
+- **审计另指出的证据契约缺口**（决定性场景 9 条 required_business_facts 中 3 条不成立）：
+  `write_file_envelope_verified`（`final-lane-02` 零文件写工具，README 是 `run_shell` 改的）、
+  `provider_call_count_bounded`（填的是"无并发驱动"而非计数）、`next_turn_typed_recall_hit`
+  （原文承认没跑第二轮）。已改造车道：强制走文件编辑工具、事实采集器改为**实测数字**
+  （测不到就写 `NOT_MEASURED`，不填推断）、第二轮改为**新建 scope 提问过往工作**。
+- **typed recall 的结构性发现**：它由模型自选的 `context_route(memory_standalone)` 触发，
+  **不是自动发生的**。同一 scope 的续轮不会触发（模型在上下文里就看得到上一轮），实测
+  `typed_recall_attempts` 零行。故第二轮必须开新 scope，模型无历史可依才会走召回。
