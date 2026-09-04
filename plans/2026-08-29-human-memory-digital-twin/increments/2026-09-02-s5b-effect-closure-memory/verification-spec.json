@@ -50,7 +50,7 @@
    "concurrent_layer_kinds": 3
   },
   "related_run_dirs": [
-   "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/verification/r1-s5b"
+   "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/verification/r3-s5b"
   ],
   "behavior_changes": [
    {
