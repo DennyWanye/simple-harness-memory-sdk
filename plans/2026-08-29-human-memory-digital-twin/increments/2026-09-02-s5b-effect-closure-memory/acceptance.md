@@ -154,11 +154,23 @@ analysis 产出的记忆条目每条可回指对话原句、无臆造（S5/S6 �
 - 后端日志 `context_route` 出现 **0 次**：模型从未调用该工具。
 - `context_route_decisions` 两轮均为 Host 自签 `origin=host_initial` / `route=resume_existing`。
 
-**机制**：typed recall 仅在 `context_route(memory_standalone)` 被选中时执行
-（`main.py::recall_executor` → `sdk_adapters/context_route.py:302-315`）。前台任务链首轮由
-Host 自签路由回执（`foreground_runtime_ports.py::verify_initial_route` 记 `origin=host_initial`），
-模型无机会选择 `memory_standalone`。**该要求在当前接线下不可满足**，与提示词措辞、
-是否新建 scope 均无关（两种测法都试过且都为 0）。
+**机制（2026-09-04 独立复审订正）**：typed recall 仅在 `context_route(memory_standalone)`
+被选中时执行（`main.py::recall_executor` → `sdk_adapters/context_route.py:302-315`）。
+
+> **初稿的论断「模型无机会选择 `memory_standalone`／结构性不可达」是错的，特此订正。**
+> 复审核出反证，我已复核确认：`context_route` 就在 `tool_authority.py:113-122`
+> 的 `SDK_DIRECT_TOOL_KERNEL` 内——**每轮直接暴露**，其注释原文即写着
+> 「模型必须无需 tool_search 跳转就能够到路由闸门」；工具描述里也明写
+> `memory_standalone (typed recall)`；`handle_context_route` 对 Host 自签回执之后的
+> 第二次路由**没有任何 barrier**。
+
+**真实情况**：模型**有机会但没有动机**——首轮路由已由 Host 自签（`origin=host_initial`），
+任务是「改文件」而非「回忆」，模型没有理由再去提交 `memory_standalone`。实测 10 轮
+`typed_recall_attempts` 恒为 0、后端日志 `context_route` 出现 0 次，是**未接线／未被引导**
+的结果，不是能力上的不可能。
+
+**这一订正改变补救方向**：不是「去建一条不存在的通路」，而是让前台链在有可用记忆时
+**引导或自动**走召回路由（或由 Host 在上下文装配阶段直接注入 typed recall）。
 
 **这不是执行缺失，是 plan 层缺口**：plan 从未为这一环安排可达路径或 oracle。补它属**新增接线**
 （让前台链在有可用记忆时走召回路由，或由 Host 在上下文装配阶段直接注入 typed recall），

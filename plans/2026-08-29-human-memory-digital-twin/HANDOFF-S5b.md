@@ -253,7 +253,11 @@ acceptance 的最小验证动作以加粗的「**下一轮 typed recall 可读�
 - 两轮的路由决策都是 Host 自签的 **`origin=host_initial` / `route=resume_existing`**
   （`context_route_decisions` 表）。
 
-**机制**：typed recall 只在 `context_route(memory_standalone)` 被选中时才执行
+**机制（已于 2026-09-04 经独立复审订正，原「结构性不可达」的定性为假）**：
+`context_route` 在 `SDK_DIRECT_TOOL_KERNEL` 内每轮直接暴露，模型**有机会**选择
+`memory_standalone`，只是没有动机（任务是改文件不是回忆，且首轮路由已由 Host 自签）。
+补救方向因此是「引导/自动走召回路由」，而非「建一条不存在的通路」。
+以下机制描述保留：typed recall 只在 `context_route(memory_standalone)` 被选中时才执行
 （`main.py::recall_executor=_human_memory_v7.typed_recall` → `sdk_adapters/context_route.py:302-315`）。
 而前台任务链在首轮由 Host 自签路由回执（这正是 S5b Task 7 的 9 处修复之一：
 `foreground_runtime_ports.py::verify_initial_route` 记 `origin=host_initial`），模型没有机会去选
