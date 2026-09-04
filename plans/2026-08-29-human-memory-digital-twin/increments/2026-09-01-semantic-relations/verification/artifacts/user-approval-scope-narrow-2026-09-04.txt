@@ -1,0 +1,14 @@
+用户 2026-09-04 批准（对话原文选项 3）：
+
+按收窄口径补签 semantic-relations 增量。明确记录：本次仅验证语义关系增量自身的产物
+（Memory 仓全量测试 + twin-graph / relation-integrity 两个冻结 oracle 自检全绿），
+全仓 lint / mypy / 仓根 pytest 收集的既有债务不计入本场景判定，并在账本里挂牌说明。
+
+不计入的既有债务（均与语义关系增量无关，逐条列明以便日后追讨）：
+1. harness-tests 从仓根执行时有 8 个 collection error，全部来自 plans/ 下的历史脚本；
+   从 backend/ 执行为 6525 passed（今日实测）。
+2. harness-ruff 3 条：调试脚本 test_health 的裸 except 等。
+3. harness-changed-surface-mypy：目标 src/simple_harness/runtime/memory_protocol.py
+   属冻结第三方 SDK，本仓无源码，无法检查。
+4. memory-ruff 2 条：sqlite_v5.py 的 UP031、test_occurrence_inbox_v6.py 的 import 排序。
+5. memory-mypy 1 条：core/occurrence.py:173 类型不匹配。

@@ -1,0 +1,8 @@
+用户 2026-09-04 批准（对话原文选项 1）：
+
+为验证 semantic-relations 增量的 VALUE 场景，允许构建 harness 与 memory 的 candidate
+wheel，并在 clean venv 中只经包根公共 API 执行冻结 oracle 的最小验证动作。
+
+范围界定：
+- 构建 wheel 属「为验证而打包」，不修改 Harness SDK 0.7.1 的任何源码；冻结约束仍然有效。
+- 产物只用于本次验证取证，不推送、不发布、不改变仓库的 pin。
