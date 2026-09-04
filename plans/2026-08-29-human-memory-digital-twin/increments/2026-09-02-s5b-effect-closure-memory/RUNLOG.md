@@ -323,3 +323,31 @@
 - **typed recall 的结构性发现**：它由模型自选的 `context_route(memory_standalone)` 触发，
   **不是自动发生的**。同一 scope 的续轮不会触发（模型在上下文里就看得到上一轮），实测
   `typed_recall_attempts` 零行。故第二轮必须开新 scope，模型无历史可依才会走召回。
+
+## 2026-09-04 ship 轮：P0-13~P0-16 与「证据挑选」的纠正
+
+- **P0-13**（`7b42e5c0`）：前台 driver 的 `max_consecutive_same_tool` 漏设 → 回落 SDK 默认值 3，
+  而同处已放到 25 轮 / 50 次工具调用。连读 4 个文件即掐断 Run。显式设为 10。
+- **P0-14**（`6c455cdc` / `ddfdf8b0`）：三跳披露的 `tool_search` / `tool_describe` / `tool_activate`
+  处理器强制校验必填字段，schema 却不声明 `required`。省略原本的理由（缺项被冻结 SDK 判
+  `driver_failed` 打死整个 Run）已被本增量的 `ProductToolsAdapter.validate` 修掉，前提消失。
+- **P0-15**（`e37bdf29`）：驱动唤醒丢失 → 回合永停 `CLAIMED`、终态永不提交。
+- **P0-16**（`70bf12d7`）：analysis 响应不可用（被 `max_output_tokens=2048` 截断/不可解析）
+  被压成 `analysis_model_declined`，与「模型主动判定无可记」不可区分 → 记忆静默丢失而
+  attempt 记 `succeeded`。拆出 `analysis_response_unusable` + 可观测信号。
+
+### 独立复审（第二轮）判 FAIL，两条 P0 我复现后确认成立
+
+1. **证据挑选（P0）**：冻结 HEAD 上 S1 实跑 5 轮，我只把通过的 2 轮记进账本判 PASS。
+   重试循环「收够 2 个通过就停」的设计在**系统性过滤不利证据**，失败轮既不在账本也不在文档。
+   **已纠正**：5 轮全部入账（3 通过 2 失败），S5B-S1 转 FAIL，闸门退回 IMPLEMENTED；
+   循环改为固定跑满 N 轮、每轮留痕。
+2. **归因错误（P0）**：我把 `20260904T131633` 判成 INCONCLUSIVE（"模型判断无可记"），
+   实为 `output_tokens=2048` 顶满上限导致工具调用发不完整。真因是 P0-16。
+3. **假声明（P1）**：`e37bdf29` 称 P0-15 用例「变异后 2.2 秒转红」——**该声明失实**。
+   那个测试把控制流抄进自建类，变异改的是副本；删掉生产代码后原测试照样全绿。
+   已重写为驱动真实 `ForegroundRuntimeExecutionAuthority`，并对生产代码做双变异验证
+   （删复查+置空 → 3 条红；`close()` 还原提前返回 → 1 条红）。已在 `70bf12d7` 明确订正。
+4. **A15 论断错误（P1）**：「模型无机会选择 memory_standalone／结构性不可达」为假——
+   `context_route` 在 `SDK_DIRECT_TOOL_KERNEL` 内每轮直出。已订正为「有机会但没动机」，
+   补救方向随之改变。
