@@ -173,3 +173,17 @@ Independent literal generic HMAC vectors remain unchanged.
 sole-handoff absence, later-attempt oldcut and reopen. Original red and intermediate trigger-restore
 fixture failure remain ignored. This overlaps117 earlier tests; do not add counts. Dirac reported
 no second new P0/P1 in the complete review; final affected-path recheck is pending.
+
+
+Final independent scoped ACCEPT: af49f2a1aefd54b6d9292e582bbac3b30770bae1, combining Dirac's
+complete5260759 review and sole-handoff affected-path recheck. His unchanged actual probe now
+reports missing/unresolved; ignored Host evidence `oa1-5260759-review/sole-handoff-af49f2a-result.log`
+SHA b4be8fa17f65f92e94d0758a1c63be6c404a79bbef930da62607d3918c62897b. Owner31PASS log SHA
+4eac8053d20a70dda881746d26828d736760e62821232c8a2c8ea97cb0f82dbc independently verified;
+Dirac did not rerun31/117. Bounded source gate complete; installed/combined candidate/Host persistence
+and full operation completeness remain unproved. Retry producer P1 now has an authorized independent
+02f4020-based fix tree; no modification to frozen0.6.10 artifact or this reader source.
+
+Privacy evidence time boundary: original six-file unchanged assertions describe the earlier installed/
+native-copy gate and independent review only. Main's later authorized native Run8d00fd73 and future
+UI writes legitimately change that userdata. No claim those files must remain unchanged indefinitely.

@@ -1,7 +1,7 @@
 # Memory operation audit — bounded successor OA1
 
 2026-09-05. Status: e5ff3b3 bounded design and de0dd8a synchronous carrier independently ACCEPTed
-by Dirac. Complete bounded reader source is now implemented and submitted for independent review;
+by Dirac. Complete bounded reader source af49f2a1 is independently scoped ACCEPTed;
 117 focused checks pass, two unchanged inherited schema-probe test failures remain explicitly recorded.
 No overall/full-operation audit acceptance or candidate artifact is claimed.
 Base exact `f92fac121d2d9ce195b5715d272023e5aec920e3`. Branch
