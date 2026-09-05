@@ -21,6 +21,10 @@ root `142bdb3b-9026-5264-b244-69e94bf0e388` terminal FAILED、closure pending、
 其余 SDK 功能/原 AC/权限/预算/oracle 不变；S3 契约修订另线已获批。本次只回写文档/证据；SDK 0.7.2 源码修复已提交 `2b842846…` 并经 review，Host 安装与生产复验仍待完成。
 证据索引与状态见 [PROJECT_STATUS](PROJECT_STATUS.md) 和 [RESUME](../plans/2026-08-29-human-memory-digital-twin/RESUME-2026-09-05.md)。
 
+本机当前回归使用 Host 的 Python 3.12 / exact Harness 0.7.2：全量 1123 passed / 9 skipped，
+旧 cutover 测试的 0.6.2 版本字面量更正为 0.6.3 后，该文件 3 passed。
+v7.1 DDL checksum 与全部迁移断言不变；这是测试身份修正，未修改已验证 wheel 的运行时包。
+
 ## S5b AC2：analysis 恢复与 no-mutation 正确性（2026-09-05）
 
 本修复已通过独立复审并合入 main；当前 source candidate 0.6.3，公共 API 与 schema v7.1
