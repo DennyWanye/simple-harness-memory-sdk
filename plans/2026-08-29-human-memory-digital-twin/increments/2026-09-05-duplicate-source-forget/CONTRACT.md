@@ -55,48 +55,85 @@ Identity profile `user-message-text-exact/v1`:
 - Eligibility/disclosure/purpose/expiry/current suppression gates continue independently. Equality
   is an additional refusal edge, never a grant or a reason to reveal an otherwise suppressed source.
 
-## Public integration and trusted boundary
+## Public integration and trusted boundary — minimal read-only Host fact seam
 
-Extend the existing trusted Host S1 admission integration with a READ-ONLY source-origin/cut witness
-port backed by the existing authoritative Host evidence/action stores. It supplies source facts and
-ordering, NOT a second suppression/disclosure permission authority. If no existing trustworthy order
-exists, Host must create a minimal durable source/action sequence in its own store; SDK must not
-read Host SQL or accept a caller-made numeric cutoff. A new sequence cannot retroactively prove an
-unknown historical order; explicit legacy limitations below still apply.
+The trusted Host S1/action stores retain origin order and first-action cut. SDK derives exact keys
+and enforces current suppression; Host does NOT provide an equality key, choose Memory support
+seeds, or grant disclosure permission. No new Memory table/implicit schema migration is needed.
+This replaces the initial875554e suggestion of an additional SDK binding ledger: the actual Host
+first-action journal already owns the cutoff fact, while the existing SDK directive owns suppression.
+The new provenance adapter is not a second permission authority.
 
-Proposed public fact carriers (names provisional until challenge):
-- `HistorySourceOriginRef`: immutable reference to an already durable Host source admission.
-- Resolved origin: exact envelope+receipt binding, subject, producer/store identity and epoch,
-  append sequence, source_kind/profile, proof hash. SDK validates canonical bindings before deriving E.
-- `HistorySourceCutRef`: exact durable forget action/request identity plus target subject and store
-  epoch. Resolved cut is fixed before dispatch to SDK, covers a stable source sequence, and binds the
-  actual authenticated forget action. Its resolver cannot mint action permission from source text.
-- `HistorySuppressionBindingReceipt`: actual SDK directive_id/decision_hash, immutable source-cut
-  receipt hash, sorted exact USER seed keys and all-revision support binding hashes, binding hash.
+Fixed public interface for Host implementation:
+```python
+class HistorySourceAuthorityPort(Protocol):
+    async def resolve_history_source(
+        self, *, principal: MemoryPrincipal,
+        envelope: SanitizedEvidenceEnvelope, receipt: SanitizedEvidenceReceipt,
+    ) -> HistorySourceOriginReceipt | None: ...
 
-Host creates/persists source admission order when S1 is originally admitted, not when async Memory
-analysis finally consumes it. At forget, Host atomically persists the authenticated action and its
-source cut before invoking SDK. SDK resolves and validates that exact cut, derives seed keys from its
-OWN canonical support lineage, and atomically commits the original suppression decision and the new
-binding. Extend `MemoryManager.suppress(..., history_cut_ref=...)` without changing existing decision
-hash/fields; expose a separate public binding receipt read for auditing and outbox exact replay.
-Same request/ACK replay must return identical cut/key binding, never recompute a current maximum.
-Conflicting replay must reject. New additive persistence and public API require a successor candidate;
-no alteration of frozen069 bytes or old decision/receipt hashes.
+    async def resolve_history_forget_cut(
+        self, *, principal: MemoryPrincipal, decision: SuppressionDecision,
+    ) -> HistoryForgetCutReceipt | None: ...
 
-History batch checks accept/resolvably reference origin proofs alongside actual HistoryEvidenceBinding.
-Resolve external Host facts outside the Memory snapshot/transaction; validate the complete bindings
-against the frozen cut and current Memory suppression within one SDK snapshot. Already admitted SDK
-sources can use persisted verified origin metadata. Pending first USER evidence can use the same
-trusted Host admission proof without a fabricated Run, fake ingestion, or a fake complete short group.
+# public builder optional keyword, default None; no change to suppress request/decision hashes
+manager = await build_human_memory_v7(..., history_source_authority=host_source_authority)
+```
 
-At check time, SDK computes the candidate's exact key and looks up applicable active suppression
-bindings. If source store/epoch matches and source admission sequence <= the fixed cut, suppress it.
-Late ingestion of an OLD source keeps its original Host sequence, so it cannot impersonate a new
-statement. Do not enumerate arbitrary historical text or implement a Host copy of private SDK SQL.
-Matching keys with missing/unverifiable origin/cut produce a precise history_source_cut_unverifiable
-refusal, not an allow. Nonmatching unrelated ordinary history must remain readable. Existing256/4096
-history bounds stay intact; unsupported profile/store or exceeded work stays explicit, not truncated.
+Immutable DTOs, canonical to_json/from_json and new domain hashes:
+- `HistorySourceNamespace(store_epoch: str, subject: str, source_stream: str)`.
+  All three fields define one comparable sequence namespace. store_epoch must come from persistent
+  Host store identity/restore lineage, never a process-random UUID. subject is exact SDK actor.
+- `HistorySourceOriginReceipt(namespace: HistorySourceNamespace, source_sequence: int,
+  evidence_id: str, envelope_hash: str, admission_receipt_id: str,
+  admission_receipt_hash: str, profile: str="user-message-text-exact/v1")`.
+  Positive source sequence. Source kind/text/profile are independently checked against actual S1;
+  no key/text supplied by this receipt can replace envelope/receipt validation. `origin_hash` computed.
+- `HistoryForgetCutReceipt(namespace: HistorySourceNamespace, through_sequence: int,
+  request_id: str, scope_kind: SuppressionScopeKind, scope_ref: str,
+  action_ref: str, action_hash: str)`.
+  Nonnegative cut, actual MEMORY request/target/subject for this slice. `cut_hash` computed. The
+  source namespace and scope bind the authenticated original forget action. No decision_hash input:
+  Host commits action+cut before SDK commits decision, so requiring the future decision hash would
+  be circular. SDK itself combines actual directive_id/decision_hash and cut_hash when checking.
+
+Host must persist origin sequence atomically with original S1 admission, before async ingest/analysis.
+At authenticated forget, atomically persist its actual request_id/target/action facts and first cut
+in the SAME Host source-store transaction. Then call existing public SDK suppress. SDK decision
+receipt can be attached to the Host action on ACK; ACK loss does not create another action/cut.
+`resolve_history_forget_cut` looks up that first durable action by the supplied REAL SDK decision;
+verify request_id/subject/scope/target, then return the fixed cut. Same action after new USER admission
+returns the same cut. A changed/forged/ref-less record must returnNone/error, never currentMAX.
+The SDK never receives arbitrary SQL, Host rowids or client-requested timestamps as order proofs.
+
+Three independent validations:
+1. **Seed authority**: SDK reads its own canonical suppressed memory and USER support across ALL
+   revisions and real upstream evidence. Host/candidate never chooses seed IDs or key values.
+2. **Source origin**: Host resolver must find the exact durable source and complete original S1;
+   verify principal/full primary conversation ownership, envelope hash and receipt ID/hash. SDK
+   repeats canonical S1/type/subject/profile binding validation, then computes the full/text key.
+3. **Action cut**: Host resolves actual durable authenticated action with namespace/cut/scope proof;
+   SDK binds it to the real stored suppression decision, not to caller-selected time or content.
+
+Prepare known seed/origin/cut references under a bounded Memory read, release transaction before
+invoking Host resolvers, then validate against current Memory suppression in one final snapshot.
+No Host callback while holding a Memory SQLite transaction. If new relevant active directives/support
+appear after prefetch, their missing proof is a precise fail-closed finding, not permission to use
+unverified aliases. A revoked directive is ignored only through existing current suppression rules.
+Evidence/source cut proof hashes participate in the visibility observation's binding/policy identity;
+Host final outbound recheck must revalidate actual bindings, not rely only on a cached SDK epoch.
+
+At check time, same exact key + namespace + origin sequence <= cut extends current ordinary refusal.
+Later Memory ingestion cannot change a Host source's original sequence. Postcut fresh origin is
+handled by the ordinary independent source gates. Matching keys with missing/foreign/unverifiable
+origin/cut produce history_source_cut_unverifiable; unrelated nonmatching history stays readable.
+This includes first USER not yet ingested: validate its real Host S1 and origin without fake Run,
+Memory record or complete short group. Existing256/4096 bounds stay; no silent truncation or scan
+of arbitrary historical text. Only actual suppressed-memory USER seed payloads and actual candidate/
+ancestor S1s are parsed under the declared profile.
+
+All future public exports/source changes belong to a new independently reviewed candidate. Original
+069 wheel, suppress decision hashes, accepted evidence/job IDs and source-only/short contracts remain.
 
 ## Reassertion after forget
 
@@ -139,8 +176,8 @@ of all ordinary history or permanent content ban to conceal this missing proof.
    authenticated post-cut USER with exact same text may be evaluated normally, oldrefs still deny.
 4. Fresh first USER not yet ingested by async analysis remains verifiable through trusted Host S1
    origin proof. Missing proof blocks only affected equivalence checks, not all unrelated history.
-5. Real crash before/after atomic SDK suppression binding commit, ACK loss, reopen and same request
-   replay keep original cut/seed hashes; future sources cannot enter replay's historical scope.
+5. Real crash before/after Host action+cut commit and SDK suppression commit, ACK loss, reopen and
+   same request replay keep original cut and actual decision hashes; future sources cannot enter replay's historical scope.
 6. Forged key/source/cut, wrong subject/store epoch, altered origin seq, mismatched receipt/pointer,
    unproved legacy cutoff fail closed. Revoke restores only through existing explicit authorization;
    reassertion never silently revokes. No trusting caller timestamps or provider-selected seeds.
@@ -148,3 +185,12 @@ of all ordinary history or permanent content ban to conceal this missing proof.
    bound refusal after fix, if original-cut proof is available; otherwise report exact legacy blocker,
    not PASS. Verify original source files' bytes unchanged. Source/public consumer proof remains
    separate from final main native screenshot and nextProvider evidence.
+
+## Evidence updates
+
+Main supplied actual native ledger657060e28a75df9da37da843ac41040d6712813c3d986050dad34ad6dfa40693;
+its bytes were independently rehashed here. Main's public Host integration counterexample has
+controlFalse PASS / earlier-duplicateTrue FAIL (2.89s), using genuine earlier ingest but no
+materialization. This is not asserted to replay the native no_mutation job. Three required controls
+remain: old Host-precut delayed Memory ingest deny, fresh postcut same USER permitted while oldrefs
+remain unavailable, and same-action replay after new USER keeps original cut/decision.
