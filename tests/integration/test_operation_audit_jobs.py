@@ -132,3 +132,33 @@ async def test_actual_retry_and_reclaim_keep_old_cursor_and_actual_attempts(tmp_
         assert len(coverage.unresolved_ref_hashes) == 1 and not coverage.missing_event_ref_hashes
     finally:
         await manager.close()
+
+
+async def test_sole_handoff_loss_uses_independent_attempt_cut(tmp_path):
+    manager, receipt, audit, _ = await setup(tmp_path, run=False)
+    p = _principal()
+    try:
+        await _suppress(manager, p, "cut1")
+        await _suppress(manager, p, "cut2")
+        before = await _read(manager, p, receipt, limit=1)
+        claim = await manager.backend.claim_analysis_batch(WORKER_CONFIG, "actual-handoff")
+        assert claim is not None
+        # A later real attempt cannot appear in an earlier pinned page's findings.
+        after = await _read(manager, p, receipt, cursor=before.next_cursor)
+        assert after.coverage == before.coverage
+        db = manager.backend.connection
+        await db.execute("DROP TRIGGER job_attempt_events_immutable_delete")
+        await db.execute("DELETE FROM job_attempt_events WHERE event_kind='provider_handoff'")
+        await db.commit()
+        page = await _read(manager, p, receipt)
+        coverage = next(c for c in page.coverage if c.family == "job_transition")
+        assert coverage.row_count == 0
+        assert coverage.missing_event_ref_hashes and coverage.unresolved_ref_hashes
+        assert (await _read(manager, p, receipt, cursor=before.next_cursor)).coverage == before.coverage
+        await manager.close()
+        manager = await m.build_human_memory_v7(
+            tmp_path / "memory.db", clock=lambda: 40.0, audit_access_authority=audit
+        )
+        assert (await _read(manager, p, receipt, cursor=before.next_cursor)).coverage == before.coverage
+    finally:
+        await manager.close()
