@@ -233,5 +233,7 @@ WAL-only/升级COMMIT前后真进程退出、备份重试、旧任务续跑和hi
 固定2542736源码已独立scoped ACCEPT；BUSY窄修16项通过，installed wheel待验，不改冻结068、不合main，不标S3/program或Host native完成。
 [069验证与剩余边界](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-069-existing-data-selected-sources/RESULTS.md)。
 
-2026-09-05：授权分配独立0.6.10 privacy successor，root snapshot4项通过；双offline build与
-installed public/native-copy gates正在执行，冻结069不变，不标Hostlate-enqueue/native完成。
+2026-09-05：授权分配独立0.6.10 privacy successor，root snapshot4项通过；双offline build字节一致，
+installed public6阶段+原生副本读取/reopen2阶段PASS，Memory70/Harness151字节与211origins核验通过。
+source02f4020/wheelff73a1a/manifest72f45096固定；原6文件hash/mtime不变，冻结069不变，
+不标Hostlate-enqueue/native完成。见[固定交付](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-duplicate-source-forget/CANDIDATE-0.6.10.md)。

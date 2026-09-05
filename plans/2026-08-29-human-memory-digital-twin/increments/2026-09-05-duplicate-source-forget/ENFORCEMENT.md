@@ -175,3 +175,6 @@ The supplemental short control alone uses the same command with only
 
 Next gates: separately assigned successor artifact/installed bytes and consumers; Host legacy late-enqueue
 liveness and final genuine native loop. Frozen069 and original native data remain unchanged.
+
+2026-09-05 artifact gate update: [fixed0.6.10](CANDIDATE-0.6.10.md) completes owner double-offline/
+installed/public native-copy gates. The remaining Host/native and legacy limitations above remain.

@@ -53,3 +53,7 @@ WAL-only/升级COMMIT前后真进程退出、备份重试、旧任务续跑和hi
 2026-09-05：独立duplicate-source forget共享源码候选206项限定测试通过，原short用例补强单跑通过；
 Dirac对53099e7完整源码 scoped ACCEPT。后继artifact、Hostlegacy settle及native仍待验，不标旧v1cut或program完成。
 [当前事实](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-duplicate-source-forget/ENFORCEMENT.md)。
+
+2026-09-05：0.6.10 privacy后继artifact source02f4020/wheelff73a1a已固定；双offline一致、
+installed6阶段与实际旧库副本读取/reopen2阶段通过，原数据字节不变。Host/native与独立installed审另计。
+[候选身份及命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-duplicate-source-forget/CANDIDATE-0.6.10.md)。
