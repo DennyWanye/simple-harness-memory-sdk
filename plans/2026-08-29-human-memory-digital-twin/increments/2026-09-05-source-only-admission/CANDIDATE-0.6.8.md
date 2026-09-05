@@ -41,7 +41,11 @@ including real SDK foreground terminal + atomic Host producer + original USER ou
 11USER actual analysis jobs APPLIED once;11assistant source receipts create0jobs; Host attempts11
 succeeded, no assistant attempt/retry/deadletter; reopen idle and actual old short hit still returned.
 SDK-side read-only DB verification SHA25658dcb722bd28fb08ad0a329c0b614e3ac3b73b8e236ac05765a901a207ed5001.
-Host wiring source55b9e402 is independently reviewed separately; no main/native wiring implied.
+Host wiring source55b9e40219e18a65b5d5367e2faf4c30c2a6c982 independently ACCEPT by Dirac;
+report primary-api ignored host-short-55b9e402-review/REVIEW.md SHA256
+809ff07e7833c2b70edfae8de910ebc71f19c6b7236837a55b1d2d81d644dcc2.
+Reviewer read17 and committed2 logs without rerunning; no main/native wiring implied.
+The11 USER APPLIED results are real no_mutation analyses, not11 cognitive writes.
 
 ## Minimal consumption and commands
 The new SDK port is:
@@ -79,3 +83,30 @@ still lacks authoritative public selected-hit source enumeration for its termina
 The existing all-indexed-roots guard is only bounded failclosed behavior, including broad blocking/
 256-root limitations; this candidate does not claim full S3/S6 short availability or selected provenance.
 No original401cells/thresholds changed; no S3/program/native/provider completion claim.
+
+## Committed file inventory (raw evidence excluded)
+
+- `ARCHITECTURE/ARCHITECTURE.md`
+- `ARCHITECTURE/PROJECT_STATUS.md`
+- `ARCHITECTURE/index.md`
+- `plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-source-only-admission/CANDIDATE-0.6.8.md`
+- `plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-source-only-admission/CONTRACT.md`
+- `plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-source-only-admission/RESULTS.md`
+- `scripts/source_only_public_consumer.py`
+- `src/simple_harness_memory/__init__.py`
+- `src/simple_harness_memory/backends/history_visibility.py`
+- `src/simple_harness_memory/backends/schema_v5.py`
+- `src/simple_harness_memory/backends/source_admission.py`
+- `src/simple_harness_memory/backends/sqlite_v5.py`
+- `src/simple_harness_memory/core/evidence.py`
+- `src/simple_harness_memory/core/manager.py`
+- `src/simple_harness_memory/core/port.py`
+- `tests/artifact/public-api-0.6.8.json`
+- `tests/artifact/test_public_api_snapshot.py`
+- `tests/fixtures/source-admission-v1.json`
+- `tests/integration/test_memory_061_schema_v7_1.py`
+- `tests/integration/test_source_only_admission.py`
+
+Host separate leaf55b9e402: backend/deskpet/memory/short_indexing.py,
+backend/tests/memory/test_primary_short_ingestion.py; corresponding MEMORY_SDK_BOUNDARY.md,
+PROJECT_STATUS.md, JOURNAL.md and approved SOURCE-ONLY-ADMISSION.md status updated.

@@ -56,4 +56,5 @@ The fixed artifact and per-layer evidence are recorded in CANDIDATE-0.6.8.md.
 028a27b adds4 same-mode identity conflicts (all PASS), with unchanged production source bytes. Current test-tool/source state is not main/native
 integration, S3/program completion or selected-only source visibility. No release artifact frozen yet.
 JOURNAL_VERDICT: COMPLETE — bounded SDK source-only candidate built/installed/public-tested;
-Host leaf review and main/native integration are separately tracked and not implied.
+Host leaf55b9e402 separately ACCEPT (17 tests plus committed2);
+main/native integration, selected-only source authority and complex-group completion not implied.
