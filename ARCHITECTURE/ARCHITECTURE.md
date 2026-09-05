@@ -1,5 +1,9 @@
 <!-- last-calibrated: 6ba269537e45d443629aee56e9cfabec9de2e833 -->
 
+2026-09-06 final：Memory0613固定source/双wheel/exact installed已获Dirac只读
+限定ACCEPT，无新增P0/P1；未改已核wheel或业务源。Host正式installed组合另验，
+测试槽已释放。[独审闭合](../plans/2026-09-06-typed-short-sources/REVIEW.md)。
+
 2026-09-06：typed-short source cd1ea1a已Dirac scoped ACCEPT，后继0.6.13固定
 f2a6a706；两独立offlinewheel SHA33fcc494…相同，72包文件等于fixedGit。
 owninstalled H073/M0613 public consumer8PASS2.09s，installed成员75/169字节一致；
