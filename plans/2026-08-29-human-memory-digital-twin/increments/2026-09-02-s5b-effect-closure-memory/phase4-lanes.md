@@ -1,4 +1,19 @@
-# phase-4 lane 命令（record-run --exec 前先手工跑一遍确认能过；cwd = simple_harness/backend；退出码保真）
+# phase-4 lane 命令（每次真实执行据实入账；cwd = simple_harness/backend；退出码保真）
+
+## 2026-09-05 已批准口径与当前操作修正
+
+下表保留原操作清单，S1/REG 按本节执行；它不是修改原业务 oracle 或削弱原 AC。
+A14 已将 S1 UI 面移交 S6：S1 必须由真实 backend 的公开 `queue.enqueue`、真实 Provider、
+真实 workspace diff/STATUS/analysis evidence 兑现两独立 root；下面 pytest milestone 只能作集成回归。
+同一真实执行据实 record-run/attach，不为入账先重复消耗一次 Provider。collector 修正版本及原 hash
+见本机 `tools/derived-correction-recollection-before-20260905T095723/HANDOFF.md`；旧试次保持。
+
+REG 按原 acceptance/plan/baseline 的“不低于基线、无本次新增回归”判定：历史红转绿不能因
+未满足旧命令 `N == 7` 而制造失败；也不能只按总数≤7或节点同名豁免新原因。
+必须逐项比较失败节点与原因、保留完整原 pytest 退出码，单列修复后的定向复测、收集/skip/deselect
+与任何新增失败。旧七节点及原日志继续保留；当前差异见 `RESUME-2026-09-05.md` 和
+Host ignored `reg-full-host/REPORT.md`，不以文字结论伪造 machine gate PASS。
+
 
 | 场景 | root run 命令（`--exec -- bash -c "<cmd> 2>&1 | tail -2; exit ${PIPESTATUS[0]}"`） | 附加 flags |
 |---|---|---|
