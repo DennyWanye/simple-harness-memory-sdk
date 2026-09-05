@@ -87,6 +87,105 @@ async def test_missing_expected_is_not_empty_success_and_forged_cursor_denies(tm
         with pytest.raises(m.MemoryValidationError,match='cursor_invalid'):
             await _read(manager,p,receipt,cursor=m.OperationAuditCursor('forged'))
         with pytest.raises(SealedAuditAccessDenied):
-            await _read(manager,p,replace(receipt,max_reads=999))
+            await _read(manager,p,replace(receipt,max_reads=receipt.max_reads + 1))
+    finally:
+        await manager.close()
+
+
+async def test_manifest_first_consumes_operation_reader_budget(tmp_path):
+    manager, p, receipt, _ = await _open(tmp_path, max_reads=1)
+    try:
+        await manager.export_canonical_state_manifest(
+            requester=p, target_principal=p, access_receipt=receipt,
+        )
+        with pytest.raises(SealedAuditAccessDenied, match="exhausted"):
+            await _read(manager, p, receipt)
+    finally:
+        await manager.close()
+
+
+async def test_changed_known_prefix_is_not_replaced_by_later_append(tmp_path):
+    manager, p, receipt, _ = await _open(tmp_path)
+    try:
+        first = await _suppress(manager, p, "first")
+        await _suppress(manager, p, "second")
+        page = await _read(manager, p, receipt, limit=1)
+        await _suppress(manager, p, "later")
+        # Deliberate disposable SDK corruption: remove a pinned canonical event.
+        # Normal production deletes are correctly rejected by immutable triggers.
+        for trigger in ("suppression_targets_immutable_delete", "suppression_directives_immutable_delete"):
+            await manager.backend.connection.execute(f"DROP TRIGGER {trigger}")
+        await manager.backend.connection.execute(
+            "DELETE FROM suppression_targets WHERE directive_id=?", (first.directive_id,),
+        )
+        await manager.backend.connection.execute(
+            "DELETE FROM suppression_directives WHERE directive_id=?", (first.directive_id,),
+        )
+        await manager.backend.connection.commit()
+        with pytest.raises(m.MemoryCorruptionError, match="pinned_history_differs"):
+            await _read(manager, p, receipt, cursor=page.next_cursor)
+    finally:
+        await manager.close()
+
+
+async def test_expected_hash_mismatch_is_reported_without_payload(tmp_path):
+    manager, p, receipt, _ = await _open(tmp_path)
+    try:
+        decision = await _suppress(manager, p)
+        expected = m.OperationAuditExpectation(
+            "suppression", m.operation_audit_ref_hash("suppression", decision.directive_id),
+            "b" * 64,
+        )
+        page = await _read(manager, p, receipt, expected=(expected,))
+        assert page.expectation_results[0].status == "mismatched"
+        assert decision.scope_ref not in str(page.to_json())
+    finally:
+        await manager.close()
+
+
+@pytest.mark.parametrize("no_mutation,heads,effect", [(True, 0, "no_mutation"), (False, 1, "written")])
+async def test_real_job_effect_and_handoff_snapshot_stays_pinned(tmp_path, no_mutation, heads, effect):
+    from tests.integration.test_memory_061_core import (
+        _build_pipeline, _evidence, _HostEvidenceAuthority, _HostExecutor,
+        _ingest, _materialization_snapshot,
+    )
+
+    audit, evidence = _AuditAccessAuthority(), _HostEvidenceAuthority()
+    snapshots = []
+
+    class Executor(_HostExecutor):
+        async def analyze_memory(self, request):
+            snapshots.append(await _read(manager, p, receipt, limit=1))
+            return await super().analyze_memory(request)
+
+    executor = Executor(({"evidence_id": "evidence-1", "operation_id": "actual-create"},),
+                        no_mutation=no_mutation)
+    manager, runner = await _build_pipeline(
+        tmp_path / "memory.db", executor, evidence_authority=evidence,
+        audit_access_authority=audit, now=lambda: 40.0,
+    )
+    p = _principal()
+    try:
+        await _ingest(manager, _evidence(1), evidence)
+        _, grant = _grant(audit, max_reads=20)
+        receipt = await manager.authorize_audit_access(principal=p, authority_ref=grant)
+        await _suppress(manager, p, "unrelated1")
+        await _suppress(manager, p, "unrelated2")
+        assert await runner.run_once() is m.WorkerRunOutcome.APPLIED
+        actual = await _materialization_snapshot(manager)
+        assert actual["heads"] == heads
+        first = snapshots[0]
+        pinned_job = next(c for c in first.coverage if c.family == "job_transition")
+        assert pinned_job.unresolved_ref_hashes and not pinned_job.missing_event_ref_hashes
+        replay = await _read(manager, p, receipt, limit=1, cursor=first.next_cursor)
+        assert replay.snapshot_hash == first.snapshot_hash
+        assert replay.coverage == first.coverage
+        fresh = await _read(manager, p, receipt)
+        applied = [i for i in fresh.items if i.family == "job_transition" and i.event_kind == "applied"]
+        assert len(applied) == 1 and applied[0].cognitive_effect == effect
+        assert bool(applied[0].committed_operation_ref_hashes) is (heads == 1)
+        assert applied[0].effect_receipt_hashes
+        assert not next(c for c in fresh.coverage if c.family == "job_transition").unresolved_ref_hashes
+        assert fresh.all_operations_recorded is False
     finally:
         await manager.close()
