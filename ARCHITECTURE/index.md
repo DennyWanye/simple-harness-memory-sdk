@@ -50,6 +50,6 @@ WAL-only/升级COMMIT前后真进程退出、备份重试、旧任务续跑和hi
 固定2542736源码已独立scoped ACCEPT；BUSY窄修16项通过，installed wheel待验，不改冻结068、不合main，不标S3/program或Host native完成。
 [069验证与剩余边界](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-069-existing-data-selected-sources/RESULTS.md)。
 
-2026-09-05：独立duplicate-source forget共享源码候选206项限定测试通过；完整独立审、
-后继artifact、Hostlegacy settle及native仍待验，不标旧v1cut或program完成。
+2026-09-05：独立duplicate-source forget共享源码候选206项限定测试通过，原short用例补强单跑通过；
+Dirac对53099e7完整源码 scoped ACCEPT。后继artifact、Hostlegacy settle及native仍待验，不标旧v1cut或program完成。
 [当前事实](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-duplicate-source-forget/ENFORCEMENT.md)。

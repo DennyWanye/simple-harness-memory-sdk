@@ -142,7 +142,14 @@ historical receipt, which does not grant current use. A new atomic same-text sou
 followed by ten complete groups, becomes standalone/typed visible and passes fresh final-use
 authorization while the old bindings remain denied. These are real SQLite/public SDK fixture
 controls, not proof of Host-produced complete groups or native execution. Production code remains
-at c9bdd22; complete independent source review is still pending.
+at c9bdd22. Dirac independently accepted the complete fixed-source scope at
+53099e736f9321964f7ae663b7df866a9cc67f5e on2026-09-05, with no remaining current P0/P1
+identified. Review covered shared ordinary/typed/short resolution, final read transactions,
+all-revision and background paths, configured-authority pre-admission zero-SQL controls, and
+these supplemental short assertions. Dirac independently checked both owner log hashes rather
+than re-running206; the independent no-/text reproduction separately went red→green.
+This ACCEPT is source-scoped: controlled Host Origins fixtures and source tests do not establish
+installed artifact identity, actual Host authority correctness, legacy liveness or native completion.
 
 Main separately reported source-overlay actual Host API/history/reopen/next physical MockTransport
 request tests on56c6 and2b2fa47 (latest36PASS32.98s, then direct-principal aligned6PASS8.62s).
@@ -166,6 +173,5 @@ Re-run from this isolated tree, exact Harness0.7.2 + editable source environment
 The supplemental short control alone uses the same command with only
 `tests/integration/test_duplicate_source_short.py`; no repeat of the206 batch was needed.
 
-Next gates: independent review of the complete enforcement source and supplemental controls;
-separately assigned successor artifact/installed bytes and consumers; Host legacy late-enqueue
+Next gates: separately assigned successor artifact/installed bytes and consumers; Host legacy late-enqueue
 liveness and final genuine native loop. Frozen069 and original native data remain unchanged.
