@@ -143,3 +143,25 @@ S5B-AC-1/2 的真实桌面 UI 面按 acceptance **A14 范围缩减**（用户 20
 
 ## 终态行
 （phase-final 填写）
+
+## 2026-09-05 本机 r5：限定解冻批准与失败证据入账
+
+用户原话：「我批准你进行，另外，我不喜欢你把token和资源浪费在反复的确认上」；UTF-8 无换行 hash
+`e77e066868134fa60789c3835c2ca376418bf61f6058fdb720ac93d68d19e343`。限定范围及正反例见 acceptance A17 / 已批准提案；
+主执行者实施 SDK 修复，本文仅文档/账本续接。S3 契约修订同次获批另线执行，不修改任何原始 oracle。
+
+Host `26b50ee8` + Memory 0.6.3 exact wheel `6b20ae5b…ab77c78`：原生 UI root
+`c2af5326a8d05023868f7994f1a4e0be` 已有 gpt-5.5 非空成功响应；r5 保留较早失败，因此 S8 **FLAKY**。
+A14 S1 root `142bdb3b-9026-5264-b244-69e94bf0e388` 真实 README 1.1.3→1.2.0，
+context_route/task_scope_update 的 exact approval 均接受，随后 SDK initial/current route 校验失败；
+terminal FAILED、closure pending、accepted/head=0，第二 root 未跑。独立源码诊断确认 P1，已停止业务重跑。
+
+本地 Host `.../human-memory-resume/verification/r5-local/artifacts/s1-route-failure/` 保存原结果、stderr、
+WS、README diff 的原字节副本及 route/DB-WAL hash 索引，以 `attach-evidence --metadata` 追加 6 项；
+`artifacts/limited-unfreeze/` 追加批准原话、批准前提案 hash 与第 7 项 derived 批准记录。原文件/失败 runs 未改，
+未伪造 PASS、豁免或 a2-001 resolved。A15 `next_turn_typed_recall_hit=NOT_MEASURED` 保留原批准 hash。
+本次验证只核对文档 diff、hash、metadata 和 gate 状态，不运行 Provider 或代码测试。
+
+最新源码进度：SDK 源码修复已提交 `2b8428465cbd41032ba024a0b7199183161f5ecd`（candidate 0.7.2）；主执行者报告真实 runtime route→WAITING→授权重启新增 2 用例先红后绿、独立 review 4 passed。Host 正在 revendor/安装，尚未完成新候选身份核验及 A14/S8；本地 S1 FAIL/S8 FLAKY 保留。
+
+VERDICT: BLOCKED — SDK 0.7.2 待 Host 安装验真及生产复验；S1 FAIL / S8 FLAKY 历史保留，S5b/program 未完成。

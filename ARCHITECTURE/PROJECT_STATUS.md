@@ -4,11 +4,23 @@
 
 ## 2026-09-05 本机合入与 0.6.3 candidate
 
+SDK 源码修复已提交 `2b8428465cbd41032ba024a0b7199183161f5ecd`（candidate 0.7.2）；主执行者报告真实 runtime route→WAITING→授权重启新增 2 用例先红后绿、独立 review 4 passed。Host 正在 revendor/安装，尚未完成新候选身份核验及 A14/S8；本地 S1 FAIL/S8 FLAKY 保留。
+
 - IR-02/IR-03 独立 correctness/minimality review 接受，无新增 P0/P1/P2；复审 24 条通过，
   原 Host 复现分别得到两条 accepted/两条 head/两次调用与合法 no-mutation accepted。
 - 修复已由独立分支合入 main（`d70d98c`）；source candidate 升为 0.6.3，以新版本保留
   0.6.2 wheel 身份，公共 API 与 schema v7.1 不变。0.6.3 快照逐字段对照 0.6.2，旧快照保留。
-- 本节更新下方“待 review/合并”的历史交接状态；exact-wheel、真实 Provider 和 S5b 机器门仍待执行。
+- Host `26b50ee8` 已接入 source `2f3d73814fe6a884e0458d87567b918c5863033e` 的双次一致 wheel：
+  `6b20ae5bff6c3ecfe1108ccaff9bb41c4dc6a3b98bb754dac2c418673ab77c78`；版本/来源/hash 通过，Host 51、安装版 SDK 16 条通过。
+- 新 wheel 原生 UI/gpt-5.5 root `c2af5326a8d05023868f7994f1a4e0be` 非空回复成功；r5 S8 保留 fail/pass，状态 FLAKY。
+- A14 root `142bdb3b-9026-5264-b244-69e94bf0e388` 已真实写 README，却在 task_scope_update 获批后触发
+  Harness initial/current route P1；terminal FAILED、closure pending、accepted/head=0，第二 root 未跑。
+- 用户已批准 [A17 限定 SDK 修复](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/SDK-ROUTE-UNFREEZE-PROPOSAL.md)
+  与另线 S3 契约修订。P1/S1 尚未闭合；其余冻结项不变，未宣布 S5b/program complete。
+- Host 本地证据根 `.local-test-evidence/2026-09-05/human-memory-resume/`：UI 在 `verification/r5-local/artifacts/s8-native-ui/`；
+  S1 在 `verification/r5-local/artifacts/s1-route-failure/`（stderr SHA `5c479175a5c4…`，完整 hash 见 metadata）；
+  7 项 metadata attach 保留原 FAIL/FLAKY。详见 [RESUME](../plans/2026-08-29-human-memory-digital-twin/RESUME-2026-09-05.md)。
+- 本节更新下方“待 review/合并/exact-wheel”的历史交接状态；其余 required 验收与机器门仍未闭合。
 
 ## 2026-09-05 S5b IR-02 / IR-03：phase-3 源码修复交接
 

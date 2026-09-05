@@ -5,13 +5,26 @@
 > 最后更新：2026-09-05
 > 当前事实：Human Memory V0/S1/S2 与 S3 Task 1–7 的 SDK 范围已闭合；S3 Task 6 已补齐一等
 > `applies_to` 语义关系 proposal、原子持久化、公开收据视图与 display-only graph 投影。Host/UI 接线、
-> Host durable pre-admission audit 与最终 candidate packaging 尚未完成。旧 Agent Memory v1 能力仍保留，
+> Host durable pre-admission audit 与 program 最终验收须按各自 AC 核对。Memory 0.6.3 candidate 已构建接入；旧 Agent Memory v1 能力仍保留，
 > 但不是新认知 mutation 的 authority。
+
+## 2026-09-05 当前候选与真实入口边界
+
+Memory 0.6.3 source `2f3d73814fe6a884e0458d87567b918c5863033e`，双次 wheel SHA-256
+`6b20ae5bff6c3ecfe1108ccaff9bb41c4dc6a3b98bb754dac2c418673ab77c78`；Host `26b50ee8`
+已按 exact wheel 接入，集成 51 passed、安装版 SDK 16 passed。新候选原生 UI/gpt-5.5 非空回复成功，
+root `c2af5326a8d05023868f7994f1a4e0be`；r5 保留早期失败，S8 状态 FLAKY。
+A14 真实 queue.enqueue 在 README 写回后触发 Harness 0.7.1 initial/current route 恢复 P1：
+root `142bdb3b-9026-5264-b244-69e94bf0e388` terminal FAILED、closure pending、accepted/head=0。
+这不推翻 IR-02/03 的固定 plan/evidence 回归结论，也不构成 S5b 完成。
+用户已批准 [A17 限定修复](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/SDK-ROUTE-UNFREEZE-PROPOSAL.md)，
+其余 SDK 功能/原 AC/权限/预算/oracle 不变；S3 契约修订另线已获批。本次只回写文档/证据；SDK 0.7.2 源码修复已提交 `2b842846…` 并经 review，Host 安装与生产复验仍待完成。
+证据索引与状态见 [PROJECT_STATUS](PROJECT_STATUS.md) 和 [RESUME](../plans/2026-08-29-human-memory-digital-twin/RESUME-2026-09-05.md)。
 
 ## S5b AC2：analysis 恢复与 no-mutation 正确性（2026-09-05）
 
 本修复已通过独立复审并合入 main；当前 source candidate 0.6.3，公共 API 与 schema v7.1
-保持 0.6.2 契约。以下 phase-3 交接中的“待 review”已由此更新；Host exact-wheel 与整体验收仍待完成。
+保持 0.6.2 契约。以下 phase-3 交接中的“待 review”已由此更新；Host exact-wheel 已核验，整体验收仍受 SDK route P1 阻塞。
 
 - 对应原始 [S2 Task 5](../plans/2026-08-29-human-memory-digital-twin/slices/S2-memory-evidence-audit-suppression.md)
   与 [S5b AC2 / Task 4a](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/acceptance.md)，

@@ -222,3 +222,12 @@ S5B-AC-6 ← Task 4a/5/6；全部 AC 的验收矩阵 ← Task 7/8。S5B-AC-4/5 �
 
 ## 停止追踪点
 S6 UI；HM-AC-8 质量门（人工语料）；SDK 0.8 tool_calls；多 root selection；Prospective 递归意图；WeMM COS 上传；系统通知交付；Memory 侧 triggered→completed 的非 analysis 路径。
+
+## 2026-09-05 限定修复续接（acceptance A17）
+
+已按 [限定解冻提案](SDK-ROUTE-UNFREEZE-PROPOSAL.md) 获批，原话 hash
+`e77e066868134fa60789c3835c2ca376418bf61f6058fdb720ac93d68d19e343`；已批准范围不再重复确认。仅增加 initial/current route
+恢复校验及必需 port/回归/新候选接入，其他 SDK 功能继续冻结，原任务、AC、权限、预算和 oracle 不变。
+主执行者负责 SDK 修复；顺序为真实 SQLite 初始 A→合法 B→重启恢复及负例、完整 runtime exact approval
+不重复执行回归 → 独立 review → Host source/exact-wheel ports 回归 → A14 两 root 与新候选 S8 → 原 required gate。
+本地 r5 的 S1 FAIL、S8 FLAKY 与 a2-001 保留；先前文件写回不算成功。S3 契约修订另线已获批，本文件不改其 oracle。

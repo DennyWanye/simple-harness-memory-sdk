@@ -308,3 +308,16 @@ analysis 产出的记忆条目每条可回指对话原句、无臆造（S5/S6 �
 3. 机器门 `finalize` exit 0 + receipt（MACHINE_GATE 启用）；
 4. 三仓文档回写（Host ARCHITECTURE/PROJECT_STATUS、Memory CHANGELOG/PROJECT_STATUS、本增量 RUNLOG/journal/retro）；
    S5a 遗留义务逐条有去处（做掉或显式顺延且写明理由）。
+
+## A17：SDK route 恢复限定解冻（2026-09-05 已批准）
+
+用户批准原话与 hash 见 [SDK-ROUTE-UNFREEZE-PROPOSAL](SDK-ROUTE-UNFREEZE-PROPOSAL.md)：
+`e77e066868134fa60789c3835c2ca376418bf61f6058fdb720ac93d68d19e343`（UTF-8，无末尾换行）。本条只为§范围及架构决策中的
+「Harness 0.7.1 任何改动冻结」加入一个例外：修复 immutable initial / mutable current route
+恢复校验，以及必需的 SDK port、决定性回归、新候选版本与 Host pin 接入；**其他 SDK 功能继续冻结**。
+必须保留 initial/StartSnapshot 绑定、current 的合法 effect 来源、Run/binding/hash 校验与旧记录兼容；
+不得删比较直接放行或隐藏 context_route，不得以改写既有 checkpoint/plan/base_revision/evidence 绕行或以额外 Provider 调用掩盖重放。
+原 AC、权限、6144/180s 预算、原始 oracle、两独立 root 真 Provider 判据和 A14/A15/S5c/S6 义务不变。
+S3 契约修订同次获批但另线执行；本条不改 S3 原始 oracle，不是验收豁免，也不授权发布/push/tag。
+先完成真实 SQLite/完整 runtime 的重启+exact approval 正反例、独立 review 与 Host ports 回归，再安装核验
+新候选重测 A14/S8；旧 wheel 与失败 Run 原样保留。当前 S1 FAIL、SDK P1 OPEN，批准不将任何门转绿。
