@@ -1,5 +1,13 @@
 # PROJECT STATUS — simple-harness-memory-sdk
 
+2026-09-06：typed-short source cd1ea1a已Dirac scoped ACCEPT，后继0.6.13固定
+f2a6a706；两独立offlinewheel SHA33fcc494…相同，72包文件等于fixedGit。
+owninstalled H073/M0613 public consumer8PASS2.09s，installed成员75/169字节一致；
+Host只消费此wheel不overlay，完整group/final出站仍主线验证。无模型/native/DDL/发布，
+旧0612冻结未动，整体扫描成本仍未闭合。制品只读独审待结果，测试槽已释放。
+[固定artifact/边界](../plans/2026-09-06-typed-short-sources/CANDIDATE-0.6.13.md)。
+
+
 ## 2026-09-06 typed-short selected sources isolated source leaf
 
 最后更新：2026-09-06。新public MemoryManager.resolve_typed_short_horizon_sources仅
