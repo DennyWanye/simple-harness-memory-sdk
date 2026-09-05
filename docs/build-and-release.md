@@ -5,6 +5,10 @@ SPDX-License-Identifier: BUSL-1.1
 
 # 0.6 candidate build and verification runbook
 
+2026-09-05 current authorized successor:0.6.10 privacy artifact, reviewed productionc9bdd22.
+Use [candidate journal](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-duplicate-source-forget/CANDIDATE-0.6.10.md); old version-specific commands below are historical.
+
+
 2026-09-05 newer authorized exception: standalone-short0.6.7 is allocated from reviewed e19161ba.
 Use [0.6.7 journal](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-short-history-visibility/CANDIDATE-0.6.7.md)
 for this independent candidate. Retain all older wheel identities and publisher boundaries.

@@ -10,7 +10,7 @@ import simple_harness_memory.migrations as migrations
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_public_api_0_6_9_preserves_prior_surface_and_adds_upgrade_sources() -> None:
+def test_public_api_0_6_10_preserves_prior_surface_and_adds_history_origin_cut() -> None:
     snapshots = {
         version: json.loads(Path(__file__).with_name(f"public-api-{version}.json").read_text())
         for version in (
@@ -25,20 +25,26 @@ def test_public_api_0_6_9_preserves_prior_surface_and_adds_upgrade_sources() -> 
             "0.6.7",
             "0.6.8",
             "0.6.9",
+            "0.6.10",
         )
     }
     for version, snapshot in snapshots.items():
         assert snapshot["package"] == "simple-harness-memory-sdk"
         assert snapshot["version"] == version
-    current = snapshots["0.6.9"]
-    assert simple_harness_memory.__version__ == "0.6.9"
-    # Unversioned successor protocol leaf. Frozen 0.6.9 snapshot/bytes stay exact.
-    assert sorted([*current["root"],
-                   "HistoryForgetCutReceipt", "HistorySourceAuthorityPort",
-                   "HistorySourceNamespace", "HistorySourceOriginReceipt"]) == sorted(
-        simple_harness_memory.__all__
-    )
+    current = snapshots["0.6.10"]
+    assert simple_harness_memory.__version__ == "0.6.10"
+    assert current["root"] == sorted(simple_harness_memory.__all__)
     assert current["root"] == sorted(
+        [
+            *snapshots["0.6.9"]["root"],
+            "HistoryForgetCutReceipt",
+            "HistorySourceAuthorityPort",
+            "HistorySourceNamespace",
+            "HistorySourceOriginReceipt",
+        ]
+    )
+    assert current["migrations"] == snapshots["0.6.9"]["migrations"]
+    assert snapshots["0.6.9"]["root"] == sorted(
         [
             *snapshots["0.6.8"]["root"],
             "ShortHorizonSourceItem",
@@ -206,7 +212,7 @@ def test_0_6_8_candidate_sources_and_docs_are_consistent() -> None:
     assert "simple-harness-sdk>=0.7,<0.8" in pyproject["project"]["dependencies"]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "当前 source candidate：**0.6.7**" in readme
+    assert "当前 source candidate：**0.6.10**" in readme
     assert "已发布 fallback 为 0.5.1" in readme
     assert "## [0.6.6] - 2026-09-05" in changelog
     assert "## [0.6.5] - 2026-09-05" in changelog

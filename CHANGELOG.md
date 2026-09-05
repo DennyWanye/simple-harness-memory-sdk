@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.10] - 2026-09-05（独立 duplicate-source privacy 候选）
+
+- 保留冻结069能力，新增已独立审的 Host source origin/cut 公共契约与跨 history/ordinary/typed/short/mutation/background 共享当前 suppression 检查。
+- memory-only forget 覆盖同 subject 的完整 USER /text 精确重复及真实来源血缘；新 atomic source 依原 cut 判定，旧 v1 无 cut/legacy 晚入队明确不可验证。
+- 不改 schema、旧快照、既有 hash 或冻结069轮子；仅隔离候选，不 push/tag/native。Host late-enqueue 收尾及原生闭环独立验证。
+
 ## [0.6.7] - 2026-09-05（独立 short 候选）
 
 - 保留0.6.6 history/clock/rejection，新增已独立审查的 exact standalone short history carrier。

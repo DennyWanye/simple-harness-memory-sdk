@@ -472,3 +472,6 @@ Dirac已审oracle，源码复审/wheel/Host11组组合待验，不合main，不�
 WAL-only/升级COMMIT前后真进程退出、备份重试、旧任务续跑和history过滤已有限定源码证据。
 固定2542736源码已独立scoped ACCEPT；BUSY窄修16项通过，installed wheel待验，不改冻结068、不合main，不标S3/program或Host native完成。
 [069验证与剩余边界](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-069-existing-data-selected-sources/RESULTS.md)。
+
+2026-09-05：授权分配独立0.6.10 privacy successor，root snapshot4项通过；双offline build与
+installed public/native-copy gates正在执行，冻结069不变，不标Hostlate-enqueue/native完成。
