@@ -53,3 +53,9 @@ WAL-only/升级COMMIT前后真进程退出、备份重试、旧任务续跑和hi
 2026-09-05：独立duplicate-source forget共享源码候选206项限定测试通过，原short用例补强单跑通过；
 Dirac对53099e7完整源码 scoped ACCEPT。后继artifact、Hostlegacy settle及native仍待验，不标旧v1cut或program完成。
 [当前事实](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-duplicate-source-forget/ENFORCEMENT.md)。
+
+2026-09-05：独立retry-current-attempt后继修复真实firstfail→secondclaim→expiry错误回收旧batch
+P1；限定107PASS/1项冻结0610已有schema-probe拒绝测试失败单列保留，含8项新current/multi-member/
+concurrent-owner/真实COMMIT前后进程退出控制。原069反例DB保留，publicgraph相邻源码绿。
+待独立源码review，不改版本/DDL/冻结0610制品、不合main；随后才组合已审OA1统一候选。
+[当前源码事实与命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-retry-current-attempt/RESULTS.md)。

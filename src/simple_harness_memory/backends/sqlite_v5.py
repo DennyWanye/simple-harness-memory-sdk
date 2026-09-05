@@ -10494,10 +10494,20 @@ class SQLiteHumanMemoryBackend:
                 lease_token = f"analysis-lease-{uuid4().hex}"
                 lease_expires_at = now + config.lease_seconds
                 async with self._db.execute(
-                    "SELECT DISTINCT b.batch_id FROM analysis_batches b "
-                    "JOIN analysis_batch_members m ON m.batch_id=b.batch_id "
-                    "JOIN jobs j ON j.job_id=m.job_id WHERE j.state='claimed' AND "
-                    "j.lease_expires_at<=? "
+                    # Historical members must not redirect a current job's lease.
+                    # Every member must still own THIS expired active attempt.
+                    "SELECT b.batch_id FROM analysis_batches b "
+                    "WHERE b.state IN ('handed_off','result_committed','audit_pending') "
+                    "AND EXISTS (SELECT 1 FROM analysis_batch_members m "
+                    "WHERE m.batch_id=b.batch_id) "
+                    "AND NOT EXISTS (SELECT 1 FROM analysis_batch_members m "
+                    "LEFT JOIN jobs j ON j.job_id=m.job_id "
+                    "LEFT JOIN job_attempts a ON a.job_id=m.job_id AND a.attempt=m.job_attempt "
+                    "AND a.batch_id=m.batch_id WHERE m.batch_id=b.batch_id AND NOT COALESCE("
+                    "j.state='claimed' AND j.principal_id=b.principal_id "
+                    "AND j.attempt_count=m.job_attempt AND j.lease_expires_at<=? "
+                    "AND j.lease_token=a.lease_token AND a.request_hash=b.request_hash "
+                    "AND a.state IN ('handed_off','result_committed','audit_pending'),0)) "
                     "ORDER BY b.created_at,b.batch_id LIMIT 1",
                     (now,),
                 ) as cursor:
@@ -10899,6 +10909,7 @@ class SQLiteHumanMemoryBackend:
             "SELECT COUNT(*) AS member_count,"
             f"SUM(CASE WHEN j.job_id IN ({placeholders}) "
             "AND j.state='claimed' AND j.lease_token=? AND j.lease_expires_at>? "
+            "AND j.attempt_count=m.job_attempt AND a.request_hash=b.request_hash "
             "AND a.lease_token=? AND a.state IN "
             "('handed_off','result_committed','audit_pending') THEN 1 ELSE 0 END) "
             "AS current_count FROM analysis_batch_members m "
