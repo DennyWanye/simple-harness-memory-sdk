@@ -2,6 +2,10 @@
 
 <!-- plan-status: finalized -->
 
+> 2026-09-05 执行顺序修订：用户已同意按可用产品闭环推进，见
+> [EXECUTION-REVISION-2026-09-05.md](EXECUTION-REVISION-2026-09-05.md)。
+> 原 MUST AC 保留；下方 S1—S6 继续作为模块与历史索引，顶部旧进度不代表当前完整验收状态。
+
 > 状态：APPROVED / EXECUTION IN PROGRESS — V0/S1/S2 与 S3 Task 1—4 complete；RecallDecision v3、EvidenceItemAuthority v3 classification、MemoryActionAuthority v2、Procedure/Prospective consumer 已闭合。五天 Short-Horizon repository 已完成独立审查 P0/P1/P2=0；machine `a2-004` resolved，继续 Task 5—7
 > 行为策略：`preserve-approved`  
 > 唯一真相：`acceptance.md` + `assurance-contract.json`  

@@ -1,5 +1,8 @@
 # Human Memory Digital Twin Plan Workspace
 
+> 最新执行入口（2026-09-05）：[按用户闭环推进的执行修订](EXECUTION-REVISION-2026-09-05.md)。
+> 原始目标与验收继续保留；以下早期状态、worktree 和分支信息仅作历史记录，当前事实见本仓 ARCHITECTURE。
+
 > 创建日期：2026-08-29
 > 状态：用户已批准直接实施；V0、S1、S2 与 S3 Task 1—4 已闭合。五天 Short-Horizon repository 已完成五轮独立复审 P0/P1/P2=0；machine `a2-004` resolved；真实 semantic quality gate 仍为 `NOT_RUN/BLOCKED`，现进入 S3 Task 5—7
 > 主计划仓库：`simple-harness-memory-sdk`
