@@ -8,11 +8,13 @@
 > Host durable pre-admission audit 与 program 最终验收须按各自 AC 核对。Memory 0.6.3 candidate 已构建接入；旧 Agent Memory v1 能力仍保留，
 > 但不是新认知 mutation 的 authority。
 
-## 2026-09-05 Memory0.6.7 独立候选冻结准备
+## 2026-09-05 Memory0.6.7 独立候选已验证
 
 主统一分配0.6.7给已审short e19161ba；仅版本、根快照与公开消费者增量，产品行为无修改。
-根快照4项与新增short真实public source consumer11阶段通过；新wheel/isolated installed
-消费与完整字节核验正在执行。封存0.6.6 wheel不覆盖，未合main/Host/native或发布。
+根快照4项与新增short真实public source consumer11阶段通过；source fa6badd / wheel7dd224c2
+已完成18阶段isolated installed public消费与Memory64/Harness151完整字节核验，78导入模块
+均属新venv，Dirac独立prebuild delta ACCEPT。封存0.6.6 wheel不变；Host来源登记/接线另验，
+未合main/Host/native或发布。
 [本轮候选记录](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-short-history-visibility/CANDIDATE-0.6.7.md)。
 
 ## 2026-09-05 独立 standalone short 历史可见性源码修复
