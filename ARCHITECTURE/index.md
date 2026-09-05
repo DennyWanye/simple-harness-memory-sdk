@@ -118,3 +118,9 @@ vendor/pin/directURL安装固定0612；Memory72/Harness151/Service112字节检�
 native checkout安装版startup/composition/graph49PASS，main相关组合64PASS。
 原生已启动但macOS锁屏，真实native交互仍待协调处理，不计PASS。0612制品冻结，
 Dirac artifact复核待收；原文件不变断言仅限先前copygate时点。
+
+2026-09-05：Dirac对固定0612 source c3c59f4 / wheel1095d90c artifact/exact-installed
+独立限定ACCEPT，无新增P0/P1；逐字节复核双build、Memory72/Harness151、16依赖/
+213origins/16旧snapshot/原0610与0611轮子，并核38公共控制及真实副本page/reopen证据。
+SDK候选source/artifact gate闭合；未重跑测试或native，真实native交互及全operation
+覆盖仍由协调独立验收，旧档案不变结论只限copygate时点。制品冻结不再重建。

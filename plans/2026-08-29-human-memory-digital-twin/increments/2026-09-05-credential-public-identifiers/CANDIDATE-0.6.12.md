@@ -76,3 +76,22 @@ No new SDK builds, source changes or repeat source suite. Dirac artifact review
 is still pending at this update. Native continuation belongs to the coordinator.
 The earlier original-file unchanged assertions only describe the copygate time;
 subsequent authorized native activity does not invalidate that historical proof.
+
+## Independent artifact review — ACCEPT, 2026-09-05
+
+Dirac independently accepted fixed source c3c59f4210ed5e238a2833c47db62039b6d10300
+and wheel1095d90c8f6202a4dab6a547076bb6517944f3f964a032136c2378bbd5ba8774,
+with no new P0/P1. Compared to reviewed ce1a85b, production changes only version.
+Independent checks covered equal build1/build2 bytes; Memory72/Harness151
+Git source→wheel→isolated install bytes;16 dependency metadata records;213
+actual imported origins;16 retained snapshots; unchanged frozen0610/0611
+wheels; manifest637b7217c0c397dde79d24cdf8a97f4dad83f7a03cfdaf88ea7dfffda07f0580.
+
+Reviewer read and hash-verified the38-case public consumer and no-overlay actual
+Host factory page/reopen evidence/scripts (8items,7 terminal reads, zeroProvider).
+Reviewer did not rerun160/38, install or launch native. Original archive equality
+remains explicitly scoped to the copygate time.
+
+SDK0.6.12 candidate source/artifact gate is closed. New native interaction,
+Harness successors and Host full-operation coverage remain independent gates.
+No further build or source change; later commits record documents only.
