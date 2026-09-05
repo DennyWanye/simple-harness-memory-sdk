@@ -241,3 +241,6 @@ P1；限定107PASS/1项冻结0610已有schema-probe拒绝测试失败单列保�
 concurrent-owner/真实COMMIT前后进程退出控制。原069反例DB保留，publicgraph相邻源码绿。
 待独立源码review，不改版本/DDL/冻结0610制品、不合main；随后才组合已审OA1统一候选。
 [当前源码事实与命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-retry-current-attempt/RESULTS.md)。
+
+2026-09-05：retry-current-attempt0947c011限定源码已Dirac scoped ACCEPT；原红/DB与继承
+测试错误均保留。OA1 af49另树也已源码ACCEPT，后续统一组合候选与installed验证，当前无新wheel。

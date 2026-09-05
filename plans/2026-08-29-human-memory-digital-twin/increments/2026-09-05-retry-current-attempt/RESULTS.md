@@ -62,3 +62,11 @@ Environment is a separate offline editable source venv, exact official Harness0.
 Required remaining: independent narrow source review; combination with independently ACCEPTed OA1
 af49f2a1 (docHEADcb1409d) and assigned successor installed artifact gate. No partial wheel issued.
 Graph public view is unchanged and its focused source regressions passed; no native graph claim.
+
+
+Independent narrow source scoped ACCEPT:0947c0110d0f20271587b6fb4893adddd0f70414. Dirac inspected
+both production edits, NULL/missing/mixed-member refusal, current attempt/request binding, existing
+transaction atomicity and same-batch authority/result/audit_pending recovery. The eight cited log/DB
+hashes were independently checked; reviewer did not rerun107/8 or relabel the inherited early-refusal
+failure. OA1 af49f2a1 is separately accepted; combination/new version/installed gate remains separate.
+No claim to repair already malformed legacy job leases or previously emitted events automatically.
