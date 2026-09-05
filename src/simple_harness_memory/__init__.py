@@ -92,6 +92,12 @@ from simple_harness_memory.core.occurrence import (
 from simple_harness_memory.core.operation_audit import (
     MemoryOperationObservationContext,
     MemoryOperationObservationV1,
+    OperationAuditItemV1,
+    OperationAuditExpectation,
+    OperationAuditCursor,
+    OperationAuditCoverage,
+    OperationAuditExpectationResult,
+    OperationAuditPage,
     operation_audit_ref_hash,
 )
 from simple_harness_memory.core.port import CognitiveMemoryBackend, MemoryBackend
@@ -197,6 +203,12 @@ __all__ = [
     "TypedRecallRejectionV1",
     "MemoryOperationObservationContext",
     "MemoryOperationObservationV1",
+    "OperationAuditItemV1",
+    "OperationAuditExpectation",
+    "OperationAuditCursor",
+    "OperationAuditCoverage",
+    "OperationAuditExpectationResult",
+    "OperationAuditPage",
     "operation_audit_ref_hash",
     "TwinGraphEdge",
     "TwinGraphNode",

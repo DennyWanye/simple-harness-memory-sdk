@@ -71,6 +71,11 @@ from simple_harness_memory.core.short_horizon import (
     ShortHorizonProjectionBuildResult,
     ShortHorizonRecallResult,
 )
+from simple_harness_memory.core.operation_audit import (
+    OperationAuditCursor,
+    OperationAuditExpectation,
+    OperationAuditPage,
+)
 from simple_harness_memory.core.short_sources import ShortHorizonSourceSnapshot
 from simple_harness_memory.core.suppression import (
     SealedAuditAccessReceipt,
@@ -453,6 +458,14 @@ class CognitiveMemoryBackend(Protocol):
         principal: MemoryPrincipal,
         authority_ref: AuditAccessAuthorityRefV1,
     ) -> SealedAuditAccessReceipt: ...
+
+    async def read_operation_audit(
+        self, *, requester: MemoryPrincipal, target_principal: MemoryPrincipal,
+        access_receipt: SealedAuditAccessReceipt, limit: int = 100,
+        cursor: OperationAuditCursor | None = None,
+        expected: tuple[OperationAuditExpectation, ...] = (),
+    ) -> OperationAuditPage:
+        ...
 
     async def export_audit_trace(
         self,

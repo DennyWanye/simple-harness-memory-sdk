@@ -51,6 +51,9 @@ from simple_harness_memory.core.mutations import InformationClassificationPolicy
 from simple_harness_memory.core.observability import CorrelationInput, MemoryObservability
 from simple_harness_memory.core.operation_audit import (
     MemoryOperationObservationContext,
+    OperationAuditCursor,
+    OperationAuditExpectation,
+    OperationAuditPage,
     _observe_rejection,
 )
 from simple_harness_memory.core.port import CognitiveMemoryBackend, MemoryBackend
@@ -230,6 +233,16 @@ class MemoryManager:
         return await self._backend.authorize_audit_access(
             principal=principal, authority_ref=authority_ref
         )
+
+    async def read_operation_audit(
+        self, *, requester: MemoryPrincipal, target_principal: MemoryPrincipal,
+        access_receipt: SealedAuditAccessReceipt, limit: int = 100,
+        cursor: OperationAuditCursor | None = None,
+        expected: tuple[OperationAuditExpectation, ...] = (),
+    ) -> OperationAuditPage:
+        return await self._backend.read_operation_audit(
+            requester=requester, target_principal=target_principal,
+            access_receipt=access_receipt, limit=limit, cursor=cursor, expected=expected)
 
     async def export_audit_trace(
         self,

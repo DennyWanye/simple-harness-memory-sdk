@@ -40,3 +40,12 @@ job/receipt business-effect projection, sealed shared-budget pagination, missing
 real no_mutation/applied counterexample and committed-mutation control remain required. OA1 is not
 complete and all_operations_recorded remains false. Source review of this leaf is pending.
 Native partialrunref and legacy cost0 examples came from main; no local native rerun/price proof.
+
+2026-09-05 priority checkpoint: user requested pause OA1 for a new native duplicate-source
+forgetting P1. Carrier de0dd8a independently scoped ACCEPT; public reader WIP is preserved here,
+not reviewed/complete/candidate ready. Item/cursor vectors f38c185 preceded reader code.
+`reader-first.log`:3PASS/1FAIL0.64s; failing negative fixture tries max_reads999 (public DTO caps32),
+so it rejects before exercising forged grant. No failed case is claimed green; remaining families,
+same-cut real job phase/cognitive effects, integrity/no-omission controls and API review remain.
+Do not consume WIP as frozen069, assign version, build wheel or merge main. Resume from this
+checkpoint only after higher-priority explicit duplicate-source suppression repair is resolved.
