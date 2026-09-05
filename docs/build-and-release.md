@@ -5,6 +5,13 @@ SPDX-License-Identifier: BUSL-1.1
 
 # 0.6 candidate build and verification runbook
 
+2026-09-05 authorized successor: **0.6.12**, reviewed source ce1a85b7dae1b709d1f8fa53889e2c9e75b20e63
+on frozen0.6.11. User authorizes one versioned candidate, two offline wheel builds
+and exact isolated installed public/captured-history verification. Harness stays
+0.7.2 SHA53bded3fea87168e5d2ad9e49fea5f99e1c1edb1d6077b2a52dd62716692f9ed.
+Only the 0.6.12 candidate journal defines current scope; old literals below remain historical.
+[Current journal](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-credential-public-identifiers/CANDIDATE-0.6.12.md).
+
 2026-09-05 current authorized successor:0.6.10 privacy artifact, reviewed productionc9bdd22.
 Use [candidate journal](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-duplicate-source-forget/CANDIDATE-0.6.10.md); old version-specific commands below are historical.
 

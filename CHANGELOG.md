@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.12] - 2026-09-05（独立凭据误报窄修候选）
+
+- 保留已审0.6.11 privacy/OA1/retry能力，仅修正五个已确证公开完整词元被凭据前缀扫描误报。
+- 原有凭据格式、无分隔符拒绝、阈值、其它扫描及S1/subject/suppression门保持；不改公共API/DDL/旧receipt或archive。
+- 160项限定source及真实旧native三库副本Host factory page红绿已通过，固定ce1a85b独立scoped ACCEPT；本候选installed/native另验，不push/tag/release。
+
 ## [0.6.10] - 2026-09-05（独立 duplicate-source privacy 候选）
 
 - 保留冻结069能力，新增已独立审的 Host source origin/cut 公共契约与跨 history/ordinary/typed/short/mutation/background 共享当前 suppression 检查。

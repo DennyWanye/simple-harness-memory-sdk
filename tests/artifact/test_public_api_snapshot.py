@@ -10,7 +10,7 @@ import simple_harness_memory.migrations as migrations
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_public_api_0_6_11_preserves_privacy_and_adds_operation_audit() -> None:
+def test_public_api_0_6_12_preserves_0_6_11_public_contract() -> None:
     snapshots = {
         version: json.loads(Path(__file__).with_name(f"public-api-{version}.json").read_text())
         for version in (
@@ -27,13 +27,17 @@ def test_public_api_0_6_11_preserves_privacy_and_adds_operation_audit() -> None:
             "0.6.9",
             "0.6.10",
             "0.6.11",
+            "0.6.12",
         )
     }
     for version, snapshot in snapshots.items():
         assert snapshot["package"] == "simple-harness-memory-sdk"
         assert snapshot["version"] == version
-    current = snapshots["0.6.11"]
-    assert simple_harness_memory.__version__ == "0.6.11"
+    current = snapshots["0.6.12"]
+    assert {k: v for k, v in current.items() if k != "version"} == {
+        k: v for k, v in snapshots["0.6.11"].items() if k != "version"
+    }
+    assert simple_harness_memory.__version__ == "0.6.12"
     assert current["root"] == sorted(simple_harness_memory.__all__)
     assert current["root"] == sorted(
         [
@@ -230,7 +234,7 @@ def test_0_6_8_candidate_sources_and_docs_are_consistent() -> None:
     assert "simple-harness-sdk>=0.7,<0.8" in pyproject["project"]["dependencies"]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "当前 source candidate：**0.6.10**" in readme
+    assert "当前 source candidate：**0.6.12**" in readme
     assert "已发布 fallback 为 0.5.1" in readme
     assert "## [0.6.6] - 2026-09-05" in changelog
     assert "## [0.6.5] - 2026-09-05" in changelog
