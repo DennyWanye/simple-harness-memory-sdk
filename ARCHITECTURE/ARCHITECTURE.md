@@ -443,3 +443,10 @@ Dirac已审oracle，源码复审/wheel/Host11组组合待验，不合main，不�
 WAL-only/升级COMMIT前后真进程退出、备份重试、旧任务续跑和history过滤已有限定源码证据。
 固定2542736源码已独立scoped ACCEPT；BUSY窄修16项通过，installed wheel待验，不改冻结068、不合main，不标S3/program或Host native完成。
 [069验证与剩余边界](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-069-existing-data-selected-sources/RESULTS.md)。
+
+2026-09-05：0.6.9组合candidate已固定source f92fac1 / wheel cf149022；41项固定源码专项、
+BUSY窄修16项、4阶段独立installed publicconsumer通过，双build一致、Memory68/Harness151文件
+与source/wheel/install一致，209模块隔离来源已核验。旧063/067非空WAL升级、遗忘保留、
+selected来源和reopen原backup/receipt复用是SDK证据；Host installed/native旧数据副本与最终
+出站过滤另验，不标S3/program完成，不合main、不改旧wheel。
+[固定身份与命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-069-existing-data-selected-sources/CANDIDATE-0.6.9.md)。

@@ -86,3 +86,9 @@ not schema identity. Actual unsupported/corrupt catalog refusal remains unchange
 Public consumer input export only adds actual old DTOs to the pre-migration fixture record;
 `scripts/existing_data_public_consumer.py` uses public APIs with no SDK private SQL/imports.
 `consumer-source-r2/result.json` is4stagePASS, installed=false; isolated artifact run remains required.
+
+Final isolated artifact/installed gate completed on f92fac1: two identical wheels cf149022,
+4 public installed stages PASS, pipcheckPASS, all Memory68/Harness151 package bytes exact,
+209 runtime module origins isolated. [Fixed candidate](CANDIDATE-0.6.9.md) supersedes the earlier
+pending artifact status. Main and Popper received exact source/wheel/manifest identities promptly;
+Host/native verification remains independent. No additional operation-audit work enters this artifact.
