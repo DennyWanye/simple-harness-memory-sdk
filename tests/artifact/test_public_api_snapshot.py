@@ -35,7 +35,22 @@ def test_public_api_0_6_11_preserves_privacy_and_adds_operation_audit() -> None:
     current = snapshots["0.6.11"]
     assert simple_harness_memory.__version__ == "0.6.11"
     assert current["root"] == sorted(simple_harness_memory.__all__)
-    assert current["root"] == sorted([*snapshots["0.6.10"]["root"], *['MemoryOperationObservationContext', 'MemoryOperationObservationV1', 'OperationAuditItemV1', 'OperationAuditExpectation', 'OperationAuditCursor', 'OperationAuditCoverage', 'OperationAuditExpectationResult', 'OperationAuditPage', 'operation_audit_ref_hash']])
+    assert current["root"] == sorted(
+        [
+            *snapshots["0.6.10"]["root"],
+            *[
+                "MemoryOperationObservationContext",
+                "MemoryOperationObservationV1",
+                "OperationAuditItemV1",
+                "OperationAuditExpectation",
+                "OperationAuditCursor",
+                "OperationAuditCoverage",
+                "OperationAuditExpectationResult",
+                "OperationAuditPage",
+                "operation_audit_ref_hash",
+            ],
+        ]
+    )
     assert callable(simple_harness_memory.MemoryManager.read_operation_audit)
     assert snapshots["0.6.10"]["root"] == sorted(
         [
