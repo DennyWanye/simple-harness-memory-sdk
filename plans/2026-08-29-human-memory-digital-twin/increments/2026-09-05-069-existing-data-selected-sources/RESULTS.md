@@ -1,4 +1,4 @@
-# 0.6.9 A+B implementation candidate — independent review pending
+# 0.6.9 A+B implementation candidate — source scoped ACCEPT
 
 2026-09-05. Isolated feat/human-memory-069-existing-data-selected-sources. No push/tag/main/native
 environment change; frozen068 and earlier wheels untouched. 069 version was not occupied by a
@@ -55,8 +55,8 @@ create an empty WAL/SHM for a previously sidecar-free WAL-mode root during a mod
 cleanup, immutable/main-only fallback, or test failure deletion is used to hide this fact.
 
 ## Remaining gates
-Independent source review, committed scoped checks,
-two offline identical builds, exact isolated installed public consumer and full package byte/origin
+Dirac independently ACCEPTed fixed2542736 A+B source with no blockingP0/P1.
+Two offline identical builds, exact isolated installed public consumer and full package byte/origin
 identity manifest. Host selected-source leaf is owned by Popper; Host migration/native actual-data
 copy and final conversation E2E are owned by main. No original401/threshold/oracle files changed;
 no S3/program/native completion claim. Runner327b remains stopped.
@@ -73,3 +73,16 @@ Real Host source-policy finding: Popper's source-overlay Host fixture exposed a 
 configuration bug (default SDK filter policies reject legal Host admissions). Fixed validation-only
 historical reconstruction without widening real runtime admission; custom-policy SQLite regression
 passes. Popper is independently rerunning the actual Host leaf. No installed claim yet.
+
+2026-09-05 fixed-source follow-up: `committed-scoped.log` has41PASS/6.17s on2542736.
+Popper independently reported19 actual Host source-overlay tests PASS; not installed/native evidence.
+Dirac's real exclusive-lock probe found transient SQLITE_BUSY incorrectly classified as legacy schema.
+`busy-red-r2.log` reproduces both public builder and migration failures before the fix; initial
+`busy-red.log` is a test import mistake, not product evidence. Narrow mapping preserves BUSY/LOCKED
+(including extended codes) as MemoryWriterConflict; CANTOPEN/IOERR/READONLY as snapshot-unavailable,
+not schema identity. Actual unsupported/corrupt catalog refusal remains unchanged.
+`busy-green.log`:16PASS/9deselected/12.98s (both real locks, current no-op, unknown schema, backups).
+`busy-mypy.log`: migration source check PASS. Failed snapshot connections now close explicitly.
+Public consumer input export only adds actual old DTOs to the pre-migration fixture record;
+`scripts/existing_data_public_consumer.py` uses public APIs with no SDK private SQL/imports.
+`consumer-source-r2/result.json` is4stagePASS, installed=false; isolated artifact run remains required.

@@ -14,7 +14,11 @@ from pathlib import Path
 import pytest
 
 import simple_harness_memory as m
-from simple_harness_memory.core.errors import MemoryCorruptionError, MemoryLegacySchemaUnsupported
+from simple_harness_memory.core.errors import (
+    MemoryCorruptionError,
+    MemoryLegacySchemaUnsupported,
+    MemoryWriterConflict,
+)
 from simple_harness_memory.migrations import migrate_human_memory_v7_to_v7_2
 from tests.integration.test_cognitive_mutation_repository_v5 import _classification_policy
 
@@ -25,6 +29,35 @@ OLD = {
     "067": EVIDENCE / "nonempty-067-r1/old.db",
     "alter071": EVIDENCE / "official-alter-071.db",
 }
+
+
+@pytest.mark.parametrize("entry", ["builder", "migration"])
+async def test_temporary_read_lock_is_writer_conflict_not_legacy(tmp_path, entry):
+    """A real exclusive writer is not evidence of an unsupported schema."""
+    path, backup = tmp_path / "memory.db", tmp_path / "backup.db"
+    manager = await m.build_human_memory_v7(path)
+    await manager.close()
+    writer = sqlite3.connect(path, isolation_level=None)
+    writer.execute("PRAGMA journal_mode=DELETE")
+    before = path.read_bytes()
+    writer.execute("BEGIN EXCLUSIVE")
+    try:
+        with pytest.raises(MemoryWriterConflict) as caught:
+            if entry == "builder":
+                await m.build_human_memory_v7(path)
+            else:
+                await migrate_human_memory_v7_to_v7_2(path, backup_path=backup)
+        assert caught.value.code == "memory_second_writer_rejected"
+        assert caught.value.__cause__.sqlite_errorcode == sqlite3.SQLITE_BUSY
+        assert not backup.exists()
+        assert path.read_bytes() == before
+    finally:
+        writer.execute("ROLLBACK")
+        writer.close()
+    manager = await m.build_human_memory_v7(path)
+    await manager.close()
+    assert await migrate_human_memory_v7_to_v7_2(path, backup_path=backup) is None
+    assert not backup.exists()
 
 
 def _copy(source, dest):

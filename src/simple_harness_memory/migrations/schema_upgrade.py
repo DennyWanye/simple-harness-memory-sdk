@@ -261,13 +261,26 @@ def inspect_root(connection: sqlite3.Connection, *, allow_legacy: bool = False) 
     return _Root(receipt, actual, marker)
 
 
+def _raise_if_snapshot_unavailable(exc: sqlite3.Error) -> None:
+    # Extended result codes (e.g. BUSY_SNAPSHOT) retain their primary low byte.
+    code = getattr(exc, "sqlite_errorcode", 0) & 0xFF
+    if code in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+        raise MemoryWriterConflict() from exc
+    if code in (sqlite3.SQLITE_CANTOPEN, sqlite3.SQLITE_IOERR, sqlite3.SQLITE_READONLY):
+        raise MemoryValidationError("schema_read_snapshot_unavailable") from exc
+
+
 def _open_snapshot(path: Path) -> sqlite3.Connection:
+    db = None
     try:
         db = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, isolation_level=None)
         db.execute("PRAGMA query_only=ON")
         db.execute("BEGIN")
         return db
     except sqlite3.Error as exc:
+        if db is not None:
+            db.close()
+        _raise_if_snapshot_unavailable(exc)
         raise MemoryValidationError("schema_read_snapshot_unavailable") from exc
 
 
@@ -327,6 +340,8 @@ async def probe_existing_root(path: Path) -> tuple[str, InitializationReceipt | 
                 return "fresh", None
             root = inspect_root(db)
         except (MemoryCorruptionError, sqlite3.Error, TypeError, ValueError) as exc:
+            if isinstance(exc, sqlite3.Error):
+                _raise_if_snapshot_unavailable(exc)
             # Preserve the original initializer's schema/initial receipt rejection.
             # Later canonical business corruption keeps its existing corruption type.
             raise MemoryLegacySchemaUnsupported() from exc
@@ -375,6 +390,9 @@ async def migrate_human_memory_v7_to_v7_2(
         ):
             raise MemoryIdempotencyConflict("schema_upgrade_initialization_conflict")
         await _validate_canonical_snapshot(preflight, root)
+    except sqlite3.Error as exc:
+        _raise_if_snapshot_unavailable(exc)
+        raise
     finally:
         preflight.close()
     lease = SQLiteHumanMemoryBackend(source)
@@ -440,6 +458,8 @@ async def migrate_human_memory_v7_to_v7_2(
             MemoryLegacySchemaUnsupported,
             MemoryValidationError,
         ) as exc:
+            if isinstance(exc, sqlite3.Error):
+                _raise_if_snapshot_unavailable(exc)
             raise MemoryIdempotencyConflict("schema_upgrade_backup_conflict") from exc
         digest = hashlib.sha256(backup.read_bytes()).hexdigest()
         _fault("after_backup")
@@ -471,8 +491,7 @@ async def migrate_human_memory_v7_to_v7_2(
         _fault("after_commit")
         return receipt
     except sqlite3.OperationalError as exc:
-        if getattr(exc, "sqlite_errorcode", None) in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
-            raise MemoryWriterConflict() from exc
+        _raise_if_snapshot_unavailable(exc)
         raise
     finally:
         if writer is not None:

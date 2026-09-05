@@ -234,8 +234,23 @@ async def produce(args):
             "product_origin": str(Path(m.__file__).resolve()),
             "initialization": {**init.to_json(), "receipt_hash": init.receipt_hash},
             "memory_id": memory_id,
+            "principal": {
+                "deployment_id": _principal().deployment_id,
+                "household_id": _principal().household_id,
+                "actor_id": _principal().actor_id,
+                "session_id": _principal().session_id,
+            },
+            "history_inputs": [
+                {"envelope": item.to_json(), "receipt": receipt.to_json()}
+                for item, receipt in ((env, admission), (other, other_admission))
+            ],
             "apply_result": applied.to_json(),
-            "recall": {"decision": recall.decision.to_json(), "result": recall.result.to_json()},
+            "recall": {
+                "decision": recall.decision.to_json(),
+                "result": recall.result.to_json(),
+                "context": context.to_json(),
+                "plan": recall_plan.to_json(),
+            },
             "suppression": [{**x.to_json(), "decision_hash": x.decision_hash} for x in decisions],
             "other_receipt": other_receipt.to_json(),
             "main_only_cognitive_count": main_cognitive_count,

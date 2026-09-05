@@ -441,5 +441,5 @@ Dirac已审oracle，源码复审/wheel/Host11组组合待验，不合main，不�
 
 2026-09-05：独立0.6.9 A+B源码候选实现官方非空7.0/7.1保留式升级和actual-selected短来源批量读口；
 WAL-only/升级COMMIT前后真进程退出、备份重试、旧任务续跑和history过滤已有限定源码证据。
-当前源码独立审与installed wheel待验，不改冻结068、不合main，不标S3/program或Host native完成。
+固定2542736源码已独立scoped ACCEPT；BUSY窄修16项通过，installed wheel待验，不改冻结068、不合main，不标S3/program或Host native完成。
 [069验证与剩余边界](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-069-existing-data-selected-sources/RESULTS.md)。
