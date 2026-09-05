@@ -12,8 +12,8 @@
 
 用户授权独立组合history a96a5008、clock16dc707与rejection30743bb；不修改冻结0.6.3/0.6.5
 wheel及main/Host环境。新0.6.6根快照保留所有旧导出并包含五项history DTO，schema/hash/阈值不变。
-64项组合源码聚焦已通过；exactwheel安装核验与publicconsumer正在后续执行，当前不据此宣称
-installed/Host/UI完成。独立short-horizon hit仍缺历史复查binding，明确保留后继接口缺口。
+130项限定源码测试已通过；clean source9ec5943对应wheel381d8543已在新venv通过public
+consumer、Memory63/Harness151源/轮子/安装字节一致性及pipcheck。尚无Host/UI完成结论。独立short-horizon hit仍缺历史复查binding，明确保留后继接口缺口。
 详见[组合候选契约和命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-history-visibility/CANDIDATE-0.6.6.md)。
 
 ## 2026-09-05 隔离 history visibility 源码候选
