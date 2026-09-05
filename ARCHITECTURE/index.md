@@ -105,3 +105,10 @@ Bearer/AKIA/privatekey与S1验证。160项限定源测试通过，真实旧nativ
 Host factory history page由0610红变源码绿且reopen通过，原archive及10文件hash保持。
 源码review/0.6.12 installed尚待，不改0610/0611或主树，不标native UI/program完成。
 [事实及命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-credential-public-identifiers/RESULTS.md)。
+
+2026-09-05：0.6.12独立凭据误报候选source c3c59f4 / wheel1095d90c冻结；
+Dirac ce1a85b source/factory scoped ACCEPT，双offlinebuild一致，freshinstalled38公共
+正负控制与真实三库副本Host factory page/reopen通过。72+151包文件/213origins/16deps/
+16旧snapshot匹配；原0610/0611字节保持。产物独立复核待收，实际native/UI由Host另验，
+不标全program或全operation覆盖，不push/tag/main。
+[固定身份及命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-credential-public-identifiers/CANDIDATE-0.6.12.md)。

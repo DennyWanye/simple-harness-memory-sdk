@@ -13,3 +13,48 @@ Memory/Harness bytes, dependency manifest, public positive/negative consumer and
 actual saved native three-store public Host history page including reopen.
 No native startup, new CREATE, Provider, push/tag/release or main edits.
 Artifact identities and results will be appended after the immutable build.
+
+## Fixed artifact and installed gate
+
+- Source: `c3c59f4210ed5e238a2833c47db62039b6d10300`. Later document commits do not rebuild or replace these bytes.
+- Wheel: `.local-test-evidence/2026-09-05/0612-credential/build1/simple_harness_memory_sdk-0.6.12-py3-none-any.whl`.
+- SHA256: `1095d90c8f6202a4dab6a547076bb6517944f3f964a032136c2378bbd5ba8774`; build2 byte-identical.
+- Manifest: `.local-test-evidence/2026-09-05/0612-credential/candidate-manifest.json`,
+  SHA256 `637b7217c0c397dde79d24cdf8a97f4dad83f7a03cfdaf88ea7dfffda07f0580`.
+- Root API snapshot: 4PASS/0.17s, exports and migration names exactly match0.6.11.
+- Fresh offline installed root consumer: 38 positive/negative cases PASS, no source
+  imports/Memory SQL/Provider. Exact original S1 after public source admission,
+  replay, reopen, then evidence suppression remains unavailable.
+- Same installed venv + actual Host public factory on three captured native
+  stores: page/reopen PASS, each8items (4USER/3assistant/1tool), actual autumn
+  USER and latest assistant present. Uses existing terminal bytes/public Context,
+  Hostterminalidentity checks; no SDK runtime start, fabricated ready slot,
+  native guard override or new CREATE. Original native app remains stopped.
+- Identity: Memory72/Harness151 tracked package files equal source/wheel/install;
+  213 imported module origins under the fresh env, 16 exact dependencies and
+  pipcheck PASS; 16 older snapshot JSON files unchanged. Original frozen0.6.10
+  and0.6.11 wheel hashes unchanged.
+- Captured-original10-file equality and archive unchanged assertions are at
+  this verification time, not a permanent claim against later authorized native
+  writes. Main receives artifact to perform independent Host/native gate.
+
+Exact build/install commands (repository root):
+```sh
+SOURCE_DATE_EPOCH=315532800 uv build --offline --no-sources --wheel --out-dir .local-test-evidence/2026-09-05/0612-credential/build1
+SOURCE_DATE_EPOCH=315532800 uv build --offline --no-sources --wheel --out-dir .local-test-evidence/2026-09-05/0612-credential/build2
+uv pip install --offline --python .local-test-evidence/2026-09-05/0612-credential/venv/bin/python --no-deps --require-hashes -r .local-test-evidence/2026-09-05/0612-credential/exact-wheels.txt
+uv pip check --python .local-test-evidence/2026-09-05/0612-credential/venv/bin/python
+.local-test-evidence/2026-09-05/0612-credential/venv/bin/python -I .local-test-evidence/2026-09-05/0612-credential/verify_candidate.py
+```
+
+The venv was created fresh offline and preinstalled the exact14 non-SDK runtime
+dependencies in runtime-dependencies.txt before installing the two exact wheels.
+consumer-tools/credential_consumer.py and credential-public-identifiers/native_page_probe.py
+are retained ignored, with result and helper source hashes in manifest. The
+consumer/page output directories deliberately refuse reuse: select a new label/
+output for reruns to preserve evidence. Never point this probe at original userdata.
+
+Dirac source/factory scoped ACCEPT was obtained before freezing source/version.
+Independent artifact evidence recheck pending at this document commit; owner
+installed gate complete. No full suite, native UI, or Host all-operation audit
+coverage is claimed; finite public vocabulary scope stays explicit. No push/tag.
