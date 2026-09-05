@@ -277,8 +277,14 @@ class MemoryManager:
         context: RecallContext,
         plan: RecallPlan,
         now: float | None = None,
+        harness_protocol: int = 4,
     ) -> TypedRecallExecution:
+        from simple_harness_memory.core.recall import _validate_recall_protocol
+
+        _validate_recall_protocol(harness_protocol, context=context, plan=plan)
         operation = getattr(self._backend, "execute_typed_recall")
+        # v4 is the only admitted protocol. Preserve legacy backend keyword sets
+        # and the existing v4 hash; direct backend callers have the same gate.
         return await operation(principal=principal, context=context, plan=plan, now=now)
 
     async def read_occurrence_inbox(

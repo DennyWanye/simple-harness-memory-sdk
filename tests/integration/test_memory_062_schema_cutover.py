@@ -23,8 +23,8 @@ from tests.integration.test_memory_061_schema_v7_1 import _columns, _write_v7_0_
 SCHEMA_CHECKSUM_V7_1 = "c3d680ff5b1f55e6eb4134dd65054f50b5bce6e0cc721d5b19d4ab794a86c15b"
 
 
-def test_0_6_4_keeps_0_6_2_schema_v7_1_without_ddl_change() -> None:
-    assert __version__ == "0.6.4"
+def test_0_6_5_keeps_0_6_2_schema_v7_1_without_ddl_change() -> None:
+    assert __version__ == "0.6.5"
     assert (SCHEMA_VERSION, SCHEMA_MINOR_VERSION, SCHEMA_VERSION_LABEL) == (7, 1, "7.1")
     # 0.6.2 只修 decision 构造，不改 DDL：当前 checksum 钉死为 0.6.1 定稿的 v7.1 值。
     assert SCHEMA_CHECKSUM == SCHEMA_CHECKSUM_V7_1

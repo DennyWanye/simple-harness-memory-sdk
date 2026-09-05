@@ -81,7 +81,7 @@ from simple_harness_memory.core.occurrence import (
     OutboxPageV1,
 )
 from simple_harness_memory.core.port import CognitiveMemoryBackend, MemoryBackend
-from simple_harness_memory.core.recall import TypedRecallExecution
+from simple_harness_memory.core.recall import TypedRecallExecution, TypedRecallRejectionV1
 from simple_harness_memory.core.short_horizon import (
     ShortHorizonDegradationCode,
     ShortHorizonGenerationBuildResult,
@@ -165,6 +165,7 @@ __all__ = [
     "MemoryBackend",
     "CognitiveMemoryBackend",
     "TypedRecallExecution",
+    "TypedRecallRejectionV1",
     "TwinGraphEdge",
     "TwinGraphNode",
     "TwinGraphSourceRef",
@@ -198,4 +199,4 @@ __all__ = [
     "ShortHorizonRecallResult",
 ]
 
-__version__ = "0.6.4"
+__version__ = "0.6.5"

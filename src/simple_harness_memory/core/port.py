@@ -395,6 +395,7 @@ class CognitiveMemoryBackend(Protocol):
         context: RecallContext,
         plan: RecallPlan,
         now: float | None = None,
+        harness_protocol: int = 4,
     ) -> TypedRecallExecution: ...
 
     async def page_typed_recall_result(

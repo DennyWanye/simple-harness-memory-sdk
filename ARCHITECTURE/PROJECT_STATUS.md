@@ -2,6 +2,24 @@
 
 > 最后更新：2026-09-05
 
+## 2026-09-05 S3 pre-candidate rejection（0.6.5 隔离候选）
+
+公开 `TypedRecallRejectionV1` 是附着于本次异常的不可变观察值，不是持久化收据或权限。
+精确类型、ownership、narrowing 及 `IDEMPOTENCY_CONFLICT` 在候选访问前各自附加 invocation ID、
+可合法计算的 request/context/plan hash、实际 stage/reason 与逻辑零候选标记；保留异常类/消息/traceback。
+`_admit` 的超时提交、损坏、存储错误与取消不包装，候选访问期异常也不获得此见证。
+零表示没有进入候选读取，不等于没有 SQL 或 admission 写入；真实性由候选入口拦截和 SQL trace 回归检查。
+Manager 和 backend 同时接受严格 `harness_protocol: int = 4`，其它整数拒绝 unsupported，
+其它类型（包括 bool）拒绝 invalid；均在 backend 操作之前拒绝。合法 Context/Plan 的 hash 仍可绑定，
+未定义版本的 request hash 为 null。默认向旧 backend 的 kwargs 保持不变；v4 request hash 和 v7.1 schema 不变。
+
+已有 typed-recall/clock 28 passed，API/schema 7 passed；mypy 四个改动源文件通过。
+文件级 ruff 仅命中既存 sqlite_v5.py 的 UP031（不在改动范围），忽略该既存规则后通过。
+新增专项 **30 passed**，含原 13 变异的真实 SQLite/reopen、candidate trap 与 SQL trace、正控制和候选访问后异常负控制。
+独立 source review ACCEPT（无 P0/P1/P2）；当前源码全量 **1157 passed / 9 skipped**，46.45 秒、退出码 0。
+尚未构建/接入候选，installed-wheel 与 401-cell 验证另记。证据位于本分支
+`.local-test-evidence/2026-09-05/public-recall-rejection/`。Host S5b pin 仍为 0.6.3；401-cell 与 program 未完成。
+
 ## 2026-09-05 S3 公开构造时钟（0.6.4 隔离候选）
 
 `MemoryManager.build_human_memory_v7` / 根工厂接受可选 `clock: Callable[[], float]`，

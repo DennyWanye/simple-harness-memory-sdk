@@ -1,6 +1,6 @@
 # ARCHITECTURE 索引
 
-本目录是 simple-harness-memory-sdk 的当前架构事实源。当前隔离分支为 **0.6.4 source candidate**
+本目录是 simple-harness-memory-sdk 的当前架构事实源。当前隔离分支为 **0.6.5 source candidate**
 新增 fresh `human-memory-v1` schema v7 的 immutable evidence、append-only suppression/audit、durable analysis
 四阶段 authority、四类认知记录的 strict mutation/classification/action-authority 事务底座，以及 strict v4 typed
 RecallPlan 执行与最终使用 authority，以及严格 display-only 的 Digital Twin graph projection，并精确依赖
@@ -23,3 +23,5 @@ ordinary-visible metrics 与 canonical state manifest 均通过 public v6 Manage
 <!-- last-updated: 2026-09-05 -->
 
 0.6.4 新增可信构造时钟依赖供 S3 公共入口时间验证；默认生产时钟不变，Host S5b 仍使用 0.6.3。
+
+0.6.5 隔离候选新增只限候选访问前的异常见证及严格协议版本入口；现有 hash/schema 不变，详见 ARCHITECTURE.md。

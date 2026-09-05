@@ -137,6 +137,89 @@ class RecallConfirmationSelection:
 
 
 @dataclass(frozen=True, slots=True)
+class TypedRecallRejectionV1:
+    """Invocation-bound pre-candidate failure observation, never an authority.
+
+    The logical zero means this invocation has not entered candidate access,
+    not zero SQL statements or rows. No witness is issued for storage faults,
+    cancellation, or failures after candidate access. It is not a durable receipt.
+    """
+
+    schema_version: int
+    invocation_id: str
+    request_hash: str | None
+    context_hash: str | None
+    plan_hash: str | None
+    stage: str
+    reason: str
+    candidate_query_started: bool
+    candidate_query_count: int
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "schema_version": self.schema_version,
+            "invocation_id": self.invocation_id,
+            "request_hash": self.request_hash,
+            "context_hash": self.context_hash,
+            "plan_hash": self.plan_hash,
+            "stage": self.stage,
+            "reason": self.reason,
+            "candidate_query_started": self.candidate_query_started,
+            "candidate_query_count": self.candidate_query_count,
+        }
+
+
+def _attach_pre_candidate_rejection(
+    error: Exception,
+    *,
+    invocation_id: str,
+    stage: str,
+    request_digest: str | None = None,
+    context_digest: str | None = None,
+    plan_digest: str | None = None,
+) -> None:
+    # Called only by explicit gates before any candidate access. Canonicalization
+    # must be completed before catching an error, never while handling it.
+    error.rejection_receipt = TypedRecallRejectionV1(  # type: ignore[attr-defined]
+        1, invocation_id, request_digest, context_digest, plan_digest,
+        stage, str(error), False, 0,
+    )
+
+
+def _validate_recall_protocol(
+    harness_protocol: int, *, context: object = None, plan: object = None,
+) -> None:
+    """Shared Manager/backend gate; reject before invoking any backend operation."""
+    if type(harness_protocol) is int and harness_protocol == 4:
+        return
+    from uuid import uuid4
+
+    from simple_harness_memory.core.errors import MemoryValidationError
+
+    reason = (
+        "typed_recall_protocol_invalid"
+        if type(harness_protocol) is not int else "typed_recall_protocol_unsupported"
+    )
+    from simple_harness.runtime import RecallContext, RecallPlan
+
+    bindings: list[str | None] = []
+    for value, expected_type, attribute in (
+        (context, RecallContext, "context_hash"), (plan, RecallPlan, "plan_hash"),
+    ):
+        try:
+            digest = getattr(value, attribute) if type(value) is expected_type else None
+        except (AttributeError, TypeError, ValueError):
+            digest = None  # malformed input has no valid canonical binding
+        bindings.append(digest)
+    error = MemoryValidationError(reason)
+    _attach_pre_candidate_rejection(
+        error, invocation_id=str(uuid4()), stage="protocol",
+        context_digest=bindings[0], plan_digest=bindings[1],
+    )
+    raise error
+
+
+@dataclass(frozen=True, slots=True)
 class TypedRecallExecution:
     decision: RecallDecisionV4
     result: TypedRecallResultV1

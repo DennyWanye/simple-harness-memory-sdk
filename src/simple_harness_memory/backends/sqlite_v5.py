@@ -2997,6 +2997,7 @@ class SQLiteHumanMemoryBackend:
         context: RecallContext,
         plan: RecallPlan,
         now: float | None = None,
+        harness_protocol: int = 4,
     ) -> TypedRecallExecution:
         """Execute strict RecallPlan v4 with durable replay before candidate access."""
 
@@ -3005,6 +3006,8 @@ class SQLiteHumanMemoryBackend:
         from simple_harness_memory.core.identity import MemoryPrincipal
         from simple_harness_memory.core.recall import (
             TypedRecallExecution,
+            _attach_pre_candidate_rejection,
+            _validate_recall_protocol,
             apply_budget,
             apply_confirmation_budget,
             build_host_execution,
@@ -3013,28 +3016,60 @@ class SQLiteHumanMemoryBackend:
             request_hash,
         )
 
-        if type(principal) is not MemoryPrincipal:
-            raise TypeError("principal must use MemoryPrincipal")
-        if type(context) is not RecallContext:
-            raise TypeError("context must use RecallContext")
-        if type(plan) is not RecallPlan:
-            raise TypeError("plan must use RecallPlan")
+        _validate_recall_protocol(harness_protocol, context=context, plan=plan)
+        invocation_id = str(uuid4())
+        for value, expected_type, label in (
+            (principal, MemoryPrincipal, "principal must use MemoryPrincipal"),
+            (context, RecallContext, "context must use RecallContext"),
+            (plan, RecallPlan, "plan must use RecallPlan"),
+        ):
+            if type(value) is not expected_type:
+                type_error = TypeError(label)
+                _attach_pre_candidate_rejection(
+                    type_error, invocation_id=invocation_id, stage="protocol",
+                )
+                raise type_error
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
         started_monotonic = time.monotonic()
         deadline_monotonic = started_monotonic + plan.budget.deadline_ms / 1_000
         effective_now = _timestamp(self._now() if now is None else now)
-        if context.subject != principal.actor_id or plan.subject != principal.actor_id:
-            raise MemoryOwnershipConflict("typed_recall_subject_not_owned")
-        plan.validate_narrowing(context, current_time=effective_now)
+        # Compute request bindings before a rejection, keeping error handlers
+        # free of canonicalization that could obscure the original failure.
+        context_digest, plan_digest = context.context_hash, plan.plan_hash
         digest = request_hash(principal_id=principal.actor_id, context=context, plan=plan)
-        replay, request_id, attempt_id = await self._admit_typed_recall_request(
-            principal=principal,
-            context=context,
-            plan=plan,
-            request_digest=digest,
-            now=effective_now,
-        )
+        if context.subject != principal.actor_id or plan.subject != principal.actor_id:
+            ownership_error = MemoryOwnershipConflict("typed_recall_subject_not_owned")
+            _attach_pre_candidate_rejection(
+                ownership_error, invocation_id=invocation_id, stage="ownership",
+                request_digest=digest, context_digest=context_digest, plan_digest=plan_digest,
+            )
+            raise ownership_error
+        try:
+            plan.validate_narrowing(context, current_time=effective_now)
+        except ValueError as narrowing_error:
+            _attach_pre_candidate_rejection(
+                narrowing_error, invocation_id=invocation_id, stage="narrowing",
+                request_digest=digest, context_digest=context_digest, plan_digest=plan_digest,
+            )
+            raise
+        try:
+            replay, request_id, attempt_id = await self._admit_typed_recall_request(
+                principal=principal,
+                context=context,
+                plan=plan,
+                request_digest=digest,
+                now=effective_now,
+            )
+        except MemoryIdempotencyConflict as conflict_error:
+            # _admit can also commit a timeout or report corruption/storage
+            # failures. Only this exact pre-candidate conflict earns a witness.
+            if str(conflict_error) == "IDEMPOTENCY_CONFLICT":
+                _attach_pre_candidate_rejection(
+                    conflict_error, invocation_id=invocation_id, stage="idempotency",
+                    request_digest=digest, context_digest=context_digest, plan_digest=plan_digest,
+                )
+            raise
         if replay is not None:
             return replay
         if time.monotonic() >= deadline_monotonic:
