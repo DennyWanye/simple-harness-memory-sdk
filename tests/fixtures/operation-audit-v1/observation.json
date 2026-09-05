@@ -1,0 +1,24 @@
+{
+  "observation": {
+    "candidate_query_count": 0,
+    "candidate_query_started": false,
+    "context_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+    "host_attempt_ref_hash": "53e2a120886449fc64dfb7a65ed882091eda4d8be18efd2934fbd1dcbf598b82",
+    "host_request_ref_hash": "eb4c78b4500c649a75c19104988be51971eb2fa4bec866c0d34be6cf920fcd96",
+    "invocation_ref_hash": "a2a1f378921c6ca09f2cbca3c2f35a15282e38a0e00d4045f81e3e7e411a3f7c",
+    "observed_at": 40.0,
+    "operation": "execute_typed_recall",
+    "persistence_status": "host_persistence_unverified",
+    "plan_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+    "reason": "typed_recall_protocol_unsupported",
+    "request_hash": null,
+    "schema_version": 1,
+    "stage": "protocol"
+  },
+  "observation_hash": "00513dce015c33d6799b5a3ca037399a43b5de48ad3a66ed6aa3f2a32fc9f4f8",
+  "refs": {
+    "host_attempt": "53e2a120886449fc64dfb7a65ed882091eda4d8be18efd2934fbd1dcbf598b82",
+    "host_request": "eb4c78b4500c649a75c19104988be51971eb2fa4bec866c0d34be6cf920fcd96",
+    "invocation": "a2a1f378921c6ca09f2cbca3c2f35a15282e38a0e00d4045f81e3e7e411a3f7c"
+  }
+}
