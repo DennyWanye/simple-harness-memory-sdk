@@ -91,12 +91,21 @@ DB-owner rewriting, or a never-recorded invocation before first trusted observat
 
 Reuse existing per-database audit HMAC key; no Host cursor signing secret. Cursor binds exact full
 requester/target, access receipt identity, registry version, expected-set hash, immutable per-family
-snapshot cut/root/count and last position. Global traversal uses fixed family order then stable
+snapshot cut/root/count and last position. A cut exposes only per-family count/root, never SQL
+row IDs/names. Internal append ordering selects the first pinned count; cursor item positions are
+registry/ordinal positions. Changed prefix or a deletion filled by later appended rows fails its root. Global traversal uses fixed family order then stable
 internal append position, not a timestamp pretending to be total operation chronology. Each item
 exposes source timestamp separately. New appends are outside the cursor cut; same cursor after
 close/reopen returns same next data page when grants remain valid. Recheck grant/usage on every
 page; audit access_event_hash can change on each read even when data page is identical.
 
+All coverage, linkage and required-event conclusions are AS-OF that same first cut, derived only
+from immutable phase witnesses at/below it. Never use fresh mutable jobs.state/batch.state or later
+terminal rows to reinterpret an old page. Mutable lease/result columns are excluded from pinned
+link projections; immutable job identity/batch member bindings form separately pinned support roots.
+An attempt unresolved on page1 stays unresolved on every page/reopen of that snapshot even if a
+real terminal arrives meanwhile; only a fresh snapshot may report the later event. Current checks
+are restricted to authority and integrity, not recomputation of historical coverage from live state.
 Detect changed/deleted pinned history by recomputing each prefix root/count before emitting data.
 Reject forged/wrong-subject/wrong-query cursors; revoked/expired/exhausted grants fail normally.
 Host sees an opaque serialized cursor, not private database row IDs or table names. No full persistent
@@ -108,35 +117,41 @@ of coverage; counts never silently truncate. This is a new audit resource bound,
 recall401 cells, semantic thresholds, latest10, five-day window, or source256 bound. Scalability beyond
 this bound remains a named next-slice requirement if real data reaches it.
 
-## 2. Typed safe observer for pre-candidate rejection
+## 2. Typed safe handoff for pre-candidate rejection
 
-Expose immutable `MemoryOperationObservationV1` and typed async `MemoryOperationObserver` protocol.
-Manager builder accepts optional `operation_observer`; execute_typed_recall accepts optional
-`observation_context: MemoryOperationObservationContext` containing opaque Host request/attempt refs.
-Pass neither new kw to legacy backend. Actual Manager gate/backend exceptions are observed only at
-this outer invocation boundary, once. Operation succeeds/fails according to the existing public
-contract regardless of observer availability; no fabricated invocation Run or Memory receipt.
+Expose immutable `MemoryOperationObservationV1` and `MemoryOperationObservationContext` DTOs.
+`execute_typed_recall` accepts optional `observation_context` with opaque Host request/attempt refs;
+this Manager-only kw is never forwarded to a legacy backend. At its outer invocation boundary,
+project an ACTUAL existing TypedRecallRejectionV1 exactly once and attach the immutable projection
+as `exception.operation_observation`, then synchronously re-raise the ORIGINAL exception. Class,
+code, message and rejection_receipt remain unchanged. No observer callback, task, await, timeout,
+queue or Memory DB access is introduced. Caller input is not used to mint a Memory admission receipt.
 
-Host persists request/attempt start BEFORE calling Memory and provides corresponding context.
-Only an actual existing `TypedRecallRejectionV1` is projected in OA1: schema/version, hash refs,
-SDK witness invocation_id hashed, canonical request/context/plan digests where genuinely available,
-finite stage/reason, candidate_query_started=false/count0, observed_at, observation_hash.
-Never use repr/str of untrusted arbitrary inputs or exceptions; a generic DBfault/cancel without an
-actual witness remains outside rejection-receipt coverage. Unsupported integer5 remains protocol
-unsupported, string inputs remain type-invalid. No DB access/lease/query/ledger write is added by
-this observer, including in before-DB protocol failure. Observer runs outside SQLite transactions.
+This is a typed handoff to the calling Host observer, not execution of arbitrary Host callbacks
+inside SDK. Host persists start before dispatch, catches the original rejection, and sends the typed
+carrier to its own persistence/outbox policy. It can use its existing bounded storage worker. A
+Host callback/store failure cannot change the already produced SDK exception. It leaves the Host
+attempt unresolved. External cancellation retains existing CancelledError behavior: SDK adds no
+BaseException catch; a cancellation without an actual rejection receipt is not relabeled a rejection.
+There is no new suspension between attaching a witnessed rejection and re-raising it, nor a task to
+leak if a Host callback ignores cancellation. Late persistence is solely a Host receipt/outbox fact.
 
-Await observer delivery before propagating the ORIGINAL product exception, class/code/message and
-rejection_receipt unchanged. Observer cannot replace product outcome or alter frozen witness.
-If callback fails/cancels/times out, retain the immutable observation on the original exception with
-explicit delivery status; do not recursively observe observer errors or log payloads. Bounded delivery
-and external cancellation semantics must be pinned in oracle before implementation. Callback success
-means `observer_delivered`, not `host_durably_persisted`; only an independently verified Host store
-can support the latter claim. Manager configured without observer/context reports this coverage gap.
+Projection contains schema/version, operation='execute_typed_recall', domain-hashed Host request/
+attempt refs, domain-hashed SDK witness invocation_id, actual canonical request/context/plan digests
+where available, finite stage/reason, candidate_query_started=false/count0, observed_at, observation_hash.
+Malformed optional observation context rejects at the DTO constructor BEFORE the product call;
+original existing invocation behavior without the kw is unchanged. Exact original pre-candidate
+witness type plus finite supported stage/reason combinations are required for projection. Generic
+DBfault/corruption/timeout/cancel without that witness receives no synthetic observation.
+Never call repr/str on arbitrary bad product input or error objects. Int5 remains protocol unsupported;
+string'5' remains protocol invalid. Context absent means uncorrelated observation coverage, not a new
+invented Host request/attempt. Hashes and witness imply observation only, never durable persistence.
 
-OA1 does not create a general audit event sink which callers can use to inject Memory facts. Host
-observations remain a separate request-attempt journal, linked by observation hash to actual Memory
-witness. Their presence never changes typed recall admission, authorization, hashing or idempotency.
+No new builder option is needed. No callback subscription means no duplicate delivery at nested
+Manager/backend gates. Host absence always appears in coverage as `host_persistence_unverified`.
+OA1 consumer tests a real separate Host SQLite store, but only production Host wiring can close this
+required follow-up; no permanent waiver. Host observation never changes Memory protocol/hash,
+admission/authorization/idempotency, and no public event-injection sink is added.
 
 ## 3. Acceptance (7 MUST, oracle first)
 
@@ -149,8 +164,9 @@ witness. Their presence never changes typed recall admission, authorization, has
    truthful; legitimately pending work is unresolved, not synthetic terminal success.
 4. Existing audit authority and shared budget apply; forged/expired/foreign grants deny; no payload
    appears even for suppression targets or malicious reason strings. Audit-read observer is nonrecursive.
-5. Real pre-DB int5/type-invalid rejection invokes observer exactly once with original finite witness,
-   zero SDK SQL trace/lease access. Host callback failure cannot mutate exception or silently claim persisted.
+5. Real pre-DB int5/type-invalid rejection carries exactly one typed projection of its original finite
+   witness, zero SDK SQL trace/lease access. No new task/callback is executed by SDK; original
+   CancelledError behavior is retained. Host persistence failure remains explicit and cannot claim persisted.
 6. A tiny real Host-owned SQLite observation store fixture (separate from SDK DB) persists start then actual
    observed rejection; crash/reopen sees deterministic attempt correlation. Missing Host wiring is explicitly
    uncovered. This is consumer evidence, not production Host integration or a new Memory authority.
@@ -160,3 +176,11 @@ witness. Their presence never changes typed recall admission, authorization, has
 Follow-up required for user's all-operation goal: production Host start/terminal journaling and
 observer outbox/recovery; all remaining operation entry points and nonreceipt exceptional exits;
 new invocation exact-replay observations; end-to-end completeness comparisons. None waived by OA1.
+
+## Challenge correction 2026-09-05
+
+Dirac challenged initial5d21636: mutable phase validation could drift a pinned cursor; arbitrary async
+observer callbacks cannot be forcibly time-bounded safely. Resolved contract by freezing all coverage
+and dependencies at one cut, and replacing SDK-executed callbacks with an immutable synchronous
+exception carrier consumed by the Host observer. This is a scoped design correction, not a change
+to frozen product evidence or 069 bytes. The earlier proposal remains in Git history for review.
