@@ -49,6 +49,10 @@ from simple_harness_memory.core.models import Fact
 from simple_harness_memory.core.mutation_receipts import MemoryMutationReceiptView
 from simple_harness_memory.core.mutations import InformationClassificationPolicy
 from simple_harness_memory.core.observability import CorrelationInput, MemoryObservability
+from simple_harness_memory.core.operation_audit import (
+    MemoryOperationObservationContext,
+    _observe_rejection,
+)
 from simple_harness_memory.core.port import CognitiveMemoryBackend, MemoryBackend
 from simple_harness_memory.core.short_sources import ShortHorizonSourceSnapshot
 from simple_harness_memory.core.suppression import (
@@ -317,14 +321,26 @@ class MemoryManager:
         plan: RecallPlan,
         now: float | None = None,
         harness_protocol: int = 4,
+        observation_context: MemoryOperationObservationContext | None = None,
     ) -> TypedRecallExecution:
         from simple_harness_memory.core.recall import _validate_recall_protocol
 
-        _validate_recall_protocol(harness_protocol, context=context, plan=plan)
-        operation = getattr(self._backend, "execute_typed_recall")
-        # v4 is the only admitted protocol. Preserve legacy backend keyword sets
-        # and the existing v4 hash; direct backend callers have the same gate.
-        return await operation(principal=principal, context=context, plan=plan, now=now)
+        if observation_context is not None and type(observation_context) is not MemoryOperationObservationContext:
+            raise TypeError("observation_context must use MemoryOperationObservationContext")
+        try:
+            _validate_recall_protocol(harness_protocol, context=context, plan=plan)
+            operation = getattr(self._backend, "execute_typed_recall")
+            # Manager-only observation context never changes legacy backend kwargs.
+            return await operation(principal=principal, context=context, plan=plan, now=now)
+        except Exception as error:
+            if observation_context is not None:
+                try:
+                    _observe_rejection(error, observation_context, time.time())
+                except (TypeError, ValueError, AttributeError):
+                    # An invalid optional witness is a coverage gap, never a new
+                    # product failure replacing the original rejection.
+                    setattr(error, "operation_observation_status", "witness_unverifiable")
+            raise
 
     async def read_occurrence_inbox(
         self,

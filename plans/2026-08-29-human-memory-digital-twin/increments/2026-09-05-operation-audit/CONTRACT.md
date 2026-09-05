@@ -1,6 +1,7 @@
 # Memory operation audit — bounded successor OA1
 
-2026-09-05. Status: design challenge requested; implementation not started.
+2026-09-05. Status: e5ff3b3 bounded design independently ACCEPTed by Dirac; synchronous carrier implemented,
+durable read projection and overall OA1 acceptance remain incomplete.
 Base exact `f92fac121d2d9ce195b5715d272023e5aec920e3`. Branch
 `feat/human-memory-operation-audit`. No version assignment/build/pin in this slice.
 Frozen069/068 and Host/native environments untouched. Main explicitly authorized this separate

@@ -89,6 +89,11 @@ from simple_harness_memory.core.occurrence import (
     OutboxEntryV1,
     OutboxPageV1,
 )
+from simple_harness_memory.core.operation_audit import (
+    MemoryOperationObservationContext,
+    MemoryOperationObservationV1,
+    operation_audit_ref_hash,
+)
 from simple_harness_memory.core.port import CognitiveMemoryBackend, MemoryBackend
 from simple_harness_memory.core.recall import TypedRecallExecution, TypedRecallRejectionV1
 from simple_harness_memory.core.short_horizon import (
@@ -190,6 +195,9 @@ __all__ = [
     "CognitiveMemoryBackend",
     "TypedRecallExecution",
     "TypedRecallRejectionV1",
+    "MemoryOperationObservationContext",
+    "MemoryOperationObservationV1",
+    "operation_audit_ref_hash",
     "TwinGraphEdge",
     "TwinGraphNode",
     "TwinGraphSourceRef",
