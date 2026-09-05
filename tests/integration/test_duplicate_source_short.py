@@ -26,10 +26,11 @@ from tests.integration.test_short_horizon_repository_v5 import (
 )
 
 
-def registered(sequence):
+def registered(sequence, *, shared=False):
     """Rebind the existing synthetic SDK group fixture through every public DTO."""
     old, _ = _registration(sequence)
-    text = "Project alpha shared original" if sequence <= 2 else f"Project alpha {sequence}"
+    text = ("Project alpha shared original" if sequence <= 2 or shared
+            else f"Project alpha {sequence}")
     payload = {"item_id": f"message-{sequence}", "public_text": text,
                "text": text, "delivery_key": f"delivery-{sequence}"}
     digest = fingerprint_json(payload)
@@ -79,10 +80,11 @@ async def test_standalone_and_typed_short_actual_duplicates_denied_after_memory_
         origins.register(m.HistoryEvidenceBinding(
             registration.envelope, registration.admission_receipt,
         ), index)
+    conversation_authority = _Authority(tuple(p[0] for p in pairs))
     manager = await m.build_human_memory_v7(
         tmp_path / "short.db", clock=lambda: NOW,
         classification_policy=_classification_policy(), evidence_authority=mutation,
-        conversation_evidence_authority=_Authority(tuple(p[0] for p in pairs)),
+        conversation_evidence_authority=conversation_authority,
         history_source_authority=origins,
     )
     origins.backend = manager.backend
@@ -98,6 +100,14 @@ async def test_standalone_and_typed_short_actual_duplicates_denied_after_memory_
             principal=PRINCIPAL, query="Project alpha", disclosure_context=_disclosure(),
         )
         assert len(before.hits) == 2
+        bindings = tuple(m.HistoryShortHorizonBinding(before.audit_id, x.chunk_ref, x.content_hash)
+                         for x in before.hits)
+        sources_before = await manager.resolve_short_horizon_sources(
+            principal=PRINCIPAL, disclosure_context=_disclosure(), bindings=bindings,
+        )
+        assert all(item.visible and item.complete for item in sources_before.items)
+        assert {tuple(ref.evidence_id for ref in item.source_refs)
+                for item in sources_before.items} == {("evidence-1",), ("evidence-2",)}
         context = _context(
             query="Project alpha", short_horizon=True, expires_at=NOW + 100,
             selectors=(h.RecallSelectorDomain.MEMORY_TYPE, h.RecallSelectorDomain.SHORT_HORIZON),
@@ -112,6 +122,22 @@ async def test_standalone_and_typed_short_actual_duplicates_denied_after_memory_
         assert typed_before.result.items
         assert all(x.selected_item.source_kind.value == "short_horizon"
                    for x in typed_before.result.items)
+
+        def use_request(execution, ctx, attempt):
+            item = execution.result.items[0]
+            fragment = h.ContextFragmentBindingV2("short-fragment", "f" * 64)
+            return h.RecallContextUseAuthorizationRequestV1(
+                "actor-1", ctx.run_id, ctx.turn_id, attempt,
+                execution.decision.decision_id, execution.decision.decision_hash,
+                execution.result.result_id, execution.result.result_hash,
+                (h.RecallItemBindingV1(item.selected_item.item_id, item.result_item_hash),),
+                (fragment,), fingerprint_json([fragment.to_json()]), NOW,
+            )
+
+        old_use_request = use_request(typed_before, context, "short-use-before")
+        old_use_receipt = await manager.authorize_recall_context_use(
+            principal=PRINCIPAL, request=old_use_request,
+        )
         result = await manager.apply_memory_mutation_plan(
             principal=PRINCIPAL, scope=m.MemoryScope.personal("actor-1"),
             plan=_plan(seed.envelope, _operation(span)),
@@ -129,8 +155,6 @@ async def test_standalone_and_typed_short_actual_duplicates_denied_after_memory_
         await manager.suppress(principal=PRINCIPAL, request=m.SuppressionRequest(
             "short-forget", "actor-1", m.SuppressionScopeKind.MEMORY, mid, "user_forget", NOW,
         ))
-        bindings = tuple(m.HistoryShortHorizonBinding(before.audit_id, x.chunk_ref, x.content_hash)
-                         for x in before.hits)
         current = await manager.check_history_visibility(
             principal=PRINCIPAL, disclosure_context=_disclosure(), bindings=bindings,
         )
@@ -139,6 +163,23 @@ async def test_standalone_and_typed_short_actual_duplicates_denied_after_memory_
             principal=PRINCIPAL, disclosure_context=_disclosure(), bindings=bindings,
         )
         assert all(not item.visible for item in resolved.items)
+        typed_bindings = tuple(m.HistoryRecallBinding(
+            typed_before.result.result_id, typed_before.result.result_hash,
+            item.selected_item.item_id, item.result_item_hash,
+        ) for item in typed_before.result.items)
+        typed_current = await manager.check_history_visibility(
+            principal=PRINCIPAL, disclosure_context=_disclosure(), bindings=typed_bindings,
+        )
+        assert all(not item.visible for item in typed_current.items)
+        with pytest.raises(m.MemoryValidationError, match="RECALL_AUTHORITY_STALE"):
+            await manager.authorize_recall_context_use(
+                principal=PRINCIPAL,
+                request=replace(old_use_request, provider_attempt_id="short-use-after"),
+            )
+        # Exact receipt replay is historical acknowledgement, not current-use authorization.
+        assert old_use_receipt == await manager.authorize_recall_context_use(
+            principal=PRINCIPAL, request=old_use_request,
+        )
         after = await manager.recall_short_horizon(
             principal=PRINCIPAL, query="Project alpha", disclosure_context=_disclosure(),
         )
@@ -149,5 +190,50 @@ async def test_standalone_and_typed_short_actual_duplicates_denied_after_memory_
                               selector_domains=(h.RecallSelectorDomain.SHORT_HORIZON,)), now=NOW,
         )
         assert not typed.result.items
+
+        # New independent atomic source13 has the same complete /text. Ten later
+        # complete groups move it outside the existing recent10 exclusion window.
+        new_pairs = [registered(i, shared=(i == 13)) for i in range(13, 24)]
+        for index, (registration, ref) in enumerate(new_pairs, 13):
+            conversation_authority.registrations[registration.registration_id] = registration
+            origins.register(m.HistoryEvidenceBinding(
+                registration.envelope, registration.admission_receipt,
+            ), index)
+            await manager.ingest_committed_evidence(
+                registration.envelope, registration.admission_receipt,
+            )
+            await manager.register_conversation_evidence(ref)
+        await manager.rebuild_short_horizon_projection(principal=PRINCIPAL)
+        fresh = await manager.recall_short_horizon(
+            principal=PRINCIPAL, query="shared original", disclosure_context=_disclosure(),
+        )
+        assert fresh.hits
+        fresh_bindings = tuple(m.HistoryShortHorizonBinding(
+            fresh.audit_id, item.chunk_ref, item.content_hash,
+        ) for item in fresh.hits)
+        fresh_sources = await manager.resolve_short_horizon_sources(
+            principal=PRINCIPAL, disclosure_context=_disclosure(), bindings=fresh_bindings,
+        )
+        assert any(item.visible and {r.evidence_id for r in item.source_refs} == {"evidence-13"}
+                   for item in fresh_sources.items)
+        assert all(r.evidence_id not in {"evidence-1", "evidence-2"}
+                   for item in fresh_sources.items for r in item.source_refs)
+        fresh_context = replace(context, query="shared original")
+        fresh_typed = await manager.execute_typed_recall(
+            principal=PRINCIPAL, context=fresh_context,
+            plan=_recall_plan(
+                fresh_context, idempotency_key="short-fresh", requested_memory_types=(),
+                selector_domains=(h.RecallSelectorDomain.SHORT_HORIZON,),
+            ), now=NOW,
+        )
+        assert any(item.selected_item.source_ref in {x.chunk_ref for x in fresh.hits}
+                   for item in fresh_typed.result.items)
+        await manager.authorize_recall_context_use(
+            principal=PRINCIPAL, request=use_request(fresh_typed, fresh_context, "short-fresh-use"),
+        )
+        old_current = await manager.check_history_visibility(
+            principal=PRINCIPAL, disclosure_context=_disclosure(), bindings=bindings,
+        )
+        assert all(not item.visible for item in old_current.items)
     finally:
         await manager.close()

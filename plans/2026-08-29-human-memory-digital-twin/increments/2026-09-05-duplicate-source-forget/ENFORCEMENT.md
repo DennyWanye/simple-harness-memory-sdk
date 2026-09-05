@@ -132,6 +132,18 @@ populated same-operation cache across two read transactions with unchanged first
 total_changes. Both deny after the new commit. This does not claim two concurrent production
 writers are supported. No Host private SQL or original database edits were used.
 
+Dirac's short-path evidence challenge was addressed by expanding the existing short test,
+then running only that test: **1 PASS,0.45s**, ruff PASS. This is not an additional unique test
+on top of206. Before forget, public selected-source resolution proves the two hits have distinct
+exact sources evidence-1 and evidence-2, with only evidence-2 materializing the forgotten memory.
+After forget, both standalone and typed historical bindings deny; a new provider attempt using
+the old typed result rejects with RECALL_AUTHORITY_STALE. The original attempt returns its exact
+historical receipt, which does not grant current use. A new atomic same-text source13 after cut2,
+followed by ten complete groups, becomes standalone/typed visible and passes fresh final-use
+authorization while the old bindings remain denied. These are real SQLite/public SDK fixture
+controls, not proof of Host-produced complete groups or native execution. Production code remains
+at c9bdd22; complete independent source review is still pending.
+
 Main separately reported source-overlay actual Host API/history/reopen/next physical MockTransport
 request tests on56c6 and2b2fa47 (latest36PASS32.98s, then direct-principal aligned6PASS8.62s).
 Those are collaborator evidence, not re-run here, installed evidence or native proof.
@@ -143,12 +155,16 @@ Raw ignored evidence under `.local-test-evidence/2026-09-05/duplicate-source-for
 | enforcement-red.log | 13a9def0ad41b5352a91463c04fd54aa7d8c3c494d080494d3845f9e93b7e066 |
 | other-profile-red.log | 2c571dce62b8e0b9470f3bc5007d7aaae9ce7a0a89f8e247fbff8d02235a3308 |
 | enforcement-targeted.log | 1fedc8561226259433839e443cf2ed32cd96804af98f348bbc74ad45891bf230 |
+| short-review-controls.log | 718af798eb1450a812074f301573c1f498edd3575a2450f85ee649d7e03c3c72 |
 
 Re-run from this isolated tree, exact Harness0.7.2 + editable source environment (not wheel proof):
 
 ```sh
 .local-test-evidence/2026-09-05/duplicate-source-forget/venv/bin/python -I -m pytest -q --tb=short --show-capture=no tests/unit/test_history_source_contract.py tests/artifact/test_public_api_snapshot.py tests/integration/test_duplicate_source_forget.py tests/integration/test_duplicate_source_short.py tests/integration/test_duplicate_source_analysis.py tests/integration/test_history_source_pre_admission.py tests/integration/test_history_visibility.py tests/integration/test_public_recall_rejection.py tests/integration/test_short_history_visibility.py tests/integration/test_short_history_visibility_faults.py tests/integration/test_typed_recall_v6.py tests/integration/test_analysis_recovery_correctness.py tests/integration/test_memory_062_analysis_evidence_refs.py
 ```
+
+The supplemental short control alone uses the same command with only
+`tests/integration/test_duplicate_source_short.py`; no repeat of the206 batch was needed.
 
 Next gates: independent review of the complete enforcement source and supplemental controls;
 separately assigned successor artifact/installed bytes and consumers; Host legacy late-enqueue

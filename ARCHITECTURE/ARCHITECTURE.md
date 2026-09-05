@@ -18,6 +18,8 @@ MemoryManager.history_source_enforcement_version=1；不以此替代 exact后继
 本机206项限定源码测试通过（15.14s），含22项新数据库控制、配置新authority后的23项原
 攻击/zeroSQL控制、capability及相邻回归；ruff/mypy4源通过。原56c6bf7 no-/text误拒P1已
 由2b2fa47修复并独立 scoped ACCEPT，完整enforcement复审仍待完成。
+同一short用例补强实际不同来源、遗忘后旧typed新attempt拒绝与历史receipt重放、
+cut后同文atomic来源移出recent10后的召回/最终使用正控，单跑1PASS/0.45s；生产代码未变。
 旧v1action无cut仍持续拒绝同内容新重申，不称支持旧库fresh reassert；Hostlate-enqueue
 隐私拒绝正确，但CLAIMED/无SDKrun的settle闭环由主修复，未标产品PASS。/text等值SQL
 无匹配索引，4096工作上限不证明P99。未分配版本/安装wheel/改main/native/冻结069，
