@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.4] - 2026-09-05（S3 公开时间依赖）
+
+- `build_human_memory_v7` 增加可选可信构造依赖 `clock`，复用既有 backend 时钟，让 recall、page-in 和 current-use 使用同一时间源；默认仍为系统时间。请求不能通过回填时间绕过分页过期。
+- 真实 SQLite 回归覆盖固定时间、关闭重开、过期拒绝、默认时钟及非法构造输入；独立 review ACCEPT。schema v7.1、根导出及旧候选快照保持。
+- 本分支为 S3 隔离候选；不替换 Host S5b 已安装的 0.6.3，不代表 401-cell 或 program gate 已通过。
+
 ## [0.6.3] - 2026-09-05（S5b 恢复正确性）
 
 - 同 principal 的后续 analysis 等待已领取批次完成物化，保留固定 plan/base_revision/evidence/hash，避免故障恢复丢失旧批次事实。
