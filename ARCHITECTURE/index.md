@@ -87,3 +87,10 @@ all_operations_recorded=false；未分配版本/build/合main，privacy0.6.10冻
 
 2026-09-05：OA1 af49f2a1完整bounded源码已独立scoped ACCEPT，包含sole-handoff原probe修后
 真实复验。源码gate完成；候选组合/installed/Host持久化与全operation覆盖另验，未合main。
+
+2026-09-05：独立0.6.11组合固定privacy02f4020+已审OA1af49f2a+retry0947c01；
+source d520765 / wheeld290cbfc，双offline构建一致，owner新隔离installed公共7阶段PASS，
+Memory72+Harness151 source/wheel/install字节及213origins/16deps/pipcheck/15旧json通过。
+限定组合116源码测试PASS，原继承失败保留；Dirac installed复核待验，不合main/不改Host。
+Hostcarrier持久化仍缺，all_operations_recorded=false，不标全program/native完成。
+[候选身份、命令与边界](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-operation-audit/CANDIDATE-0.6.11.md)。
