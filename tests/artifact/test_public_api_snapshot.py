@@ -32,7 +32,12 @@ def test_public_api_0_6_9_preserves_prior_surface_and_adds_upgrade_sources() -> 
         assert snapshot["version"] == version
     current = snapshots["0.6.9"]
     assert simple_harness_memory.__version__ == "0.6.9"
-    assert current["root"] == sorted(simple_harness_memory.__all__)
+    # Unversioned successor protocol leaf. Frozen 0.6.9 snapshot/bytes stay exact.
+    assert sorted([*current["root"],
+                   "HistoryForgetCutReceipt", "HistorySourceAuthorityPort",
+                   "HistorySourceNamespace", "HistorySourceOriginReceipt"]) == sorted(
+        simple_harness_memory.__all__
+    )
     assert current["root"] == sorted(
         [
             *snapshots["0.6.8"]["root"],

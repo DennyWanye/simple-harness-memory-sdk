@@ -8,6 +8,18 @@
 > Host durable pre-admission audit 与 program 最终验收须按各自 AC 核对。Memory 0.6.3 candidate 已构建接入；旧 Agent Memory v1 能力仍保留，
 > 但不是新认知 mutation 的 authority。
 
+
+## 2026-09-05 duplicate-source forget 公共协议叶（未接 enforcement）
+
+独立分支从冻结069新增 HistorySourceNamespace / HistorySourceOriginReceipt /
+HistoryForgetCutReceipt / HistorySourceAuthorityPort 四项公共契约，固定 atomic 与
+legacy_before_only 队列顺序证明、原始 v2 action cut 与 canonical hash 向量。
+仅协议/根 API 源码38项通过、ruff/mypy通过；builder、当前 suppression 执行及真实数据库
+red→green 尚未实现，不标 P1/S3/program/native 完成。旧 v1 action 无 cut 仍明确
+UNVERIFIABLE；不回填、改旧hash或声称原 native forget PASS。未分配版本/build候选/合main，
+冻结069字节不变。[协议交付与命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-duplicate-source-forget/PROTOCOL-DELIVERY.md)。
+
+
 ## 2026-09-05 Memory0.6.7 独立候选冻结准备
 
 主统一分配0.6.7给已审short e19161ba；仅版本、根快照与公开消费者增量，产品行为无修改。

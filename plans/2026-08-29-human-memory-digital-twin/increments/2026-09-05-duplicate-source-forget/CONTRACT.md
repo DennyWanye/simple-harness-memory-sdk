@@ -76,7 +76,8 @@ class HistorySourceAuthorityPort(Protocol):
         self, *, principal: MemoryPrincipal, decision: SuppressionDecision,
     ) -> HistoryForgetCutReceipt | None: ...
 
-# public builder optional keyword, default None; no change to suppress request/decision hashes
+# Planned builder integration, NOT implemented in the protocol-only commit:
+# optional keyword, default None; no change to suppress request/decision hashes
 manager = await build_human_memory_v7(..., history_source_authority=host_source_authority)
 ```
 
@@ -84,18 +85,69 @@ Immutable DTOs, canonical to_json/from_json and new domain hashes:
 - `HistorySourceNamespace(store_epoch: str, subject: str, source_stream: str)`.
   All three fields define one comparable sequence namespace. store_epoch must come from persistent
   Host store identity/restore lineage, never a process-random UUID. subject is exact SDK actor.
+  For this Host, store_epoch is the exact human_memory_init_receipts.receipt_sha256, after
+  recomputing receipt/marker and verifying subject/actual primary/format_epoch/first created_at.
+  source_stream is exactly `primary:<actual_primary_conversation_id>:foreground_turns`.
+  A same-history copy/restore preserves identity; fresh initialization changes it. Never compare
+  queue sequences across different namespace fields.
 - `HistorySourceOriginReceipt(namespace: HistorySourceNamespace, source_sequence: int,
   evidence_id: str, envelope_hash: str, admission_receipt_id: str,
-  admission_receipt_hash: str, profile: str="user-message-text-exact/v1")`.
+  admission_receipt_hash: str, proof_kind: Literal["atomic", "legacy_before_only"],
+  profile: str="user-message-text-exact/v1", schema_version: int=1)`.
   Positive source sequence. Source kind/text/profile are independently checked against actual S1;
   no key/text supplied by this receipt can replace envelope/receipt validation. `origin_hash` computed.
+  admission_receipt_id/hash identify the actual Host SanitizedEvidenceReceipt; Memory ingestion
+  is not a prerequisite. proof_kind is REQUIRED, strict closed strings, never a boolean/default.
 - `HistoryForgetCutReceipt(namespace: HistorySourceNamespace, through_sequence: int,
   request_id: str, scope_kind: SuppressionScopeKind, scope_ref: str,
-  action_ref: str, action_hash: str)`.
+  action_ref: str, action_hash: str, schema_version: int=1)`.
   Nonnegative cut, actual MEMORY request/target/subject for this slice. `cut_hash` computed. The
   source namespace and scope bind the authenticated original forget action. No decision_hash input:
   Host commits action+cut before SDK commits decision, so requiring the future decision hash would
   be circular. SDK itself combines actual directive_id/decision_hash and cut_hash when checking.
+  action_ref is original action S1 evidence_id; action_hash is that envelope's envelope_hash.
+  Persist the v2 action's raw namespace/cut/request/scope facts first, then construct this receipt
+  from its actual S1 identity. Do not embed its own cut_hash/action_hash into the action payload.
+
+Wire contract: namespace to_json has exactly its three fields; origin/cut to_json have exactly
+the listed fields including schema_version/profile, excluding computed origin_hash/cut_hash.
+from_json rejects missing/unknown keys and unsupported schema; no wire defaults. Integers are
+strict (not bool/float), source_sequence in [1, 2^63-1], through_sequence in [0, 2^63-1].
+Digests are exactly 64 lowercase hex; cut scope is only SuppressionScopeKind.MEMORY (wire `memory`).
+All DTOs are frozen/slots and return fresh nested JSON. These are trusted-port facts, not grants.
+
+Canonical algorithm: SHA256(UTF8(C({"domain": DOMAIN, "payload": dto.to_json()}))), where C is
+existing Harness canonical_json: sorted keys, compact separators, ensure_ascii=False, no Unicode
+normalization and no NUL separator. Origin DOMAIN=`memory.history.source-origin.v1`,
+cut DOMAIN=`memory.history.forget-cut.v1`. Existing S1/action/suppression hashes never change.
+Independent literal vectors committed before carriers in491b813:
+`tests/unit/test_history_source_contract.py` gives all exact payload fields; origin atomic
+45db040a872144e428be23e6af1d94f98931c5a6c3bc513796467dcee0c17be1,
+same origin legacy28b70510a95555f3ff8fa1dd25232edb4f5f7603fbeb8f45c3e8aad008f198e1,
+cut85ec7b7718cb9669476730b8de056afd957b18657dd6d8c8315eb59cb62d36ff.
+
+### Corrected source order proof (Dirac actual Host inspection)
+
+Original service first committed S1, then separately enqueued. Old turn_hash did NOT include
+enqueue_sequence; sequence authority comes from the immutable turn row and its unique constraint,
+not a claim that the old turn hash signed it. The initial same-transaction assumption was false.
+New Host first-time S1 insert + queue insert share BEGIN IMMEDIATE; only this case may set
+turn_json schema_version2/source_admission=`atomic-evidence-and-turn/v1`, resolved as `atomic`.
+Existing S1 later enqueued stays original v1/`legacy_before_only`; retries preserve format/hash.
+Resolver validates exact pair, complete immutable turn JSON/hash, queue row sequence, namespace,
+and original producer proof. DTO hashing cannot authenticate a fabricated marker.
+
+For a proved exact-key match in the same namespace with an actual original cut:
+
+| Proof | sequence <= cut | sequence > cut |
+|---|---|---|
+| atomic | current suppression denies | independently evaluate fresh source's ordinary gates |
+| legacy_before_only | admission preceded enqueue, so current suppression denies | UNVERIFIABLE, cannot prove freshness |
+| missing/invalid | UNVERIFIABLE | UNVERIFIABLE |
+
+Old v1 action with no cut returns None and stays legacy UNVERIFIABLE for affected exact matches,
+regardless of source proof. Do not create a cut from current MAX, timestamps, or source-before-only.
+Later genuine v2 remember/revise/forget acceptance does not certify the old native v1 forget.
 
 Host must persist origin sequence atomically with original S1 admission, before async ingest/analysis.
 At authenticated forget, atomically persist its actual request_id/target/action facts and first cut
@@ -124,8 +176,8 @@ Evidence/source cut proof hashes participate in the visibility observation's bin
 Host final outbound recheck must revalidate actual bindings, not rely only on a cached SDK epoch.
 
 At check time, same exact key + namespace + origin sequence <= cut extends current ordinary refusal.
-Later Memory ingestion cannot change a Host source's original sequence. Postcut fresh origin is
-handled by the ordinary independent source gates. Matching keys with missing/foreign/unverifiable
+Later Memory ingestion cannot change a Host source's original sequence. Only proved atomic postcut
+fresh origin is handled by the ordinary independent source gates. Matching keys with missing/foreign/unverifiable
 origin/cut produce history_source_cut_unverifiable; unrelated nonmatching history stays readable.
 This includes first USER not yet ingested: validate its real Host S1 and origin without fake Run,
 Memory record or complete short group. Existing256/4096 bounds stay; no silent truncation or scan
@@ -174,6 +226,9 @@ of all ordinary history or permanent content ban to conceal this missing proof.
    do not match. Full message exactness only, not substring preference extraction.
 3. Original Host source A before cut but Memory ingested after cut still denies; new independently
    authenticated post-cut USER with exact same text may be evaluated normally, oldrefs still deny.
+   Separate delayed-ENQUEUE control: S1 commit before cut but legacy queue insertion after cut must
+   be UNVERIFIABLE, never fresh allow. Existing S1 retried through the new atomic producer stays
+   legacy; only first-time S1+queue same-TX insertion can prove atomic freshness. No timestamp proxy.
 4. Fresh first USER not yet ingested by async analysis remains verifiable through trusted Host S1
    origin proof. Missing proof blocks only affected equivalence checks, not all unrelated history.
 5. Real crash before/after Host action+cut commit and SDK suppression commit, ACK loss, reopen and

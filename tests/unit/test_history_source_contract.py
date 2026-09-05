@@ -3,10 +3,10 @@
 These tests do not claim duplicate-source suppression or Host admission works.
 """
 
-from dataclasses import FrozenInstanceError, replace
 import hashlib
 import inspect
 import json
+from dataclasses import FrozenInstanceError, replace
 
 import pytest
 

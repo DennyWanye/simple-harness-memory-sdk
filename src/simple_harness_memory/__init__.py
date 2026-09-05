@@ -44,6 +44,12 @@ from simple_harness_memory.core.history import (
     HistoryVisibilityItem,
     HistoryVisibilitySnapshot,
 )
+from simple_harness_memory.core.history_sources import (
+    HistoryForgetCutReceipt,
+    HistorySourceAuthorityPort,
+    HistorySourceNamespace,
+    HistorySourceOriginReceipt,
+)
 from simple_harness_memory.core.identity import (
     ExportPage,
     MemoryPrincipal,
@@ -140,6 +146,10 @@ def __getattr__(name: str) -> object:
 
 __all__ = [
     "HistoryBinding",
+    "HistoryForgetCutReceipt",
+    "HistorySourceAuthorityPort",
+    "HistorySourceNamespace",
+    "HistorySourceOriginReceipt",
     "HistoryEvidenceBinding",
     "HistoryRecallBinding",
     "HistoryShortHorizonBinding",
