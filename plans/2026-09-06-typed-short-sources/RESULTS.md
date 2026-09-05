@@ -76,3 +76,16 @@ Exit0; monitor0.92s; sampled RSS119168KiB.
 `.local-test-evidence/2026-09-06/typed-short-sources/shared.json` SHA256 `f5d862c7863c9a7753939292f07d9cc769da87a731d467e3fee772dd3b4e1585`.
 
 `.local-test-evidence/2026-09-06/typed-short-sources/shared.log` SHA256 `2279ec65d7821a5fdf0d326061fe8c4bae70ad1962651b6925df69fa8b30a84e`.
+
+## Fixed-source independent review / successor version
+
+Dirac read-only scoped ACCEPT cd1ea1adfda5c2d4714a8a695eb8795f879e7f86; clean
+and all10 evidence hashes independently checked. No new P0/P1. No rerun. He notes
+256-binding/4096-collector limits do not establish whole-call cost bounds: existing
+source checker still fetchall chunk evidence and prefetch remains existing mechanism.
+Do not claim all scanning/latency resolved. Host outbound/full-group remains separate.
+
+Local tags and all local version history checked: no0.6.13 usage. This metadata-only
+successor commit sets dynamic package version0.6.13 and changelog. Fixed0612 unchanged.
+Next two independent offline builds and owninstalled public consumers must identify
+this exact successor source; no source-overlay Host claims.

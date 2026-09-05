@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.13] - 2026-09-06（独立 typed-short 来源候选）
+
+- 新增 public resolve_typed_short_horizon_sources，以 durable selected typed item 四元组
+  在同一当前可见性事务中返回完整短期来源 refs；认知/非 selected 不给 refs。
+- 保留旧 standalone source port、DTO wire、hash、DDL 和冻结0612；新 request/binding hash 域分离。
+- 精确校验当前 owner，复用 suppression/disclosure/expiry/registration lineage；不代替 Host 最终出站校验。
+- cd1ea1a source 已独立限定 ACCEPT；仅本地后继候选，不 push/tag/release。
+
 ## [0.6.12] - 2026-09-05（独立凭据误报窄修候选）
 
 - 保留已审0.6.11 privacy/OA1/retry能力，仅修正五个已确证公开完整词元被凭据前缀扫描误报。
