@@ -8,6 +8,27 @@
 > Host durable pre-admission audit 与 program 最终验收须按各自 AC 核对。Memory 0.6.3 candidate 已构建接入；旧 Agent Memory v1 能力仍保留，
 > 但不是新认知 mutation 的 authority。
 
+## 2026-09-05 最新 Host 及 S3 隔离候选验证
+
+当前 Host main `c183fe70` 使用 Harness 0.7.2 / Memory 0.6.3 / Service 0.3.12。
+Harness route P1 已修，两个真实生产 root 在旧 Host `8d574415` 完成 effect/closure/analysis；
+随后发现的 episode 时间 P2 已在 Host `4eb1eb7c` 改为首次持久化观察时间，受影响 150 条通过。
+新真实复验在前台第七次 Provider handoff 后遭传输 unknown，未进入 analysis，保留 FAIL、无重发。
+S5b machine gate 尚未闭合；完整试次、REG 两项测试修正与四项历史红见
+[RESUME](../plans/2026-08-29-human-memory-digital-twin/RESUME-2026-09-05.md)。
+
+S3 隔离分支 `feat/typed-recall-observability` 的 source `30743bb17ed8301d01028357de6e4c5adcdde26b`
+为 Memory 0.6.5 candidate；wheel SHA-256
+`0977159d043d409d39232d0f14f91d27f1b09ac1a4523cf8aba9028f0d0a71df` 双次构建一致。
+新增可信构造 clock、候选读取前的不可变异常见证及严格协议版本入口；既有 schema/hash/预算不变。
+源码全量 1157 passed / 9 skipped，独立 source review ACCEPT；独立安装环境 77 个 SDK 模块来源正确，
+Memory 61 / Harness 151 个包文件与指定 source/wheel/installed 字节一致，public clock/rejection/protocol/
+reopen exact replay 与 pip check 通过。identity manifest SHA-256
+`02aac6deb9944f185d9632b15c97587238f8e8aed36d666f90621d4f7601a0b2`。
+证据索引为 Host ignored `human-memory-resume/independent-review/memory-rejection-065/REPORT.md`。
+该候选未合入本仓 main、未替换 Host S5b pin；401-cell clean-wheel consumer 验收仍在执行，
+240 条 corpus 未独立人工冻结。S5c/S6 隔离实现中，program 未完成；以下更早段落保留历史边界。
+
 ## 2026-09-05 当前候选与真实入口边界
 
 Memory 0.6.3 source `2f3d73814fe6a884e0458d87567b918c5863033e`，双次 wheel SHA-256

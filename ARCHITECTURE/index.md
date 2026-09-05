@@ -1,6 +1,6 @@
 # ARCHITECTURE 索引
 
-本目录是 simple-harness-memory-sdk 的当前架构事实源。当前 **0.6.0 source candidate**
+本目录是 simple-harness-memory-sdk 的当前架构事实源。main 当前为 **0.6.3 source candidate**
 新增 fresh `human-memory-v1` schema v7 的 immutable evidence、append-only suppression/audit、durable analysis
 四阶段 authority、四类认知记录的 strict mutation/classification/action-authority 事务底座，以及 strict v4 typed
 RecallPlan 执行与最终使用 authority，以及严格 display-only 的 Digital Twin graph projection，并精确依赖
@@ -20,4 +20,6 @@ Digital Twin graph 从 canonical current cognitive records/relation rows 按普�
 原子创建一等 `applies_to` relation memory，并通过 owner/endpoint 状态门投影知识边。resolver-backed sealed audit、MEMORY lineage trace、
 ordinary-visible metrics 与 canonical state manifest 均通过 public v6 Manager facade 提供。Host/UI 接线仍未实现。
 
-<!-- last-updated: 2026-09-01 -->
+<!-- last-updated: 2026-09-05 -->
+
+2026-09-05：S3 隔离 0.6.5 candidate 已通过源码全量与独立 installed-wheel 核验，尚未合入 main 或 Host pin；401-cell、S5b 及 program 状态见 PROJECT_STATUS 最新节。
