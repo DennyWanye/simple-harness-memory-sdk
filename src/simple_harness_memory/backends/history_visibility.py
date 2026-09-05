@@ -324,6 +324,7 @@ async def check_history_visibility(
     principal: MemoryPrincipal,
     disclosure_context: DisclosureContext,
     bindings: tuple[HistoryBinding, ...],
+    _short_sources: list[tuple[Any, ...]] | None = None,
 ) -> HistoryVisibilitySnapshot:
     if type(principal) is not MemoryPrincipal or type(disclosure_context) is not DisclosureContext:
         raise TypeError("history requires canonical principal and DisclosureContext")
@@ -395,6 +396,7 @@ async def check_history_visibility(
             work = _EvidenceWork(now)
             for binding, binding_hash in zip(bindings, hashes, strict=True):
                 deadline = None
+                sources: list[Any] | None = [] if _short_sources is not None else None
                 if context.subject != principal.actor_id:
                     reason = "history_subject_mismatch"
                 elif (
@@ -411,12 +413,21 @@ async def check_history_visibility(
                 elif isinstance(binding, HistoryShortHorizonBinding):
                     from simple_harness_memory.backends.short_history_visibility import check_short
 
-                    reason, deadline = await check_short(backend, principal, context, binding, now)
+                    try:
+                        reason, deadline = await check_short(
+                            backend, principal, context, binding, now, sources=sources)
+                    except MemoryLimitError:
+                        if _short_sources is None:
+                            raise
+                        reason, deadline = "history_lineage_unverifiable", None
+                        sources = []
                 else:
                     reason, deadline = await _recall(backend, principal, context, binding, now)
                 items.append(
                     HistoryVisibilityItem(binding_hash, reason == "history_visible", reason)
                 )
+                if _short_sources is not None:
+                    _short_sources.append(tuple(sources or ()))
                 if deadline is not None:
                     deadlines.append(deadline)
             snapshot = HistoryVisibilitySnapshot(
@@ -440,3 +451,33 @@ async def check_history_visibility(
         except BaseException:
             await backend._db.execute("ROLLBACK")
             raise
+
+
+async def resolve_short_horizon_sources(
+    backend: Any, *, principal: MemoryPrincipal, disclosure_context: DisclosureContext,
+    bindings: tuple[HistoryShortHorizonBinding, ...],
+):
+    from simple_harness_memory.core.short_sources import (
+        ShortHorizonSourceItem,
+        ShortHorizonSourceSnapshot,
+    )
+
+    if type(bindings) is not tuple or any(
+        type(x) is not HistoryShortHorizonBinding for x in bindings
+    ):
+        raise TypeError("short sources require exact HistoryShortHorizonBinding tuple")
+    sources: list[tuple[Any, ...]] = []
+    observed = await check_history_visibility(
+        backend, principal=principal, disclosure_context=disclosure_context,
+        bindings=bindings, _short_sources=sources)
+    return ShortHorizonSourceSnapshot(
+        subject=observed.subject,
+        request_hash=history_hash("memory.short.sources.request.v1", {
+            "principal": asdict(principal), "disclosure": disclosure_context.to_json(),
+            "bindings": [binding.to_json() for binding in bindings]}),
+        evaluated_at=observed.checked_at, authority_epoch=observed.authority_epoch,
+        policy_hash=observed.policy_hash, valid_until=observed.valid_until,
+        items=tuple(ShortHorizonSourceItem(
+            history_hash("memory.short.sources.binding.v1", binding.to_json()),
+            item.visible, item.reason, item.visible, refs)
+            for binding, item, refs in zip(bindings, observed.items, sources, strict=True)))

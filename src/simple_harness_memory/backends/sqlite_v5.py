@@ -471,7 +471,9 @@ class SQLiteHumanMemoryBackend:
         async with self._initialize_lock:
             if self._db is not None and self._receipt is not None:
                 return self._receipt
-            classification, probed_receipt = _probe_existing_read_only(self._db_path)
+            from simple_harness_memory.migrations.schema_upgrade import probe_existing_root
+
+            classification, probed_receipt = await probe_existing_root(self._db_path)
             if classification == "unsupported":
                 raise MemoryLegacySchemaUnsupported()
             try:
@@ -1546,6 +1548,15 @@ class SQLiteHumanMemoryBackend:
         return await check_history_visibility(
             self, principal=principal, disclosure_context=disclosure_context, bindings=bindings
         )
+
+    async def resolve_short_horizon_sources(
+        self, *, principal: MemoryPrincipal, disclosure_context: DisclosureContext,
+        bindings: tuple[Any, ...],
+    ) -> Any:
+        from simple_harness_memory.backends.history_visibility import resolve_short_horizon_sources
+
+        return await resolve_short_horizon_sources(
+            self, principal=principal, disclosure_context=disclosure_context, bindings=bindings)
 
     async def resolve_suppression(
         self,
@@ -14783,8 +14794,11 @@ class SQLiteHumanMemoryBackend:
             return None
         if tables != REQUIRED_TABLES:
             raise MemoryLegacySchemaUnsupported()
-        meta = await _async_meta(self._db)
-        return await _async_receipt(self._db, meta)
+        from simple_harness_memory.migrations.schema_upgrade import inspect_root
+
+        # Run the same finite catalog/marker verifier on this fenced connection.
+        root = await self._db._execute(inspect_root, self._db._conn)
+        return root.initialization
 
     async def _migrate_v7_0_to_v7_1(self) -> None:
         """0.6.0 写出的 v7.0 库前向迁移到 v7.1（一个事务；幂等）。
@@ -15984,11 +15998,14 @@ class SQLiteHumanMemoryBackend:
         if contested_heads != active_group_keys:
             raise MemoryCorruptionError("active conflict group set differs")
 
-    async def _validate_short_horizon_integrity_unlocked(self) -> None:
+    async def _validate_short_horizon_integrity_unlocked(
+        self, *, selected_registrations: tuple[aiosqlite.Row, ...] | None = None,
+    ) -> None:
         from simple_harness.runtime import (
             EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION,
             ConversationEvidenceMetadata,
             ConversationEvidenceMetadataReceipt,
+            ConversationEvidenceRegistration,
             EvidenceActorRole,
             EvidenceItemAuthority,
             EvidenceProvenance,
@@ -16019,10 +16036,13 @@ class SQLiteHumanMemoryBackend:
                 raise MemoryCorruptionError(f"{name} JSON is not canonical")
             return cast(list[object], parsed)
 
-        async with self._db.execute(
-            "SELECT * FROM conversation_evidence_registrations ORDER BY registration_id"
-        ) as cursor:
-            registrations = tuple(await cursor.fetchall())
+        if selected_registrations is None:
+            async with self._db.execute(
+                "SELECT * FROM conversation_evidence_registrations ORDER BY registration_id"
+            ) as cursor:
+                registrations = tuple(await cursor.fetchall())
+        else:
+            registrations = selected_registrations
         for row in registrations:
             metadata_json = canonical_object(row["metadata_json"], "conversation metadata")
             receipt_json = canonical_object(
@@ -16058,6 +16078,7 @@ class SQLiteHumanMemoryBackend:
                 "recall_item_authority": None,
             }
             authority_json_value = row["evidence_item_authority_json"]
+            authority = None
             if authority_json_value is not None:
                 authority_json = canonical_object(
                     authority_json_value, "conversation item authority"
@@ -16132,6 +16153,21 @@ class SQLiteHumanMemoryBackend:
                 row["registration_hash"]
             ):
                 raise MemoryCorruptionError("conversation registration root differs")
+
+            record = await self._read_ingested_record(str(row["evidence_id"]))
+            if record is None:
+                raise MemoryCorruptionError("conversation admitted source missing")
+            try:
+                rebuilt = ConversationEvidenceRegistration(
+                    str(row["registration_id"]), record.envelope, record.admission_receipt,
+                    metadata, metadata_receipt, authority)
+            except (TypeError, ValueError) as exc:
+                raise MemoryCorruptionError("conversation admitted source binding differs") from exc
+            if rebuilt.registration_hash != str(row["registration_hash"]):
+                raise MemoryCorruptionError("conversation admitted source binding differs")
+
+        if selected_registrations is not None:
+            return
 
         registrations_by_group: dict[tuple[str, str, str], tuple[aiosqlite.Row, ...]] = {}
         raw_groups: dict[tuple[str, str, str], list[aiosqlite.Row]] = {}

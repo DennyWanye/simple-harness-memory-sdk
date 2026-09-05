@@ -32,7 +32,11 @@ from simple_harness_memory.core.evidence import (
     EvidenceSourceAdmissionReceipt,
     IngestedEvidenceRecord,
 )
-from simple_harness_memory.core.history import HistoryBinding, HistoryVisibilitySnapshot
+from simple_harness_memory.core.history import (
+    HistoryBinding,
+    HistoryShortHorizonBinding,
+    HistoryVisibilitySnapshot,
+)
 from simple_harness_memory.core.identity import (
     ExportPage,
     MemoryPrincipal,
@@ -46,6 +50,7 @@ from simple_harness_memory.core.mutation_receipts import MemoryMutationReceiptVi
 from simple_harness_memory.core.mutations import InformationClassificationPolicy
 from simple_harness_memory.core.observability import CorrelationInput, MemoryObservability
 from simple_harness_memory.core.port import CognitiveMemoryBackend, MemoryBackend
+from simple_harness_memory.core.short_sources import ShortHorizonSourceSnapshot
 from simple_harness_memory.core.suppression import (
     SealedAuditAccessReceipt,
     SuppressionDecision,
@@ -169,6 +174,14 @@ class MemoryManager:
 
     async def register_conversation_evidence(self, reference: object) -> object:
         return await self._backend.register_conversation_evidence(reference)
+
+    async def resolve_short_horizon_sources(
+        self, *, principal: MemoryPrincipal, disclosure_context: DisclosureContext,
+        bindings: tuple[HistoryShortHorizonBinding, ...],
+    ) -> ShortHorizonSourceSnapshot:
+        """Observe exact selected sources in one current visibility snapshot."""
+        return await self._backend.resolve_short_horizon_sources(
+            principal=principal, disclosure_context=disclosure_context, bindings=bindings)
 
     async def apply_memory_mutation_plan(
         self,

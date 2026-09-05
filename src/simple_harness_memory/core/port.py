@@ -42,7 +42,11 @@ from simple_harness_memory.core.evidence import (
     EvidenceSourceAdmissionReceipt,
     IngestedEvidenceRecord,
 )
-from simple_harness_memory.core.history import HistoryBinding, HistoryVisibilitySnapshot
+from simple_harness_memory.core.history import (
+    HistoryBinding,
+    HistoryShortHorizonBinding,
+    HistoryVisibilitySnapshot,
+)
 from simple_harness_memory.core.identity import (
     MemoryPrincipal,
     MemoryScope,
@@ -67,6 +71,7 @@ from simple_harness_memory.core.short_horizon import (
     ShortHorizonProjectionBuildResult,
     ShortHorizonRecallResult,
 )
+from simple_harness_memory.core.short_sources import ShortHorizonSourceSnapshot
 from simple_harness_memory.core.suppression import (
     SealedAuditAccessReceipt,
     SuppressionDecision,
@@ -320,6 +325,11 @@ class CognitiveMemoryBackend(Protocol):
         disclosure_context: DisclosureContext,
         bindings: tuple[HistoryBinding, ...],
     ) -> HistoryVisibilitySnapshot: ...
+
+    async def resolve_short_horizon_sources(
+        self, *, principal: MemoryPrincipal, disclosure_context: DisclosureContext,
+        bindings: tuple[HistoryShortHorizonBinding, ...],
+    ) -> ShortHorizonSourceSnapshot: ...
 
     async def apply_memory_mutation_plan(
         self,

@@ -49,6 +49,8 @@ async def check_short(
     context: DisclosureContext,
     binding: HistoryShortHorizonBinding,
     now: float,
+    *,
+    sources: list[Any] | None = None,
 ) -> tuple[str, float | None]:
     from simple_harness_memory.backends.history_visibility import _purpose
     from simple_harness_memory.backends.sqlite_v5 import _opaque_hash
@@ -221,4 +223,34 @@ async def check_short(
             )
         ).denied:
             return "history_suppressed", None
+    if sources is not None:
+        from simple_harness_memory.core.short_sources import ShortHorizonSourceRef
+
+        # Reuse canonical registration validation for exactly this selected group,
+        # never scan all indexed roots to answer one selected binding.
+        await backend._validate_short_horizon_integrity_unlocked(selected_registrations=rows)
+        projected_refs = []
+        for row in rows:
+            record = await backend._read_ingested_record(str(row["evidence_id"]))
+            if record is None:
+                return stale
+            envelope, admission = record.envelope, record.admission_receipt
+            metadata = json.loads(str(row["metadata_json"]))
+            if any(metadata.get(key) != value for key, value in {
+                "evidence_id": envelope.evidence_id, "envelope_hash": envelope.envelope_hash,
+                "subject": envelope.subject, "run_id": envelope.run_id,
+                "source_hash": envelope.source_hash, "sanitized_hash": envelope.sanitized_hash,
+                "admission_receipt_id": admission.receipt_id,
+                "admission_receipt_hash": admission.receipt_hash,
+            }.items()):
+                return mismatch
+            if (row["admission_receipt_id"] != admission.receipt_id
+                    or row["admission_receipt_hash"] != admission.receipt_hash):
+                return mismatch
+            projected_refs.append(ShortHorizonSourceRef(
+                envelope.evidence_id, envelope.envelope_hash, envelope.source_ref,
+                envelope.source_hash, envelope.sanitized_hash, admission.receipt_id,
+                admission.receipt_hash, str(row["registration_id"]),
+                str(row["registration_hash"]), int(row["item_ordinal"]), str(row["role"])))
+        sources.extend(projected_refs)  # publish only after ALL members validated
     return "history_visible", float(chunk["expires_at"])

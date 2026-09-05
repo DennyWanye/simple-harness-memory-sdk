@@ -10,7 +10,7 @@ import simple_harness_memory.migrations as migrations
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_public_api_0_6_8_combines_frozen_rejection_and_history_surface() -> None:
+def test_public_api_0_6_9_preserves_prior_surface_and_adds_upgrade_sources() -> None:
     snapshots = {
         version: json.loads(Path(__file__).with_name(f"public-api-{version}.json").read_text())
         for version in (
@@ -24,15 +24,24 @@ def test_public_api_0_6_8_combines_frozen_rejection_and_history_surface() -> Non
             "0.6.6",
             "0.6.7",
             "0.6.8",
+            "0.6.9",
         )
     }
     for version, snapshot in snapshots.items():
         assert snapshot["package"] == "simple-harness-memory-sdk"
         assert snapshot["version"] == version
-    current = snapshots["0.6.8"]
-    assert simple_harness_memory.__version__ == "0.6.8"
+    current = snapshots["0.6.9"]
+    assert simple_harness_memory.__version__ == "0.6.9"
     assert current["root"] == sorted(simple_harness_memory.__all__)
     assert current["root"] == sorted(
+        [
+            *snapshots["0.6.8"]["root"],
+            "ShortHorizonSourceItem",
+            "ShortHorizonSourceRef",
+            "ShortHorizonSourceSnapshot",
+        ]
+    )
+    assert snapshots["0.6.8"]["root"] == sorted(
         [*snapshots["0.6.7"]["root"], "EvidenceSourceAdmissionReceipt"]
     )
     assert snapshots["0.6.7"]["root"] == sorted(
@@ -60,10 +69,19 @@ def test_public_api_0_6_8_combines_frozen_rejection_and_history_surface() -> Non
         "PrincipalRegistrationReceipt",
     }
     for version in ("0.6.0", "0.6.1", "0.6.2", "0.6.3", "0.6.4", "0.6.5"):
-        assert {k: v for k, v in current.items() if k not in {"version", "root"}} == {
-            k: v for k, v in snapshots[version].items() if k not in {"version", "root"}
+        assert {k: v for k, v in current.items() if k not in {"version", "root", "migrations"}} == {
+            k: v
+            for k, v in snapshots[version].items()
+            if k not in {"version", "root", "migrations"}
         }
-    assert current["migrations"] == snapshots["0.5.2"]["migrations"]
+    assert current["migrations"] == sorted(
+        [
+            *snapshots["0.6.8"]["migrations"],
+            "HumanMemorySchemaUpgradeReceipt",
+            "migrate_human_memory_v7_to_v7_2",
+        ]
+    )
+    assert snapshots["0.6.8"]["migrations"] == snapshots["0.5.2"]["migrations"]
     assert "ConversationMemoryAdapter" not in current["root"]
 
 

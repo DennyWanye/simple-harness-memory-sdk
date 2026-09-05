@@ -1,6 +1,6 @@
 # Proposed0.6.9: existing-data schema upgrade + exact selected short sources
 
-2026-09-05. DESIGN ONLY; no SDK/Host implementation, version edit or wheel build.
+2026-09-05. Approved implementation candidate; source review/install pending, no frozen wheel.
 User authorized this necessary follow-up direction without another user confirmation. Independent
 contract review must precede changes to known-schema acceptance/rejection. Base is frozen0.6.8
 source5e8397b; wheel98a9c788 and all prior candidates stay byte-identical. The two increments can
@@ -32,8 +32,15 @@ One operation; no automatic upgrade from normal builder/open and no Host SQL mig
 async def migrate_human_memory_v7_to_v7_2(
     db_path: str | Path, *, backup_path: str | Path,
     expected_initialization_receipt_hash: str | None = None,
-) -> HumanMemorySchemaUpgradeReceipt: ...
+) -> HumanMemorySchemaUpgradeReceipt | None: ...
 ```
+
+Latest authorized Host integration refinement: an existing valid fresh7.2 root without a marker
+is fully verified and returns `None` (no backup, no DDL/meta writes). An already upgraded root returns
+its original receipt. Missing database paths are not created by this API: Host skips migration when
+absent and lets the ordinary builder initialize. Runtime closes any old manager before this call,
+keeps its original backup across reopen, and never privately probes schema. The required backup
+path may be `<same directory>/<db.name>.pre-schema-7.2.backup`.
 
 The optional expected hash is a caller compare-and-swap constraint, not a substitute for SDK
 verification. SDK always verifies the complete actual source identity. No principal/Run/authority
@@ -88,8 +95,12 @@ SQLite reads/reconstructs its own WAL index; SHM is coordination data, not a can
 No Host-side WAL parsing, main-only fallback, manual deletion/truncation/checkpoint to make a probe
 pass, or read/write recovery of an unvalidated source. If SQLite cannot obtain a safe read-only
 snapshot, return explicit snapshot-unavailable/busy rather than classify a valid WAL root as old,
-corrupt or fresh. Rejection preserves main/WAL bytes and logical rows; a SQLite-managed SHM index
-is not evidence that source data was migrated. A readable missing/stale-SHM fixture must exercise
+corrupt or fresh. Rejection preserves main/existing-WAL bytes and logical rows. Dirac reviewed the observed
+SQLite3.50.4 read-only coordination behavior: when sidecars did not exist, SQLite mode=ro may
+create a zero-byte WAL and coordination SHM. No WAL header/frame is allowed; existing files and
+agreed metadata remain exact. This explicit side effect is not schema acceptance or migration.
+No manual sidecar deletion is allowed to manufacture the old directory-inventory assertion.
+A SQLite-managed SHM index is not evidence that source data was migrated. A readable missing/stale-SHM fixture must exercise
 SQLite's supported WAL-aware path; an actually unsupported read-only recovery is explicit BLOCKED,
 not permission to ignore WAL. Supported platform behavior must be established before implementation
 is called complete.
@@ -291,3 +302,13 @@ an uncheckpointed committed migration marker. This revision corrects the PLAN ON
 before implementation, plus catalog variants, historical-root lifetime and backup-retry controls.
 No .068 source/wheel, SDK rejection behavior, Host code, version or product test execution changed.
 Follow-up independent contract review is pending; this entry is not an implementation ACCEPT.
+
+## Historical policy reconstruction refinement (real Host fixture finding)
+The disposable query-only validation clone reconstructs S1/receipt hashes against each record's
+already stored filter-policy version. These are historical admission facts, not a new allowlist:
+the clone cannot write/admit sources, no policy values escape into the runtime, and the real
+builder/ingestion path still uses the Host's explicitly configured supported_filter_policies.
+Using SDK default policies in this validation-only clone incorrectly rejected legal Host records
+on reopen; a real custom-policy ingest→close→migration no-op→configured reopen/replay regression
+and a new-unsupported-policy rejection control cover the correction. No Host callback is required
+for offline canonical validation, and no migration signature expansion is needed.

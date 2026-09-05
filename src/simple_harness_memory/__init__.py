@@ -98,6 +98,11 @@ from simple_harness_memory.core.short_horizon import (
     ShortHorizonRecallHit,
     ShortHorizonRecallResult,
 )
+from simple_harness_memory.core.short_sources import (
+    ShortHorizonSourceItem,
+    ShortHorizonSourceRef,
+    ShortHorizonSourceSnapshot,
+)
 from simple_harness_memory.core.suppression import (
     OrdinaryMemoryPurpose,
     SealedAuditAccessDecision,
@@ -140,6 +145,9 @@ __all__ = [
     "HistoryShortHorizonBinding",
     "HistoryVisibilityItem",
     "HistoryVisibilitySnapshot",
+    "ShortHorizonSourceItem",
+    "ShortHorizonSourceRef",
+    "ShortHorizonSourceSnapshot",
     "MemoryManager",
     "build_human_memory_v7",
     "build_human_memory_v6",
@@ -215,4 +223,4 @@ __all__ = [
     "ShortHorizonRecallResult",
 ]
 
-__version__ = "0.6.8"
+__version__ = "0.6.9"

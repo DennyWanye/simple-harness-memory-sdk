@@ -1766,6 +1766,7 @@ BEGIN SELECT RAISE(ABORT, 'immutable recall context use receipt'); END;
 
 
 DDL_V7_1 = DDL
+SCHEMA_CHECKSUM_V7_1 = hashlib.sha256(DDL_V7_1.encode("utf-8")).hexdigest()
 SOURCE_ADMISSION_DDL = """
 CREATE TABLE source_admission_receipts (
     receipt_id TEXT PRIMARY KEY,
@@ -1949,7 +1950,7 @@ class InitializationReceipt:
             raise ValueError("initialization receipt schema version differs")
         if self.schema_epoch != SCHEMA_EPOCH:
             raise ValueError("initialization receipt schema epoch differs")
-        if self.schema_checksum != SCHEMA_CHECKSUM:
+        if self.schema_checksum not in {SCHEMA_CHECKSUM, SCHEMA_CHECKSUM_V7_0, SCHEMA_CHECKSUM_V7_1}:
             raise ValueError("initialization receipt schema checksum differs")
         if (
             not isinstance(self.audit_cursor_authority_hash, str)

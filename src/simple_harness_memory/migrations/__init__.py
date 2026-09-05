@@ -1,5 +1,10 @@
 """Explicit migration APIs; never part of the runtime AgentMemoryPort."""
 
+from simple_harness_memory.migrations.schema_upgrade import (
+    HumanMemorySchemaUpgradeReceipt,
+    migrate_human_memory_v7_to_v7_2,
+)
+
 from simple_harness_memory.migrations.contracts import (
     EXECUTION_MANIFEST_PROTOCOL,
     IDENTITY_MAP_PROTOCOL,
@@ -26,6 +31,8 @@ from simple_harness_memory.migrations.v3_to_v4 import (
 
 __all__ = (
     "EXECUTION_MANIFEST_PROTOCOL",
+    "HumanMemorySchemaUpgradeReceipt",
+    "migrate_human_memory_v7_to_v7_2",
     "IDENTITY_MAP_PROTOCOL",
     "LEGACY_SCHEMA_CHECKSUM",
     "LEGACY_SCHEMA_VERSION",
