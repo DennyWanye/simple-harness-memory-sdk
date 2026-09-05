@@ -21,6 +21,9 @@ source9ec5943/wheel381d8543已通过新venv publicconsumer与全包字节核验�
 新增三元carrier复用当前batch suppression/expiry/disclosure；版本尚未分配，未build/合main/接Host，
 封存0.6.6 wheel不含此增量。[当前独立源码交付](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-short-history-visibility/RESULTS.md)。
 
+2026-09-05：主分配0.6.7给已审short增量，独立候选根快照和消费者源码检查通过，wheel验证待完成。
+[本轮候选](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-short-history-visibility/CANDIDATE-0.6.7.md)，不覆盖封存0.6.6或修改Host环境。
+
 | 文档 | 范围 |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 包结构、分层、本地后端与召回/认知/世界对象的生产边界 |

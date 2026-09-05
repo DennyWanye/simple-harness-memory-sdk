@@ -5,6 +5,10 @@ SPDX-License-Identifier: BUSL-1.1
 
 # 0.6 candidate build and verification runbook
 
+2026-09-05 newer authorized exception: standalone-short0.6.7 is allocated from reviewed e19161ba.
+Use [0.6.7 journal](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-short-history-visibility/CANDIDATE-0.6.7.md)
+for this independent candidate. Retain all older wheel identities and publisher boundaries.
+
 2026-09-05 current authorized exception: independent0.6.6 combines history+clock+rejection, uses
 frozen Harness0.7.2 SHA53bded3fea87168e5d2ad9e49fea5f99e1c1edb1d6077b2a52dd62716692f9ed,
 and only builds/tests a candidate wheel. Use the [0.6.6 candidate journal](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-history-visibility/CANDIDATE-0.6.6.md)

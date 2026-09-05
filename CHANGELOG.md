@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.7] - 2026-09-05（独立 short 候选）
+
+- 保留0.6.6 history/clock/rejection，新增已独立审查的 exact standalone short history carrier。
+- 同一 public history batch 核验实际 audit 选中、当前来源/subject/disclosure/expiry 及反向 suppression。
+- 原0.6.6及旧快照/wheel保持冻结；本版本仅候选，未push/tag/release，Host接线另验。
+
 ## [0.6.6] - 2026-09-05（独立组合候选）
 
 - 合并0.6.3基线的 history visibility 完整修复、0.6.4公开可信clock及0.6.5限定拒绝见证；普通历史可见性以当前SDK反向suppression和source状态为准。

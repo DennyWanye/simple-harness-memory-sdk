@@ -10,21 +10,28 @@ import simple_harness_memory.migrations as migrations
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_public_api_0_6_6_combines_frozen_rejection_and_history_surface() -> None:
+def test_public_api_0_6_7_combines_frozen_rejection_and_history_surface() -> None:
     snapshots = {
         version: json.loads(Path(__file__).with_name(f"public-api-{version}.json").read_text())
-        for version in ("0.5.2", "0.6.0", "0.6.1", "0.6.2", "0.6.3", "0.6.4", "0.6.5", "0.6.6")
+        for version in (
+            "0.5.2",
+            "0.6.0",
+            "0.6.1",
+            "0.6.2",
+            "0.6.3",
+            "0.6.4",
+            "0.6.5",
+            "0.6.6",
+            "0.6.7",
+        )
     }
     for version, snapshot in snapshots.items():
         assert snapshot["package"] == "simple-harness-memory-sdk"
         assert snapshot["version"] == version
-    current = snapshots["0.6.6"]
-    assert simple_harness_memory.__version__ == "0.6.6"
-    # Pending source increment: version allocation/build is explicitly deferred.
-    # The sealed 0.6.6 JSON remains exact; allow only this reviewed additive carrier.
-    assert sorted(simple_harness_memory.__all__) == sorted(
-        [*current["root"], "HistoryShortHorizonBinding"]
-    )
+    current = snapshots["0.6.7"]
+    assert simple_harness_memory.__version__ == "0.6.7"
+    assert current["root"] == sorted(simple_harness_memory.__all__)
+    assert current["root"] == sorted([*snapshots["0.6.6"]["root"], "HistoryShortHorizonBinding"])
     assert current["migrations"] == sorted(migrations.__all__)
     history_exports = {
         "HistoryBinding",
@@ -33,7 +40,7 @@ def test_public_api_0_6_6_combines_frozen_rejection_and_history_surface() -> Non
         "HistoryVisibilityItem",
         "HistoryVisibilitySnapshot",
     }
-    assert set(current["root"]) - set(snapshots["0.6.5"]["root"]) == history_exports
+    assert set(snapshots["0.6.6"]["root"]) - set(snapshots["0.6.5"]["root"]) == history_exports
     assert set(snapshots["0.6.5"]["root"]) < set(current["root"])
     assert set(snapshots["0.6.5"]["root"]) - set(snapshots["0.6.4"]["root"]) == {
         "TypedRecallRejectionV1"
@@ -54,7 +61,7 @@ def test_public_api_0_6_6_combines_frozen_rejection_and_history_surface() -> Non
     assert "ConversationMemoryAdapter" not in current["root"]
 
 
-def test_0_6_1_public_surface_is_reachable_from_0_6_6_root() -> None:
+def test_0_6_1_public_surface_is_reachable_from_0_6_7_root() -> None:
     """0.6.1 §8 新增公共面在 0.6.6 仍可达：根导出 + 方法/关键字/函数（只读核对）。"""
 
     import inspect
@@ -158,7 +165,7 @@ def test_root_exports_construct_public_facade_contracts() -> None:
     assert receipt.to_json()["operations"] == [operation.to_json()]
 
 
-def test_0_6_6_candidate_sources_and_docs_are_consistent() -> None:
+def test_0_6_7_candidate_sources_and_docs_are_consistent() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert pyproject["project"]["dynamic"] == ["version"]
     assert pyproject["tool"]["hatch"]["version"]["path"] == (
@@ -170,7 +177,7 @@ def test_0_6_6_candidate_sources_and_docs_are_consistent() -> None:
     assert "simple-harness-sdk>=0.7,<0.8" in pyproject["project"]["dependencies"]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "当前 source candidate：**0.6.6**" in readme
+    assert "当前 source candidate：**0.6.7**" in readme
     assert "已发布 fallback 为 0.5.1" in readme
     assert "## [0.6.6] - 2026-09-05" in changelog
     assert "## [0.6.5] - 2026-09-05" in changelog

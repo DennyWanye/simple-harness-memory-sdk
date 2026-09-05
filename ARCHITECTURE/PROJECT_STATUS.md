@@ -2,6 +2,13 @@
 
 > 最后更新：2026-09-05
 
+## 2026-09-05 Memory0.6.7 独立候选冻结准备
+
+主统一分配0.6.7给已审short e19161ba；仅版本、根快照与公开消费者增量，产品行为无修改。
+根快照4项与新增short真实public source consumer11阶段通过；新wheel/isolated installed
+消费与完整字节核验正在执行。封存0.6.6 wheel不覆盖，未合main/Host/native或发布。
+[本轮候选记录](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-short-history-visibility/CANDIDATE-0.6.7.md)。
+
 ## 2026-09-05 独立 standalone short 历史可见性源码修复
 
 在封存0.6.6之后的独立分支新增 `HistoryShortHorizonBinding(audit_id,chunk_ref,content_hash)`，

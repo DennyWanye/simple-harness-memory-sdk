@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exact installed0.6.6 public consumer; synthetic Host admissions, real SQLite.
+"""Exact installed0.6.7 public consumer; synthetic Host admissions, real SQLite.
 
 Input constructors retain the established SDK fixture contract. Expected outcomes
 are explicit below, independent of product outputs. No source/test imports, SQL,
@@ -294,7 +294,7 @@ class HostEvidenceAuthority:
 
 
 async def run(output):
-    assert m.__version__ == importlib.metadata.version("simple-harness-memory-sdk") == "0.6.6"
+    assert m.__version__ == importlib.metadata.version("simple-harness-memory-sdk") == "0.6.7"
     assert h.__version__ == importlib.metadata.version("simple-harness-sdk") == "0.7.2"
     assert not (output / "state.db").exists(), "use a new evidence directory"
     prefix = Path(sys.prefix).resolve()
@@ -465,6 +465,7 @@ async def run(output):
             raise AssertionError("expired page accepted by backdated request")
     finally:
         await manager.close()
+    observations.extend(await run_short(output))
     identity = {
         name: str(Path(cast(str, module.__file__)).resolve())
         for name, module in sys.modules.items()
@@ -489,6 +490,267 @@ async def run(output):
             }
         )
     )
+
+
+def _short_registration(sequence):
+    envelope, receipt = _admitted(evidence_id=f"short-source-{sequence}")
+    text = (
+        "Project alpha: user prefers concise answers"
+        if sequence == 1
+        else f"Project beta note {sequence}"
+    )
+    payload = {"item_id": "message-1", "public_text": text}
+    envelope = replace(
+        envelope,
+        sanitized_payload=payload,
+        sanitized_hash=fingerprint_json(payload),
+        source_hash=_sha(text),
+    )
+    receipt = replace(
+        receipt,
+        envelope_hash=envelope.envelope_hash,
+        sanitized_hash=envelope.sanitized_hash,
+        source_hash=envelope.source_hash,
+    )
+    authority = _item_authority(_span(envelope, receipt))
+    metadata = h.ConversationEvidenceMetadata(
+        metadata_id=f"short-metadata-{sequence}",
+        authority_issuer_id="host-conversation-registry",
+        evidence_id=envelope.evidence_id,
+        envelope_hash=envelope.envelope_hash,
+        admission_receipt_id=receipt.receipt_id,
+        admission_receipt_hash=receipt.receipt_hash,
+        run_id=envelope.run_id,
+        subject=envelope.subject,
+        source_hash=envelope.source_hash,
+        sanitized_hash=envelope.sanitized_hash,
+        conversation_id="primary",
+        primary_conversation_id="primary",
+        causal_group_id=f"group-{sequence}",
+        causal_group_sequence=sequence,
+        item_ordinal=1,
+        group_item_count=1,
+        ordered_group_manifest_hash=fingerprint_json({"group": sequence, "items": ["message-1"]}),
+        role=h.ConversationEvidenceRole.USER,
+        occurred_at=10.0 + sequence / 10,
+        task_scope_id="task-1",
+        tool_causal_link=None,
+        entities=("project-alpha" if sequence == 1 else "project-beta",),
+    )
+    metadata = h.authorize_conversation_public_text(
+        metadata, h.AdmittedEvidenceAuthority(envelope, receipt, authority)
+    )
+    metadata_receipt = h.ConversationEvidenceMetadataReceipt(
+        receipt_id=f"short-metadata-receipt-{sequence}",
+        metadata_id=metadata.metadata_id,
+        authority_issuer_id=metadata.authority_issuer_id,
+        evidence_id=metadata.evidence_id,
+        envelope_hash=metadata.envelope_hash,
+        admission_receipt_id=metadata.admission_receipt_id,
+        admission_receipt_hash=metadata.admission_receipt_hash,
+        run_id=metadata.run_id,
+        subject=metadata.subject,
+        source_hash=metadata.source_hash,
+        sanitized_hash=metadata.sanitized_hash,
+        metadata_hash=metadata.metadata_hash,
+        issuer_ref=metadata.authority_issuer_id,
+        accepted=True,
+    )
+    registration = h.ConversationEvidenceRegistration(
+        f"short-registration-{sequence}", envelope, receipt, metadata, metadata_receipt, authority
+    )
+    return registration
+
+
+class HostConversationAuthority:
+    def __init__(self, registrations):
+        self.records = {x.registration_id: x for x in registrations}
+
+    async def resolve_conversation_registration(self, reference):
+        registration = self.records[reference.registration_id]
+        if reference != h.ConversationEvidenceRegistrationRef(
+            registration.registration_id,
+            registration.registration_hash,
+            registration.envelope.evidence_id,
+            registration.envelope.envelope_hash,
+        ):
+            raise ValueError("unknown Host conversation binding")
+        return registration
+
+
+async def run_short(output):
+    assert not (output / "short.db").exists(), "use a new evidence directory"
+    registrations = tuple(_short_registration(i) for i in range(1, 13))
+    first, second = registrations[:2]
+    span = _span(first.envelope, first.admission_receipt)
+    now = [20.0]
+    principal = _principal()
+    context = replace(
+        _disclosure(),
+        run_id="actual-short-history-request",
+        purpose=h.DisclosurePurpose.USER_REVIEW,
+    )
+    kwargs = dict(
+        clock=lambda: now[0],
+        classification_policy=_classification_policy(),
+        conversation_evidence_authority=HostConversationAuthority(registrations),
+        evidence_authority=HostEvidenceAuthority(first.envelope, first.admission_receipt, span),
+    )
+    manager = await m.build_human_memory_v7(output / "short.db", **kwargs)
+    observations = []
+    bindings: tuple[m.HistoryBinding, ...] = ()
+
+    async def check(expected, stage, checked_bindings=None, disclosure=None, owner=None):
+        snapshot = await manager.check_history_visibility(
+            principal=owner or principal,
+            disclosure_context=disclosure or context,
+            bindings=bindings if checked_bindings is None else checked_bindings,
+        )
+        assert [x.visible for x in snapshot.items] == expected, (stage, snapshot.to_json())
+        assert snapshot.checked_at == now[0]
+        observations.append(dict(stage=stage, snapshot=snapshot.to_json()))
+        return snapshot
+
+    async def forget(kind, target, key):
+        return await manager.suppress(
+            principal=principal,
+            request=m.SuppressionRequest(
+                key,
+                principal.actor_id,
+                kind,
+                target,
+                "user_forget",
+                now[0],
+            ),
+        )
+
+    try:
+        await manager.register_principal_owner(
+            principal, m.MemoryScope.personal(principal.actor_id)
+        )
+        for registration in registrations:
+            await manager.ingest_committed_evidence(
+                registration.envelope, registration.admission_receipt
+            )
+            await manager.register_conversation_evidence(
+                h.ConversationEvidenceRegistrationRef(
+                    registration.registration_id,
+                    registration.registration_hash,
+                    registration.envelope.evidence_id,
+                    registration.envelope.envelope_hash,
+                )
+            )
+        built = await manager.rebuild_short_horizon_projection(principal=principal)
+        assert built.projected_chunk_count == 2
+        result = await manager.recall_short_horizon(
+            principal=principal, query="Project", disclosure_context=context
+        )
+        assert len(result.hits) == result.eligible_count == result.fts_count == 2
+        hits = {hit.content: hit for hit in result.hits}
+        first_hit = hits["user: Project alpha: user prefers concise answers"]
+        second_hit = hits["user: Project beta note 2"]
+        for hit in (first_hit, second_hit):
+            assert _sha(hit.content) == hit.content_hash
+        short_bindings = tuple(
+            m.HistoryShortHorizonBinding(result.audit_id, hit.chunk_ref, hit.content_hash)
+            for hit in (first_hit, second_hit)
+        )
+        evidence_bindings = tuple(
+            m.HistoryEvidenceBinding(reg.envelope, reg.admission_receipt) for reg in (first, second)
+        )
+        bindings = short_bindings + evidence_bindings
+        initial = await check([True, True, True, True], "short_exact_selection")
+        forged = (
+            replace(short_bindings[0], audit_id="short-audit:unknown"),
+            replace(short_bindings[0], chunk_ref=second_hit.chunk_ref),
+            replace(short_bindings[0], content_hash="0" * 64),
+        )
+        await check([False, False, False], "short_forged_triples", forged)
+        limited = await manager.recall_short_horizon(
+            principal=principal, query="Project", disclosure_context=context, limit=1
+        )
+        assert limited.eligible_count == 2 and len(limited.hits) == 1
+        unselected = next(x for x in result.hits if x.chunk_ref != limited.hits[0].chunk_ref)
+        await check(
+            [False],
+            "short_unselected",
+            (
+                m.HistoryShortHorizonBinding(
+                    limited.audit_id, unselected.chunk_ref, unselected.content_hash
+                ),
+            ),
+        )
+        await check(
+            [False, False],
+            "short_wrong_subject",
+            short_bindings,
+            disclosure=replace(context, subject="other", recipient_id="other"),
+            owner=_principal("other"),
+        )
+        await check(
+            [False, False],
+            "short_current_disclosure",
+            short_bindings,
+            disclosure=replace(
+                context,
+                recipient=h.DeliveryRecipient.HOUSEHOLD,
+                intended_audience=h.IntendedAudience.HOUSEHOLD,
+                recipient_id="household-1",
+                purpose=h.DisclosurePurpose.TASK_EXECUTION,
+            ),
+        )
+        assert initial.valid_until == 10.1 + 5 * 86400
+        now[0] = initial.valid_until
+        await check([False, True], "short_expiry_boundary", short_bindings)
+        now[0] = 20.0
+        applied = await manager.apply_memory_mutation_plan(
+            principal=principal,
+            scope=m.MemoryScope.personal(principal.actor_id),
+            plan=_plan(first.envelope, _operation(span)),
+        )
+        assert applied.outcome is h.MemoryMutationApplyOutcome.COMMITTED
+        view = await manager.get_memory_mutation_receipt_view(
+            principal=principal, receipt_ref=applied.receipt_ref
+        )
+        recall_context = _context()
+        typed = await manager.execute_typed_recall(
+            principal=principal,
+            context=recall_context,
+            plan=_recall_plan(recall_context, idempotency_key="short-consumer-typed"),
+        )
+        assert len(typed.result.items) == 1
+        item = typed.result.items[0]
+        assert item.public_payload["object_value"] == "concise"
+        bindings += (
+            m.HistoryRecallBinding(
+                typed.result.result_id,
+                typed.result.result_hash,
+                item.selected_item.item_id,
+                item.result_item_hash,
+            ),
+        )
+        await check([True, True, True, True, True], "short_typed_evidence_compatible")
+        await forget(
+            m.SuppressionScopeKind.MEMORY, view.operations[0].memory_id, "short-forget-memory"
+        )
+        await check([False, True, False, True, False], "short_memory_only_suppression")
+    finally:
+        await manager.close()
+    manager = await m.build_human_memory_v7(output / "short.db", **kwargs)
+    try:
+        await check([False, True, False, True, False], "short_memory_only_reopen")
+        await forget(
+            m.SuppressionScopeKind.EVIDENCE, second.envelope.evidence_id, "short-forget-source"
+        )
+        await check([False, False, False, False, False], "short_source_suppression")
+    finally:
+        await manager.close()
+    manager = await m.build_human_memory_v7(output / "short.db", **kwargs)
+    try:
+        await check([False, False, False, False, False], "short_source_reopen")
+    finally:
+        await manager.close()
+    return observations
 
 
 if __name__ == "__main__":
