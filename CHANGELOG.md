@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.3] - 2026-09-05（S5b 恢复正确性）
+
+- 同 principal 的后续 analysis 等待已领取批次完成物化，保留固定 plan/base_revision/evidence/hash，避免故障恢复丢失旧批次事实。
+- 合法 no_mutation 保留可选 closure_reason 并以同一规则恢复；不可用响应仍被拒绝，零认知写入。
+- schema v7.1 与 0.6.2 公共 API 完全一致；新增 0.6.3 快照保留旧版本谱系。独立复审接受，候选构建与 Host 验收另行记录。
+
 ## [0.6.2] - 2026-09-03（S5b Task 5：Memory 0.6.1 余项）
 
 - **缺陷修复**（Host Task 4 真实/确定性车道发现）：多 evidence 的 analysis batch 中，只引用

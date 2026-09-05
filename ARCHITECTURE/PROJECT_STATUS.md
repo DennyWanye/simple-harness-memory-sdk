@@ -2,6 +2,14 @@
 
 > 最后更新：2026-09-05
 
+## 2026-09-05 本机合入与 0.6.3 candidate
+
+- IR-02/IR-03 独立 correctness/minimality review 接受，无新增 P0/P1/P2；复审 24 条通过，
+  原 Host 复现分别得到两条 accepted/两条 head/两次调用与合法 no-mutation accepted。
+- 修复已由独立分支合入 main（`d70d98c`）；source candidate 升为 0.6.3，以新版本保留
+  0.6.2 wheel 身份，公共 API 与 schema v7.1 不变。0.6.3 快照逐字段对照 0.6.2，旧快照保留。
+- 本节更新下方“待 review/合并”的历史交接状态；exact-wheel、真实 Provider 和 S5b 机器门仍待执行。
+
 ## 2026-09-05 S5b IR-02 / IR-03：phase-3 源码修复交接
 
 - 执行方式：集中串行完成两个同文件正确性修复。独立 worktree

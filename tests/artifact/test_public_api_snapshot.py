@@ -10,8 +10,8 @@ import simple_harness_memory.migrations as migrations
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_public_api_0_6_2_snapshot_is_frozen_and_0_6_1_is_preserved() -> None:
-    snapshot_path = Path(__file__).with_name("public-api-0.6.2.json")
+def test_public_api_0_6_3_snapshot_preserves_0_6_2_and_0_6_1() -> None:
+    snapshot_path = Path(__file__).with_name("public-api-0.6.3.json")
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
     previous = json.loads(
         Path(__file__).with_name("public-api-0.6.1.json").read_text(encoding="utf-8")
@@ -21,7 +21,14 @@ def test_public_api_0_6_2_snapshot_is_frozen_and_0_6_1_is_preserved() -> None:
         Path(__file__).with_name("public-api-0.5.2.json").read_text(encoding="utf-8")
     )
     assert snapshot["package"] == "simple-harness-memory-sdk"
-    assert snapshot["version"] == simple_harness_memory.__version__ == "0.6.2"
+    assert snapshot["version"] == simple_harness_memory.__version__ == "0.6.3"
+    recovery_base = json.loads(
+        Path(__file__).with_name("public-api-0.6.2.json").read_text(encoding="utf-8")
+    )
+    assert recovery_base["version"] == "0.6.2"
+    assert {k: v for k, v in snapshot.items() if k != "version"} == {
+        k: v for k, v in recovery_base.items() if k != "version"
+    }
     assert snapshot["root"] == sorted(simple_harness_memory.__all__)
     assert snapshot["migrations"] == sorted(migrations.__all__)
     assert previous["version"] == "0.6.1" and base["version"] == "0.6.0"
@@ -41,8 +48,8 @@ def test_public_api_0_6_2_snapshot_is_frozen_and_0_6_1_is_preserved() -> None:
     assert "ConversationMemoryAdapter" not in snapshot["root"]
 
 
-def test_0_6_1_public_surface_is_reachable_from_0_6_2_root() -> None:
-    """0.6.1 §8 新增公共面在 0.6.2 仍可达：根导出 + 方法/关键字/函数（只读核对）。"""
+def test_0_6_1_public_surface_is_reachable_from_0_6_3_root() -> None:
+    """0.6.1 §8 新增公共面在 0.6.3 仍可达：根导出 + 方法/关键字/函数（只读核对）。"""
 
     import inspect
 
@@ -145,7 +152,7 @@ def test_root_exports_construct_public_facade_contracts() -> None:
     assert receipt.to_json()["operations"] == [operation.to_json()]
 
 
-def test_0_6_2_candidate_sources_and_docs_are_consistent() -> None:
+def test_0_6_3_candidate_sources_and_docs_are_consistent() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert pyproject["project"]["dynamic"] == ["version"]
     assert pyproject["tool"]["hatch"]["version"]["path"] == (
@@ -157,8 +164,9 @@ def test_0_6_2_candidate_sources_and_docs_are_consistent() -> None:
     assert "simple-harness-sdk>=0.7,<0.8" in pyproject["project"]["dependencies"]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "当前 source candidate：**0.6.2**" in readme
+    assert "当前 source candidate：**0.6.3**" in readme
     assert "已发布 fallback 为 0.5.1" in readme
+    assert "## [0.6.3] - 2026-09-05" in changelog
     assert "## [0.6.2] - 2026-09-03" in changelog
     assert "## [0.6.1] - 2026-09-02" in changelog
     assert "## [0.6.0] - 2026-08-30" in changelog

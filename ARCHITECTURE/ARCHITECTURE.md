@@ -1,6 +1,6 @@
 <!-- last-calibrated: 6ba269537e45d443629aee56e9cfabec9de2e833 -->
 
-# ARCHITECTURE — simple-harness-memory-sdk（v0.6.0 candidate）
+# ARCHITECTURE — simple-harness-memory-sdk（v0.6.3 candidate）
 
 > 最后更新：2026-09-05
 > 当前事实：Human Memory V0/S1/S2 与 S3 Task 1–7 的 SDK 范围已闭合；S3 Task 6 已补齐一等
@@ -9,6 +9,9 @@
 > 但不是新认知 mutation 的 authority。
 
 ## S5b AC2：analysis 恢复与 no-mutation 正确性（2026-09-05）
+
+本修复已通过独立复审并合入 main；当前 source candidate 0.6.3，公共 API 与 schema v7.1
+保持 0.6.2 契约。以下 phase-3 交接中的“待 review”已由此更新；Host exact-wheel 与整体验收仍待完成。
 
 - 对应原始 [S2 Task 5](../plans/2026-08-29-human-memory-digital-twin/slices/S2-memory-evidence-audit-suppression.md)
   与 [S5b AC2 / Task 4a](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/acceptance.md)，
