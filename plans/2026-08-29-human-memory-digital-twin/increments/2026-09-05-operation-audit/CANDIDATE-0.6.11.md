@@ -89,7 +89,23 @@ Public consumer and identity commands, cwd/tmp (choose a NEW consumer output dir
 /Users/denny/projects/simple-harness-memory-sdk-0611-candidate/.local-test-evidence/2026-09-05/0611-combination/venv/bin/python -I /Users/denny/projects/simple-harness-memory-sdk-0611-candidate/.local-test-evidence/2026-09-05/0611-combination/verify_candidate.py
 ```
 
-Artifact bytes are fixed and sent to main. Dirac independent installed scoped review is pending;
+Artifact bytes are fixed and sent to main. Dirac independent installed scoped review is ACCEPT;
 underlying OA1/retry/privacy source leaves are already independently accepted. Host OA1 carrier
 persistence/outbox, full-operation coverage, old malformed-job repair, latency and native product
 acceptance remain separate. No push/tag/release, no change to frozen candidate bytes.
+
+
+## Independent final candidate gate
+
+2026-09-05 Dirac independently ACCEPTed the fixed d520765d source combination and artifact/exact
+installed/public-consumer evidence, with no new P0/P1. Independent read-only checker verified all
+72+151 package bytes/member sets,16 installed distributions/METADATA/requirements,213 origins,
+15 frozen snapshots, exact old wheels and the manifest hash. Source comparison verified OA1 modules
+match af49, privacy guards match02f4020, sqlite differs from retry0947 only by OA1 delegation, and
+manager retains privacy capability/authority/clock plus observation/reader. Consumer copies match
+fixed source and the three inherited helpers retain0610 bytes. Reviewer inspected actual consumer
+flow/results but did not rerun116/consumer/native; no new independent execution count is invented.
+
+This completes the bounded SDK combination artifact gate. It does not satisfy Host carrier
+persistence, all-Agent operation coverage, a waiting Harness successor/Host audit boot gate, provider
+or native acceptance. Artifact remains Memory0.6.11 + Harness0.7.2, no push/tag/release/main mutation.

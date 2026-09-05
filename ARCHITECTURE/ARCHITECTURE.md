@@ -516,3 +516,7 @@ Memory72+Harness151 source/wheel/install字节及213origins/16deps/pipcheck/15�
 限定组合116源码测试PASS，原继承失败保留；Dirac installed复核待验，不合main/不改Host。
 Hostcarrier持久化仍缺，all_operations_recorded=false，不标全program/native完成。
 [候选身份、命令与边界](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-operation-audit/CANDIDATE-0.6.11.md)。
+
+2026-09-05：Memory0.6.11 d520765/wheeld290cbfc的组合交集及artifact/exactinstalled/
+publicconsumer证据已Dirac独立限定ACCEPT，无新增P0/P1。SDK候选gate完成；Hostcarrier、
+全operation/native及独立Harness successor门仍待主线，不作替代，不push/tag/release。
