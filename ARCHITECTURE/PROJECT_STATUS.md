@@ -2,6 +2,13 @@
 
 > 最后更新：2026-09-05
 
+## 2026-09-05 当前 Host 运行时的全量回归
+
+Host Python 3.12 + exact Harness 0.7.2 + Memory 0.6.3 源码：1123 passed / 9 skipped，
+唯一红为旧 schema-cutover 测试仍要求版本字面量 0.6.2；已将该断言固定为当前 0.6.3，
+未改变 v7.1 DDL checksum、schema 或旧库迁移断言。该文件重测 3 passed（`memory-schema-version-retest.log`）；
+其余未变测试不重复消耗。Memory 本仓旧 .venv 仍装历史 Harness，首次 collection 错误不作产品失败。
+
 ## 2026-09-05 本机合入与 0.6.3 candidate
 
 SDK 源码修复已提交 `2b8428465cbd41032ba024a0b7199183161f5ecd`（candidate 0.7.2）；主执行者报告真实 runtime route→WAITING→授权重启新增 2 用例先红后绿、独立 review 4 passed。Host 正在 revendor/安装，尚未完成新候选身份核验及 A14/S8；本地 S1 FAIL/S8 FLAKY 保留。
