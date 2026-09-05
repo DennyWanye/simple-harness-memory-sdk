@@ -12840,6 +12840,11 @@ class SQLiteHumanMemoryBackend:
                     await self._db.execute("ROLLBACK")
             raise
 
+    async def read_operation_audit(self, **kwargs: Any) -> Any:
+        from simple_harness_memory.backends.operation_audit import read_operation_audit
+
+        return await read_operation_audit(self, **kwargs)
+
     async def export_audit_trace(
         self,
         query: AuditTraceQuery,

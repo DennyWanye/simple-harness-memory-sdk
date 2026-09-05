@@ -10,7 +10,7 @@ import simple_harness_memory.migrations as migrations
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_public_api_0_6_10_preserves_prior_surface_and_adds_history_origin_cut() -> None:
+def test_public_api_0_6_11_preserves_privacy_and_adds_operation_audit() -> None:
     snapshots = {
         version: json.loads(Path(__file__).with_name(f"public-api-{version}.json").read_text())
         for version in (
@@ -26,15 +26,18 @@ def test_public_api_0_6_10_preserves_prior_surface_and_adds_history_origin_cut()
             "0.6.8",
             "0.6.9",
             "0.6.10",
+            "0.6.11",
         )
     }
     for version, snapshot in snapshots.items():
         assert snapshot["package"] == "simple-harness-memory-sdk"
         assert snapshot["version"] == version
-    current = snapshots["0.6.10"]
-    assert simple_harness_memory.__version__ == "0.6.10"
+    current = snapshots["0.6.11"]
+    assert simple_harness_memory.__version__ == "0.6.11"
     assert current["root"] == sorted(simple_harness_memory.__all__)
-    assert current["root"] == sorted(
+    assert current["root"] == sorted([*snapshots["0.6.10"]["root"], *['MemoryOperationObservationContext', 'MemoryOperationObservationV1', 'OperationAuditItemV1', 'OperationAuditExpectation', 'OperationAuditCursor', 'OperationAuditCoverage', 'OperationAuditExpectationResult', 'OperationAuditPage', 'operation_audit_ref_hash']])
+    assert callable(simple_harness_memory.MemoryManager.read_operation_audit)
+    assert snapshots["0.6.10"]["root"] == sorted(
         [
             *snapshots["0.6.9"]["root"],
             "HistoryForgetCutReceipt",

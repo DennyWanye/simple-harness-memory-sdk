@@ -244,3 +244,28 @@ concurrent-owner/真实COMMIT前后进程退出控制。原069反例DB保留，p
 
 2026-09-05：retry-current-attempt0947c011限定源码已Dirac scoped ACCEPT；原红/DB与继承
 测试错误均保留。OA1 af49另树也已源码ACCEPT，后续统一组合候选与installed验证，当前无新wheel。
+2026-09-05：独立operation-audit后继树开始OA1；同步typed rejection carrier真实公共调用/
+独立Hoststore reopen/进程退出/外部cancel共12项限定源码检查通过，既有拒绝回归保留。
+ledger分页读口尚未实现、源审待验，不标OA1或全operation审计完成；未分配新版本，
+此源码树不能冒充冻结069 wheel，不改Host/native。
+[当前范围与命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-operation-audit/RESULTS.md)。
+
+2026-09-05：privacy0.6.10独立产物冻结后恢复OA1树；read_operation_audit WIP真实job effect
+误报已由canonical plan重建/同cut receipt校验修复，11项限定source控制PASS（1.03s），
+含no_mutation与written独立业务断言、旧cursor/预算/过期/删除检测。整体reader仍未审结，
+混合typed/short与missing-event/完整boundedwork验证待完成，不标OA1/full审计完成，未分配候选。
+[当前进展](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-operation-audit/RESULTS.md)。
+
+2026-09-05：OA1 bounded reader完整源码已实现并提交独立审查：真实mixed九family、缺event/
+crosslink、retry/reclaim、stable cursor/reopen和四种scan exhaustion；限定117PASS/2项明确
+排除的冻结069既有schema-probe测试失败，mypy3source/ruff通过。两项原失败和独立retry
+producer旧batch误回收P1反例均保留，不标全套绿。preDB Host持久化/未覆盖调用仍缺，
+all_operations_recorded=false；未分配版本/build/合main，privacy0.6.10冻结不变。
+[源码事实与原红证据](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-operation-audit/RESULTS.md)。
+
+2026-09-05：Dirac完整OA1审查发现唯一新增P1（sole handoff缺失但独立attempt仍在）已按
+独立attempt prefix/cut修复，31项受影响reader控制PASS/3.30s；其余完整审查无第二新增P0/P1，
+最终复核待验。原红保留，未出候选/合main，all_operations_recorded仍false。
+
+2026-09-05：OA1 af49f2a1完整bounded源码已独立scoped ACCEPT，包含sole-handoff原probe修后
+真实复验。源码gate完成；候选组合/installed/Host持久化与全operation覆盖另验，未合main。
