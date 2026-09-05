@@ -449,3 +449,9 @@ WAL-only/升级COMMIT前后真进程退出、备份重试、旧任务续跑和hi
 ledger分页读口尚未实现、源审待验，不标OA1或全operation审计完成；未分配新版本，
 此源码树不能冒充冻结069 wheel，不改Host/native。
 [当前范围与命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-operation-audit/RESULTS.md)。
+
+2026-09-05：privacy0.6.10独立产物冻结后恢复OA1树；read_operation_audit WIP真实job effect
+误报已由canonical plan重建/同cut receipt校验修复，11项限定source控制PASS（1.03s），
+含no_mutation与written独立业务断言、旧cursor/预算/过期/删除检测。整体reader仍未审结，
+混合typed/short与missing-event/完整boundedwork验证待完成，不标OA1/full审计完成，未分配候选。
+[当前进展](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-operation-audit/RESULTS.md)。

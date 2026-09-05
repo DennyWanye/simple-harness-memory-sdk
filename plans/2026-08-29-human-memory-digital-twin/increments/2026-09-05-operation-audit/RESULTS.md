@@ -49,3 +49,44 @@ so it rejects before exercising forged grant. No failed case is claimed green; r
 same-cut real job phase/cognitive effects, integrity/no-omission controls and API review remain.
 Do not consume WIP as frozen069, assign version, build wheel or merge main. Resume from this
 checkpoint only after higher-priority explicit duplicate-source suppression repair is resolved.
+
+## Resumed after privacy0.6.10 artifact freeze — bounded reader progress
+
+2026-09-05. Privacy wheelff73a1a/source02f4020 is frozen in its separate tree; this OA1 tree
+remains on its f92fac1 lineage and is not combined with privacy or assigned a version.
+The earlier "reader not implemented" describes the pre-da80e0a stage. Current public reader is
+executable WIP, not fully accepted. No source installed into Host/native and no wheel built here.
+
+Oracle720682f preceded the effect fix: a real DurableMemoryJobRunner reaches applied with a real
+cognitive head/revision and canonical mutation receipt, but WIP reader reports unverified. Root
+cause: public MemoryMutationPlan.to_json excludes computed plan_hash. Reader now reconstructs the
+public DTO, obtains its canonical plan_hash and validates the same-cut committed mutation receipt
+against that plan before reporting written. Real no_mutation job independently has zero heads;
+applied remains a workflow outcome and no_mutation is its separately bound cognitive effect.
+No old provider/job/result records are rewritten, and no price provenance is invented.
+
+`reader-resume-scoped.log`: **11PASS/1.03s**, mypy one reader source PASS. This includes actual
+job no_mutation/written controls, handoff snapshot unresolved→fresh applied while old cursor stays
+unchanged, real suppression pagination/append/reopen, shared grant budget in both reader orders,
+missing/mismatched expectations, forged valid-range receipt/cursor, real grant expiry and pinned
+history deletion followed by append. Damaged DB test deliberately removes immutable delete triggers
+on a disposable SDK DB; normal deletion correctly refuses. Initial trigger/import fixture errors
+remain in earlier logs and are not product failures. No source full suite rerun.
+
+| Ignored log | SHA256 |
+|---|---|
+| reader-resume-red.log | 2f892339bbd93f4647ac95239bf418d6a099bfb0c8fe743d881ba0bed7f5a205 |
+| reader-resume-scoped.log | 83146a95bf64be71113f4c12a845015329edf544b1adf26777959093e77553b3 |
+
+Command:
+```
+.local-test-evidence/2026-09-05/operation-audit/venv/bin/python -I -m pytest -q --tb=short --show-capture=no tests/integration/test_operation_audit.py tests/unit/test_operation_audit_page.py
+```
+
+Still required before OA1 completion: actual mixed-family typed terminal/final-use/short controls,
+mandatory job-event omission controls and retries/appends with pinned support, complete same-cut
+cross-link audit, public API/adjacent regression and independent full reader review. Current use of
+whole-backend integrity validation is not a finite physical scan/P99 proof; a nominal covered-family
+row cap must not be reported as bounding all validation work. Production Host persistence for the
+preDB carrier remains explicitly absent. all_operations_recorded stays false. This checkpoint is
+partial reader progress, never a complete OA1/all-Agent audit verdict.

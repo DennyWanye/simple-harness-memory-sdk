@@ -238,11 +238,17 @@ async def _items(backend: Any, lanes: dict[str, Any], support: dict[str, Any]):
                         effect = 'no_mutation'
                     elif application.get('validation_status') == 'accepted':
                         # Only actual committed receipts captured in the same cut can prove writes.
-                        plan_hash = structured.get('plan_hash') if isinstance(structured, dict) else None
+                        from simple_harness import MemoryMutationPlan
+
+                        # The canonical plan wire excludes its computed plan_hash.
+                        # Rebuild the public DTO; never look for an invented output field.
+                        plan = MemoryMutationPlan.from_json(structured)
+                        plan_hash = plan.plan_hash
                         matched = [r for r in lanes['mutation_commit'] if r['plan_hash'] == plan_hash]
-                        refs = set()
+                        refs: set[str] = set()
                         for r in matched:
                             _, mutation = await backend._decode_and_verify_mutation_receipt_row_unlocked(r)
+                            mutation.validate_plan(plan)
                             refs.update(ref('mutation_operation', op) for op in mutation.canonical_operation_ids)
                         if refs:
                             effect, operations = 'written', tuple(sorted(refs))

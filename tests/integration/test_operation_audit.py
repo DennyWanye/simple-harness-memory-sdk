@@ -5,12 +5,13 @@ import pytest
 
 import simple_harness_memory as m
 from simple_harness_memory.core.suppression import SealedAuditAccessDenied
+from simple_harness_memory.core.errors import MemoryCorruptionError
 from tests.integration.test_audit_access_v6 import _AuditAccessAuthority, _grant, _principal
 
 
-async def _open(tmp_path, *, max_reads=20):
+async def _open(tmp_path, *, max_reads=20, clock=None):
     authority = _AuditAccessAuthority()
-    manager = await m.build_human_memory_v7(tmp_path/'memory.db', clock=lambda:40.0,
+    manager = await m.build_human_memory_v7(tmp_path/'memory.db', clock=clock or (lambda:40.0),
                                            audit_access_authority=authority)
     principal = _principal()
     await manager.register_principal_owner(principal, m.MemoryScope.personal(principal.actor_id))
@@ -122,7 +123,7 @@ async def test_changed_known_prefix_is_not_replaced_by_later_append(tmp_path):
             "DELETE FROM suppression_directives WHERE directive_id=?", (first.directive_id,),
         )
         await manager.backend.connection.commit()
-        with pytest.raises(m.MemoryCorruptionError, match="pinned_history_differs"):
+        with pytest.raises(MemoryCorruptionError, match="pinned_history_differs"):
             await _read(manager, p, receipt, cursor=page.next_cursor)
     finally:
         await manager.close()
@@ -187,5 +188,19 @@ async def test_real_job_effect_and_handoff_snapshot_stays_pinned(tmp_path, no_mu
         assert applied[0].effect_receipt_hashes
         assert not next(c for c in fresh.coverage if c.family == "job_transition").unresolved_ref_hashes
         assert fresh.all_operations_recorded is False
+    finally:
+        await manager.close()
+
+
+async def test_expired_real_grant_is_denied_on_cursor_replay(tmp_path):
+    now = [40.0]
+    manager, p, receipt, _ = await _open(tmp_path, clock=lambda: now[0])
+    try:
+        await _suppress(manager, p, "1")
+        await _suppress(manager, p, "2")
+        page = await _read(manager, p, receipt, limit=1)
+        now[0] = receipt.expires_at
+        with pytest.raises(SealedAuditAccessDenied, match="expired"):
+            await _read(manager, p, receipt, cursor=page.next_cursor)
     finally:
         await manager.close()
