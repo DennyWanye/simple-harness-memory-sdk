@@ -2,6 +2,17 @@
 
 > 最后更新：2026-09-05
 
+## 2026-09-05 隔离 history visibility 源码候选
+
+从 main8675352 / Memory0.6.3 独立分支 `feature/human-memory-history-visibility` 完成 AC1/AC7
+历史来源检查的限定 SDK 修复：memory_id suppression 反向覆盖原 USER、派生 evidence 及全部支持修订；
+新增公开批量 `check_history_visibility`，接受 Host 验证的 S1 envelope/receipt（允许尚未分析/摄入）
+或已持久化 recall result/item 绑定，同一读快照检查当前来源状态、suppression 和 disclosure。
+不造 UI execution Run、不新增 authority；epoch 不是完整历史版本，Host 每次出站须 fresh-check。
+本机 source 验证共94项通过（24项新 history +47项既有聚焦 +23项 mutation），限定独立 review 接受。
+版本/冻结快照JSON/schema/wheel/pin未变，未合 main、未接 Host；无 provider/UI/installed-candidate
+验收或 p95 性能结论，不标 S3/S6/program 完成。详见[契约、命令及本机证据索引](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-history-visibility/RESULTS.md)。
+
 ## 2026-09-05 最新 Host 及 S3 隔离候选验证
 
 当前 Host main `c183fe70` 使用 Harness 0.7.2 / Memory 0.6.3 / Service 0.3.12。

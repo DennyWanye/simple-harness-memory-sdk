@@ -29,7 +29,13 @@ def test_public_api_0_6_3_snapshot_preserves_0_6_2_and_0_6_1() -> None:
     assert {k: v for k, v in snapshot.items() if k != "version"} == {
         k: v for k, v in recovery_base.items() if k != "version"
     }
-    assert snapshot["root"] == sorted(simple_harness_memory.__all__)
+    # Approved unversioned history candidate: preserve the frozen 0.6.3 snapshot;
+    # main will allocate the release version and snapshot after independent review.
+    assert set(simple_harness_memory.__all__) - set(snapshot["root"]) == {
+        "HistoryBinding", "HistoryEvidenceBinding", "HistoryRecallBinding",
+        "HistoryVisibilityItem", "HistoryVisibilitySnapshot",
+    }
+    assert set(snapshot["root"]) <= set(simple_harness_memory.__all__)
     assert snapshot["migrations"] == sorted(migrations.__all__)
     assert previous["version"] == "0.6.1" and base["version"] == "0.6.0"
     assert older["version"] == "0.5.2"

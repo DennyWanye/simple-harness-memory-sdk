@@ -27,6 +27,7 @@ from simple_harness_memory.core.errors import (
     MemoryProductionConfigurationError,
 )
 from simple_harness_memory.core.evidence import EvidenceIngestionReceipt, IngestedEvidenceRecord
+from simple_harness_memory.core.history import HistoryBinding, HistoryVisibilitySnapshot
 from simple_harness_memory.core.identity import (
     ExportPage,
     MemoryPrincipal,
@@ -138,6 +139,18 @@ class MemoryManager:
             return await self._backend.ingest_committed_evidence(envelope, receipt)
         return await self._backend.ingest_committed_evidence(
             envelope, receipt, analysis_lineage=analysis_lineage
+        )
+
+    async def check_history_visibility(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        disclosure_context: DisclosureContext,
+        bindings: tuple[HistoryBinding, ...],
+    ) -> HistoryVisibilitySnapshot:
+        """Observe current source visibility for a Host history page/context batch."""
+        return await self._backend.check_history_visibility(
+            principal=principal, disclosure_context=disclosure_context, bindings=bindings
         )
 
     async def register_conversation_evidence(self, reference: object) -> object:

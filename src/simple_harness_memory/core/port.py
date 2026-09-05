@@ -36,6 +36,7 @@ from simple_harness_memory.core.audit import (
     CanonicalStateManifestAccessV1,
 )
 from simple_harness_memory.core.evidence import EvidenceIngestionReceipt, IngestedEvidenceRecord
+from simple_harness_memory.core.history import HistoryBinding, HistoryVisibilitySnapshot
 from simple_harness_memory.core.identity import (
     MemoryPrincipal,
     MemoryScope,
@@ -305,6 +306,14 @@ class CognitiveMemoryBackend(Protocol):
     pure compiler in :mod:`simple_harness_memory.core.mutations` is not an
     authority substitute.
     """
+
+    async def check_history_visibility(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        disclosure_context: DisclosureContext,
+        bindings: tuple[HistoryBinding, ...],
+    ) -> HistoryVisibilitySnapshot: ...
 
     async def apply_memory_mutation_plan(
         self,

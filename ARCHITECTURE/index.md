@@ -8,6 +8,11 @@ Harness `>=0.7,<0.8`。0.6 不再默认实例化 regex fact
 extractor，不导出物理会话删除 API；旧 v4 Message/Fact 类型和私有 storage seam 仅作兼容读及
 回归 fixture，不是新 Human Memory 的 authority。候选版本尚未 tag/push/publish。
 
+2026-09-05：隔离0.6.3基线 history visibility 源码候选新增 public batch 来源可见性检查，
+修复 memory_id 遗忘后原 USER 历史复活；94项限定 source 测试通过，独立 review 接受。
+未改版本/build/pin/合 main，Host接线及 native遗忘验证仍待主线完成；
+[交付边界与命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-history-visibility/RESULTS.md)。
+
 | 文档 | 范围 |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 包结构、分层、本地后端与召回/认知/世界对象的生产边界 |

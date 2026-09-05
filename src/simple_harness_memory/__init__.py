@@ -35,6 +35,13 @@ from simple_harness_memory.core.evidence import (
     EvidenceIngestionReceipt,
     IngestedEvidenceRecord,
 )
+from simple_harness_memory.core.history import (
+    HistoryBinding,
+    HistoryEvidenceBinding,
+    HistoryRecallBinding,
+    HistoryVisibilityItem,
+    HistoryVisibilitySnapshot,
+)
 from simple_harness_memory.core.identity import (
     ExportPage,
     MemoryPrincipal,
@@ -125,6 +132,11 @@ def __getattr__(name: str) -> object:
     raise AttributeError(name)
 
 __all__ = [
+    "HistoryBinding",
+    "HistoryEvidenceBinding",
+    "HistoryRecallBinding",
+    "HistoryVisibilityItem",
+    "HistoryVisibilitySnapshot",
     "MemoryManager",
     "build_human_memory_v7",
     "build_human_memory_v6",

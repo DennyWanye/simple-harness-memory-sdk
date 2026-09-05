@@ -106,6 +106,7 @@ if TYPE_CHECKING:
         EvidenceIngestionReceipt,
         IngestedEvidenceRecord,
     )
+    from simple_harness_memory.core.history import HistoryBinding, HistoryVisibilitySnapshot
     from simple_harness_memory.core.identity import (
         MemoryPrincipal,
         MemoryScope,
@@ -1520,6 +1521,19 @@ class SQLiteHumanMemoryBackend:
             )
             return await self._append_suppression_decision_unlocked(decision)
 
+    async def check_history_visibility(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        disclosure_context: DisclosureContext,
+        bindings: tuple[HistoryBinding, ...],
+    ) -> HistoryVisibilitySnapshot:
+        from simple_harness_memory.backends.history_visibility import check_history_visibility
+
+        return await check_history_visibility(
+            self, principal=principal, disclosure_context=disclosure_context, bindings=bindings
+        )
+
     async def resolve_suppression(
         self,
         candidate: SuppressionCandidate,
@@ -1543,6 +1557,8 @@ class SQLiteHumanMemoryBackend:
         self,
         candidate: SuppressionCandidate,
         purpose: OrdinaryMemoryPurpose,
+        *,
+        evaluated_at: float | None = None,
     ) -> SuppressionResolution:
         from simple_harness_memory.core.suppression import (
             SuppressionResolution,
@@ -1556,23 +1572,38 @@ class SQLiteHumanMemoryBackend:
         if candidate.memory_id is not None:
             targets.append((SuppressionScopeKind.MEMORY.value, candidate.memory_id))
         targets.extend((SuppressionScopeKind.ENTITY.value, item) for item in candidate.entity_ids)
-        predicates = " OR ".join("(t.target_kind=? AND t.target_ref=?)" for _ in targets)
-        parameters: list[object] = [candidate.subject, purpose.value]
-        for target_kind, target_ref in targets:
-            parameters.extend((target_kind, target_ref))
-        async with self._db.execute(
-            "SELECT DISTINCT d.directive_id FROM suppression_directives d "
-            "JOIN suppression_targets t ON t.directive_id=d.directive_id "
-            "WHERE d.principal_id=? AND d.event_kind='directive' "
-            "AND (d.purpose IS NULL OR d.purpose=?) AND ("
-            + predicates
-            + ") AND NOT EXISTS(SELECT 1 FROM suppression_directives r "
-            "WHERE r.event_kind='revoke' AND r.supersedes_directive_id=d.directive_id) "
-            "ORDER BY d.directive_id",
-            tuple(parameters),
-        ) as cursor:
-            directive_ids = tuple(str(row[0]) for row in await cursor.fetchall())
-        return SuppressionResolution(bool(directive_ids), directive_ids, _timestamp(self._now()))
+        if candidate.evidence_id is not None:
+            from simple_harness_memory.backends.history_visibility import evidence_targets
+
+            targets.extend(await evidence_targets(self, candidate.subject, candidate.evidence_id))
+        target_list = sorted(set(targets))
+        matched: set[str] = set()
+        # Keep the original SQL target filtering; large lineage does not require
+        # reading every active directive owned by the subject.
+        for offset in range(0, len(target_list), 250):
+            chunk = target_list[offset:offset + 250]
+            predicates = " OR ".join("(t.target_kind=? AND t.target_ref=?)" for _ in chunk)
+            parameters: list[object] = [candidate.subject, purpose.value]
+            for target_kind, target_ref in chunk:
+                parameters.extend((target_kind, target_ref))
+            async with self._db.execute(
+                "SELECT DISTINCT d.directive_id FROM suppression_directives d "
+                "JOIN suppression_targets t ON t.directive_id=d.directive_id "
+                "WHERE d.principal_id=? AND d.event_kind='directive' "
+                "AND (d.purpose IS NULL OR d.purpose=?) AND (" + predicates + ") "
+                "AND NOT EXISTS(SELECT 1 FROM suppression_directives r "
+                "WHERE r.event_kind='revoke' AND r.supersedes_directive_id=d.directive_id)",
+                tuple(parameters),
+            ) as cursor:
+                async for row in cursor:
+                    matched.add(str(row[0]))
+                    if len(matched) > 4096:
+                        raise MemoryLimitError("history_suppression_match_limit")
+        directive_ids = tuple(sorted(matched))
+        return SuppressionResolution(
+            bool(directive_ids), directive_ids,
+            _timestamp(self._now() if evaluated_at is None else evaluated_at),
+        )
 
     async def _append_suppression_decision(
         self,
@@ -3822,6 +3853,7 @@ class SQLiteHumanMemoryBackend:
         supplied_item_ids: frozenset[str],
         procedure_applicability_fingerprints: frozenset[str],
         now: float,
+        suppression_purpose: OrdinaryMemoryPurpose | None = None,
     ) -> None:
         """Re-evaluate every bound durable source under the suppression transaction."""
 
@@ -3830,6 +3862,7 @@ class SQLiteHumanMemoryBackend:
             SuppressionCandidate,
         )
 
+        purpose = suppression_purpose or OrdinaryMemoryPurpose.RECALL
         assert self._db is not None
         bound: list[tuple[Any, Any, bool]] = [
             (item.selected_item, item, False)
@@ -3895,14 +3928,14 @@ class SQLiteHumanMemoryBackend:
                 suppressed = (
                     await self._resolve_suppression_unlocked(
                         SuppressionCandidate(principal_id, memory_id=source.source_ref),
-                        OrdinaryMemoryPurpose.RECALL,
+                        purpose, evaluated_at=now,
                     )
                 ).denied
                 for evidence_id in evidence_ids:
                     suppressed = suppressed or (
                         await self._resolve_suppression_unlocked(
                             SuppressionCandidate(principal_id, evidence_id=evidence_id),
-                            OrdinaryMemoryPurpose.RECALL,
+                            purpose, evaluated_at=now,
                         )
                     ).denied
                 if suppressed or not self._candidate_disclosure_allowed(
@@ -3944,7 +3977,7 @@ class SQLiteHumanMemoryBackend:
                 if (
                     await self._resolve_suppression_unlocked(
                         SuppressionCandidate(principal_id, evidence_id=evidence_id),
-                        OrdinaryMemoryPurpose.RECALL,
+                        purpose, evaluated_at=now,
                     )
                 ).denied:
                     raise MemoryValidationError("RECALL_AUTHORITY_STALE")
