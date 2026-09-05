@@ -50,11 +50,14 @@ successor opens a root with the exact validated upgrade marker.
    Unknown/future/tampered/partial schemas fail before writable open, backup or mutation. No generic
    'checksum ignored' branch. Source validation must not depend on a future classification callback
    to manufacture acceptance; validate recorded canonical authority facts and original hashes.
-2. Acquire writer lease, revalidate identity/current snapshot before writes. Create a consistent
-   SQLite backup to a new path and independently verify it. Reject live writer or stale expected
-   identity. Do not silently copy/rebuild selected records into an empty database.
+2. Acquire writer lease and BEGIN IMMEDIATE, revalidate identity/current snapshot before any DDL
+   or row writes. A WAL-aware pinned read connection for that quiescent pre-upgrade state supplies
+   the SQLite backup; independently verify its contents. A new backup path is exclusive-create;
+   a pre-existing path follows the exact-retry rules below, never overwrite. Reject live writer or
+   stale expected identity. Do not copy/rebuild selected records into an empty database.
 3. In one BEGIN IMMEDIATE transaction,7.1 adds the exact frozen .068 source receipt table/indexes/
-   immutability triggers.7.0 additionally appends analysis_lineage_json BLOB DEFAULT NULL. Do not
+   immutability triggers.7.0 additionally uses the exact existing official declaration
+   ADD COLUMN analysis_lineage_json BLOB (implicit NULL, no explicit DEFAULT NULL). Do not
    backfill lineage, alter old rows, rename IDs, resanitize envelopes, update old receipt hashes,
    delete/complete/reschedule jobs or outbox, rotate cursor authority, or materialize cognitive data.
 4. Add exactly one versioned upgrade marker in the existing schema_meta table (new key proposed
@@ -72,9 +75,79 @@ successor opens a root with the exact validated upgrade marker.
    Fresh .068/.0697.2 roots without a marker remain valid. A fake marker on an unupgraded catalog,
    missing marker on an old root, duplicate/unknown marker, unknown checksum or bad binding rejects.
 
+### WAL-aware snapshot and finite catalog routes (Dirac P1 correction)
+The .068 `_probe_existing_read_only` uses `mode=ro&immutable=1` and deliberately ignores WAL.
+That optimization cannot decide complete old-data preservation, upgrade-marker existence, or
+post-upgrade reopen. Successor migration AND normal initializer must instead use a WAL-aware
+SQLite read transaction (`mode=ro`, no immutable flag; query_only, explicit BEGIN), so catalog,
+initialization/marker, canonical rows and pending work are all from one committed snapshot.
+Do not independently read main-file metadata then attach newer WAL business rows. Do not treat
+an empty/stale main-file catalog as a fresh root while a committed WAL may contain the real root.
+
+SQLite reads/reconstructs its own WAL index; SHM is coordination data, not a canonical authority.
+No Host-side WAL parsing, main-only fallback, manual deletion/truncation/checkpoint to make a probe
+pass, or read/write recovery of an unvalidated source. If SQLite cannot obtain a safe read-only
+snapshot, return explicit snapshot-unavailable/busy rather than classify a valid WAL root as old,
+corrupt or fresh. Rejection preserves main/WAL bytes and logical rows; a SQLite-managed SHM index
+is not evidence that source data was migrated. A readable missing/stale-SHM fixture must exercise
+SQLite's supported WAL-aware path; an actually unsupported read-only recovery is explicit BLOCKED,
+not permission to ignore WAL. Supported platform behavior must be established before implementation
+is called complete.
+
+After the lease/BEGIN IMMEDIATE fence, compare the pinned pre-upgrade state again. Run SQLite backup
+from a WAL-aware read snapshot of that same state; verify its canonical old-column roots, original
+receipts and integrity against the source before schema changes. The backup must include ALL committed
+WAL pages. Never copy only the main DB file. All original data and marker verification after COMMIT,
+ACK loss and normal reopen uses this same WAL-aware initializer route. Successful checkpoint is not
+an acceptance prerequisite: a committed marker/DDL still solely in WAL is a committed upgraded root.
+Uncommitted WAL frames are not a marker; SQLite determines the committed boundary.
+
+Freeze a finite physical-catalog fixture map before coding, including actual sqlite_master SQL,
+PRAGMA table_xinfo/defaults, indexes/FKs and trigger definitions for supported SQLite versions:
+
+| Source catalog | Known column state | Allowed target transform |
+|---|---|---|
+| Official fresh7.0 | No analysis_lineage_json | Official ADD COLUMN ... BLOB (implicit NULL) plus source receipt DDL |
+| Official fresh7.1 (.063/.067) | BLOB, dflt_value absent, declared by fresh DDL | Source receipt DDL only |
+| Official7.0->7.1 migration | BLOB, dflt_value absent, appended by former official ALTER | Source receipt DDL only; preserve its existing initialization receipt |
+| Each above already upgraded | Exact corresponding appended catalog + validated marker | Exact replay, no catalog rewrite |
+| Fresh frozen .0687.2 | Exact frozen DDL, no marker | Existing valid fresh-root route, no migration needed |
+
+Target logical schema checksum alone is not a physical catalog verifier. The new marker binds
+source_catalog_id/target_catalog_id from this finite map plus exact added_ddl_hash. Known fresh and
+known appended SQL representations may differ; never normalize arbitrary SQL/defaults into an
+allowlisted shape, rebuild tables to resemble fresh DDL, or accept a label/checksum without matching
+its catalog. The earlier proposal's explicit DEFAULT NULL was not implemented; it is corrected to
+existing official BLOB with implicit NULL to avoid creating an unnecessary new default variant.
+An unlisted explicit-default/custom/future shape remains rejected until separately reviewed.
+
+### Preservation hash lifetime and backup exact retry
+`preserved_old_columns_root_hash` attests the HISTORICAL migration boundary. Compare source vs
+backup and pre-upgrade vs post-DDL old-column projections inside the fenced migration. It includes
+all pre-existing columns/rows/meta entries and excludes only the precisely authorized added column,
+new source table and marker. Store the first successful equality hash in the immutable receipt.
+After commit, normal job progress, cognitive writes, suppression or source admission may legitimately
+change current rows. Reopen/repeated migrate validate original initialization identity, catalog and
+marker hash/bindings plus current canonical integrity; they MUST NOT compare the current database
+root to that historical preservation hash. No periodic rollback to the old snapshot is authorized.
+
+Before commit, a prior crash can leave a backup file but no marker. Retry does not trust its name:
+under the same writer fence, independently validate the existing backup's complete known catalog,
+original initialization/cursor identity, SQLite integrity and complete old-column canonical roots
+against the CURRENT pre-upgrade snapshot. If all match, reuse those exact bytes and bind their actual
+SHA256 in the committed receipt. Never recreate/overwrite the backup. Partial/corrupt backup, different
+identity or intervening source data changes produce an explicit backup conflict with source and
+backup unchanged; caller may supply a different unused backup path. No new preparation ledger or
+fictional previous-success receipt is needed. Exact match, not merely matching initialization ID,
+is required. After a committed marker exists, exact replay returns that original receipt without
+creating/replacing a backup. Its backup hash is a historical backup fact; normal reopen does not
+require the external backup still to be at its original location, and replay must not assert a
+missing/moved/changed backup has just been verified. Restore always separately verifies backup bytes.
+
 ### New upgrade receipt/marker (freeze independent vectors before implementation)
 Fields: protocol='memory.schema.source-admission-upgrade.v1', receipt_id,
-source_schema_checksum, target_schema_checksum, original_initialization_receipt_id,
+source_schema_checksum, target_schema_checksum, source_catalog_id, target_catalog_id,
+original_initialization_receipt_id,
 original_initialization_receipt_hash, added_ddl_hash, preserved_old_columns_root_hash,
 backup_sha256, committed_at, receipt_hash. ID binds original initialization receipt+source/target
 checksums under a new versioned ID domain. Receipt hash is H(C({domain,payload})), C sorted UTF8 JSON,
@@ -94,6 +167,28 @@ new-schema manifest hashes.7.1 old table projections remain unchanged; the new s
 starts empty. No historical audit/manifest receipt is rewritten to pretend the new schema is old.
 
 ### A acceptance oracle
+- **W1 nonempty committed WAL control:** real old public SDK commits cognitive data, suppression
+  and pending jobs/outbox into WAL with autocheckpoint disabled; prove main-only reads omit at least
+  one committed business fact, while the real WAL-aware old public control sees all expected facts.
+  Leave committed WAL across process termination without cleanup/checkpoint. Official migration and
+  verified backup must preserve the complete WAL-visible state, then reopen with unchanged IDs,
+  old receipt bytes and suppression decisions. Do not use the main-only view as the oracle.
+- **W2 upgrade commit before checkpoint control:** with complete no-fault business assertions already
+  green, inject process death immediately after migration COMMIT and before checkpoint/ACK, leaving
+  valid marker/DDL in committed WAL while main still has the old catalog. New initializer must open
+  the upgraded root and repeated migration must return the exact committed first receipt. No manual
+  WAL cleanup or mandatory checkpoint. Compare to pre-COMMIT death: no committed marker, old root
+  remains valid and retry follows verified backup reuse/conflict. These are separate required cases.
+- **W3 catalog variants:** instantiate every finite source route above using its actual official
+  fresh/migration producer; assert exact default metadata and SQL/catalog identity before/after.
+  Explicit DEFAULT NULL/custom extra columns/triggers are negative controls, not silently normalized.
+- **W4 historical root:** migrate successfully, then perform real new source admission, a permitted
+  cognitive update, suppression and pending-job progress; reopen/replay upgrade still succeeds with
+  the original marker/receipt even though the current root differs. New integrity corruption rejects.
+- **W5 backup retry:** verified backup + precommit failure -> exact retry reuses its bytes; partial
+  backup, different database, or same initialization identity with changed business state -> explicit
+  conflict/no overwrite. Committed-marker replay remains exact independently of a moved backup;
+  no claim of current backup validity. Original/source/backup bytes and outcomes are asserted.
 - Complete nonempty old fixtures generated with the exact corresponding official old public SDK
   source/wheel (at least7.0, .0637.1, .0677.1), not a current empty DB relabeled with old metadata.
   Include principal identity, original S1/full receipts, nonempty cognitive IDs/revisions/evidence
@@ -189,3 +284,10 @@ assistant registration -> actual selected-source refs -> Host exact-source guard
 and unrelated-hit allow. Main production cutover waits for this full old-data path, not a fresh-only
 SDK smoke. No build/version allocation in this plan-only checkpoint; user approval is already carried
 forward, and independent review handles routine contract correctness without another user confirmation.
+
+## 2026-09-05 contract challenge follow-up
+Dirac found a P1 in024cb4c: immutable main-only probing cannot validate committed WAL or discover
+an uncheckpointed committed migration marker. This revision corrects the PLAN ONLY and freezes W1/W2
+before implementation, plus catalog variants, historical-root lifetime and backup-retry controls.
+No .068 source/wheel, SDK rejection behavior, Host code, version or product test execution changed.
+Follow-up independent contract review is pending; this entry is not an implementation ACCEPT.
