@@ -37,6 +37,7 @@ from simple_harness_memory.core.history import (
     HistoryShortHorizonBinding,
     HistoryVisibilitySnapshot,
 )
+from simple_harness_memory.core.history_sources import HistorySourceAuthorityPort
 from simple_harness_memory.core.identity import (
     ExportPage,
     MemoryPrincipal,
@@ -112,6 +113,10 @@ class _NullWorldModel(WorldModelPort):
 
 
 class MemoryManager:
+    # Public source capability, independent of the separately assigned wheel version.
+    # A Host must still verify its exact reviewed candidate identity before startup.
+    history_source_enforcement_version = 1
+
     def __init__(
         self,
         backend: MemoryBackend | CognitiveMemoryBackend,
@@ -473,6 +478,7 @@ class MemoryManager:
         analysis_delivery_authority: object | None = None,
         evidence_authority: object | None = None,
         conversation_evidence_authority: object | None = None,
+        history_source_authority: HistorySourceAuthorityPort | None = None,
         classification_policy: InformationClassificationPolicy | None = None,
         memory_action_authority: object | None = None,
         procedure_observation_authority: object | None = None,
@@ -516,6 +522,7 @@ class MemoryManager:
             analysis_delivery_authority=analysis_delivery_authority,
             evidence_authority=evidence_authority,
             conversation_evidence_authority=conversation_evidence_authority,
+            history_source_authority=history_source_authority,
             classification_policy=classification_policy,
             memory_action_authority=memory_action_authority,
             procedure_observation_authority=procedure_observation_authority,

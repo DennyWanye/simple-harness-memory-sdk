@@ -12,10 +12,15 @@ from simple_harness.contracts import canonical_json
 
 import simple_harness_memory as m
 from tests.integration.test_cognitive_mutation_repository_v5 import (
-    _Authority, _admitted, _classification_policy, _disclosure, _operation,
-    _plan, _principal, _span,
+    _admitted,
+    _Authority,
+    _classification_policy,
+    _disclosure,
+    _operation,
+    _plan,
+    _principal,
+    _span,
 )
-
 
 TEXT = "请记住：我的默认饮品偏好是无糖乌龙茶。"
 NS = m.HistorySourceNamespace("a" * 64, "actor-1", "primary:p1:foreground_turns")
@@ -138,7 +143,9 @@ async def test_no_authority_legacy_duplicate_is_not_silently_allowed(tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("ingestion", ["before", "after", "cold"])
-async def test_duplicate_and_real_dependent_answer_deny_without_materializing_old(tmp_path, ingestion):
+async def test_duplicate_and_real_dependent_answer_deny_without_materializing_old(
+    tmp_path, ingestion,
+):
     manager, origins, seed, mid = await prepared(tmp_path / "duplicate.db")
     old, _ = source("old")
     child, _ = source("answer", "已记住", old)
@@ -165,7 +172,9 @@ async def test_duplicate_and_real_dependent_answer_deny_without_materializing_ol
     ("legacy_before_only", False, "history_source_cut_unverifiable"),
     (None, False, "history_source_cut_unverifiable"),
 ])
-async def test_postcut_requires_actual_atomic_admission_not_late_enqueue(tmp_path, proof, expected, reason):
+async def test_postcut_requires_actual_atomic_admission_not_late_enqueue(
+    tmp_path, proof, expected, reason,
+):
     manager, origins, seed, mid = await prepared(tmp_path / "after.db")
     new, _ = source("new")
     if proof:
@@ -198,7 +207,9 @@ async def test_exact_host_proof_bindings_cannot_grant_from_foreign_facts(tmp_pat
         elif field == "store_epoch":
             origin = replace(origin, namespace=replace(NS, store_epoch="b" * 64))
         elif field == "stream":
-            origin = replace(origin, namespace=replace(NS, source_stream="primary:other:foreground_turns"))
+            origin = replace(origin, namespace=replace(
+                NS, source_stream="primary:other:foreground_turns",
+            ))
         elif field == "pair":
             origin = replace(origin, admission_receipt_hash="e" * 64)
         else:
@@ -207,5 +218,179 @@ async def test_exact_host_proof_bindings_cannot_grant_from_foreign_facts(tmp_pat
         origins.sources["new"] = origin
         result = await check(manager, new)
         assert result.items[0].reason == "history_source_cut_unverifiable"
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_second_manager_commit_during_host_await_invalidates_final_snapshot(tmp_path):
+    from simple_harness_memory.core.errors import MemoryWriterConflict
+
+    path = tmp_path / "external.db"
+    manager, origins, seed, mid = await prepared(path)
+    new, _ = source("new")
+    origins.register(new, 3)
+    second = None
+    try:
+        await forget(manager, origins, mid)
+        await manager.ingest_committed_evidence(new.envelope, new.receipt)
+        # Production enforces a writer lease. First prove it; then deliberately
+        # release that lease as a source-test fault to retain a stale connection
+        # while a REAL second manager writes through public suppress (no SQL edit).
+        with pytest.raises(MemoryWriterConflict):
+            await m.MemoryManager.build_human_memory_v7(path)
+        manager.backend._release_writer_lease()
+        second = await m.MemoryManager.build_human_memory_v7(path)
+        before_changes = manager.backend.connection.total_changes
+
+        async def external_commit():
+            await second.suppress(
+                request=m.SuppressionRequest("external-forget", "actor-1",
+                    m.SuppressionScopeKind.MEMORY, mid, "user_forget", 20.0),
+                principal=_principal(),
+            )
+
+        origins.hook = external_commit
+        result = await check(manager, new)
+        assert result.items[0].reason == "history_source_cut_unverifiable"
+        assert manager.backend.connection.total_changes == before_changes
+        assert origins.hook is None
+        assert ("cut", "external-forget") not in origins.calls  # not in prefetch
+    finally:
+        if second is not None:
+            await second.close()
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_direct_current_gate_and_reopen_keep_exact_cut(tmp_path):
+    from simple_harness_memory.core.suppression import OrdinaryMemoryPurpose, SuppressionCandidate
+
+    path = tmp_path / "reopen.db"
+    manager, origins, seed, mid = await prepared(path)
+    old, _ = source("old")
+    new, _ = source("new")
+    origins.register(old, 1, "legacy_before_only")
+    origins.register(new, 3)
+    try:
+        for binding in (old, new):
+            await manager.ingest_committed_evidence(binding.envelope, binding.receipt)
+        await forget(manager, origins, mid)
+        snapshot = await check(manager, old, new)
+        assert [i.visible for i in snapshot.items] == [False, True]
+        for binding, denied in ((old, True), (new, False)):
+            observed = await manager.backend.resolve_suppression(
+                SuppressionCandidate("actor-1", evidence_id=binding.envelope.evidence_id),
+                OrdinaryMemoryPurpose.RECALL, principal=_principal(),
+            )
+            assert observed.denied is denied
+    finally:
+        await manager.close()
+
+    manager = await m.MemoryManager.build_human_memory_v7(
+        path, history_source_authority=origins, classification_policy=_classification_policy(),
+        clock=lambda: 20.0,
+    )
+    origins.backend = manager.backend
+    try:
+        reopened = await check(manager, old, new)
+        assert [i.visible for i in reopened.items] == [False, True]
+        assert reopened.policy_hash == snapshot.policy_hash
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_same_operation_cross_transaction_cache_observes_external_data_version(tmp_path):
+    from simple_harness_memory.backends.history_source_guard import (
+        history_source_operation,
+        prepare_history_source_context,
+    )
+    from simple_harness_memory.core.suppression import OrdinaryMemoryPurpose, SuppressionCandidate
+
+    path = tmp_path / "data-version.db"
+    manager, origins, seed, mid = await prepared(path)
+    new, _ = source("new")
+    origins.register(new, 3)
+    second = None
+    try:
+        await forget(manager, origins, mid)
+        await manager.ingest_committed_evidence(new.envelope, new.receipt)
+        manager.backend._release_writer_lease()  # controlled lease-handoff fault, as above
+        second = await m.MemoryManager.build_human_memory_v7(path)
+
+        @history_source_operation
+        async def same_operation(backend):
+            await prepare_history_source_context(backend, _principal())
+            candidate = SuppressionCandidate("actor-1", evidence_id="new")
+            async with backend._write_lock:
+                await backend.connection.execute("BEGIN")
+                before = await backend._resolve_suppression_unlocked(
+                    candidate, OrdinaryMemoryPurpose.RECALL,
+                )
+                await backend.connection.execute("COMMIT")
+            assert not before.denied  # populates THIS operation's catalog cache
+            changes = backend.connection.total_changes
+            await second.suppress(request=m.SuppressionRequest(
+                "external-second", "actor-1", m.SuppressionScopeKind.MEMORY,
+                mid, "user_forget", 20.0,
+            ), principal=_principal())
+            assert backend.connection.total_changes == changes
+            async with backend._write_lock:
+                await backend.connection.execute("BEGIN")
+                after = await backend._resolve_suppression_unlocked(
+                    candidate, OrdinaryMemoryPurpose.RECALL,
+                )
+                await backend.connection.execute("COMMIT")
+            assert after.denied
+
+        await same_operation(manager.backend)
+    finally:
+        if second:
+            await second.close()
+        await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("proof,should_commit", [("atomic", True), ("legacy_before_only", False)])
+async def test_fresh_reassert_actual_mutation_and_typed_recall_share_gate(
+    tmp_path, proof, should_commit,
+):
+    from simple_harness_memory.core.suppression import SuppressionDenied
+    from tests.integration.test_typed_recall_v6 import _context, _recall_plan
+
+    manager, origins, seed, mid = await prepared(tmp_path / "mutation-recall.db")
+    new, span = source("new")
+    origins.register(new, 3, proof)
+    manager.backend._evidence_authority.register_admitted(new.envelope, new.receipt, span)
+    try:
+        await forget(manager, origins, mid)
+        await manager.ingest_committed_evidence(new.envelope, new.receipt)
+        plan = _plan(new.envelope, _operation(span), base_revision=2,
+                     plan_id="new-plan", idempotency_key="new-plan")
+        if not should_commit:
+            with pytest.raises(SuppressionDenied):
+                await manager.apply_memory_mutation_plan(
+                    principal=_principal(), scope=m.MemoryScope.personal("actor-1"), plan=plan,
+                )
+        else:
+            result = await manager.apply_memory_mutation_plan(
+                principal=_principal(), scope=m.MemoryScope.personal("actor-1"), plan=plan,
+            )
+            assert result.outcome is h.MemoryMutationApplyOutcome.COMMITTED
+        context = _context()
+        execution = await manager.execute_typed_recall(
+            principal=_principal(), context=context,
+            plan=_recall_plan(context, idempotency_key="recall-new"),
+        )
+        assert len(execution.result.items) == int(should_commit)
+        if should_commit:
+            item = execution.result.items[0]
+            assert item.selected_item.source_ref != mid
+            binding = m.HistoryRecallBinding(
+                execution.result.result_id, execution.result.result_hash,
+                item.selected_item.item_id, item.result_item_hash,
+            )
+            assert (await check(manager, binding)).items[0].visible
     finally:
         await manager.close()

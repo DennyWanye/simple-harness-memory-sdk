@@ -26,6 +26,11 @@ import aiosqlite
 import structlog
 from simple_harness.contracts import FrozenJsonValue, JsonValue, canonical_json, thaw_json
 
+from simple_harness_memory.backends.history_source_guard import (
+    duplicate_source_matches,
+    history_source_operation,
+    prepare_history_source_context,
+)
 from simple_harness_memory.backends.schema_v5 import (
     REQUIRED_TABLES,
     SCHEMA_CHECKSUM,
@@ -108,6 +113,7 @@ if TYPE_CHECKING:
         IngestedEvidenceRecord,
     )
     from simple_harness_memory.core.history import HistoryBinding, HistoryVisibilitySnapshot
+    from simple_harness_memory.core.history_sources import HistorySourceAuthorityPort
     from simple_harness_memory.core.identity import (
         MemoryPrincipal,
         MemoryScope,
@@ -352,6 +358,7 @@ class SQLiteHumanMemoryBackend:
         analysis_delivery_authority: MemoryAnalysisDeliveryAuthorityPort | None = None,
         evidence_authority: EvidenceAuthorityVerifierPort | None = None,
         conversation_evidence_authority: ConversationEvidenceAuthorityVerifierPort | None = None,
+        history_source_authority: HistorySourceAuthorityPort | None = None,
         classification_policy: InformationClassificationPolicy | None = None,
         memory_action_authority: MemoryActionAuthorityPort | None = None,
         procedure_observation_authority: ProcedureObservationAuthorityPort | None = None,
@@ -387,6 +394,12 @@ class SQLiteHumanMemoryBackend:
         self._analysis_delivery_authority = analysis_delivery_authority
         self._evidence_authority = evidence_authority
         self._conversation_evidence_authority = conversation_evidence_authority
+        self._history_source_authority = history_source_authority
+        if history_source_authority is not None and any(
+            not callable(getattr(history_source_authority, name, None))
+            for name in ("resolve_history_source", "resolve_history_forget_cut")
+        ):
+            raise TypeError("history_source_authority must implement HistorySourceAuthorityPort")
         self._classification_policy = classification_policy
         self._memory_action_authority = memory_action_authority
         self._procedure_observation_authority = procedure_observation_authority
@@ -1065,6 +1078,7 @@ class SQLiteHumanMemoryBackend:
             next_after = (tail.created_at, tail.outbox_id)
         return OutboxPageV1(entries=tuple(entries), next_after=next_after)
 
+    @history_source_operation
     async def get_twin_graph_view(self, *, principal: MemoryPrincipal) -> TwinGraphView:
         """Return a suppression-first, display-only graph over canonical memory rows."""
 
@@ -1078,6 +1092,7 @@ class SQLiteHumanMemoryBackend:
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
         generated_at = _timestamp(self._now())
+        await prepare_history_source_context(self, principal)
         async with self._write_lock:
             await self._authorize_short_horizon_principal_unlocked(principal)
             async with self._db.execute(
@@ -1392,6 +1407,7 @@ class SQLiteHumanMemoryBackend:
             redact_content,
         )
 
+    @history_source_operation
     async def _ordinary_evidence_record(
         self, evidence_id: str, purpose: OrdinaryMemoryPurpose
     ) -> IngestedEvidenceRecord:
@@ -1418,6 +1434,7 @@ class SQLiteHumanMemoryBackend:
             raise KeyError("evidence_not_found")
         return record
 
+    @history_source_operation
     async def _visible_evidence_ids(
         self, subject: str, purpose: OrdinaryMemoryPurpose
     ) -> tuple[str, ...]:
@@ -1558,10 +1575,13 @@ class SQLiteHumanMemoryBackend:
         return await resolve_short_horizon_sources(
             self, principal=principal, disclosure_context=disclosure_context, bindings=bindings)
 
+    @history_source_operation
     async def resolve_suppression(
         self,
         candidate: SuppressionCandidate,
         purpose: OrdinaryMemoryPurpose,
+        *,
+        principal: MemoryPrincipal | None = None,
     ) -> SuppressionResolution:
         from simple_harness_memory.core.suppression import (
             OrdinaryMemoryPurpose,
@@ -1574,6 +1594,14 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("purpose must use OrdinaryMemoryPurpose")
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
+        if principal is not None:
+            from simple_harness_memory.core.identity import MemoryPrincipal
+
+            if type(principal) is not MemoryPrincipal:
+                raise TypeError("principal must use MemoryPrincipal")
+            if principal.actor_id != candidate.subject:
+                raise MemoryOwnershipConflict("history_source_subject_not_owned")
+            await prepare_history_source_context(self, principal)
         async with self._write_lock:
             return await self._resolve_suppression_unlocked(candidate, purpose)
 
@@ -1623,6 +1651,8 @@ class SQLiteHumanMemoryBackend:
                     matched.add(str(row[0]))
                     if len(matched) > 4096:
                         raise MemoryLimitError("history_suppression_match_limit")
+        if not matched:
+            matched.update(await duplicate_source_matches(self, candidate, purpose))
         directive_ids = tuple(sorted(matched))
         return SuppressionResolution(
             bool(directive_ids), directive_ids,
@@ -1914,6 +1944,7 @@ class SQLiteHumanMemoryBackend:
                     with suppress(Exception):
                         await self._db.execute("ROLLBACK")
 
+    @history_source_operation
     async def rebuild_short_horizon_projection(
         self, *, principal: MemoryPrincipal, now: float | None = None
     ) -> ShortHorizonProjectionBuildResult:
@@ -1937,6 +1968,7 @@ class SQLiteHumanMemoryBackend:
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
         effective_now = _timestamp(self._now() if now is None else now)
+        await prepare_history_source_context(self, principal)
         async with self._write_lock:
             await self._authorize_short_horizon_principal_unlocked(principal)
             async with self._db.execute(
@@ -2583,6 +2615,7 @@ class SQLiteHumanMemoryBackend:
                 ShortHorizonDegradationCode.DEADLINE_EXCEEDED,
             )
 
+    @history_source_operation
     async def _recall_short_horizon_after_start(
         self,
         *,
@@ -2649,6 +2682,7 @@ class SQLiteHumanMemoryBackend:
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
         effective_now = _timestamp(self._now() if now is None else now)
+        await prepare_history_source_context(self, principal)
         async with self._write_lock:
             await self._authorize_short_horizon_principal_unlocked(principal)
             if not disclosure_allowed:
@@ -3029,6 +3063,7 @@ class SQLiteHumanMemoryBackend:
                     with suppress(Exception):
                         await self._db.execute("ROLLBACK")
 
+    @history_source_operation
     async def execute_typed_recall(
         self,
         *,
@@ -3156,6 +3191,16 @@ class SQLiteHumanMemoryBackend:
                 )
             return execution
 
+        try:
+            await asyncio.wait_for(
+                prepare_history_source_context(self, principal),
+                timeout=max(0.0, deadline_monotonic - time.monotonic()),
+            )
+        except TimeoutError:
+            await self._persist_typed_recall_timeout(
+                request_id=request_id, attempt_id=attempt_id, now=effective_now,
+            )
+            raise TimeoutError("DEADLINE_EXCEEDED") from None
         async with self._write_lock:
             collected_epoch, collected_policy_hash = await self._recall_authority_unlocked(
                 principal.actor_id
@@ -3571,6 +3616,7 @@ class SQLiteHumanMemoryBackend:
 
         return rank_candidates(tuple(candidates))[:128], degradation
 
+    @history_source_operation
     async def page_typed_recall_result(
         self,
         *,
@@ -3599,6 +3645,7 @@ class SQLiteHumanMemoryBackend:
         typed_request = cast(RecallResultPageRequestV1, request)
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
+        await prepare_history_source_context(self, principal)
         async with self._write_lock:
             async with self._db.execute(
                 "SELECT r.result_json,r.result_hash,r.authority_expires_at "
@@ -3681,6 +3728,7 @@ class SQLiteHumanMemoryBackend:
             )
         return page
 
+    @history_source_operation
     async def authorize_recall_context_use(
         self,
         *,
@@ -3710,6 +3758,7 @@ class SQLiteHumanMemoryBackend:
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
         effective_now = _timestamp(self._now() if now is None else now)
+        await prepare_history_source_context(self, principal)
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
             committed = False
@@ -5367,6 +5416,7 @@ class SQLiteHumanMemoryBackend:
             ),
         )
 
+    @history_source_operation
     async def record_procedure_observation(
         self,
         *,
@@ -5441,6 +5491,7 @@ class SQLiteHumanMemoryBackend:
                 reason_code="procedure_observation_authority_rejected",
             )
             raise MemoryValidationError("procedure_observation_authority_rejected") from exc
+        await prepare_history_source_context(self, principal)
         intent = authority.intent
         try:
             if intent.subject != principal.actor_id:
@@ -5767,6 +5818,7 @@ class SQLiteHumanMemoryBackend:
                 raise
             raise MemoryValidationError(reason) from exc
 
+    @history_source_operation
     async def apply_prospective_signal(
         self,
         *,
@@ -5838,6 +5890,7 @@ class SQLiteHumanMemoryBackend:
                 reason_code="prospective_signal_authority_rejected",
             )
             raise MemoryValidationError("prospective_signal_authority_rejected") from exc
+        await prepare_history_source_context(self, principal)
         intent = authority.intent
         try:
             if intent.subject != principal.actor_id:
@@ -6118,6 +6171,7 @@ class SQLiteHumanMemoryBackend:
                 raise
             raise MemoryValidationError(reason) from exc
 
+    @history_source_operation
     async def apply_memory_mutation_plan(
         self,
         *,
@@ -6167,6 +6221,7 @@ class SQLiteHumanMemoryBackend:
         if type(self._classification_policy) is not InformationClassificationPolicy:
             raise MemoryValidationError("classification_policy_required")
 
+        await prepare_history_source_context(self, principal)
         async with self._write_lock:
             begun = False
             committed = False
@@ -11599,6 +11654,7 @@ class SQLiteHumanMemoryBackend:
                     with suppress(Exception):
                         await self._db.execute("ROLLBACK")
 
+    @history_source_operation
     async def prepare_analysis_application(
         self,
         claim: AnalysisBatchClaim,
@@ -11618,6 +11674,28 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("claim must use AnalysisBatchClaim")
         _audit_identifier(validator_version, "validator_version")
         assert self._db is not None
+        # Resolve Host order only for a canonical pending application. The final
+        # transaction repeats existing lease/result/phase validation after await.
+        source_principal = None
+        async with self._write_lock:
+            if await self._analysis_claim_is_current_unlocked(claim, _timestamp(self._now())):
+                async with self._db.execute(
+                    "SELECT p.deployment_id,p.household_id,p.actor_id FROM analysis_batches b "
+                    "JOIN principals p ON p.principal_id=b.principal_id "
+                    "WHERE b.batch_id=? AND b.result_hash=? AND b.state='result_committed' "
+                    "AND b.application_receipt_json IS NULL",
+                    (claim.batch_id, result.result_hash),
+                ) as cursor:
+                    source_owner = await cursor.fetchone()
+                if source_owner is not None:
+                    from simple_harness_memory.core.identity import MemoryPrincipal
+
+                    source_principal = MemoryPrincipal(
+                        str(source_owner[0]), str(source_owner[1]), str(source_owner[2]),
+                        claim.request.run_id,
+                    )
+        if source_principal is not None:
+            await prepare_history_source_context(self, source_principal)
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
             committed = False
@@ -13540,6 +13618,7 @@ class SQLiteHumanMemoryBackend:
         )
         return event_hash
 
+    @history_source_operation
     async def _export_audit_trace(
         self,
         query: AuditTraceQuery,

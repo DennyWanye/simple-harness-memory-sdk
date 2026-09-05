@@ -16,6 +16,12 @@ from typing import Any, cast
 from simple_harness import DisclosureContext, TypedRecallResultV1
 from simple_harness.contracts import JsonValue
 
+from simple_harness_memory.backends.history_source_guard import (
+    denial_reason,
+    history_source_operation,
+    prepare_history_source_context,
+    proof_hashes,
+)
 from simple_harness_memory.core.errors import MemoryLimitError, MemoryValidationError
 from simple_harness_memory.core.evidence import validate_sanitized_evidence
 from simple_harness_memory.core.history import (
@@ -206,7 +212,7 @@ async def _evidence_uncached(
             evaluated_at=work.now,
         )
     ).denied:
-        return "history_suppressed"
+        return denial_reason(backend, envelope.evidence_id)
     policy = backend._classification_policy
     if policy is None:
         return "history_classification_unverifiable"
@@ -318,6 +324,7 @@ async def _recall(
     return "history_visible", None if row is None or row[0] is None else float(row[0])
 
 
+@history_source_operation
 async def check_history_visibility(
     backend: Any,
     *,
@@ -361,6 +368,7 @@ async def check_history_visibility(
         hashes.append(history_hash("memory.history.binding.v1", binding.to_json()))
     if backend._db is None or backend._receipt is None:
         raise RuntimeError("human-memory v7 backend is not initialized")
+    await prepare_history_source_context(backend, principal, pending=tuple(batch.values()))
     async with backend._write_lock:
         await backend._db.execute("BEGIN")
         try:
@@ -443,7 +451,9 @@ async def check_history_visibility(
                 now,
                 min(deadlines) if deadlines else None,
                 0 if authority is None else int(authority[0]),
-                policy_hash,
+                history_hash("memory.history.source-policy.v1", {
+                    "ordinary_policy": policy_hash, "source_proofs": proof_hashes(backend),
+                }) if proof_hashes(backend) else policy_hash,
                 tuple(items),
             )
             await backend._db.execute("COMMIT")
