@@ -1,5 +1,7 @@
 # 验收标准：Human Memory Digital Twin / 单一主对话与 Memory Program
 
+> 2026-09-06 当前执行方式更新：停用 plan-test 系列技能；240 条语料改为子代理审查、主代理复核；保留原功能与真实验证目标。见 [用户执行指令更新](EXECUTION-UPDATE-2026-09-06.md)。旧流程与人工安排描述作为历史保留。
+
 > 状态：APPROVED / FROZEN（2026-08-30）；语义关系增量 AC 已批准（2026-09-01）
 > 主计划仓库：`simple-harness-memory-sdk`
 > 实施仓库：`simple-harness-memory-sdk`、`simple-harness-sdk`、`simple_harness`
