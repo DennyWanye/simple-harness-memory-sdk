@@ -10378,10 +10378,19 @@ class SQLiteHumanMemoryBackend:
                     )
 
                 threshold = now - config.max_batch_wait_seconds
+                # A durable result fixes its plan's base_revision. Keep a principal's
+                # next batch pending until materialization commits, including while
+                # its lease is live after an apply failure. audit_pending has already
+                # committed the head and can safely overlap the next batch. Expired
+                # claims are reclaimed above and reuse the result, without LLM calls.
                 async with self._db.execute(
                     "SELECT principal_id,batch_key,COUNT(*) AS job_count,"
-                    "MIN(created_at) AS oldest FROM jobs WHERE state='pending' "
-                    "AND next_attempt_at<=? GROUP BY principal_id,batch_key "
+                    "MIN(created_at) AS oldest FROM jobs pending WHERE state='pending' "
+                    "AND next_attempt_at<=? AND NOT EXISTS ("
+                    "SELECT 1 FROM analysis_batches active "
+                    "WHERE active.principal_id=pending.principal_id "
+                    "AND active.state IN ('handed_off','result_committed')) "
+                    "GROUP BY principal_id,batch_key "
                     "HAVING COUNT(*)>=? OR MIN(created_at)<=? "
                     "ORDER BY oldest,principal_id,batch_key LIMIT 1",
                     (now, config.batch_size, threshold),
@@ -11573,11 +11582,7 @@ class SQLiteHumanMemoryBackend:
                     structured = thaw_json(cast(FrozenJsonValue, result.structured_result))
                     if not isinstance(structured, dict):
                         raise ValueError("structured result is not an object")
-                    no_mutation = (
-                        set(structured) == {"outcome", "operations"}
-                        and structured.get("outcome") == "no_mutation"
-                        and structured.get("operations") == []
-                    )
+                    no_mutation = _is_analysis_no_mutation(structured)
                     if not no_mutation:
                         plan = MemoryMutationPlan.from_json(structured)
                 except (KeyError, TypeError, ValueError):
@@ -11638,6 +11643,8 @@ class SQLiteHumanMemoryBackend:
                             "outcome": "no_mutation",
                             "operations": [],
                         }
+                        if isinstance(structured, dict) and "closure_reason" in structured:
+                            no_mutation_value["closure_reason"] = structured["closure_reason"]
                         no_mutation_json = canonical_json(no_mutation_value)
                         await self._db.execute(
                             "INSERT INTO accepted_analysis_plans(batch_id,principal_id,"
@@ -11868,11 +11875,7 @@ class SQLiteHumanMemoryBackend:
             plan_value = json.loads(str(plan_row["plan_json"]))
             if not isinstance(plan_value, dict):
                 raise MemoryCorruptionError("accepted analysis plan is malformed")
-            if (
-                set(plan_value) == {"outcome", "operations"}
-                and plan_value.get("outcome") == "no_mutation"
-                and plan_value.get("operations") == []
-            ):
+            if _is_analysis_no_mutation(plan_value):
                 expected_hash = hashlib.sha256(canonical_json(plan_value).encode()).hexdigest()
                 if expected_hash != str(plan_row["plan_hash"]):
                     raise MemoryCorruptionError("accepted no-mutation hash differs")
@@ -17212,6 +17215,19 @@ def _audit_identifier(value: object, name: str) -> str:
     ):
         raise MemoryValidationError(f"{name}_invalid")
     return value
+
+
+def _is_analysis_no_mutation(value: object) -> bool:
+    """Use the same no-change contract on application and durable replay."""
+    return (
+        isinstance(value, dict)
+        and set(value) <= {"outcome", "operations", "closure_reason"}
+        and value.get("outcome") == "no_mutation"
+        and value.get("operations") == []
+        and ("closure_reason" not in value or isinstance(value["closure_reason"], str))
+        # An unusable response is not a model decision to make no change.
+        and value.get("closure_reason") != "analysis_response_unusable"
+    )
 
 
 def _validate_accepted_operation_decisions(
