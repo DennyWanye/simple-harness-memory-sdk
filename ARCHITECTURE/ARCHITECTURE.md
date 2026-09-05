@@ -2,11 +2,33 @@
 
 # ARCHITECTURE — simple-harness-memory-sdk（v0.6.0 candidate）
 
-> 最后更新：2026-09-01
+> 最后更新：2026-09-05
 > 当前事实：Human Memory V0/S1/S2 与 S3 Task 1–7 的 SDK 范围已闭合；S3 Task 6 已补齐一等
 > `applies_to` 语义关系 proposal、原子持久化、公开收据视图与 display-only graph 投影。Host/UI 接线、
 > Host durable pre-admission audit 与最终 candidate packaging 尚未完成。旧 Agent Memory v1 能力仍保留，
 > 但不是新认知 mutation 的 authority。
+
+## S5b AC2：analysis 恢复与 no-mutation 正确性（2026-09-05）
+
+- 对应原始 [S2 Task 5](../plans/2026-08-29-human-memory-digital-twin/slices/S2-memory-evidence-audit-suppression.md)
+  与 [S5b AC2 / Task 4a](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/acceptance.md)，
+  修复独立审查 S5B-IR-02 / IR-03；基于 Memory `78d6192`，仅源码修复，版本/schema/候选 pin 不变。
+- `claim_analysis_batch` 在现有 `BEGIN IMMEDIATE` 内排除仍有 `handed_off` 或 `result_committed`
+  batch 的 principal。新 evidence 照常摄入、job 保持 pending；lease 到期先 reclaim 原 batch，使用已保存
+  request/result/plan/evidence 与原 `base_revision`，不追加 Provider 调用。`audit_pending` 已提交物化与 head，
+  可以与下一 batch 重叠；不同 principal 的 pending batch 仍可领取。
+- 未改变 plan/evidence/lineage/hash/target revision 契约，也未自动 rebase。真正的 CAS 或目标冲突仍按原规则拒绝；
+  本修复防止新 analysis 抢先推进同属主 head，不回填旧版本已终态拒绝的 batch。
+- 无操作结果允许 `{outcome: no_mutation, operations: []}` 及可选字符串 `closure_reason`，首次应用和 durable
+  replay 使用同一校验。accepted plan 连同原理由生成 canonical hash，保留审计信息；无认知 revision/head、
+  mutation receipt、operation decision 或 cognitive/prospective outbox 写入，apply revision 不递增。
+  `analysis_response_unusable` 仍 rejected，原 structured result/Host 告警与审计保留；非法字段/类型/非空操作继续拒绝。
+- 仓内决定性回归见 [test_analysis_recovery_correctness.py](../tests/integration/test_analysis_recovery_correctness.py)：
+  apply commit 前后故障、新一轮到达、close/reopen、原结果与 accepted plan 字节契约、两份 evidence 最终各有 head、
+  恰好两次 Provider 调用、同 principal 并发领取/跨 principal 进展、no-mutation 合法/非法形状及 audit_pending 恢复。
+  原始 Host 生产复现也以本 worktree 源码重跑；Provider adapter 为确定性替身，未声称真实模型/UI/生产验收。
+- 本节仅为 phase-3 修复事实；独立 review 由主执行者另派，S5b/program 完成状态与其他验收门保持原边界。
+  测试命令、结果与本地证据索引见 [PROJECT_STATUS](PROJECT_STATUS.md)。
 
 ## Human Memory Program 当前边界（2026-09-01）
 

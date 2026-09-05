@@ -1,6 +1,53 @@
 # PROJECT STATUS — simple-harness-memory-sdk
 
-> 最后更新：2026-09-04
+> 最后更新：2026-09-05
+
+## 2026-09-05 S5b IR-02 / IR-03：phase-3 源码修复交接
+
+- 执行方式：集中串行完成两个同文件正确性修复。独立 worktree
+  `/Users/denny/projects/simple-harness-memory-sdk-analysis-recovery`，分支
+  `feature/human-memory-analysis-recovery`，基于 `main@78d61926e15a8b0b8f49971472e2f5ef2b25f60a`。
+- IR-02：领取时等待同 principal 未物化的 batch；原 plan/base_revision/evidence/result hash 不改，
+  CAS/target 冲突校验保留。故障恢复 + 新一轮事实最终 2 accepted / 2 heads，Provider 调用恰好 2 次。
+- IR-03：合法可选 `closure_reason` 被接受、原值/hash 持久化，零认知写入；不可用响应保留
+  `analysis_response_unusable` 且 rejected。首次应用与 audit_pending 恢复共用同一 shape 校验。
+- 验证范围：Memory 源码自动化 + Host 生产组件的确定性 adapter 复现；尚无本修复的独立 review、
+  真实 Provider/UI/生产或 exact-wheel 验收。Host IR-01 的 `f0133ac8` 另线完成，不包含在本 diff。
+- 未改 Host、冻结 oracle/acceptance、原始 plan、版本/schema 或候选 pin；未 build wheel/push/tag/合并 main。
+  此处只交接两个修复，不宣布 S5b/program complete，也不代替主执行者的 full-audit/机器门。
+
+验证命令从本 worktree 执行，统一
+`PYTHONPATH="$PWD/src" /Users/denny/projects/simple_harness/backend/.venv/bin/python -m pytest`：
+
+- 基线：`-q tests/integration/test_durable_memory_jobs_v5.py tests/integration/test_memory_061_core.py tests/integration/test_memory_062_analysis_evidence_refs.py`
+  → 91 passed。
+- 新回归：`-q tests/integration/test_analysis_recovery_correctness.py` → 12 passed；修复前首批回归
+  4 failed / 7 passed，明确得到 `rejected,accepted` 与合法 no-mutation rejected。
+- 全量/静态检查与证据索引在下方记录。Ruff/mypy 使用 Memory 原 checkout 的 `.venv/bin`；mypy 指定
+  `--python-executable /Users/denny/projects/simple_harness/backend/.venv/bin/python`。
+- 原始 `revision.py` / `probe.py` 的可执行副本仅存 ignored 证据目录，调整源码 import 与成功断言，
+  增加恢复后的下一 tick；两者 PASS。另以无 proposal 的非空响应验证 Host 告警 + Memory rejected，PASS。
+- 剩余工作仅就本修复而言：主执行者独立 correctness/minimality review 后决定合入及候选重新验证。
+
+本地证据目录（Git ignored）：`.local-test-evidence/2026-09-05/s5b-analysis-recovery/`。
+日志、生产复现脚本与数据库只留本机；下方只保存结论和 SHA-256。
+
+全量源码命令：`-q --basetemp=.local-test-evidence/2026-09-05/s5b-analysis-recovery/final-test-data`
+→ **1124 passed / 9 skipped**。`ruff check src tests` 与 `mypy src tests` 均非全绿：
+前者 2 项、后者 26 项，已用 `git archive 78d6192` 的只读副本按相同环境复核，无新增 diagnostic。
+本次新测试 Ruff 通过、修改代码/测试无新增类型错误，`git diff --check` 通过。
+
+| 证据相对文件 | 结果 | SHA-256 |
+|---|---|---|
+| `baseline.log` | 91 passed | `86fe655e010ac5264f6a8a24bf83a7d7583820090e08f62fecef21b2eb81a653` |
+| `regression-red.log` | 4 failed / 7 passed，修复前 | `b390b73ee8c6892244d2f773e9e7bb5b89542616c243fcdb22719184b829b739` |
+| `final-regressions.log` | 12 passed | `616390f827a1a32cdcbaf81c768b2e29aafd024fa5266260a1b2ff858afad9a0` |
+| `final-full.log` | 1124 passed / 9 skipped | `86791de26c706053c2584fbbfe6739c570ee8028ac7325c889f9373029fc1ec1` |
+| `host-revision.log` | 2 accepted / 2 heads / calls=2 | `0886d9c3144bf3bb22ff3957b1ba611cf18e395e47fe7a6d7af89f1a9350f4a1` |
+| `host-probe.log` | accepted / heads=0 / calls=1 | `560caab634ed4995224b47efac240ed61aac2aa8c971acca7b52c43f6f675196` |
+| `host-unusable.log` | rejected / heads=0 / calls=1；原因保留 | `e8dced11616209e96775f00afda0c396b8b54505982d4d5b235375a2b51666db` |
+| `ruff.log` | 2 项基线问题，输出与 baseline 相同 | `925659d9ff539e52e3283cba1d3217e7708daf709c23bb9796332ac1cc07ad0b` |
+| `mypy.log` | 26 项基线问题 / 3 文件，diagnostics 与 baseline 相同 | `4f852c67c88ffadcb8184219c485dcad898467bbf3f3426c30818d11e303e46d` |
 
 ## 2026-09-04 S5b：effect gate / 语义收口 / 记忆分析（验收中）
 
@@ -46,6 +93,7 @@
 
 | Slice | 状态 | 当前生产事实 |
 |---|---|---|
+| S5b AC2 / IR-02、IR-03 | phase-3 源码修复已验证，待独立复审 | 按 principal 等待未物化 analysis；固定 plan/evidence/result 不变；合法 no-mutation 理由保留且零认知写入；不代表 S5b/program 完成 |
 | V0 / S1 / S2 | 完成 | fresh v7 evidence、suppression、durable analysis 与 cognitive mutation authority |
 | S3 Task 1–3 | 完成 | 四类 cognitive records、Procedure/Prospective lifecycle 与 Host authority consumption |
 | S3 Task 4 | 完成 | 五天 Short-Horizon disposable projection；真实 semantic quality corpus 仍为外部 gate |
