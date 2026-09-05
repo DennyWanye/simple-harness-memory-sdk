@@ -39,6 +39,7 @@ from simple_harness_memory.core.history import (
     HistoryBinding,
     HistoryEvidenceBinding,
     HistoryRecallBinding,
+    HistoryShortHorizonBinding,
     HistoryVisibilityItem,
     HistoryVisibilitySnapshot,
 )
@@ -135,6 +136,7 @@ __all__ = [
     "HistoryBinding",
     "HistoryEvidenceBinding",
     "HistoryRecallBinding",
+    "HistoryShortHorizonBinding",
     "HistoryVisibilityItem",
     "HistoryVisibilitySnapshot",
     "MemoryManager",

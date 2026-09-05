@@ -2,6 +2,16 @@
 
 > 最后更新：2026-09-05
 
+## 2026-09-05 独立 standalone short 历史可见性源码修复
+
+在封存0.6.6之后的独立分支新增 `HistoryShortHorizonBinding(audit_id,chunk_ref,content_hash)`，
+复用当前批量history快照，验证真实owned recall成功audit的exact选中、canonical来源、expiry、
+disclosure与evidence/entity/反向MEMORY suppression。28项专项+93项相邻源码测试通过，
+独立review ACCEPT；无需Host私查SQL或伪typed binding。nextProvider每次出站仍须当前完整来源复查，
+SDK检查不是网络发送锁或Host依赖完整性证明。尚未分配新版本/build/pin/合main/接Host；
+已封存0.6.6 wheel完全未变，该新能力不属于旧wheel。不标S3/S6/program完成。
+[契约、验证与接线边界](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-short-history-visibility/RESULTS.md)。
+
 ## 2026-09-05 Memory0.6.6 隔离组合源码候选
 
 用户授权独立组合history a96a5008、clock16dc707与rejection30743bb；不修改冻结0.6.3/0.6.5

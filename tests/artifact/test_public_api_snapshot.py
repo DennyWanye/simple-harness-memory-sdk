@@ -20,7 +20,11 @@ def test_public_api_0_6_6_combines_frozen_rejection_and_history_surface() -> Non
         assert snapshot["version"] == version
     current = snapshots["0.6.6"]
     assert simple_harness_memory.__version__ == "0.6.6"
-    assert current["root"] == sorted(simple_harness_memory.__all__)
+    # Pending source increment: version allocation/build is explicitly deferred.
+    # The sealed 0.6.6 JSON remains exact; allow only this reviewed additive carrier.
+    assert sorted(simple_harness_memory.__all__) == sorted(
+        [*current["root"], "HistoryShortHorizonBinding"]
+    )
     assert current["migrations"] == sorted(migrations.__all__)
     history_exports = {
         "HistoryBinding",

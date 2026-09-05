@@ -17,6 +17,10 @@ extractor，不导出物理会话删除 API；旧 v4 Message/Fact 类型和私�
 source9ec5943/wheel381d8543已通过新venv publicconsumer与全包字节核验，Host接线另验，冻结旧candidate不变。
 [当前候选](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-history-visibility/CANDIDATE-0.6.6.md)。
 
+2026-09-05：后继独立short exact history源码修复28专项+93相邻测试通过，独立review接受。
+新增三元carrier复用当前batch suppression/expiry/disclosure；版本尚未分配，未build/合main/接Host，
+封存0.6.6 wheel不含此增量。[当前独立源码交付](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-short-history-visibility/RESULTS.md)。
+
 | 文档 | 范围 |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 包结构、分层、本地后端与召回/认知/世界对象的生产边界 |

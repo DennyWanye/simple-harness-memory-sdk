@@ -74,3 +74,12 @@ were wrong facade method/keyword and fewer than eleven groups; they are not prod
   interleaving cannot produce half-old/half-new batch. Earliest deadline from visible sources only.
 - Focused existing history, short recall, suppression, clock/rejection and root API regressions.
   These are source/library evidence, not installed new-wheel/Host/provider/UI acceptance.
+
+Independent design challenge ACCEPT (Popper, before production edits). Concrete audit clarification:
+this ledger has no status column or `success` string. Returnable recall success uses `event_kind=recall`
+and degradation in {null,VECTOR_DEGRADED,NO_ACTIVE_GENERATION,STALE_ACTIVE_GENERATION}; rejected
+`gate_outcome`, non-recall IDs, or any linked recall_terminal deny even if selected fields remain.
+Require exact owned started audit query/disclosure linkage. Test both legitimate degraded lexical
+success and failed/incomplete audit negatives. Host still proves that it actually received/used the
+hit; SDK cannot infer wire delivery from a committed result. Short canonical classification/refs
+remain mandatory without global policy; mixed evidence/typed bindings keep their original floors.

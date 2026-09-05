@@ -61,7 +61,32 @@ class HistoryRecallBinding:
         }
 
 
-HistoryBinding = HistoryEvidenceBinding | HistoryRecallBinding
+@dataclass(frozen=True, slots=True)
+class HistoryShortHorizonBinding:
+    """Exact standalone short hit selected by an owned durable recall audit."""
+
+    audit_id: str
+    chunk_ref: str
+    content_hash: str
+
+    def __post_init__(self) -> None:
+        for name in ("audit_id", "chunk_ref", "content_hash"):
+            _identifier(getattr(self, name), name)
+        if len(self.content_hash) != 64 or any(
+            c not in "0123456789abcdef" for c in self.content_hash
+        ):
+            raise ValueError("history binding digest invalid")
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "kind": "short_horizon",
+            "audit_id": self.audit_id,
+            "chunk_ref": self.chunk_ref,
+            "content_hash": self.content_hash,
+        }
+
+
+HistoryBinding = HistoryEvidenceBinding | HistoryRecallBinding | HistoryShortHorizonBinding
 
 
 @dataclass(frozen=True, slots=True)
