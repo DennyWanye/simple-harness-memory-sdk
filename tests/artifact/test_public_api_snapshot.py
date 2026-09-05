@@ -10,68 +10,48 @@ import simple_harness_memory.migrations as migrations
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_public_api_0_6_5_snapshot_preserves_0_6_2_and_0_6_1() -> None:
-    snapshot_path = Path(__file__).with_name("public-api-0.6.5.json")
-    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
-    previous = json.loads(
-        Path(__file__).with_name("public-api-0.6.1.json").read_text(encoding="utf-8")
-    )
-    base = json.loads(Path(__file__).with_name("public-api-0.6.0.json").read_text(encoding="utf-8"))
-    older = json.loads(
-        Path(__file__).with_name("public-api-0.5.2.json").read_text(encoding="utf-8")
-    )
-    assert snapshot["package"] == "simple-harness-memory-sdk"
-    assert snapshot["version"] == simple_harness_memory.__version__ == "0.6.5"
-    clock_candidate = json.loads(
-        Path(__file__).with_name("public-api-0.6.4.json").read_text(encoding="utf-8")
-    )
-    assert clock_candidate["version"] == "0.6.4"
-    assert set(snapshot["root"]) - set(clock_candidate["root"]) == {"TypedRecallRejectionV1"}
-    assert set(clock_candidate["root"]) < set(snapshot["root"])
-    unchanged_surface = {k: v for k, v in snapshot.items() if k != "version"}
-    unchanged_surface["root"] = [v for v in snapshot["root"] if v != "TypedRecallRejectionV1"]
-    assert unchanged_surface == {k: v for k, v in clock_candidate.items() if k != "version"}
-    recovery_base = json.loads(
-        Path(__file__).with_name("public-api-0.6.2.json").read_text(encoding="utf-8")
-    )
-    recovery_candidate = json.loads(
-        Path(__file__).with_name("public-api-0.6.3.json").read_text(encoding="utf-8")
-    )
-    assert recovery_candidate["version"] == "0.6.3"
-    assert unchanged_surface == {
-        k: v for k, v in recovery_candidate.items() if k != "version"
+def test_public_api_0_6_6_combines_frozen_rejection_and_history_surface() -> None:
+    snapshots = {
+        version: json.loads(Path(__file__).with_name(f"public-api-{version}.json").read_text())
+        for version in ("0.5.2", "0.6.0", "0.6.1", "0.6.2", "0.6.3", "0.6.4", "0.6.5", "0.6.6")
     }
-    assert recovery_base["version"] == "0.6.2"
-    assert unchanged_surface == {
-        k: v for k, v in recovery_base.items() if k != "version"
+    for version, snapshot in snapshots.items():
+        assert snapshot["package"] == "simple-harness-memory-sdk"
+        assert snapshot["version"] == version
+    current = snapshots["0.6.6"]
+    assert simple_harness_memory.__version__ == "0.6.6"
+    assert current["root"] == sorted(simple_harness_memory.__all__)
+    assert current["migrations"] == sorted(migrations.__all__)
+    history_exports = {
+        "HistoryBinding",
+        "HistoryEvidenceBinding",
+        "HistoryRecallBinding",
+        "HistoryVisibilityItem",
+        "HistoryVisibilitySnapshot",
     }
-    # Approved unversioned history candidate: preserve the frozen 0.6.3 snapshot;
-    # main will allocate the release version and snapshot after independent review.
-    assert set(simple_harness_memory.__all__) - set(snapshot["root"]) == {
-        "HistoryBinding", "HistoryEvidenceBinding", "HistoryRecallBinding",
-        "HistoryVisibilityItem", "HistoryVisibilitySnapshot",
+    assert set(current["root"]) - set(snapshots["0.6.5"]["root"]) == history_exports
+    assert set(snapshots["0.6.5"]["root"]) < set(current["root"])
+    assert set(snapshots["0.6.5"]["root"]) - set(snapshots["0.6.4"]["root"]) == {
+        "TypedRecallRejectionV1"
     }
-    assert set(snapshot["root"]) <= set(simple_harness_memory.__all__)
-    assert snapshot["migrations"] == sorted(migrations.__all__)
-    assert previous["version"] == "0.6.1" and base["version"] == "0.6.0"
-    assert older["version"] == "0.5.2"
-    # 0.6.2 只修缺陷、不动公共面（preserve-approved）：根导出与 0.6.1 完全一致。
-    assert unchanged_surface["root"] == previous["root"]
-    # 0.6.1 只增不减：0.6.0 根导出全部保留，仅新增两项。
-    assert set(base["root"]) <= set(previous["root"])
-    assert set(previous["root"]) - set(base["root"]) == {
+    assert set(snapshots["0.6.4"]["root"]) < set(snapshots["0.6.5"]["root"])
+    for version in ("0.6.2", "0.6.3", "0.6.4"):
+        assert snapshots[version]["root"] == snapshots["0.6.1"]["root"]
+    assert set(snapshots["0.6.0"]["root"]) < set(snapshots["0.6.1"]["root"])
+    assert set(snapshots["0.6.1"]["root"]) - set(snapshots["0.6.0"]["root"]) == {
         "AnalysisLineage",
         "PrincipalRegistrationReceipt",
     }
-    assert snapshot["migrations"] == previous["migrations"] == base["migrations"]
-    assert snapshot["migrations"] == older["migrations"]
-    assert snapshot["removed_public_methods"] == previous["removed_public_methods"]
-    assert previous["removed_public_methods"] == base["removed_public_methods"]
-    assert "ConversationMemoryAdapter" not in snapshot["root"]
+    for version in ("0.6.0", "0.6.1", "0.6.2", "0.6.3", "0.6.4", "0.6.5"):
+        assert {k: v for k, v in current.items() if k not in {"version", "root"}} == {
+            k: v for k, v in snapshots[version].items() if k not in {"version", "root"}
+        }
+    assert current["migrations"] == snapshots["0.5.2"]["migrations"]
+    assert "ConversationMemoryAdapter" not in current["root"]
 
 
-def test_0_6_1_public_surface_is_reachable_from_0_6_5_root() -> None:
-    """0.6.1 §8 新增公共面在 0.6.5 仍可达：根导出 + 方法/关键字/函数（只读核对）。"""
+def test_0_6_1_public_surface_is_reachable_from_0_6_6_root() -> None:
+    """0.6.1 §8 新增公共面在 0.6.6 仍可达：根导出 + 方法/关键字/函数（只读核对）。"""
 
     import inspect
 
@@ -174,7 +154,7 @@ def test_root_exports_construct_public_facade_contracts() -> None:
     assert receipt.to_json()["operations"] == [operation.to_json()]
 
 
-def test_0_6_5_candidate_sources_and_docs_are_consistent() -> None:
+def test_0_6_6_candidate_sources_and_docs_are_consistent() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert pyproject["project"]["dynamic"] == ["version"]
     assert pyproject["tool"]["hatch"]["version"]["path"] == (
@@ -186,8 +166,9 @@ def test_0_6_5_candidate_sources_and_docs_are_consistent() -> None:
     assert "simple-harness-sdk>=0.7,<0.8" in pyproject["project"]["dependencies"]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "当前 source candidate：**0.6.5**" in readme
+    assert "当前 source candidate：**0.6.6**" in readme
     assert "已发布 fallback 为 0.5.1" in readme
+    assert "## [0.6.6] - 2026-09-05" in changelog
     assert "## [0.6.5] - 2026-09-05" in changelog
     assert "## [0.6.2] - 2026-09-03" in changelog
     assert "## [0.6.1] - 2026-09-02" in changelog
@@ -195,6 +176,4 @@ def test_0_6_5_candidate_sources_and_docs_are_consistent() -> None:
     assert "## [0.5.1] - 2026-08-24" in changelog
     assert "## [0.5.0] - 2026-08-23" in changelog
     assert "## [0.4.0] - 2026-08-22" in changelog
-    assert "version=0.5.1" in (ROOT / ".github/workflows/release.yml").read_text(
-        encoding="utf-8"
-    )
+    assert "version=0.5.1" in (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")

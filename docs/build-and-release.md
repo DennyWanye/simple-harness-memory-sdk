@@ -5,6 +5,14 @@ SPDX-License-Identifier: BUSL-1.1
 
 # 0.6 candidate build and verification runbook
 
+2026-09-05 current authorized exception: independent0.6.6 combines history+clock+rejection, uses
+frozen Harness0.7.2 SHA53bded3fea87168e5d2ad9e49fea5f99e1c1edb1d6077b2a52dd62716692f9ed,
+and only builds/tests a candidate wheel. Use the [0.6.6 candidate journal](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-history-visibility/CANDIDATE-0.6.6.md)
+for its exact clean source/artifact/consumer commands. The older0.6.2/0.7.0 literals below and
+write_candidate_metadata.py's0.6.1 version constant are historical; they are not silently rebound
+to a new release. No current full artifact/CI matrix or publisher validation is claimed.
+
+
 This is the current operator procedure for `simple-harness-memory-sdk` 0.6.2. The Task 6 boundary is
 candidate-only: build and verify artifacts, but do not create or move a tag, push a release commit, upload
 assets, or publish the candidate. `.github/workflows/release.yml` remains the read-only 0.5.1 historical

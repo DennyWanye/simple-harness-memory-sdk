@@ -13,6 +13,10 @@ extractor，不导出物理会话删除 API；旧 v4 Message/Fact 类型和私�
 未改版本/build/pin/合 main，Host接线及 native遗忘验证仍待主线完成；
 [交付边界与命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-history-visibility/RESULTS.md)。
 
+2026-09-05：0.6.6组合候选在独立分支保留history+clock+rejection，64项组合源码聚焦通过；
+新wheel安装及Host接线另行验证，冻结旧candidate不变。
+[当前候选](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-history-visibility/CANDIDATE-0.6.6.md)。
+
 | 文档 | 范围 |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 包结构、分层、本地后端与召回/认知/世界对象的生产边界 |

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.6] - 2026-09-05（独立组合候选）
+
+- 合并0.6.3基线的 history visibility 完整修复、0.6.4公开可信clock及0.6.5限定拒绝见证；普通历史可见性以当前SDK反向suppression和source状态为准。
+- 新增五项history根导出与0.6.6 API快照；保留所有旧快照、schema v7.1、typed v4 hash和原数值阈值。
+- 不替换冻结0.6.3/0.6.5 artifact，不合main/tag/push；本候选的源码、wheel与最小installed验证另见history increment候选记录。
+
 ## [0.6.5] - 2026-09-05（S3 候选访问前拒绝见证）
 
 - `execute_typed_recall` 的类型、ownership、narrowing 和精确幂等冲突保留原异常，附加不可变 `TypedRecallRejectionV1`，绑定本次 invocation 与可合法计算的 request/context/plan hash。逻辑零表示未进入候选访问，不是 SQL 条数，也不声称没有 admission 写入。

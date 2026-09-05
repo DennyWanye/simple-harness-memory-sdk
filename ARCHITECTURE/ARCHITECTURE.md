@@ -8,6 +8,14 @@
 > Host durable pre-admission audit 与 program 最终验收须按各自 AC 核对。Memory 0.6.3 candidate 已构建接入；旧 Agent Memory v1 能力仍保留，
 > 但不是新认知 mutation 的 authority。
 
+## 2026-09-05 Memory0.6.6 隔离组合源码候选
+
+用户授权独立组合history a96a5008、clock16dc707与rejection30743bb；不修改冻结0.6.3/0.6.5
+wheel及main/Host环境。新0.6.6根快照保留所有旧导出并包含五项history DTO，schema/hash/阈值不变。
+64项组合源码聚焦已通过；exactwheel安装核验与publicconsumer正在后续执行，当前不据此宣称
+installed/Host/UI完成。独立short-horizon hit仍缺历史复查binding，明确保留后继接口缺口。
+详见[组合候选契约和命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-history-visibility/CANDIDATE-0.6.6.md)。
+
 ## 2026-09-05 隔离 history visibility 源码候选
 
 从 main8675352 / Memory0.6.3 独立分支 `feature/human-memory-history-visibility` 完成 AC1/AC7

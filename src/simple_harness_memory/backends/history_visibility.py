@@ -11,9 +11,10 @@ import math
 from collections.abc import AsyncIterator
 from dataclasses import asdict, dataclass, field
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 from simple_harness import DisclosureContext, TypedRecallResultV1
+from simple_harness.contracts import JsonValue
 
 from simple_harness_memory.core.errors import MemoryLimitError, MemoryValidationError
 from simple_harness_memory.core.evidence import validate_sanitized_evidence
@@ -410,7 +411,7 @@ async def check_history_visibility(
                     {
                         "principal": asdict(principal),
                         "disclosure": context.to_json(),
-                        "bindings": hashes,
+                        "bindings": cast(JsonValue, hashes),
                     },
                 ),
                 now,
