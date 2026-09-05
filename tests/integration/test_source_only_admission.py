@@ -536,3 +536,29 @@ async def test_memory_only_forget_denies_source_child_and_original_user_after_re
             )
         ).items
     )
+
+
+@pytest.mark.parametrize(
+    "collision", ["exact_changed_payload", "source_ref", "evidence_id", "admission_id"]
+)
+async def test_same_mode_shared_identity_changes_reject_without_writes(tmp_path, collision):
+    backend, manager = await setup(tmp_path / "same-mode.db")
+    first = _authority({"public_text": "source"})
+    original = await admit(manager, first)
+    before = await counts(backend)
+    other = _authority(
+        {"public_text": "changed"},
+        source_ref=first[0].source_ref
+        if collision in ("source_ref", "exact_changed_payload")
+        else "new-ref",
+        evidence_id=first[0].evidence_id
+        if collision in ("evidence_id", "exact_changed_payload")
+        else "new-id",
+        receipt_id=first[1].receipt_id
+        if collision in ("admission_id", "exact_changed_payload")
+        else "new-admission",
+    )
+    with pytest.raises(MemoryIdempotencyConflict, match="^evidence_source_admission_conflict$"):
+        await admit(manager, other)
+    assert await counts(backend) == before
+    assert await admit(manager, first) == original

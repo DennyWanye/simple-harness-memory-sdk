@@ -103,7 +103,9 @@ def test_schema_v7_1_constants_and_v7_0_ddl_are_pinned() -> None:
 
 
 @pytest.mark.asyncio
-async def test_v7_0_valid_database_is_rejected_without_old_automatic_migration(tmp_path: Path) -> None:
+async def test_v7_0_valid_database_is_rejected_without_old_automatic_migration(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "v7-0.db"
     _write_v7_0_database(path)
     before = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -115,7 +117,9 @@ async def test_v7_0_valid_database_is_rejected_without_old_automatic_migration(t
 
 
 @pytest.mark.asyncio
-async def test_fresh_v7_2_has_lineage_and_source_receipts_old_fixture_unchanged(tmp_path: Path) -> None:
+async def test_fresh_v7_2_has_lineage_and_source_receipts_old_fixture_unchanged(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "fresh.db"
     backend = SQLiteHumanMemoryBackend(path, now=lambda: 20.0)
     first = await backend.initialize()
