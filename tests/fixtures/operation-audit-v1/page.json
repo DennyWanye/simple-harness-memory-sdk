@@ -1,0 +1,42 @@
+{
+  "cursor_hmac_key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "cursor_payload": {
+    "cuts": [
+      [
+        "suppression",
+        1,
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      ]
+    ],
+    "offset": 0,
+    "query_hash": "6a535ee973d8b93e55ef0962faae9170e5045f13f15fc669407a29e4816aacc3",
+    "schema_version": 1,
+    "support_root_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "cursor_signature": "9242f5608cec071c743094488d34783617a658498655c8b09e9e75c1a000f505",
+  "cursor_token": "eyJwYXlsb2FkIjp7ImN1dHMiOltbInN1cHByZXNzaW9uIiwxLCJkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkIl1dLCJvZmZzZXQiOjAsInF1ZXJ5X2hhc2giOiI2YTUzNWVlOTczZDhiOTNlNTVlZjA5NjJmYWFlOTE3MGU1MDQ1ZjEzZjE1ZmM2Njk0MDdhMjllNDgxNmFhY2MzIiwic2NoZW1hX3ZlcnNpb24iOjEsInN1cHBvcnRfcm9vdF9oYXNoIjoiZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZSJ9LCJzaWduYXR1cmUiOiI5MjQyZjU2MDhjZWMwNzFjNzQzMDk0NDg4ZDM0NzgzNjE3YTY1ODQ5ODY1NWM4YjA5ZTllNzVjMWEwMDBmNTA1In0=",
+  "empty_root": "2205f90f7ee729bbc71bf746ac5ca93be6c712f470d6d143e3b807b6deabd9e8",
+  "item": {
+    "attempt_ref_hash": null,
+    "cognitive_effect": "not_applicable",
+    "committed_operation_ref_hashes": [],
+    "effect_receipt_hashes": [],
+    "event_kind": "directive",
+    "event_ref_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+    "family": "suppression",
+    "occurred_at": 40.0,
+    "operation_ref_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+    "outcome": "committed",
+    "receipt_hash": "3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "item_hash": "8c7dea2005f330b8dc60ed4ac154fb8ee7bdde200a5c5bc77a7a558ae64fc202",
+  "query": {
+    "access_receipt_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "coverage_version": "oa1.v1",
+    "expected": [],
+    "requester_ref_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "schema_version": 1,
+    "target_ref_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "query_hash": "6a535ee973d8b93e55ef0962faae9170e5045f13f15fc669407a29e4816aacc3"
+}
