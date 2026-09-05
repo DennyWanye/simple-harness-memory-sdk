@@ -54,9 +54,16 @@ _FORBIDDEN_KEYS = frozenset(
         "thoughtsignature",
     }
 )
+_TOKEN_VALUE_PATTERN = re.compile(r"\b(?:sk|key|tsk)-?[a-zA-Z0-9_-]{8,}")
+# Proven public runtime vocabulary, not a caller-controlled credential bypass.
+# Only the prefix-pattern false positive is exempt; other patterns still scan.
+_PUBLIC_RUNTIME_IDENTIFIERS = frozenset({
+    "skill_resource", "skill-catalog", "skill-catalog-v1",
+    "product-skill-catalog", "product-skill-catalog-v1",
+})
 _FORBIDDEN_VALUE_PATTERNS = (
     re.compile(r"(?i)\bbearer\s+[a-z0-9._~+/=-]{8,}"),
-    re.compile(r"\b(?:sk|key|tsk)-?[a-zA-Z0-9_-]{8,}"),
+    _TOKEN_VALUE_PATTERN,
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
 )
@@ -324,6 +331,17 @@ def _controlled_blob_ref(value: JsonValue) -> tuple[str, str] | None:
     return blob_ref, normalized_content_hash
 
 
+def _public_runtime_identifier(value: str, match: re.Match[str]) -> bool:
+    # A regex hit may start inside product-skill-catalog. Compare its complete
+    # lexeme so prefixed/suffixed credential material never inherits an exemption.
+    start, end = match.span()
+    while start and (value[start - 1].isalnum() or value[start - 1] in "_-"):
+        start -= 1
+    while end < len(value) and (value[end].isalnum() or value[end] in "_-"):
+        end += 1
+    return value[start:end] in _PUBLIC_RUNTIME_IDENTIFIERS
+
+
 def _scan_public_structure(value: JsonValue) -> None:
     nodes = 0
 
@@ -348,8 +366,11 @@ def _scan_public_structure(value: JsonValue) -> None:
         if isinstance(item, str):
             if len(item.encode("utf-8")) > MAX_PUBLIC_STRING_BYTES:
                 raise MemoryLimitError("evidence_public_string_limit_exceeded")
-            if any(pattern.search(item) for pattern in _FORBIDDEN_VALUE_PATTERNS):
-                raise MemoryValidationError("evidence_credential_boundary_rejected")
+            for pattern in _FORBIDDEN_VALUE_PATTERNS:
+                for match in pattern.finditer(item):
+                    if pattern is _TOKEN_VALUE_PATTERN and _public_runtime_identifier(item, match):
+                        continue
+                    raise MemoryValidationError("evidence_credential_boundary_rejected")
 
     visit(value, 0)
 

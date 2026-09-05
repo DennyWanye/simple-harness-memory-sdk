@@ -98,3 +98,10 @@ Hostcarrier持久化仍缺，all_operations_recorded=false，不标全program/na
 2026-09-05：Memory0.6.11 d520765/wheeld290cbfc的组合交集及artifact/exactinstalled/
 publicconsumer证据已Dirac独立限定ACCEPT，无新增P0/P1。SDK候选gate完成；Hostcarrier、
 全operation/native及独立Harness successor门仍待主线，不作替代，不push/tag/release。
+
+2026-09-05：独立credential-public-identifiers后继修复仅将五个已证明公开完整词元
+从凭据prefix-pattern误报中排除；保留所有其它legacy delimiter/无delimiter、秘密字段、
+Bearer/AKIA/privatekey与S1验证。160项限定源测试通过，真实旧native三库副本的
+Host factory history page由0610红变源码绿且reopen通过，原archive及10文件hash保持。
+源码review/0.6.12 installed尚待，不改0610/0611或主树，不标native UI/program完成。
+[事实及命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-credential-public-identifiers/RESULTS.md)。
