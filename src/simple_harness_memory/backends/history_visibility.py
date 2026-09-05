@@ -175,6 +175,12 @@ async def _evidence_uncached(
         or admitted.admission_receipt_hash != receipt.receipt_hash
     ):
         return "history_binding_mismatch"
+    source_records = await backend._read_source_admission_binding(
+        subject=envelope.subject, source_ref=envelope.source_ref,
+        admission_receipt_id=receipt.receipt_id
+    )
+    if any(r.envelope != envelope or r.admission_receipt != receipt for r in source_records):
+        return "history_binding_mismatch"
     record = await backend._read_ingested_record(envelope.evidence_id)
     if record is not None and (record.envelope != envelope or record.admission_receipt != receipt):
         return "history_binding_mismatch"

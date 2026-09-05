@@ -193,3 +193,8 @@ SDK 源码修复已提交 `2b8428465cbd41032ba024a0b7199183161f5ecd`（candidate
 - 普通 metrics/trace 先执行 suppression policy；sealed read 共用 durable `max_reads` 预算并记录 hash-only access event。
 - manifest coverage registry 覆盖全部 required v6 table；当前 access event 在 snapshot 后写入，历史 ledger 在后续 snapshot 可验证。
 - manifest 是可比较的完整性快照，不替代外部保存的可信历史 hash，也不声称抵抗 DB owner 同步改写。
+
+2026-09-05：独立0.6.8 source-only admission源码完成36专项、721含专项相邻、4 schema检查；
+公开独立receipt/零analysis job、双模式冲突、registration/history union与fresh7.2边界已实现。
+Dirac已审oracle，源码复审/wheel/Host11组组合待验，不合main，不标S3/program或selected-only完成。
+[本轮事实与命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-source-only-admission/RESULTS.md)。

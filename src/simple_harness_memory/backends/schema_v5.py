@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 SCHEMA_VERSION = 7
 # v7.1（0.6.1）：evidence_envelopes 前向加列 analysis_lineage_json；主版本号仍为 7
 # （initialization_receipts.schema_version CHECK = 7 不变），小版本由 DDL checksum 编码。
-SCHEMA_MINOR_VERSION = 1
+SCHEMA_MINOR_VERSION = 2
 SCHEMA_VERSION_LABEL = f"{SCHEMA_VERSION}.{SCHEMA_MINOR_VERSION}"
 SCHEMA_EPOCH = "human-memory-v1"
 
@@ -1765,6 +1765,28 @@ BEGIN SELECT RAISE(ABORT, 'immutable recall context use receipt'); END;
 """
 
 
+DDL_V7_1 = DDL
+SOURCE_ADMISSION_DDL = """
+CREATE TABLE source_admission_receipts (
+    receipt_id TEXT PRIMARY KEY,
+    evidence_id TEXT NOT NULL UNIQUE REFERENCES evidence_envelopes(evidence_id),
+    source_hash TEXT NOT NULL,
+    envelope_hash TEXT NOT NULL,
+    admission_receipt_id TEXT NOT NULL,
+    admission_receipt_json BLOB NOT NULL,
+    admission_receipt_hash TEXT NOT NULL,
+    receipt_hash TEXT NOT NULL UNIQUE,
+    accepted_at REAL NOT NULL CHECK (accepted_at >= 0)
+);
+CREATE UNIQUE INDEX source_admission_receipt_unique
+    ON source_admission_receipts(admission_receipt_id);
+CREATE TRIGGER source_admission_receipts_immutable_update
+BEFORE UPDATE ON source_admission_receipts BEGIN SELECT RAISE(ABORT, 'immutable evidence'); END;
+CREATE TRIGGER source_admission_receipts_immutable_delete
+BEFORE DELETE ON source_admission_receipts BEGIN SELECT RAISE(ABORT, 'immutable evidence'); END;
+"""
+DDL += SOURCE_ADMISSION_DDL
+
 def ddl_statements(script: str = DDL) -> tuple[str, ...]:
     statements: list[str] = []
     buffer: list[str] = []
@@ -1779,6 +1801,7 @@ def ddl_statements(script: str = DDL) -> tuple[str, ...]:
     return tuple(statements)
 
 
+
 SCHEMA_CHECKSUM = hashlib.sha256(DDL.encode("utf-8")).hexdigest()
 
 # ---- v7.0 → v7.1 前向迁移定义（0.6.1）-------------------------------------------
@@ -1789,7 +1812,7 @@ _V7_1_EVIDENCE_LINEAGE_COLUMN_DDL = "    analysis_lineage_json BLOB,\n"
 V7_1_ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("evidence_envelopes", "analysis_lineage_json", "BLOB"),
 )
-DDL_V7_0 = DDL.replace(_V7_1_EVIDENCE_LINEAGE_COLUMN_DDL, "", 1)
+DDL_V7_0 = DDL_V7_1.replace(_V7_1_EVIDENCE_LINEAGE_COLUMN_DDL, "", 1)
 SCHEMA_CHECKSUM_V7_0 = "82c36e161eea0e5f92f6c0f5dae57501934b62aa6771c82c4435d0f03f1a4915"
 REQUIRED_TABLES = frozenset(
     {
@@ -1801,6 +1824,7 @@ REQUIRED_TABLES = frozenset(
         "evidence_items",
         "evidence_links",
         "ingestion_receipts",
+        "source_admission_receipts",
         "suppression_directives",
         "suppression_targets",
         "sealed_audit_access_receipts",

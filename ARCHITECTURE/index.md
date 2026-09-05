@@ -39,3 +39,8 @@ ordinary-visible metrics 与 canonical state manifest 均通过 public v6 Manage
 <!-- last-updated: 2026-09-05 -->
 
 2026-09-05：S3 隔离 0.6.5 candidate 已通过源码全量与独立 installed-wheel 核验，尚未合入 main 或 Host pin；401-cell、S5b 及 program 状态见 PROJECT_STATUS 最新节。
+
+2026-09-05：独立0.6.8 source-only admission源码完成36专项、721含专项相邻、4 schema检查；
+公开独立receipt/零analysis job、双模式冲突、registration/history union与fresh7.2边界已实现。
+Dirac已审oracle，源码复审/wheel/Host11组组合待验，不合main，不标S3/program或selected-only完成。
+[本轮事实与命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-source-only-admission/RESULTS.md)。

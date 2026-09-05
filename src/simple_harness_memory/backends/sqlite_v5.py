@@ -104,6 +104,7 @@ if TYPE_CHECKING:
     )
     from simple_harness_memory.core.evidence import (
         EvidenceIngestionReceipt,
+        EvidenceSourceAdmissionReceipt,
         IngestedEvidenceRecord,
     )
     from simple_harness_memory.core.history import HistoryBinding, HistoryVisibilitySnapshot
@@ -534,6 +535,14 @@ class SQLiteHumanMemoryBackend:
                     self._delivery_admissions.clear()
                 self._release_writer_lease()
 
+    async def admit_evidence_source(
+        self, *, principal: MemoryPrincipal, envelope: SanitizedEvidenceEnvelope,
+        receipt: SanitizedEvidenceReceipt,
+    ) -> EvidenceSourceAdmissionReceipt:
+        from simple_harness_memory.backends.source_admission import admit
+
+        return await admit(self, principal=principal, envelope=envelope, receipt=receipt)
+
     async def ingest_committed_evidence(
         self,
         envelope: SanitizedEvidenceEnvelope,
@@ -613,6 +622,9 @@ class SQLiteHumanMemoryBackend:
         outbox_payload_hash = hashlib.sha256(outbox_payload_json.encode("utf-8")).hexdigest()
 
         async with self._write_lock:
+            from simple_harness_memory.backends.source_admission import check_other_mode
+
+            await check_other_mode(self, envelope, receipt, source=False)
             existing = await self._read_ingestion_by_source(principal_id, envelope.source_ref)
             if existing is not None:
                 if lineage_json is not None:
@@ -636,6 +648,7 @@ class SQLiteHumanMemoryBackend:
                 self._fault("ingestion.before_begin")
                 await self._db.execute("BEGIN IMMEDIATE")
                 begun = True
+                await check_other_mode(self, envelope, receipt, source=False)
                 self._fault("ingestion.after_begin")
                 await self._db.execute(
                     "INSERT INTO principals(principal_id,deployment_id,household_id,actor_id,"
@@ -1005,7 +1018,7 @@ class SQLiteHumanMemoryBackend:
             raise MemoryValidationError("outbox_limit_invalid")
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
-        clauses = "principal_id=? AND state IN (%s)" % ",".join("?" * len(wanted))
+        clauses = "principal_id=? AND state IN ({})".format(",".join("?" * len(wanted)))
         params: list[object] = [principal.actor_id, *wanted]
         if after is not None:
             created_at, outbox_id = after
@@ -1781,25 +1794,9 @@ class SQLiteHumanMemoryBackend:
             await self._db.execute("BEGIN IMMEDIATE")
             committed = False
             try:
-                async with self._db.execute(
-                    "SELECT e.envelope_hash,e.run_id,e.subject,e.source_hash,"
-                    "e.sanitized_hash,i.admission_receipt_id,i.admission_receipt_hash "
-                    "FROM evidence_envelopes e JOIN ingestion_receipts i "
-                    "ON i.evidence_id=e.evidence_id WHERE e.evidence_id=?",
-                    (envelope.evidence_id,),
-                ) as cursor:
-                    row = await cursor.fetchone()
-                expected = (
-                    envelope.envelope_hash,
-                    envelope.run_id,
-                    envelope.subject,
-                    envelope.source_hash,
-                    envelope.sanitized_hash,
-                    admission.receipt_id,
-                    admission.receipt_hash,
-                )
-                actual = None if row is None else tuple(str(row[index]) for index in range(7))
-                if actual != expected:
+                record = await self._read_ingested_record(envelope.evidence_id)
+                if (record is None or record.envelope != envelope
+                        or record.admission_receipt != admission):
                     raise MemoryValidationError("conversation_registration_evidence_differs")
                 async with self._db.execute(
                     "SELECT registration_hash FROM conversation_evidence_registrations "
@@ -13130,6 +13127,12 @@ class SQLiteHumanMemoryBackend:
             ),
             (
                 "receipts",
+                "source_admission_receipts",
+                "SELECT t.* FROM source_admission_receipts t JOIN evidence_envelopes e "
+                "ON e.evidence_id=t.evidence_id WHERE e.principal_id=? ORDER BY t.receipt_id",
+            ),
+            (
+                "receipts",
                 "memory_mutation_receipts",
                 "SELECT t.* FROM memory_mutation_receipts t WHERE t.principal_id=? "
                 "ORDER BY t.receipt_id",
@@ -14647,6 +14650,23 @@ class SQLiteHumanMemoryBackend:
             row = await cursor.fetchone()
         return None if row is None else _ingestion_receipt_from_row(row)
 
+    async def _read_source_admission_binding(
+        self, *, subject: str, source_ref: str, admission_receipt_id: str
+    ) -> tuple[IngestedEvidenceRecord, ...]:
+        async with self.connection.execute(
+            "SELECT e.evidence_id FROM evidence_envelopes e JOIN source_admission_receipts r "
+            "ON r.evidence_id=e.evidence_id WHERE (e.subject=? AND e.source_ref=?) "
+            "OR r.admission_receipt_id=?", (subject, source_ref, admission_receipt_id),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        records = []
+        for row in rows:
+            record = await self._read_ingested_record(str(row[0]))
+            if record is None:
+                raise MemoryCorruptionError("stored source admission missing")
+            records.append(record)
+        return tuple(records)
+
     async def _read_ingested_record(self, evidence_id: str) -> IngestedEvidenceRecord | None:
         from simple_harness.runtime import (
             COGNITIVE_MEMORY_SCHEMA_VERSION,
@@ -14663,12 +14683,19 @@ class SQLiteHumanMemoryBackend:
 
         assert self._db is not None
         async with self._db.execute(
-            "SELECT e.*,r.receipt_id,r.admission_receipt_id,r.admission_receipt_json,"
+            "SELECT e.*,r.source_hash AS receipt_source_hash,"
+            "r.envelope_hash AS receipt_envelope_hash,"
+            "r.mode,r.receipt_id,r.admission_receipt_id,r.admission_receipt_json,"
             "r.admission_receipt_hash,r.receipt_hash,r.accepted_at FROM evidence_envelopes e "
-            "JOIN ingestion_receipts r ON r.evidence_id=e.evidence_id WHERE e.evidence_id=?",
+            "JOIN (SELECT *, 'full' AS mode FROM ingestion_receipts UNION ALL "
+            "SELECT *, 'source' AS mode FROM source_admission_receipts) r "
+            "ON r.evidence_id=e.evidence_id WHERE e.evidence_id=?",
             (evidence_id,),
         ) as cursor:
-            row = await cursor.fetchone()
+            rows = list(await cursor.fetchall())
+        if len(rows) > 1:
+            raise MemoryCorruptionError("stored evidence has multiple admission modes")
+        row = rows[0] if rows else None
         if row is None:
             return None
         async with self._db.execute(
@@ -14713,6 +14740,11 @@ class SQLiteHumanMemoryBackend:
             raise MemoryCorruptionError("stored evidence admission receipt is invalid")
         admission_receipt = SanitizedEvidenceReceipt.from_json(admission_payload)
         admission_receipt.verify(envelope)
+        if (admission_receipt.receipt_id != str(row["admission_receipt_id"])
+                or envelope.subject != str(row["principal_id"])
+                or envelope.source_hash != str(row["receipt_source_hash"])
+                or envelope.envelope_hash != str(row["receipt_envelope_hash"])):
+            raise MemoryCorruptionError("stored evidence admission binding differs")
         if admission_receipt.receipt_hash != str(row["admission_receipt_hash"]):
             raise MemoryCorruptionError("stored evidence admission receipt hash differs")
         spans = tuple(
@@ -14736,7 +14768,12 @@ class SQLiteHumanMemoryBackend:
         )
         if spans != (expected_span,):
             raise MemoryCorruptionError("stored evidence span differs")
-        ingestion_receipt = _ingestion_receipt_from_row(row)
+        from simple_harness_memory.backends.source_admission import source_receipt_from_row
+
+        ingestion_receipt = (
+            source_receipt_from_row(row) if row["mode"] == "source"
+            else _ingestion_receipt_from_row(row)
+        )
         return IngestedEvidenceRecord(envelope, admission_receipt, ingestion_receipt, spans)
 
     async def _classify_open_connection(self) -> InitializationReceipt | None:
@@ -17589,9 +17626,8 @@ def _probe_existing_read_only(
         if tables != REQUIRED_TABLES:
             return "unsupported", None
         meta = _sync_meta(connection)
-        if _is_v7_0_migratable(connection, meta):
-            # 0.6.0 写出的 v7.0 库：打开后先前向迁移，再按 v7.1 receipt 校验。
-            return "v7.0-migratable", None
+        if meta.get("schema_checksum") != SCHEMA_CHECKSUM:
+            return "unsupported", None
         return "v5", _sync_receipt(connection, meta)
     except (MemoryCorruptionError, sqlite3.Error, TypeError, ValueError) as exc:
         raise MemoryLegacySchemaUnsupported() from exc

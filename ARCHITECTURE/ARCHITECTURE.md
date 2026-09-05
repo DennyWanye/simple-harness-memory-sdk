@@ -433,3 +433,8 @@ src/simple_harness_memory/
 - Memory `3d4247b` / 0.4.0 wheel `bfcd2506…` 由 simple_harness `4e797ccd` exact installed-origin
   消费；产品 Gate r4 的 21/21 required 场景达到 `READY_FOR_AUDIT`。SH-M5 跨进程新 Session 召回，
   SH-M6 recall timeout 与 record transient/startup recovery 均由真实 UI + DeepSeek 验证。
+
+2026-09-05：独立0.6.8 source-only admission源码完成36专项、721含专项相邻、4 schema检查；
+公开独立receipt/零analysis job、双模式冲突、registration/history union与fresh7.2边界已实现。
+Dirac已审oracle，源码复审/wheel/Host11组组合待验，不合main，不标S3/program或selected-only完成。
+[本轮事实与命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-source-only-admission/RESULTS.md)。

@@ -192,10 +192,74 @@ class EvidenceIngestionReceipt:
 
 
 @dataclass(frozen=True, slots=True)
+class EvidenceSourceAdmissionReceipt:
+    receipt_id: str
+    evidence_id: str
+    subject: str
+    source_ref: str
+    source_hash: str
+    sanitized_hash: str
+    envelope_hash: str
+    admission_receipt_id: str
+    admission_receipt_hash: str
+    accepted_at: float
+    schema_version: int = 1
+    receipt_hash: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if isinstance(self.schema_version, bool) or not isinstance(self.schema_version, int):
+            raise TypeError("evidence source admission schema_version must be an integer")
+        if self.schema_version != 1:
+            raise MemoryValidationError("evidence_source_admission_schema_unsupported")
+        for value, name in (
+            (self.receipt_id, "receipt_id"),
+            (self.evidence_id, "evidence_id"),
+            (self.subject, "subject"),
+            (self.source_ref, "source_ref"),
+            (self.admission_receipt_id, "admission_receipt_id"),
+        ):
+            _identifier(value, name)
+        for value, name in (
+            (self.source_hash, "source_hash"),
+            (self.sanitized_hash, "sanitized_hash"),
+            (self.envelope_hash, "envelope_hash"),
+            (self.admission_receipt_hash, "admission_receipt_hash"),
+        ):
+            _digest(value, name)
+        if (
+            isinstance(self.accepted_at, bool)
+            or not isinstance(self.accepted_at, (int, float))
+            or not math.isfinite(float(self.accepted_at))
+            or float(self.accepted_at) < 0
+        ):
+            raise MemoryValidationError("evidence_accepted_at_invalid")
+        object.__setattr__(self, "accepted_at", float(self.accepted_at))
+        object.__setattr__(self, "receipt_hash", _sha256_json({
+            "domain": "memory.evidence.source-admission.receipt.v1",
+            "payload": self.to_json(),
+        }))
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "schema_version": self.schema_version,
+            "receipt_id": self.receipt_id,
+            "evidence_id": self.evidence_id,
+            "subject": self.subject,
+            "source_ref": self.source_ref,
+            "source_hash": self.source_hash,
+            "sanitized_hash": self.sanitized_hash,
+            "envelope_hash": self.envelope_hash,
+            "admission_receipt_id": self.admission_receipt_id,
+            "admission_receipt_hash": self.admission_receipt_hash,
+            "accepted_at": self.accepted_at,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class IngestedEvidenceRecord:
     envelope: SanitizedEvidenceEnvelope
     admission_receipt: SanitizedEvidenceReceipt
-    ingestion_receipt: EvidenceIngestionReceipt
+    ingestion_receipt: EvidenceIngestionReceipt | EvidenceSourceAdmissionReceipt
     spans: tuple[EvidenceSpan, ...]
 
 

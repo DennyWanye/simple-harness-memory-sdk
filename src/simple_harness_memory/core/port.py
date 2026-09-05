@@ -13,6 +13,8 @@ from simple_harness.runtime import (
     ProspectiveSignalAuthorityRef,
     RecallContext,
     RecallPlan,
+    SanitizedEvidenceEnvelope,
+    SanitizedEvidenceReceipt,
 )
 
 if TYPE_CHECKING:
@@ -35,7 +37,11 @@ from simple_harness_memory.core.audit import (
     AuditTraceQuery,
     CanonicalStateManifestAccessV1,
 )
-from simple_harness_memory.core.evidence import EvidenceIngestionReceipt, IngestedEvidenceRecord
+from simple_harness_memory.core.evidence import (
+    EvidenceIngestionReceipt,
+    EvidenceSourceAdmissionReceipt,
+    IngestedEvidenceRecord,
+)
 from simple_harness_memory.core.history import HistoryBinding, HistoryVisibilitySnapshot
 from simple_harness_memory.core.identity import (
     MemoryPrincipal,
@@ -329,6 +335,11 @@ class CognitiveMemoryBackend(Protocol):
         principal: MemoryPrincipal,
         receipt_ref: MemoryMutationApplyReceiptRef,
     ) -> MemoryMutationReceiptView: ...
+
+    async def admit_evidence_source(
+        self, *, principal: MemoryPrincipal,
+        envelope: SanitizedEvidenceEnvelope, receipt: SanitizedEvidenceReceipt,
+    ) -> EvidenceSourceAdmissionReceipt: ...
 
     async def ingest_committed_evidence(
         self,

@@ -27,7 +27,11 @@ from simple_harness_memory.core.errors import (
     MemoryOwnershipConflict,
     MemoryProductionConfigurationError,
 )
-from simple_harness_memory.core.evidence import EvidenceIngestionReceipt, IngestedEvidenceRecord
+from simple_harness_memory.core.evidence import (
+    EvidenceIngestionReceipt,
+    EvidenceSourceAdmissionReceipt,
+    IngestedEvidenceRecord,
+)
 from simple_harness_memory.core.history import HistoryBinding, HistoryVisibilitySnapshot
 from simple_harness_memory.core.identity import (
     ExportPage,
@@ -128,6 +132,15 @@ class MemoryManager:
     @property
     def backend(self) -> MemoryBackend | CognitiveMemoryBackend:
         return self._backend
+
+    async def admit_evidence_source(
+        self, *, principal: MemoryPrincipal,
+        envelope: SanitizedEvidenceEnvelope, receipt: SanitizedEvidenceReceipt,
+    ) -> EvidenceSourceAdmissionReceipt:
+        """Persist a validated source without scheduling analysis or granting use."""
+        return await self._backend.admit_evidence_source(
+            principal=principal, envelope=envelope, receipt=receipt
+        )
 
     async def ingest_committed_evidence(
         self,

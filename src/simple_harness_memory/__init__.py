@@ -33,6 +33,7 @@ from simple_harness_memory.core.errors import (
 )
 from simple_harness_memory.core.evidence import (
     EvidenceIngestionReceipt,
+    EvidenceSourceAdmissionReceipt,
     IngestedEvidenceRecord,
 )
 from simple_harness_memory.core.history import (
@@ -173,6 +174,7 @@ __all__ = [
     "SuppressionRevokeRequest",
     "SuppressionScopeKind",
     "EvidenceIngestionReceipt",
+    "EvidenceSourceAdmissionReceipt",
     "IngestedEvidenceRecord",
     "EffectiveInformationClassification",
     "InformationClassificationPolicy",
@@ -213,4 +215,4 @@ __all__ = [
     "ShortHorizonRecallResult",
 ]
 
-__version__ = "0.6.7"
+__version__ = "0.6.8"

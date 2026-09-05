@@ -10,7 +10,7 @@ import simple_harness_memory.migrations as migrations
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_public_api_0_6_7_combines_frozen_rejection_and_history_surface() -> None:
+def test_public_api_0_6_8_combines_frozen_rejection_and_history_surface() -> None:
     snapshots = {
         version: json.loads(Path(__file__).with_name(f"public-api-{version}.json").read_text())
         for version in (
@@ -23,15 +23,21 @@ def test_public_api_0_6_7_combines_frozen_rejection_and_history_surface() -> Non
             "0.6.5",
             "0.6.6",
             "0.6.7",
+            "0.6.8",
         )
     }
     for version, snapshot in snapshots.items():
         assert snapshot["package"] == "simple-harness-memory-sdk"
         assert snapshot["version"] == version
-    current = snapshots["0.6.7"]
-    assert simple_harness_memory.__version__ == "0.6.7"
+    current = snapshots["0.6.8"]
+    assert simple_harness_memory.__version__ == "0.6.8"
     assert current["root"] == sorted(simple_harness_memory.__all__)
-    assert current["root"] == sorted([*snapshots["0.6.6"]["root"], "HistoryShortHorizonBinding"])
+    assert current["root"] == sorted(
+        [*snapshots["0.6.7"]["root"], "EvidenceSourceAdmissionReceipt"]
+    )
+    assert snapshots["0.6.7"]["root"] == sorted(
+        [*snapshots["0.6.6"]["root"], "HistoryShortHorizonBinding"]
+    )
     assert current["migrations"] == sorted(migrations.__all__)
     history_exports = {
         "HistoryBinding",
@@ -61,7 +67,7 @@ def test_public_api_0_6_7_combines_frozen_rejection_and_history_surface() -> Non
     assert "ConversationMemoryAdapter" not in current["root"]
 
 
-def test_0_6_1_public_surface_is_reachable_from_0_6_7_root() -> None:
+def test_0_6_1_public_surface_is_reachable_from_0_6_8_root() -> None:
     """0.6.1 §8 新增公共面在 0.6.6 仍可达：根导出 + 方法/关键字/函数（只读核对）。"""
 
     import inspect
@@ -165,7 +171,7 @@ def test_root_exports_construct_public_facade_contracts() -> None:
     assert receipt.to_json()["operations"] == [operation.to_json()]
 
 
-def test_0_6_7_candidate_sources_and_docs_are_consistent() -> None:
+def test_0_6_8_candidate_sources_and_docs_are_consistent() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert pyproject["project"]["dynamic"] == ["version"]
     assert pyproject["tool"]["hatch"]["version"]["path"] == (
