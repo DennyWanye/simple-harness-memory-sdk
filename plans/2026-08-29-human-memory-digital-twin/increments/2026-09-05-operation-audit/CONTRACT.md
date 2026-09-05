@@ -153,8 +153,10 @@ SDK validation catalog,64MiB logical database pages (including committed WAL), a
 VM steps with1000-step granularity. These are conservative whole-database limits, not subject-only
 work or P99 latency promises. Exhaustion returns one distinct MemoryLimitError and no partial page;
 rollback preserves grant budget and clears the progress handler. No DDL or persistent event store added.
-Opaque cursors also pin two internal typed decision/result support prefixes (counts/roots), allowing
-fresh missing-terminal detection while old unresolved snapshots ignore later completion.
+Opaque cursors also pin internal typed decision/result and immutable job-attempt support prefixes
+(counts/roots), allowing
+fresh missing-terminal detection while old unresolved snapshots ignore later completion/attempts. A surviving admitted job attempt
+requires its same-TX provider_handoff even when no event remains; absence is explicit missing/unresolved.
 OperationAuditPage.to_json/page_hash describe replay-stable data; access_event_hash is a separate
 object attribute for this fresh paid access and intentionally not part of the stable serialization.
 Caller persisting audit access evidence must retain that attribute separately.

@@ -243,7 +243,7 @@ def _decode(backend: Any, cursor: OperationAuditCursor, query_hash: str) -> dict
             raise ValueError()
         if type(payload["offset"]) is not int or payload["offset"] < 0:
             raise ValueError()
-        if len(payload["support_cuts"]) != 2 or any(
+        if len(payload["support_cuts"]) != 3 or any(
             len(r) != 2 or type(r[0]) is not int or not 0 <= r[0] <= _MAX_ROWS
             for r in payload["support_cuts"]
         ):
@@ -310,6 +310,21 @@ async def _support(backend: Any, lanes: dict[str, Any], subject: str, cut: Any):
             raise MemoryCorruptionError("operation_audit_pinned_support_differs")
         support_cuts.append(actual)
         support["typed"].extend(rows)
+    # Attempts are a same-TX witness for handoff even when its only event is lost.
+    # Pin their independent immutable prefix; later attempts must not enter old cuts.
+    attempts = await _rows(
+        db,
+        "SELECT a.job_id,a.attempt,a.batch_id,a.request_hash,a.started_at "
+        "FROM job_attempts a JOIN jobs j ON j.job_id=a.job_id "
+        "WHERE j.principal_id=? ORDER BY a.rowid LIMIT ?",
+        (subject, _MAX_ROWS + 1 if cut is None else cut["support_cuts"][2][0]),
+    )
+    actual = [len(attempts), _root(attempts)]
+    if len(attempts) > _MAX_ROWS:
+        raise MemoryLimitError("operation_audit_snapshot_limit_exceeded")
+    if cut is not None and actual != cut["support_cuts"][2]:
+        raise MemoryCorruptionError("operation_audit_pinned_support_differs")
+    support_cuts.append(actual)
     for row in lanes["suppression"]:
         support["suppression"].extend(
             await _rows(
@@ -319,6 +334,10 @@ async def _support(backend: Any, lanes: dict[str, Any], subject: str, cut: Any):
             )
         )
     grouped: dict[str, list[dict[str, Any]]] = {}
+    batch_attempts: dict[str, list[dict[str, Any]]] = {}
+    for attempt in attempts:
+        grouped.setdefault(attempt["batch_id"], [])
+        batch_attempts.setdefault(attempt["batch_id"], []).append(attempt)
     for event in lanes["job_transition"]:
         grouped.setdefault(event["batch_id"], []).append(event)
     for batch_id, events in grouped.items():
@@ -337,12 +356,7 @@ async def _support(backend: Any, lanes: dict[str, Any], subject: str, cut: Any):
             "SELECT * FROM analysis_batch_members WHERE batch_id=? ORDER BY ordinal",
             (batch_id,),
         )
-        value["attempts"] = await _rows(
-            db,
-            "SELECT job_id,attempt,batch_id,request_hash,started_at FROM job_attempts "
-            "WHERE batch_id=? ORDER BY job_id,attempt",
-            (batch_id,),
-        )
+        value["attempts"] = batch_attempts.get(batch_id, [])
         # No fresh batch.state/lease or late-populated values can reinterpret a cursor.
         if kinds & {
             "result_committed",
@@ -363,6 +377,9 @@ async def _support(backend: Any, lanes: dict[str, Any], subject: str, cut: Any):
 
 def _job_findings(events: list[dict[str, Any]], support: dict[str, Any]):
     grouped: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+    for batch_id, batch in support["jobs"].items():
+        for attempt in batch["attempts"]:
+            grouped.setdefault((batch_id, attempt["job_id"], attempt["attempt"]), [])
     for event in events:
         grouped.setdefault((event["batch_id"], event["job_id"], event["attempt"]), []).append(event)
     missing, unresolved = set(), set()
@@ -424,7 +441,7 @@ def _job_findings(events: list[dict[str, Any]], support: dict[str, Any]):
         ):
             missing.add(reference)
         closing = {"applied", "dead_letter", "retry_scheduled", "authority_retry_scheduled"}
-        if not kinds & closing or members[-1]["event_kind"] == "reclaimed":
+        if not kinds & closing or (members and members[-1]["event_kind"] == "reclaimed"):
             unresolved.add(reference)
     return tuple(sorted(unresolved)), tuple(sorted(missing))
 

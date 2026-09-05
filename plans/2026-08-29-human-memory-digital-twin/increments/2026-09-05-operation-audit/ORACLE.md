@@ -89,3 +89,10 @@ grant on rollback, and progress handler reset before cleanup. These deliberately
 may reject a large database even when the requested subject is small; they are finite resource guards,
 not latency/P99 guarantees or user-goal completion. Unknown/corrupt inputs retain ordinary rejection.
 A larger-data scalable reader remains a named limitation, not silent truncation/second authority.
+
+
+Independent full-reader challenge correction: oracle680099d freezes a real sole-handoff deletion
+while job_attempt/batch remain. Fresh coverage must report missing/unresolved. An independent
+immutable job-attempt prefix is necessary; old cursor before a later real attempt retains its
+original zero-attempt coverage even after that new handoff deletion and close/reopen. No producer
+rows or expected outputs invented, no current mutable attempts/state used to reinterpret old cuts.

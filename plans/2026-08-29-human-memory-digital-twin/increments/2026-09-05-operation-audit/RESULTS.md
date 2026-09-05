@@ -155,3 +155,21 @@ and rejection carrier outbox; uncovered call families/nonreceipt failures/exact-
 all_operations_recorded stays false. Large-database availability beyond the conservative reader
 guard and the inherited retry producer defect remain separate, explicit follow-ups. Frozen069 and
 privacy0.6.10 source/wheel bytes are unchanged. No candidate/version/main/native modification here.
+
+
+## Independent reader review correction
+
+Dirac reviewed complete5260759 source and evidence: CHANGES_REQUIRED for one P1, sole handoff loss.
+Real job_attempt/batch remained after its only provider_handoff event was deleted, but the reader
+started its support from surviving events and reported no missing witness. Original independent
+probe remains Host ignored `oa1-5260759-review/`; local oracle680099d reproduces the same failure.
+Fixed by a separate immutable job_attempt prefix count/root in the first cut, excluding mutable
+lease/state/result. Batch support and required-handoff findings now enumerate this prefix even with
+zero events. Later real attempts do not enter old snapshots, including after deletion and reopen.
+Opaque support_cuts has a third internal prefix; no issued candidate/cursor is being migrated.
+Independent literal generic HMAC vectors remain unchanged.
+
+`independent-attempt-cut-r2.log`:31PASS/3.30s, all reader integration and page-vector tests including
+sole-handoff absence, later-attempt oldcut and reopen. Original red and intermediate trigger-restore
+fixture failure remain ignored. This overlaps117 earlier tests; do not add counts. Dirac reported
+no second new P0/P1 in the complete review; final affected-path recheck is pending.

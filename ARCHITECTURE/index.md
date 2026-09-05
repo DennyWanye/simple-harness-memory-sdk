@@ -68,3 +68,7 @@ crosslink、retry/reclaim、stable cursor/reopen和四种scan exhaustion；限�
 producer旧batch误回收P1反例均保留，不标全套绿。preDB Host持久化/未覆盖调用仍缺，
 all_operations_recorded=false；未分配版本/build/合main，privacy0.6.10冻结不变。
 [源码事实与原红证据](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-operation-audit/RESULTS.md)。
+
+2026-09-05：Dirac完整OA1审查发现唯一新增P1（sole handoff缺失但独立attempt仍在）已按
+独立attempt prefix/cut修复，31项受影响reader控制PASS/3.30s；其余完整审查无第二新增P0/P1，
+最终复核待验。原红保留，未出候选/合main，all_operations_recorded仍false。
