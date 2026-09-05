@@ -57,6 +57,8 @@ Identity profile `user-message-text-exact/v1`:
 
 ## Public integration and trusted boundary — minimal read-only Host fact seam
 
+Implementation status, exact entry coverage and current gates: [ENFORCEMENT.md](ENFORCEMENT.md).
+
 The trusted Host S1/action stores retain origin order and first-action cut. SDK derives exact keys
 and enforces current suppression; Host does NOT provide an equality key, choose Memory support
 seeds, or grant disclosure permission. No new Memory table/implicit schema migration is needed.
@@ -76,7 +78,7 @@ class HistorySourceAuthorityPort(Protocol):
         self, *, principal: MemoryPrincipal, decision: SuppressionDecision,
     ) -> HistoryForgetCutReceipt | None: ...
 
-# Planned builder integration, NOT implemented in the protocol-only commit:
+# Implemented in successor source56c6bf7+, absent from protocol-only8bd93c9/frozen069:
 # optional keyword, default None; no change to suppress request/decision hashes
 manager = await build_human_memory_v7(..., history_source_authority=host_source_authority)
 ```

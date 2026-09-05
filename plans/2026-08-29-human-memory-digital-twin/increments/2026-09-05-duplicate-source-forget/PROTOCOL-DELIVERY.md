@@ -1,5 +1,9 @@
 # History source/cut protocol leaf — 2026-09-05
 
+Historical protocol-only state at8bd93c9. Builder and shared enforcement have since been added;
+[current source review delivery](ENFORCEMENT.md) supersedes the implementation status below.
+The four DTO/port wire contracts remain unchanged.
+
 Only four public carriers/port are implemented, from frozen069 f92fac1 in the isolated
 `feat/human-memory-duplicate-source-forget` tree. This is NOT a new version/wheel, builder support,
 current suppression implementation, installed consumer, native fix, or S3/program completion.

@@ -414,5 +414,60 @@ async def test_fresh_reassert_actual_mutation_and_typed_recall_share_gate(
                 item.selected_item.item_id, item.result_item_hash,
             )
             assert (await check(manager, binding)).items[0].visible
+            fragment = h.ContextFragmentBindingV2("fragment-1", "f" * 64)
+            manifest = hashlib.sha256(canonical_json([fragment.to_json()]).encode()).hexdigest()
+            request = h.RecallContextUseAuthorizationRequestV1(
+                "actor-1", context.run_id, context.turn_id, "provider-new-assertion",
+                execution.decision.decision_id, execution.decision.decision_hash,
+                execution.result.result_id, execution.result.result_hash,
+                (h.RecallItemBindingV1(item.selected_item.item_id, item.result_item_hash),),
+                (fragment,), manifest, 20.0,
+            )
+            receipt = await manager.authorize_recall_context_use(
+                principal=_principal(), request=request,
+            )
+            assert receipt == await manager.authorize_recall_context_use(
+                principal=_principal(), request=request,
+            )
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_revise_preserves_old_revision_seed_and_unrelated_exact_text_control(tmp_path):
+    from tests.integration.test_cognitive_mutation_repository_v5 import _with_action_authorities
+
+    manager, origins, seed, mid = await prepared(tmp_path / "revision.db")
+    old, _ = source("old")
+    correction, span = source("correction", "请把饮品偏好改成柠檬水。")
+    unrelated, _ = source("other", TEXT + " ")  # no trim/substrings/semantic matching
+    origins.register(old, 1, "legacy_before_only")
+    origins.register(correction, 3)
+    authority = manager.backend._evidence_authority
+    authority.register_admitted(correction.envelope, correction.receipt, span)
+    try:
+        await manager.ingest_committed_evidence(correction.envelope, correction.receipt)
+        operation = _operation(span, kind=h.MemoryMutationKind.REVISE,
+                               target=h.ExistingMemoryTarget(mid, 1))
+        operation = replace(operation, payload=replace(operation.payload, object_value="lemonade"))
+        revised = await manager.apply_memory_mutation_plan(
+            principal=_principal(), scope=m.MemoryScope.personal("actor-1"),
+            plan=_with_action_authorities(_plan(
+                correction.envelope, operation, base_revision=2,
+                plan_id="revise", idempotency_key="revise",
+            ), authority),
+        )
+        assert revised.outcome is h.MemoryMutationApplyOutcome.COMMITTED
+        view = await manager.get_memory_mutation_receipt_view(
+            principal=_principal(), receipt_ref=revised.receipt_ref,
+        )
+        assert view.operations[0].revision == 2
+        origins.cuts["forget-1"] = m.HistoryForgetCutReceipt(
+            NS, 3, "forget-1", m.SuppressionScopeKind.MEMORY, mid, "action-s1", "d" * 64,
+        )
+        await forget(manager, origins, mid)
+        observed = await check(manager, old, seed, correction, unrelated)
+        assert [item.visible for item in observed.items] == [False, False, False, True]
+        assert observed.items[0].reason == "history_suppressed"
     finally:
         await manager.close()

@@ -9,6 +9,21 @@
 > 但不是新认知 mutation 的 authority。
 
 
+
+## 2026-09-05 duplicate-source forget 共享源码候选（待完整独立审）
+
+在独立069后继树实现真实 Host origin/cut 两阶段准备、当前 canonical MEMORY 全 revision
+来源拒绝与共享 suppression resolver。实际 builder支持 history_source_authority，公开能力
+MemoryManager.history_source_enforcement_version=1；不以此替代 exact后继artifact身份。
+本机206项限定源码测试通过（15.14s），含22项新数据库控制、配置新authority后的23项原
+攻击/zeroSQL控制、capability及相邻回归；ruff/mypy4源通过。原56c6bf7 no-/text误拒P1已
+由2b2fa47修复并独立 scoped ACCEPT，完整enforcement复审仍待完成。
+旧v1action无cut仍持续拒绝同内容新重申，不称支持旧库fresh reassert；Hostlate-enqueue
+隐私拒绝正确，但CLAIMED/无SDKrun的settle闭环由主修复，未标产品PASS。/text等值SQL
+无匹配索引，4096工作上限不证明P99。未分配版本/安装wheel/改main/native/冻结069，
+不标S3/program完成。[当前源码、命令与边界](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-duplicate-source-forget/ENFORCEMENT.md)。
+
+
 ## 2026-09-05 duplicate-source forget 公共协议叶（未接 enforcement）
 
 独立分支从冻结069新增 HistorySourceNamespace / HistorySourceOriginReceipt /

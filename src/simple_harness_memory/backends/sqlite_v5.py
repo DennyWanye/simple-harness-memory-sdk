@@ -1612,6 +1612,31 @@ class SQLiteHumanMemoryBackend:
         *,
         evaluated_at: float | None = None,
     ) -> SuppressionResolution:
+        # Caller always owns the backend lock, but ordinary readers do not all
+        # own a SQLite TX. Pin their entire direct+alias decision to one snapshot.
+        assert self._db is not None
+        if self._db.in_transaction:
+            return await self._resolve_suppression_snapshot_unlocked(
+                candidate, purpose, evaluated_at=evaluated_at,
+            )
+        await self._db.execute("BEGIN")
+        try:
+            result = await self._resolve_suppression_snapshot_unlocked(
+                candidate, purpose, evaluated_at=evaluated_at,
+            )
+            await self._db.execute("COMMIT")
+            return result
+        except BaseException:
+            await self._db.execute("ROLLBACK")
+            raise
+
+    async def _resolve_suppression_snapshot_unlocked(
+        self,
+        candidate: SuppressionCandidate,
+        purpose: OrdinaryMemoryPurpose,
+        *,
+        evaluated_at: float | None = None,
+    ) -> SuppressionResolution:
         from simple_harness_memory.core.suppression import (
             SuppressionResolution,
             SuppressionScopeKind,
