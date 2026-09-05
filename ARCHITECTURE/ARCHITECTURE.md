@@ -438,3 +438,9 @@ src/simple_harness_memory/
 公开独立receipt/零analysis job、双模式冲突、registration/history union与fresh7.2边界已实现。
 Dirac已审oracle，源码复审/wheel/Host11组组合待验，不合main，不标S3/program或selected-only完成。
 [本轮事实与命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-source-only-admission/RESULTS.md)。
+
+2026-09-05：独立Memory0.6.8 source5e8397b经Dirac限定ACCEPT/7独立检查通过；wheel98a9c788双离线构建一致，
+全新安装8阶段publicconsumer与65Memory/151Harness包字节比对通过。Host独立17项组合中11USER真实分析
+applied、11assistant source-only零job/reopenidle；Host接线审查/main/native另记。
+候选仅fresh7.2，不迁移/清理067；selected-only来源接口及allroots可用性限制保留，不标S3/program完成。
+[冻结候选与边界](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-source-only-admission/CANDIDATE-0.6.8.md)。

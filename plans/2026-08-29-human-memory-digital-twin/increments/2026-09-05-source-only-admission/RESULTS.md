@@ -49,9 +49,11 @@ From this worktree, let PY=.local-test-evidence/2026-09-05/source-only-068/devve
 Historical-schema/current gate: `$PY -m pytest tests/integration/test_memory_061_schema_v7_1.py -q`.
 Do not repeat the whole adjacent set absent a relevant change; these are scope/command records.
 
-## Still pending for this delivery
-Independent source review; offline candidate build/exact install+full package byte manifest;
-Host new assistant public-port wiring with prewrite capability fail closed and actual11groups,
-11USER worker attempts and0assistant jobs. Current test-tool/source state is not main/native
+## Follow-up delivery facts
+Source review ACCEPT, offline build/exact install+full package byte manifest PASS;
+Host public-port wiring and actual11groups/11USER worker attempts/0assistant jobs PASS.
+The fixed artifact and per-layer evidence are recorded in CANDIDATE-0.6.8.md.
+028a27b adds4 same-mode identity conflicts (all PASS), with unchanged production source bytes. Current test-tool/source state is not main/native
 integration, S3/program completion or selected-only source visibility. No release artifact frozen yet.
-JOURNAL_VERDICT: IN_PROGRESS — source tested; review/install/Host composition pending.
+JOURNAL_VERDICT: COMPLETE — bounded SDK source-only candidate built/installed/public-tested;
+Host leaf review and main/native integration are separately tracked and not implied.
