@@ -72,3 +72,20 @@ mutation control. SDK source tests may independently check cognitive rows for th
 Host/public consumer asserts public result and operation receipt bindings. The reported native case
 does not replace this deterministic execution test. Price handling is a contract boundary for unified
 usage, not a claim that OA1 has implemented billing or independently verified the legacy Host values.
+
+2026-09-05 resumed reader controls (before completion implementation): mixed real producers,
+mutation rejection field rebinding despite unchanged hash, applied event foreign-result rebinding
+with honestly recomputed event hash, required predecessor deletion, same-cut handoff→reclaim→retry.
+No synthetic events or product output fed into expected projections. Typed decisions/results require
+separate same-cut support prefixes so a deleted terminal is detected in a fresh snapshot without
+letting later results reinterpret an old cursor. Existing independent generic HMAC vectors stay exact.
+
+Additional resource bounds apply only to this new audit reader, not frozen recall/SDK admission:
+100,000 covered rows remains; prior whole-backend integrity reuse additionally requires <=100,000
+rows across the finite SDK validation catalog and <=64MiB logical database pages (including current
+WAL snapshot). A SQLite progress handler limits the whole read transaction to10,000,000 VM steps
+with1000-step granularity. Each limit has a distinct MemoryLimitError, no partial page, no consumed
+grant on rollback, and progress handler reset before cleanup. These deliberately conservative bounds
+may reject a large database even when the requested subject is small; they are finite resource guards,
+not latency/P99 guarantees or user-goal completion. Unknown/corrupt inputs retain ordinary rejection.
+A larger-data scalable reader remains a named limitation, not silent truncation/second authority.
