@@ -1,4 +1,4 @@
-# OA1 ongoing implementation facts
+# OA1 bounded source implementation and review facts
 
 2026-09-05. Independent tree from f92fac1; frozen069 bytes remain unchanged. No new version,
 candidate wheel, main merge, Host environment or native change. This source checkout still has
@@ -34,8 +34,8 @@ The venv has exactHarness0.7.2 and an editable OA1 source install; not candidate
 Frozen public API snapshot/version is not rewritten. New snapshot follows the separately assigned
 successor version after the complete slice review.
 
-## Required remaining work
-Durable read_operation_audit is NOT implemented. Registry/hash vectors, same-cut support roots and
+## Historical pre-reader checkpoint (superseded below)
+At this checkpoint durable read_operation_audit was NOT implemented. Registry/hash vectors, same-cut support roots and
 job/receipt business-effect projection, sealed shared-budget pagination, missing-event controls,
 real no_mutation/applied counterexample and committed-mutation control remain required. OA1 is not
 complete and all_operations_recorded remains false. Source review of this leaf is pending.
@@ -90,3 +90,68 @@ whole-backend integrity validation is not a finite physical scan/P99 proof; a no
 row cap must not be reported as bounding all validation work. Production Host persistence for the
 preDB carrier remains explicitly absent. all_operations_recorded stays false. This checkpoint is
 partial reader progress, never a complete OA1/all-Agent audit verdict.
+
+## Complete reader source submitted for independent review
+
+2026-09-05. Current bounded source implements all nine fixed families, actual mixed producers,
+missing events/crosslinks, retry/reclaim, same-cut pagination/reopen, sealed shared grant budget,
+explicit coverage and finite scan exhaustion. Latest focused source selection: **117PASS,
+2 explicitly deselected inherited failures,10.05s**; mypy3source PASS and targeted ruff PASS.
+This is source/editable-environment evidence with exact Harness0.7.2, not installed wheel/native,
+full-suite or all-Agent completeness evidence. Independent full reader review is pending.
+
+Actual cases include eight non-job families together (typed final-use and12 registered short groups),
+actual DurableMemoryJobRunner no_mutation/head0 versus written/head1, application-phase old cut,
+reclaim then retry with separate attempts, short timeout terminal/reopen, typed cancel/retry ordinal,
+deleted terminal with retained decision/result, and deleted sole atomic admission attempt.
+The latter produced an actual DID NOT RAISE red before the request→attempt check was added.
+Foreign result with honestly recomputed event hash and unchanged-hash rejection routing field tamper
+both now reject. Grant controls cover requester session, foreign target, target-session/expected-set
+cursor changes, valid narrow evidence grant refusal, forged/expired grant and shared manifest budget.
+Each of four real resource-limit controls exhausts its guard, then proves rollback leaves the one-read
+grant available and the progress handler usable. No large-database/P99 throughput claim.
+
+The unfiltered adjacent run was **115PASS/2FAIL10.15s**. Both failures were independently rerun
+against unchanged frozen069 src f92fac1 (git diff f92fac1 -- src empty) and reproduce identically:
+- test_cursor_authority_is_bound_to_initialization_receipt_on_reopen expects "cursor authority hash"
+  but current schema probe rejects the modified initialization receipt as LEGACY_SCHEMA_UNSUPPORTED.
+- test_manifest_root_is_independently_recomputable_and_tamper_fails_closed removes a required trigger;
+  schema probe rejects initialize before the old test's later manifest corruption assertion.
+These tests and production refusal semantics are unchanged. They are inherited test/entry-boundary
+incompatibilities, not two new OA1 greens. The final selection explicitly excludes only these two
+after retaining both unfiltered and exact-base failure logs. No waiver of a product acceptance gate.
+
+A separate real **inherited job producer defect** was found: failed first attempt→new second claim→
+second lease expiry→reclaim returns the first old batch. The disposable probe uses actual producer
+calls, no private SQL/fabricated events, and reproduces on frozen069 source. Main has been notified;
+producer repair is outside this reader slice. No test is changed to claim that sequence correct.
+The reader preserves what was durably emitted; a newly reclaimed old attempt is unresolved.
+
+Raw ignored evidence root remains `.local-test-evidence/2026-09-05/operation-audit/`.
+All original reds, including fixture mistakes (missing idempotency key, reused audit replay identity,
+immutable trigger/import setup) remain. They are distinguished from reader/producer defects.
+
+| Evidence | SHA256 |
+|---|---|
+| reader-review-scoped.log | 528be03033e98fb198806fcdee1d233deb0da71831e6f0ab575f76a008ed7bab |
+| reader-review-mypy.log | 8228fcc5ce46d42d01caf3cd941f4e9c5f2bcc372bb5b147a2f0572d2dd675a8 |
+| reader-complete-scoped.log | 0cf74ff3d2f3b99c82161e4f16affea887affa6ea1bf38fdb09a9a77cd02457d |
+| frozen069-audit-baseline.log | 837573c7a32c707758de3ebef907feaa840f2b598c4fb48317825748a6ec0f14 |
+| frozen069-retry-reclaim.log | d18f5f6e8b9ae18e757fd20d4bbfaf1b1f3ea126da60804a80a1f7884ca51ee8 |
+| request-attempt-red-r2.log | 50533f73600ee888ce96a3a0fdb4cea3d1e5a9194160cbb805dbfd39bdae688a |
+| mixed-red-r1.log | cd34bcb705196fe6ca5a4cbe7a813a12c2ce94988d4f298c3a92dd839128d9d1 |
+| jobs-red.log | 0cce8dda0cc6db144d7dbfc5e2e7ca27e28f6f45722505dc6d91ec3efde2afba |
+
+Exact final focused command (all counts from this one selection; do not sum overlapping runs):
+```sh
+.local-test-evidence/2026-09-05/operation-audit/venv/bin/python -I -m pytest -q --tb=short --show-capture=no tests/integration/test_operation_audit.py tests/integration/test_operation_audit_mixed.py tests/integration/test_operation_audit_jobs.py tests/unit/test_operation_audit_page.py tests/integration/test_operation_observation.py tests/unit/test_operation_observation.py tests/integration/test_public_recall_rejection.py tests/integration/test_audit_access_v6.py tests/integration/test_memory_061_core.py tests/artifact/test_public_api_snapshot.py -k 'not test_cursor_authority_is_bound_to_initialization_receipt_on_reopen and not test_manifest_root_is_independently_recomputable_and_tamper_fails_closed'
+```
+For the inherited producer probe, run the retained `retry_reclaim_probe.py` with frozen069 devvenv
+from that tree; it prints imported SDK origin and actual first/second/reclaimed batch identities.
+
+Required remaining gates: independent complete source review; later assigned combination candidate
+with privacy lineage/API snapshot and installed consumers; production Host start/terminal persistence
+and rejection carrier outbox; uncovered call families/nonreceipt failures/exact-replay invocations.
+all_operations_recorded stays false. Large-database availability beyond the conservative reader
+guard and the inherited retry producer defect remain separate, explicit follow-ups. Frozen069 and
+privacy0.6.10 source/wheel bytes are unchanged. No candidate/version/main/native modification here.

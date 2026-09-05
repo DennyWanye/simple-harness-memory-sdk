@@ -1,7 +1,9 @@
 # Memory operation audit — bounded successor OA1
 
-2026-09-05. Status: e5ff3b3 bounded design independently ACCEPTed by Dirac; synchronous carrier implemented,
-durable read projection and overall OA1 acceptance remain incomplete.
+2026-09-05. Status: e5ff3b3 bounded design and de0dd8a synchronous carrier independently ACCEPTed
+by Dirac. Complete bounded reader source is now implemented and submitted for independent review;
+117 focused checks pass, two unchanged inherited schema-probe test failures remain explicitly recorded.
+No overall/full-operation audit acceptance or candidate artifact is claimed.
 Base exact `f92fac121d2d9ce195b5715d272023e5aec920e3`. Branch
 `feat/human-memory-operation-audit`. No version assignment/build/pin in this slice.
 Frozen069/068 and Host/native environments untouched. Main explicitly authorized this separate
@@ -26,7 +28,7 @@ or label exact product replay as evidence that a new invocation was durably reco
 
 ## 1. Durable read API
 
-Proposed public Manager method:
+Implemented public Manager method:
 ```python
 async def read_operation_audit(
     *, requester: MemoryPrincipal, target_principal: MemoryPrincipal,
@@ -145,6 +147,17 @@ across covered families. Exceeding guard raises a distinct limit error with no p
 of coverage; counts never silently truncate. This is a new audit resource bound, not a change to
 recall401 cells, semantic thresholds, latest10, five-day window, or source256 bound. Scalability beyond
 this bound remains a named next-slice requirement if real data reaches it.
+
+The full integrity validator is additionally guarded by100,000 cumulative rows across the finite
+SDK validation catalog,64MiB logical database pages (including committed WAL), and10,000,000 SQLite
+VM steps with1000-step granularity. These are conservative whole-database limits, not subject-only
+work or P99 latency promises. Exhaustion returns one distinct MemoryLimitError and no partial page;
+rollback preserves grant budget and clears the progress handler. No DDL or persistent event store added.
+Opaque cursors also pin two internal typed decision/result support prefixes (counts/roots), allowing
+fresh missing-terminal detection while old unresolved snapshots ignore later completion.
+OperationAuditPage.to_json/page_hash describe replay-stable data; access_event_hash is a separate
+object attribute for this fresh paid access and intentionally not part of the stable serialization.
+Caller persisting audit access evidence must retain that attribute separately.
 
 ## 2. Typed safe handoff for pre-candidate rejection
 

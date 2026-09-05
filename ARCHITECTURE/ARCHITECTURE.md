@@ -455,3 +455,10 @@ ledger分页读口尚未实现、源审待验，不标OA1或全operation审计�
 含no_mutation与written独立业务断言、旧cursor/预算/过期/删除检测。整体reader仍未审结，
 混合typed/short与missing-event/完整boundedwork验证待完成，不标OA1/full审计完成，未分配候选。
 [当前进展](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-operation-audit/RESULTS.md)。
+
+2026-09-05：OA1 bounded reader完整源码已实现并提交独立审查：真实mixed九family、缺event/
+crosslink、retry/reclaim、stable cursor/reopen和四种scan exhaustion；限定117PASS/2项明确
+排除的冻结069既有schema-probe测试失败，mypy3source/ruff通过。两项原失败和独立retry
+producer旧batch误回收P1反例均保留，不标全套绿。preDB Host持久化/未覆盖调用仍缺，
+all_operations_recorded=false；未分配版本/build/合main，privacy0.6.10冻结不变。
+[源码事实与原红证据](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-operation-audit/RESULTS.md)。

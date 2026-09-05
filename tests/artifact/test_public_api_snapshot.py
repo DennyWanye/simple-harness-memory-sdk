@@ -32,7 +32,21 @@ def test_public_api_0_6_9_preserves_prior_surface_and_adds_upgrade_sources() -> 
         assert snapshot["version"] == version
     current = snapshots["0.6.9"]
     assert simple_harness_memory.__version__ == "0.6.9"
-    assert current["root"] == sorted(simple_harness_memory.__all__)
+    # Unversioned OA1 source increment. Frozen069 JSON/bytes remain exact;
+    # this checkout must not be consumed as the official069 artifact.
+    additions = {
+        "MemoryOperationObservationContext",
+        "MemoryOperationObservationV1",
+        "OperationAuditItemV1",
+        "OperationAuditExpectation",
+        "OperationAuditCursor",
+        "OperationAuditCoverage",
+        "OperationAuditExpectationResult",
+        "OperationAuditPage",
+        "operation_audit_ref_hash",
+    }
+    assert set(simple_harness_memory.__all__) == set(current["root"]) | additions
+    assert callable(simple_harness_memory.MemoryManager.read_operation_audit)
     assert current["root"] == sorted(
         [
             *snapshots["0.6.8"]["root"],

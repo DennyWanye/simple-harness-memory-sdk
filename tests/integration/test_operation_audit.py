@@ -103,6 +103,54 @@ async def test_shared_budget_with_existing_manifest(tmp_path):
         await manager.close()
 
 
+async def test_reader_grant_identity_scope_and_cursor_query_binding(tmp_path):
+    manager, p, receipt, authority = await _open(tmp_path)
+    try:
+        await _suppress(manager, p, "1")
+        await _suppress(manager, p, "2")
+        first = await _read(manager, p, receipt, limit=1)
+        other_session = replace(p, session_id="other-session")
+        with pytest.raises(SealedAuditAccessDenied, match="requester_differs"):
+            await manager.read_operation_audit(
+                requester=other_session, target_principal=p, access_receipt=receipt
+            )
+        foreign = m.MemoryPrincipal("other", "other", "other", "other")
+        await manager.register_principal_owner(foreign, m.MemoryScope.personal("other"))
+        with pytest.raises(SealedAuditAccessDenied, match="target_differs"):
+            await manager.read_operation_audit(
+                requester=p, target_principal=foreign, access_receipt=receipt
+            )
+        # Target session is not in the old grant authority, but IS pinned in the cursor query.
+        with pytest.raises(m.MemoryValidationError, match="cursor"):
+            await manager.read_operation_audit(
+                requester=p,
+                target_principal=other_session,
+                access_receipt=receipt,
+                cursor=first.next_cursor,
+            )
+        with pytest.raises(m.MemoryValidationError, match="cursor"):
+            await _read(
+                manager,
+                p,
+                receipt,
+                cursor=first.next_cursor,
+                expected=(m.OperationAuditExpectation("suppression", "a" * 64, "b" * 64),),
+            )
+        decision, reference = _grant(
+            authority,
+            decision_id="narrow-audit",
+            scope_kind=m.SuppressionScopeKind.EVIDENCE,
+            scope_ref="payload-secret-1",
+        )
+        reference = replace(reference, nonce="narrow-nonce", replay_identity="narrow-replay")
+        authority.decisions[reference.ref_hash] = decision
+        narrow = await manager.authorize_audit_access(principal=p, authority_ref=reference)
+        with pytest.raises(SealedAuditAccessDenied, match="subject_scope_required"):
+            await _read(manager, p, narrow)
+    finally:
+        await manager.close()
+
+
 async def test_missing_expected_is_not_empty_success_and_forged_cursor_denies(tmp_path):
     manager, p, receipt, _ = await _open(tmp_path)
     try:

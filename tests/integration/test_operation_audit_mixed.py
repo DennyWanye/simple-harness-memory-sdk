@@ -377,6 +377,7 @@ async def test_cancelled_request_cannot_lose_its_atomic_admission_attempt(tmp_pa
 
     manager, p, receipt, _ = await _open(tmp_path)
     try:
+
         async def cancelled(**kwargs):
             raise asyncio.CancelledError()
 
@@ -384,8 +385,9 @@ async def test_cancelled_request_cannot_lose_its_atomic_admission_attempt(tmp_pa
         context = _context()
         with pytest.raises(asyncio.CancelledError):
             await manager.execute_typed_recall(
-                principal=p, context=context,
-                plan=_recall_plan(context, idempotency_key="atomic-attempt-loss")
+                principal=p,
+                context=context,
+                plan=_recall_plan(context, idempotency_key="atomic-attempt-loss"),
             )
         page = await _read(manager, p, receipt)
         assert next(c for c in page.coverage if c.family == "typed_attempt").row_count == 1

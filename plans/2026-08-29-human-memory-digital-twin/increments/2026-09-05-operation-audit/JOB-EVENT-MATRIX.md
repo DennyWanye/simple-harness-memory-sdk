@@ -42,6 +42,18 @@ Changing/removing a required earlier event while its later witness remains must 
 canonical corruption refusal. Deleting all evidence before the first trusted snapshot cannot be
 proved by the reader alone; independent Host start/receipt/checkpoint is the required witness.
 
+Observed real producer detail: applied may carry result_hash=None because finalization appends from
+the originally handed-off claim. Reader permits exactly that actual absence on applied; an arbitrary
+non-null foreign result_hash still rejects. Cognitive effect comes from independently validated
+same-cut canonical result/application/mutation receipts, never a fabricated applied result field.
+
+Separate inherited producer defect confirmed on unchanged f92fac1 source: fail first handoff,
+schedule/claim a new second attempt, then expire its lease; claim_analysis_batch can reclaim the
+first old failed batch because its recovery join includes historical members of the now-claimed job.
+The reader does not repair/rewrite these events. Legal reclaim-before-retry is the positive cursor
+control; the failing retry-before-reclaim probe/log is retained and reported for a separate producer
+fix. An old attempt with an actual later reclaimed event is unresolved, never silently final/applied.
+
 Native counterexample supplied by main (partial ref product-sdk-be6f...): actual provider success
 and applied job with analysis_all_operations_rejected/no_mutation closure. The audit must preserve
 `applied` and the canonical no-mutation effect together. It must not count this as cognitive-write
