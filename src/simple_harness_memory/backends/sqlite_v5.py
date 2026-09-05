@@ -1566,6 +1566,17 @@ class SQLiteHumanMemoryBackend:
             self, principal=principal, disclosure_context=disclosure_context, bindings=bindings
         )
 
+    async def resolve_typed_short_horizon_sources(
+        self, *, principal: MemoryPrincipal, disclosure_context: DisclosureContext,
+        bindings: tuple[Any, ...],
+    ) -> Any:
+        from simple_harness_memory.backends.history_visibility import (
+            resolve_typed_short_horizon_sources,
+        )
+
+        return await resolve_typed_short_horizon_sources(
+            self, principal=principal, disclosure_context=disclosure_context, bindings=bindings)
+
     async def resolve_short_horizon_sources(
         self, *, principal: MemoryPrincipal, disclosure_context: DisclosureContext,
         bindings: tuple[Any, ...],

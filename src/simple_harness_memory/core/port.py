@@ -44,6 +44,7 @@ from simple_harness_memory.core.evidence import (
 )
 from simple_harness_memory.core.history import (
     HistoryBinding,
+    HistoryRecallBinding,
     HistoryShortHorizonBinding,
     HistoryVisibilitySnapshot,
 )
@@ -330,6 +331,11 @@ class CognitiveMemoryBackend(Protocol):
         disclosure_context: DisclosureContext,
         bindings: tuple[HistoryBinding, ...],
     ) -> HistoryVisibilitySnapshot: ...
+
+    async def resolve_typed_short_horizon_sources(
+        self, *, principal: MemoryPrincipal, disclosure_context: DisclosureContext,
+        bindings: tuple[HistoryRecallBinding, ...],
+    ) -> ShortHorizonSourceSnapshot: ...
 
     async def resolve_short_horizon_sources(
         self, *, principal: MemoryPrincipal, disclosure_context: DisclosureContext,

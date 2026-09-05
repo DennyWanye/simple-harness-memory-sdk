@@ -270,6 +270,7 @@ async def _recall(
     context: DisclosureContext,
     binding: HistoryRecallBinding,
     now: float,
+    *, sources: list[Any] | None = None,
 ) -> tuple[str, float | None]:
     async with backend._db.execute(
         "SELECT r.result_json,r.result_hash FROM typed_recall_results r "
@@ -281,10 +282,16 @@ async def _recall(
     if row is None or str(row[1]) != binding.result_hash:
         return "history_binding_mismatch", None
     result = TypedRecallResultV1.from_json(json.loads(str(row[0])))
-    if result.result_hash != binding.result_hash:
+    if result.result_hash != binding.result_hash or (
+        sources is not None and result.result_id != binding.result_id
+    ):
         return "history_binding_mismatch", None
     item = next((x for x in result.items if x.selected_item.item_id == binding.item_id), None)
     if item is None or item.result_item_hash != binding.item_hash:
+        return "history_binding_mismatch", None
+    # A source-expansion request is strictly short-only. Never expose cognitive
+    # lineage even though ordinary history visibility also accepts cognitive items.
+    if sources is not None and item.selected_item.source_kind.value != "short_horizon":
         return "history_binding_mismatch", None
     # Existing source checker enforces head/status/type/hash/expiry/current disclosure.
     # No current procedure applicability was supplied: never reuse old runtime fingerprints.
@@ -310,6 +317,13 @@ async def _recall(
     ):
         return "history_disclosure_denied", None
     source = item.selected_item
+    if sources is not None:
+        from simple_harness_memory.backends.short_history_visibility import check_selected_chunk
+
+        return await check_selected_chunk(
+            backend, principal, context, chunk_ref=source.source_ref,
+            content_hash=source.source_content_hash, now=now, sources=sources,
+        )
     if source.source_kind.value == "cognitive_memory":
         async with backend._db.execute(
             "SELECT valid_to FROM cognitive_memory_revisions WHERE memory_id=? AND revision=?",
@@ -332,6 +346,7 @@ async def check_history_visibility(
     disclosure_context: DisclosureContext,
     bindings: tuple[HistoryBinding, ...],
     _short_sources: list[tuple[Any, ...]] | None = None,
+    _require_principal_binding: bool = False,
 ) -> HistoryVisibilitySnapshot:
     if type(principal) is not MemoryPrincipal or type(disclosure_context) is not DisclosureContext:
         raise TypeError("history requires canonical principal and DisclosureContext")
@@ -379,7 +394,9 @@ async def check_history_visibility(
                 registered = await cursor.fetchone()
                 # S1 ingestion uses subject-only placeholder identity. Match the existing
                 # mutation admission convention without promoting it during a read.
-                if registered is not None and tuple(registered) != (principal.actor_id,) * 3:
+                if registered is not None and (
+                    _require_principal_binding or tuple(registered) != (principal.actor_id,) * 3
+                ):
                     await backend._authorize_short_horizon_principal_unlocked(principal)
             now = float(backend._now())
             if not math.isfinite(now) or now < 0:
@@ -430,7 +447,14 @@ async def check_history_visibility(
                         reason, deadline = "history_lineage_unverifiable", None
                         sources = []
                 else:
-                    reason, deadline = await _recall(backend, principal, context, binding, now)
+                    try:
+                        reason, deadline = await _recall(
+                            backend, principal, context, binding, now, sources=sources)
+                    except MemoryLimitError:
+                        if _short_sources is None:
+                            raise
+                        reason, deadline = "history_lineage_unverifiable", None
+                        sources = []
                 items.append(
                     HistoryVisibilityItem(binding_hash, reason == "history_visible", reason)
                 )
@@ -491,3 +515,34 @@ async def resolve_short_horizon_sources(
             history_hash("memory.short.sources.binding.v1", binding.to_json()),
             item.visible, item.reason, item.visible, refs)
             for binding, item, refs in zip(bindings, observed.items, sources, strict=True)))
+
+
+async def resolve_typed_short_horizon_sources(
+    backend: Any, *, principal: MemoryPrincipal, disclosure_context: DisclosureContext,
+    bindings: tuple[HistoryRecallBinding, ...],
+):
+    """Expand only exact selected typed-short items in one current read transaction."""
+    from simple_harness_memory.core.short_sources import (
+        ShortHorizonSourceItem, ShortHorizonSourceSnapshot,
+    )
+
+    if type(bindings) is not tuple or any(type(x) is not HistoryRecallBinding for x in bindings):
+        raise TypeError("typed short sources require exact HistoryRecallBinding tuple")
+    sources: list[tuple[Any, ...]] = []
+    observed = await check_history_visibility(
+        backend, principal=principal, disclosure_context=disclosure_context,
+        bindings=bindings, _short_sources=sources, _require_principal_binding=True,
+    )
+    return ShortHorizonSourceSnapshot(
+        subject=observed.subject,
+        request_hash=history_hash("memory.typed.short.sources.request.v1", {
+            "principal": asdict(principal), "disclosure": disclosure_context.to_json(),
+            "bindings": [binding.to_json() for binding in bindings],
+        }),
+        evaluated_at=observed.checked_at, authority_epoch=observed.authority_epoch,
+        policy_hash=observed.policy_hash, valid_until=observed.valid_until,
+        items=tuple(ShortHorizonSourceItem(
+            history_hash("memory.typed.short.sources.binding.v1", binding.to_json()),
+            item.visible, item.reason, item.visible, refs,
+        ) for binding, item, refs in zip(bindings, observed.items, sources, strict=True)),
+    )

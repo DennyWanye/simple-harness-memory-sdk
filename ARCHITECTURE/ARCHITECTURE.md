@@ -1,5 +1,17 @@
 <!-- last-calibrated: 6ba269537e45d443629aee56e9cfabec9de2e833 -->
 
+## 2026-09-06 typed-short selected sources isolated source leaf
+
+最后更新：2026-09-06。新public MemoryManager.resolve_typed_short_horizon_sources仅
+接受durable typed selected-short四元组；返回现有ShortHorizonSourceSnapshot/Item/Ref，
+新request/binding hash域，同current visibility事务验证owner/selection/current来源
+与完整registration lineage。认知或未选中item不给refs，不伪造旧audit_id；旧short
+接口/wire/DDL/hash不变。source阶段最终唯一31项绿，真实principal占位绕过原红保留
+且newport专用exact校验修复。尚未改版本/build/install；Host只后继installed消费。
+[契约](../plans/2026-09-06-typed-short-sources/CONTRACT.md) /
+[命令与结果](../plans/2026-09-06-typed-short-sources/RESULTS.md)。
+
+
 # ARCHITECTURE — simple-harness-memory-sdk（v0.6.3 candidate）
 
 > 最后更新：2026-09-05

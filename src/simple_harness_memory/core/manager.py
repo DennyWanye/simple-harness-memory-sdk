@@ -34,6 +34,7 @@ from simple_harness_memory.core.evidence import (
 )
 from simple_harness_memory.core.history import (
     HistoryBinding,
+    HistoryRecallBinding,
     HistoryShortHorizonBinding,
     HistoryVisibilitySnapshot,
 )
@@ -186,6 +187,14 @@ class MemoryManager:
 
     async def register_conversation_evidence(self, reference: object) -> object:
         return await self._backend.register_conversation_evidence(reference)
+
+    async def resolve_typed_short_horizon_sources(
+        self, *, principal: MemoryPrincipal, disclosure_context: DisclosureContext,
+        bindings: tuple[HistoryRecallBinding, ...],
+    ) -> ShortHorizonSourceSnapshot:
+        """Observe sources of owned durable selected typed-short items, never cognitive items."""
+        return await self._backend.resolve_typed_short_horizon_sources(
+            principal=principal, disclosure_context=disclosure_context, bindings=bindings)
 
     async def resolve_short_horizon_sources(
         self, *, principal: MemoryPrincipal, disclosure_context: DisclosureContext,

@@ -52,12 +52,9 @@ async def check_short(
     *,
     sources: list[Any] | None = None,
 ) -> tuple[str, float | None]:
-    from simple_harness_memory.backends.history_visibility import _purpose
     from simple_harness_memory.backends.sqlite_v5 import _opaque_hash
 
     mismatch = ("history_binding_mismatch", None)
-    stale = ("history_source_stale", None)
-    denied = ("history_disclosure_denied", None)
     audit = await _audit(backend, binding.audit_id, principal.actor_id)
     if (
         audit is None
@@ -118,17 +115,33 @@ async def check_short(
         for x in eligible
     ):
         return mismatch
+    return await check_selected_chunk(
+        backend, principal, context, chunk_ref=binding.chunk_ref,
+        content_hash=binding.content_hash, now=now, sources=sources,
+    )
+
+
+async def check_selected_chunk(
+    backend: Any, principal: MemoryPrincipal, context: DisclosureContext, *,
+    chunk_ref: str, content_hash: str, now: float, sources: list[Any] | None = None,
+) -> tuple[str, float | None]:
+    """Validate a chunk after a caller proves durable selection in this transaction."""
+    from simple_harness_memory.backends.history_visibility import _purpose
+
+    mismatch = ("history_binding_mismatch", None)
+    stale = ("history_source_stale", None)
+    denied = ("history_disclosure_denied", None)
     async with backend._db.execute(
         "SELECT * FROM short_horizon_chunks WHERE chunk_id=? AND principal_id=?",
-        (binding.chunk_ref, principal.actor_id),
+        (chunk_ref, principal.actor_id),
     ) as cursor:
         chunk = await cursor.fetchone()
     if (
         chunk is None
         or not float(chunk["occurred_at"]) <= now < float(chunk["expires_at"])
         or (
-            chunk["content_hash"] != binding.content_hash
-            or _sha(str(chunk["public_text"])) != binding.content_hash
+            chunk["content_hash"] != content_hash
+            or _sha(str(chunk["public_text"])) != content_hash
         )
     ):
         return stale
@@ -139,7 +152,7 @@ async def check_short(
         "FROM short_horizon_chunk_evidence e LEFT JOIN conversation_evidence_registrations r "
         "ON r.registration_id=e.registration_id LEFT JOIN evidence_envelopes en "
         "ON en.evidence_id=e.evidence_id WHERE e.chunk_id=? ORDER BY e.item_ordinal",
-        (binding.chunk_ref,),
+        (chunk_ref,),
     ) as cursor:
         rows = tuple(await cursor.fetchmany(4097))
     if len(rows) > 4096:
@@ -187,8 +200,8 @@ async def check_short(
         classification_authority_refs=cast(JsonValue, refs),
     )
     if (
-        "short:" + _sha(canonical_json(payload)) != binding.chunk_ref
-        or _sha(content) != binding.content_hash
+        "short:" + _sha(canonical_json(payload)) != chunk_ref
+        or _sha(content) != content_hash
         or privacy != chunk["effective_privacy_class"]
         or attrs != json.loads(str(chunk["information_attributes_json"]))
         or refs != json.loads(str(chunk["classification_authority_refs_json"]))
@@ -205,7 +218,7 @@ async def check_short(
         tuple(x.value for x in policy.required_information_attributes),
     ):
         return denied
-    candidates = [SuppressionCandidate(principal.actor_id, memory_id=binding.chunk_ref)]
+    candidates = [SuppressionCandidate(principal.actor_id, memory_id=chunk_ref)]
     candidates.extend(
         SuppressionCandidate(
             principal.actor_id,
