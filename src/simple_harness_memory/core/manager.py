@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -436,13 +437,19 @@ class MemoryManager:
         world: WorldModelPort | None = None,
         allow_development_embedder: bool = False,
         supported_filter_policies: frozenset[str] | None = None,
+        clock: Callable[[], float] | None = None,
     ) -> MemoryManager:
         """Build the fresh-only schema-v7 backend behind the complete public facade.
 
         ``supported_filter_policies`` 透传 backend；``None`` 保持默认（仅
         ``credential-filter/v1``）。Host 组合传入自己的 sanitizer 策略集合。
+        ``clock`` is a trusted construction dependency shared by recall,
+        paging and authorization. Omission retains the production wall clock;
+        untrusted request timestamps never replace the backend clock.
         """
 
+        if clock is not None and not callable(clock):
+            raise TypeError("clock must be callable or None")
         if (
             not allow_development_embedder
             and getattr(short_horizon_embedder, "kind", None) in {"hash", "mock"}
@@ -455,6 +462,8 @@ class MemoryManager:
         from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
 
         backend_kwargs: dict[str, Any] = {}
+        if clock is not None:
+            backend_kwargs["now"] = clock
         if supported_filter_policies is not None:
             backend_kwargs["supported_filter_policies"] = frozenset(supported_filter_policies)
         backend = SQLiteHumanMemoryBackend(

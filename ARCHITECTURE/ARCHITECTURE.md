@@ -8,6 +8,17 @@
 > Host durable pre-admission audit 与 program 最终验收须按各自 AC 核对。Memory 0.6.3 candidate 已构建接入；旧 Agent Memory v1 能力仍保留，
 > 但不是新认知 mutation 的 authority。
 
+## 2026-09-05 S3 公开构造时钟（0.6.4 隔离候选）
+
+`MemoryManager.build_human_memory_v7` / 根工厂接受可选 `clock: Callable[[], float]`，
+透传既有 backend `now`。默认系统时间不变；这是可信部署依赖，不是模型或请求可设置的 authority。
+一次构造的 recall、page-in、current-use 共用该时间源，重开时由 Host 重新注入。
+非法非 callable 在创建存储前拒绝。没有 schema、hash、排序或预算调整。
+真实 SQLite 公共入口测试 3 passed：固定时间产生非空 recall，关闭重开保留分页结果，
+时钟前进后旧请求时间不能逃逸过期拒绝；默认时钟及非法输入另测。独立 review ACCEPT，ruff 通过。
+证据位于本分支 `.local-test-evidence/2026-09-05/public-recall-clock-review/pytest-host-env.log`。
+本分支尚未合入 main，Host S5b 仍固定 Memory 0.6.3；401-cell 验收与 program 完成状态不变。
+
 ## 2026-09-05 当前候选与真实入口边界
 
 Memory 0.6.3 source `2f3d73814fe6a884e0458d87567b918c5863033e`，双次 wheel SHA-256
