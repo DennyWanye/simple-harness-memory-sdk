@@ -142,6 +142,28 @@ async def test_no_authority_legacy_duplicate_is_not_silently_allowed(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_other_user_profile_stays_visible_but_real_forgotten_parent_denies(tmp_path):
+    manager, origins, seed, mid = await prepared(tmp_path / "other-profile.db")
+    unrelated_env, unrelated_receipt = _admitted(evidence_id="unrelated-public-text")
+    from tests.integration.test_history_visibility import _rebind
+
+    unrelated = m.HistoryEvidenceBinding(unrelated_env, unrelated_receipt)
+    child_env, child_receipt = _admitted(evidence_id="dependent-public-text")
+    dependent = _rebind(child_env, child_receipt, evidence_refs=(
+        h.EvidenceRef(seed.envelope.evidence_id, seed.envelope.envelope_hash, 1),
+    ))
+    try:
+        before = await check(manager, unrelated, dependent)
+        assert all(item.visible for item in before.items)
+        await forget(manager, origins, mid)
+        after = await check(manager, unrelated, dependent)
+        assert [item.visible for item in after.items] == [True, False]
+        assert after.items[1].reason == "history_suppressed"
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("ingestion", ["before", "after", "cold"])
 async def test_duplicate_and_real_dependent_answer_deny_without_materializing_old(
     tmp_path, ingestion,

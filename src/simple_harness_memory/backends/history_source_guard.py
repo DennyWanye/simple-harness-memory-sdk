@@ -310,11 +310,8 @@ async def duplicate_source_matches(backend, candidate, purpose):
     for binding in bindings.values():
         key = exact_user_key(binding)
         if key is None:
-            if binding.envelope.source_kind is EvidenceSourceKind.USER_MESSAGE:
-                # A USER candidate outside the declared profile cannot be called
-                # nonmatching when this subject has active supported USER seeds.
-                matched.update(decision.directive_id for decision, _, _ in entries)
-                unverifiable = True
+            # Alias scope is the declared /text profile, not every USER envelope.
+            # Direct targets and actual ancestors still enforce their own gates.
             continue
         for decision, seed, seed_key in entries:
             if key != seed_key:
