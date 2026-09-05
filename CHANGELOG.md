@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.5] - 2026-09-05（S3 候选访问前拒绝见证）
+
+- `execute_typed_recall` 的类型、ownership、narrowing 和精确幂等冲突保留原异常，附加不可变 `TypedRecallRejectionV1`，绑定本次 invocation 与可合法计算的 request/context/plan hash。逻辑零表示未进入候选访问，不是 SQL 条数，也不声称没有 admission 写入。
+- 数据库故障、损坏、取消、timeout 和候选访问后的异常不获得此见证；没有新增账本、授权 token 或全局 last-error 槽。
+- Manager/backend 增加严格 `harness_protocol=4` 入口，未知版本在 backend 操作前拒绝；默认调用保留旧 backend 参数集合、原 v4 hash 和 schema v7.1。
+- 新增 30 条专项回归，全量 1157 passed / 9 skipped，独立 source review ACCEPT；本分支仍为 S3 隔离候选，不替换 Host S5b 的 0.6.3。401-cell 与 program verdict 按实际验收独立记录。
+
 ## [0.6.4] - 2026-09-05（S3 公开时间依赖）
 
 - `build_human_memory_v7` 增加可选可信构造依赖 `clock`，复用既有 backend 时钟，让 recall、page-in 和 current-use 使用同一时间源；默认仍为系统时间。请求不能通过回填时间绕过分页过期。
