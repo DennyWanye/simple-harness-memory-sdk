@@ -50,3 +50,25 @@ terminal/application phase commit → remaining old pages and reopen old cursor.
 pinned roots remain exact old-cut unresolved; a fresh snapshot includes the new terminal. No current
 jobs.state or fresh terminal join may change the historical interpretation. Support identity roots
 are pinned too; row-count cuts are validated by prefix roots, not exposed SQL IDs.
+
+## Native counterexample and price-provenance controls
+
+2026-09-05 main-reported native observation, partial SDK run ref product-sdk-be6f...; full source
+receipt identity has not been supplied here. Do not invent it or call this locally rerun evidence.
+This case refines AC1/AC3/AC7, rather than changing recall thresholds or rewriting old jobs.
+
+| Producer facts fixed before reader assertions | Required audit interpretation |
+|---|---|
+| Provider response succeeded; real job applied; canonical closure analysis_all_operations_rejected/no_mutation; actual no cognitive operation committed | Workflow applied; cognitive_effect=no_mutation with actual result/application bindings; zero cognitive-write successes; remember intent not proven satisfied |
+| Real nonempty accepted mutation with committed operation and revision/receipt | Workflow and cognitive effect reported separately; written only from actual operation bindings |
+| Job applied but result/application/mutation binding unavailable in the selected cut | cognitive_effect=unverified; neither assumed written nor inferred no_mutation from absence |
+| Legacy Host reports cost_microunits=0 without a price source | reported cost0 retained, priced cost null, price_provenance=unavailable; no free-call claim or complete priced total |
+| Independently bound, explicitly verified zero price (future billing slice control) | Only then may confirmed zero be distinguished from unavailable pricing; not inferred from workflow or token counters |
+
+The decisive SDK fixture must genuinely execute the existing no_mutation analysis path through
+DurableMemoryJobRunner to applied and preserve its result/application hashes; do not insert an
+applied row, construct reader output, or rewrite an old native job. Pair it with an actual committed
+mutation control. SDK source tests may independently check cognitive rows for the counterexample;
+Host/public consumer asserts public result and operation receipt bindings. The reported native case
+does not replace this deterministic execution test. Price handling is a contract boundary for unified
+usage, not a claim that OA1 has implemented billing or independently verified the legacy Host values.

@@ -56,6 +56,34 @@ attempt_ref_hash|null, occurred_at, outcome (committed/rejected/started/observed
 receipt_hash, item_hash. Values are rebuilt from actual durable data; an item is never fabricated
 from a logger, current jobs.state, or expected receipt supplied by the caller.
 
+### Execution outcome is separate from cognitive effect and price
+
+An `applied` job event proves completion of the analysis application workflow, not creation or
+correction of a cognitive memory. `mutation_audit_committed` likewise means audit material was
+committed, not necessarily a cognitive write. Any derived business summary must expose a separate
+`cognitive_effect` of `written`, `no_mutation`, `unverified`, or `not_applicable`, with its actual
+same-cut result/application/mutation receipt hash bindings. `written` requires a verified committed
+mutation operation/revision; a successful provider response, job state, or assistant claim is
+insufficient. `no_mutation` requires the canonical no-mutation result/application binding; absence
+of a mutation receipt alone is `unverified`, never proof of zero writes. Do not infer intent success
+from accepted analysis validation: a valid no-mutation closure can fail the user's remember intent.
+
+Main reported a real native remember run (partial SDK run ref `product-sdk-be6f...`): provider
+response succeeded and job applied, but closure was `analysis_all_operations_rejected/no_mutation`
+and no cognitive memory was added. Preserve the facts independently: workflow applied, cognitive
+effect no_mutation when bound, remember intent unsatisfied. Do not rewrite the old job or use the
+main executor's separate CREATE empty-field v3 repair to relabel this historical outcome. This is
+a reported native counterexample, not an independently rerun native result of OA1.
+
+OA1 does not add unified billing. Any later usage projection MUST distinguish the stored value
+from priced/billed truth. The legacy HostMemoryAnalysisExecutor `cost_microunits=0` is a placeholder
+without price provenance: retain reported_cost_microunits=0 if exposing the historical field,
+but priced_cost_microunits=null and price_provenance=unavailable. Never render it as confirmed free,
+sum it as known zero, or make a fully priced total from incomplete entries. A verified zero price
+requires independent price/billing provenance bound to the actual usage/invocation. Existing token
+usage, workflow status and cognitive effect do not supply that missing price evidence. Do not
+modify old invocation hashes/records to add invented provenance.
+
 `OperationAuditExpectation`: family, event_ref_hash, receipt_hash. Up to100 exact expected facts
 captured by Host from genuine operation returns; not authority to manufacture events. Report matched,
 missing or mismatched after inspecting the entire bounded snapshot, not just the current page.

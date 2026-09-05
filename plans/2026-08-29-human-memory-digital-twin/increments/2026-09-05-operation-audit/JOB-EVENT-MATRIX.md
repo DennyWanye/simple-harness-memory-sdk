@@ -16,7 +16,7 @@ is not a total order. This matrix is NOT a claim all invocation failures create 
 | prepare_analysis_application valid | application_staged | Actual accepted application receipt, not finalized applied |
 | prepare_analysis_application invalid | application_rejected | Actual rejected application receipt, not generic call rejection |
 | _record_analysis_invocation after durable mutation audit | mutation_audit_committed | Audit material committed; final application may still be pending |
-| finalize_analysis_application | applied | Actual committed final application |
+| finalize_analysis_application | applied | Analysis workflow finalized; cognitive effect may be no_mutation, not necessarily a memory write |
 | fail_analysis_batch below retry ceiling | retry_scheduled | Actual retry scheduling; no claim next attempt started |
 | reject_analysis_result retryable/authority gap | authority_retry_scheduled | Distinguish authority recovery from provider retry |
 | fail_analysis_batch/reject_analysis_result terminal all_dead | dead_letter | Actual batch terminal; per-job count/binding validated |
@@ -41,3 +41,10 @@ case using the existing real rejection fixture before reader assertions; no temp
 Changing/removing a required earlier event while its later witness remains must surface a gap or
 canonical corruption refusal. Deleting all evidence before the first trusted snapshot cannot be
 proved by the reader alone; independent Host start/receipt/checkpoint is the required witness.
+
+Native counterexample supplied by main (partial ref product-sdk-be6f...): actual provider success
+and applied job with analysis_all_operations_rejected/no_mutation closure. The audit must preserve
+`applied` and the canonical no-mutation effect together. It must not count this as cognitive-write
+success or confirmation that a remember request was fulfilled. Bind the actual result/application
+and any mutation receipts at the same snapshot cut; absent bindings mean unverified, not guessed
+success or zero writes. Main's CREATE candidate v3 repair is separate; old jobs remain unchanged.
