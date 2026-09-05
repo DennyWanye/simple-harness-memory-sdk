@@ -29,7 +29,7 @@ Artifact identities and results will be appended after the immutable build.
   stores: page/reopen PASS, each8items (4USER/3assistant/1tool), actual autumn
   USER and latest assistant present. Uses existing terminal bytes/public Context,
   Hostterminalidentity checks; no SDK runtime start, fabricated ready slot,
-  native guard override or new CREATE. Original native app remains stopped.
+  native guard override or new CREATE. Original native app was stopped during this copy gate.
 - Identity: Memory72/Harness151 tracked package files equal source/wheel/install;
   213 imported module origins under the fresh env, 16 exact dependencies and
   pipcheck PASS; 16 older snapshot JSON files unchanged. Original frozen0.6.10
@@ -58,3 +58,21 @@ Dirac source/factory scoped ACCEPT was obtained before freezing source/version.
 Independent artifact evidence recheck pending at this document commit; owner
 installed gate complete. No full suite, native UI, or Host all-operation audit
 coverage is claimed; finite public vocabulary scope stays explicit. No push/tag.
+
+## Coordinator integration update — 2026-09-05
+
+The following is reported by the Host coordinator, not rerun by this SDK task:
+
+- Main combination commit `1e36f111`; independent native commit `65a604f8`.
+- Both checkouts vendor/pin/lock0.6.12 and install from their own wheel path.
+- Coordinator identity checks: Memory72/Harness151/Service112 source/wheel
+  bytes PASS; Memory also compared against fixed source.
+- Native checkout installed startup/composition/graph:49PASS/11.53s.
+- Main installed startup/composition/audit/preparation:64PASS/8.76s.
+- Native65a has launched, but CUA reports macOS locked. Unlock requested by
+  coordinator; actual native interaction is pending and is not PASS.
+
+No new SDK builds, source changes or repeat source suite. Dirac artifact review
+is still pending at this update. Native continuation belongs to the coordinator.
+The earlier original-file unchanged assertions only describe the copygate time;
+subsequent authorized native activity does not invalidate that historical proof.

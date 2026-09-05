@@ -112,3 +112,9 @@ Dirac ce1a85b source/factory scoped ACCEPT，双offlinebuild一致，freshinstal
 16旧snapshot匹配；原0610/0611字节保持。产物独立复核待收，实际native/UI由Host另验，
 不标全program或全operation覆盖，不push/tag/main。
 [固定身份及命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-credential-public-identifiers/CANDIDATE-0.6.12.md)。
+
+2026-09-05协调回报（本SDK任务未重跑）：Host main1e36f111/native65a604f8已各自
+vendor/pin/directURL安装固定0612；Memory72/Harness151/Service112字节检查通过，
+native checkout安装版startup/composition/graph49PASS，main相关组合64PASS。
+原生已启动但macOS锁屏，真实native交互仍待协调处理，不计PASS。0612制品冻结，
+Dirac artifact复核待收；原文件不变断言仅限先前copygate时点。
