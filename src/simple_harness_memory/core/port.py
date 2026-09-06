@@ -65,6 +65,7 @@ from simple_harness_memory.core.models import (
     MemoryApplyResult,
     Message,
 )
+from simple_harness_memory.core.prospective_sources_v2 import ProspectiveOutboxSourceViewV2
 from simple_harness_memory.core.prospective_sources import ProspectiveOutboxSourceView
 from simple_harness_memory.core.mutation_receipts import MemoryMutationReceiptView
 from simple_harness_memory.core.recall import TypedRecallExecution
@@ -350,6 +351,10 @@ class CognitiveMemoryBackend(Protocol):
         scope: MemoryScope,
         plan: MemoryMutationPlan,
     ) -> MemoryMutationApplyResult: ...
+
+    async def read_prospective_outbox_source_v2(
+        self, *, principal: MemoryPrincipal, outbox_id: str, payload_hash: str,
+    ) -> ProspectiveOutboxSourceViewV2: ...
 
     async def read_prospective_outbox_source(
         self, *, principal: MemoryPrincipal, outbox_id: str, payload_hash: str,

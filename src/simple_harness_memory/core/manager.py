@@ -48,6 +48,7 @@ from simple_harness_memory.core.identity import (
     ScopeKind,
 )
 from simple_harness_memory.core.models import Fact
+from simple_harness_memory.core.prospective_sources_v2 import ProspectiveOutboxSourceViewV2
 from simple_harness_memory.core.prospective_sources import ProspectiveOutboxSourceView
 from simple_harness_memory.core.mutation_receipts import MemoryMutationReceiptView
 from simple_harness_memory.core.mutations import InformationClassificationPolicy
@@ -392,6 +393,13 @@ class MemoryManager:
             raise RuntimeError("backend does not support principal owner registration")
         result: PrincipalRegistrationReceipt = await operation(principal, scope)
         return result
+
+    async def read_prospective_outbox_source_v2(
+        self, *, principal: MemoryPrincipal, outbox_id: str, payload_hash: str,
+    ) -> ProspectiveOutboxSourceViewV2:
+        from simple_harness_memory.core.prospective_source_observation_v2 import observed_read
+
+        return await observed_read(self, principal=principal, outbox_id=outbox_id, payload_hash=payload_hash)
 
     async def read_prospective_outbox_source(
         self, *, principal: MemoryPrincipal, outbox_id: str, payload_hash: str,
