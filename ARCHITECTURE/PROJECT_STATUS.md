@@ -1,5 +1,9 @@
 # PROJECT STATUS — simple-harness-memory-sdk
 
+## 2026-09-06 完整 analysis 重试输入恢复
+
+最后更新：2026-09-06。后继源码d46bf1f保留普通失败批次完整request语义及原成员顺序，只替换attempt身份；新job独立使用新配置，篡改请求／成员拒绝。SDK三控及H077/M617依赖上的Host源码覆盖五控通过，含原v3普通异常→v4配置零新增Provider；旧24绿未跑。PG1149/exit0/3.834s/峰191648KiB/remaining=[]，共享槽释放。M617冻结不变，0.6.18.dev0未构建；待最终源码独审与实际installed，不称完整Procedure功能通过。[必要控制、原红边界与证据](../plans/2026-09-06-analysis-retry-protocol/RESULTS.md)。
+
 ## 2026-09-06 prospective终局与schema7.3源码候选
 
 最后更新：2026-09-06。按2553已接受边界新增公开settle_prospective_invalidation严格联合、独立持久not_required receipt/observation、同事务无登记请求证明和后续登记门；新7.3显式升级保留原7.2 DDL/初始化receipt/业务列，fresh用7.3。主已转Dirac源码限定ACCEPT；0.6.17单次offline wheel e119cdcc…已构建，16个变动成员=source/wheel/own target，独有安装3PASS/0.68秒，无Memory源码覆盖；PGID70661/exit0/峰147104KiB/1.522秒、无残留，槽释放。Host52由主实施。业务源码5ee3c6b；新增12项风险控分批通过：r4为11PASS/1测试断言FAIL，topic范围修正后r5定向1PASS，不重复其余绿。PGID67413/exit0/峰115936KiB/0.657秒、无残留，槽释放；旧V2八项未重跑，尚无Host52实际组合结论。[实际接口与待验收边界](../plans/2026-09-06-prospective-signal-source/SDK终局实现.md)。
