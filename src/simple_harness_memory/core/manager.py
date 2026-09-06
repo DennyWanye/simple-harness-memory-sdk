@@ -1303,11 +1303,11 @@ class MemoryManager:
             SQLiteMemoryBackend.restore_backup_sync, backup, self._backend._db_path
         )
 
-    async def read_procedure_use_target(self, *, principal, scope, memory_id, revision):
+    async def read_procedure_use_target(self, *, principal, scope, memory_id, revision, **recovery):
         """Exact owner-scoped metadata and safe per-call observation; no grant."""
         from simple_harness_memory.core.procedure_operation_observation import observed_procedure_call
         return await observed_procedure_call(self, "read_procedure_use_target", principal=principal,
-            scope=scope, memory_id=memory_id, revision=revision)
+            scope=scope, memory_id=memory_id, revision=revision, **recovery)
 
     async def prepare_procedure_observation(self, *, principal, scope, **observation):
         """Return PreparedProcedureObservation with an authority-free intent."""

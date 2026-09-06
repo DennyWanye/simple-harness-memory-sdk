@@ -69,7 +69,7 @@ from simple_harness_memory.core.lifecycle_results import (
     ProcedureObservationApplyResult,
     ProspectiveSignalApplyResult,
 )
-from simple_harness_memory.core.procedure_use import ProcedureUseTarget
+from simple_harness_memory.core.procedure_use import ProcedureUseTarget, PROCEDURE_OBSERVATION_RECOVERY_VERSION
 from simple_harness_memory.core.procedure_operation_observation import (
     ProcedureOperationObservationV1, PreparedProcedureObservation,
 )
@@ -272,6 +272,7 @@ __all__ = [
     "LifecycleApplyOutcome",
     "ProcedureObservationApplyResult",
     "ProcedureUseTarget",
+    "PROCEDURE_OBSERVATION_RECOVERY_VERSION",
     "ProcedureOperationObservationV1",
     "PreparedProcedureObservation",
     "ProspectiveSignalApplyResult",

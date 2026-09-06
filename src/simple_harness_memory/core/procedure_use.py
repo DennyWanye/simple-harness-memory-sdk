@@ -9,6 +9,9 @@ from simple_harness_memory.core.lifecycle_results import (
 )
 
 
+PROCEDURE_OBSERVATION_RECOVERY_VERSION = 1
+
+
 @dataclass(frozen=True, slots=True)
 class ProcedureUseTarget:
     memory_id: str

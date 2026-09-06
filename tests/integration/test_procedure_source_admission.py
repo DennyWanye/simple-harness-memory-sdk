@@ -48,7 +48,7 @@ async def test_source_only_receipt_scope_binding_and_ordinary_mutation_gate_rema
         envelope, _, span = evidence[1]
         # Public ordinary mutation still requires full ingestion. No source-only
         # row is converted or given analysis lineage to bypass its admission gate.
-        with pytest.raises(MemoryValidationError, match="mutation_evidence_not_admitted"):
+        with pytest.raises(MemoryValidationError, match="mutation_evidence_span_not_admitted"):
             await manager.apply_memory_mutation_plan(principal=_principal(), scope=MemoryScope.personal("actor-1"),
                 plan=_plan(envelope, _procedure_operation(span), base_revision=2,
                     plan_id="source-only-mutation", idempotency_key="source-only-mutation"))

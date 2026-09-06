@@ -5482,7 +5482,7 @@ class SQLiteHumanMemoryBackend:
         )
 
     @history_source_operation
-    async def read_procedure_use_target(self, *, principal, scope, memory_id, revision):
+    async def read_procedure_use_target(self, *, principal, scope, memory_id, revision, allow_observation_rebase=False):
         from simple_harness.runtime import ProcedureMemoryPayload
         from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
         from simple_harness_memory.core.procedure_use import ProcedureUseTarget
@@ -5492,6 +5492,8 @@ class SQLiteHumanMemoryBackend:
         if type(principal) is not MemoryPrincipal or type(scope) is not MemoryScope:
             raise TypeError("principal and scope must use Memory identity types")
         scope.authorize(principal)
+        if type(allow_observation_rebase) is not bool:
+            raise MemoryValidationError("procedure_observation_rebase_flag_invalid")
         _audit_identifier(memory_id, "memory_id")
         if type(revision) is not int or revision < 1:
             raise MemoryValidationError("procedure_use_revision_invalid")
@@ -5502,6 +5504,10 @@ class SQLiteHumanMemoryBackend:
             await self._db.execute("BEGIN IMMEDIATE")
             try:
                 now = _timestamp(self._now())
+                if allow_observation_rebase:
+                    from simple_harness_memory.backends.procedure_recovery import compatible_revision
+                    revision = await compatible_revision(self, principal=principal, scope=scope,
+                        memory_id=memory_id, revision=revision)
                 async with self._db.execute(
                     "SELECT r.lifecycle_state,r.content_json,r.content_hash,p.* FROM cognitive_memory_heads h "
                     "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
@@ -5557,7 +5563,7 @@ class SQLiteHumanMemoryBackend:
         self, *, principal, scope, observation_id, target_memory_id, target_revision,
         kind, applicability, hazard, task_scope_id, evidence_span,
         terminal_receipt_id, terminal_receipt_hash, outcome, attributable,
-        observed_at, run_id, operation_id,
+        observed_at, run_id, operation_id, allow_observation_rebase=False, previous_reference=None,
     ):
         """Read a current intent, never an observation grant or consumption.
 
@@ -5575,6 +5581,8 @@ class SQLiteHumanMemoryBackend:
         if type(principal) is not MemoryPrincipal or type(scope) is not MemoryScope:
             raise TypeError("principal and scope must use Memory identity types")
         scope.authorize(principal)
+        if type(allow_observation_rebase) is not bool or (previous_reference is not None and not allow_observation_rebase):
+            raise MemoryValidationError("procedure_observation_recovery_options_invalid")
         _audit_identifier(target_memory_id, "target_memory_id")
         if type(target_revision) is not int or target_revision < 1:
             raise MemoryValidationError("procedure_observation_revision_invalid")
@@ -5583,10 +5591,18 @@ class SQLiteHumanMemoryBackend:
         kind = ProcedureObservationKind(kind)
         outcome = None if outcome is None else ProcedureObservationOutcome(outcome)
         hazard = ProcedureHazard(hazard)
+        previous_authority = None
+        if previous_reference is not None:
+            from simple_harness_memory.backends.procedure_recovery import resolve_previous
+            previous_authority = await resolve_previous(self, previous_reference)
         await prepare_history_source_context(self, principal)
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
             try:
+                if allow_observation_rebase:
+                    from simple_harness_memory.backends.procedure_recovery import compatible_revision
+                    target_revision = await compatible_revision(self, principal=principal, scope=scope,
+                        memory_id=target_memory_id, revision=target_revision)
                 async with self._db.execute(
                     "SELECT r.lifecycle_state,p.risk_level FROM cognitive_memory_heads h "
                     "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
@@ -5620,6 +5636,14 @@ class SQLiteHumanMemoryBackend:
                 decision = await self._procedure_observation_decision_unlocked(
                     candidate, principal, scope, _timestamp(self._now()))
                 prepared = replace(candidate, transition_to=decision[7])
+                if previous_authority is not None:
+                    from simple_harness_memory.backends.procedure_recovery import check_previous_unlocked
+                    await check_previous_unlocked(self, principal=principal, scope=scope,
+                        reference=previous_reference, authority=previous_authority,
+                        candidate=prepared, now=_timestamp(self._now()))
+                if allow_observation_rebase:
+                    from simple_harness_memory.backends.procedure_recovery import reject_duplicate_unlocked
+                    await reject_duplicate_unlocked(self, prepared)
                 await self._db.execute("COMMIT")
                 return prepared
             except BaseException:
@@ -5673,6 +5697,16 @@ class SQLiteHumanMemoryBackend:
         current_fingerprint = str(row[7])
         current_hazard = None if row[8] is None else str(row[8])
         await self._verify_procedure_evidence_unlocked(intent)
+        # Both prepare and final consumption recheck current source visibility.
+        # A Host grant issued before forget does not preserve visibility later.
+        from simple_harness_memory.core.suppression import OrdinaryMemoryPurpose, SuppressionCandidate, SuppressionDenied
+        _, target_evidence_ids, _ = await self._cognitive_recall_lineage_unlocked(intent.target_memory_id, base_revision)
+        for candidate in (SuppressionCandidate(principal.actor_id, memory_id=intent.target_memory_id), *(
+            SuppressionCandidate(principal.actor_id, evidence_id=eid)
+            for eid in set((*target_evidence_ids, intent.evidence_span.evidence_id))
+        )):
+            if (await self._resolve_suppression_unlocked(candidate, OrdinaryMemoryPurpose.RECALL)).denied:
+                raise SuppressionDenied()
         if intent.observed_at > consumed_at:
             raise MemoryValidationError("procedure_observation_occurred_at_future")
         bound_fingerprint = current_fingerprint

@@ -1,3 +1,5 @@
+最后更新：2026-09-06。Procedure来源边界四个唯一新控分批通过，原fixture/载体失败保留；Host5e513eda/SDKdb7ca22三Scope正向已由主转Dirac限定接受。新增过期恢复/旧revision/drift源码尚未验证，未build、未合主、TC-HM04未完成。[后继契约](../plans/2026-09-06-procedure-observation-prepare/RECOVERY.md)。
+
 # PROJECT STATUS — simple-harness-memory-sdk
 
 最后更新：2026-09-06。Procedure后继公开prepare/read target/record的实际operation observation六项新控通过；f82c2b8仅Procedure复用source-only S1完整持久校验，Host三真实Scope路由/文件effects/完整group→公共观察由原红转绿，累计成功1/2/3与重放已验证。新四项跨源边界控未跑，完整TC-HM04、独审、installed/native未闭合。主整合Hegel e500556后统一版本，不独立build，不改M618制品；F01延期。[源码与证据边界](../plans/2026-09-06-procedure-observation-prepare/CONTRACT.md)。
