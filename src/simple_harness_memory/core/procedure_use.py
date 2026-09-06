@@ -19,6 +19,7 @@ class ProcedureUseTarget:
     applicability_fingerprint: str
     bound_hazard: str | None
     step_hashes: tuple[str, ...]
+    operation_observation: object | None = field(default=None, repr=False, compare=False)
     source_hash: str = field(init=False)
 
     def __post_init__(self):

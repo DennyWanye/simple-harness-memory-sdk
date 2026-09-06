@@ -70,6 +70,9 @@ from simple_harness_memory.core.lifecycle_results import (
     ProspectiveSignalApplyResult,
 )
 from simple_harness_memory.core.procedure_use import ProcedureUseTarget
+from simple_harness_memory.core.procedure_operation_observation import (
+    ProcedureOperationObservationV1, PreparedProcedureObservation,
+)
 from simple_harness_memory.core.manager import (
     MemoryManager,
     build_human_memory_v6,
@@ -269,6 +272,8 @@ __all__ = [
     "LifecycleApplyOutcome",
     "ProcedureObservationApplyResult",
     "ProcedureUseTarget",
+    "ProcedureOperationObservationV1",
+    "PreparedProcedureObservation",
     "ProspectiveSignalApplyResult",
     "ShortHorizonDegradationCode",
     "ShortHorizonGenerationBuildResult",

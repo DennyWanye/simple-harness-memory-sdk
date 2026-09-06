@@ -1304,59 +1304,21 @@ class MemoryManager:
         )
 
     async def read_procedure_use_target(self, *, principal, scope, memory_id, revision):
-        """Read exact owner-scoped hashes for a proposed explicit use, not raw steps."""
-        import asyncio
-        from uuid import uuid4
-
-        invocation = "procedure-use-target-" + uuid4().hex
-        try:
-            result = await self._backend.read_procedure_use_target(
-                principal=principal, scope=scope, memory_id=memory_id, revision=revision)
-        except BaseException as error:
-            self._observability.emit(
-                "memory.procedure_use_target.observed", operation="read_procedure_use_target",
-                outcome="failed", entity_id=invocation,
-                attributes={"stage": "cancelled" if isinstance(error, asyncio.CancelledError)
-                            else "rejected", "state_version": 1})
-            raise
-        self._observability.emit(
-            "memory.procedure_use_target.observed", operation="read_procedure_use_target",
-            outcome="succeeded", entity_id=invocation,
-            attributes={"fingerprint": result.source_hash, "stage": "read", "state_version": 1})
-        return result
+        """Exact owner-scoped metadata and safe per-call observation; no grant."""
+        from simple_harness_memory.core.procedure_operation_observation import observed_procedure_call
+        return await observed_procedure_call(self, "read_procedure_use_target", principal=principal,
+            scope=scope, memory_id=memory_id, revision=revision)
 
     async def prepare_procedure_observation(self, *, principal, scope, **observation):
-        """Prepare an authority-free intent from current public SDK facts."""
-        import asyncio
-        from uuid import uuid4
-
-        invocation = "procedure-prepare-" + uuid4().hex
-        operation = getattr(self._backend, "prepare_procedure_observation", None)
-        try:
-            if operation is None:
-                raise RuntimeError("backend does not support Procedure observation preparation")
-            result = await operation(principal=principal, scope=scope, **observation)
-        except BaseException as error:
-            self._observability.emit(
-                "memory.procedure_preparation.observed", operation="prepare_procedure_observation",
-                outcome="failed", entity_id=invocation,
-                attributes={"stage": "cancelled" if isinstance(error, asyncio.CancelledError)
-                            else "rejected", "state_version": 1},
-            )
-            raise
-        self._observability.emit(
-            "memory.procedure_preparation.observed", operation="prepare_procedure_observation",
-            outcome="succeeded", entity_id=invocation,
-            attributes={"fingerprint": result.intent_hash, "stage": "prepared",
-                        "to_state": result.transition_to.value, "state_version": 1},
-        )
-        return result
+        """Return PreparedProcedureObservation with an authority-free intent."""
+        from simple_harness_memory.core.procedure_operation_observation import observed_procedure_call
+        return await observed_procedure_call(self, "prepare_procedure_observation", principal=principal,
+                                            scope=scope, **observation)
 
     async def record_procedure_observation(self, *, principal, scope, reference):
-        operation = getattr(self._backend, "record_procedure_observation", None)
-        if operation is None:
-            raise RuntimeError("backend does not support Procedure observations")
-        return await operation(principal=principal, scope=scope, reference=reference)
+        from simple_harness_memory.core.procedure_operation_observation import observed_procedure_call
+        return await observed_procedure_call(self, "record_procedure_observation", principal=principal,
+                                            scope=scope, reference=reference)
 
     async def apply_prospective_signal(self, *, principal, scope, reference):
         operation = getattr(self._backend, "apply_prospective_signal", None)

@@ -45,11 +45,12 @@ async def test_public_preparation_three_scopes_no_mutation_before_authority_and_
             resolutions = authority.procedure_resolutions
             prepared = await manager.prepare_procedure_observation(
                 principal=_principal(), scope=MemoryScope.personal("actor-1"), **args)
+            prepared = prepared.intent
             assert prepared.transition_to is expected
             assert authority.procedure_resolutions == resolutions  # prepare never resolves a grant
             again = await manager.prepare_procedure_observation(
                 principal=_principal(), scope=MemoryScope.personal("actor-1"), **args)
-            assert again == prepared
+            assert again.intent == prepared
             ref = authorize(authority, prepared, str(index))
             result = await manager.record_procedure_observation(
                 principal=_principal(), scope=MemoryScope.personal("actor-1"), reference=ref)
