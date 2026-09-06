@@ -5481,6 +5481,13 @@ class SQLiteHumanMemoryBackend:
             ),
         )
 
+    async def discover_procedure_drafts(self, *, principal, scope, disclosure_context,
+                                       query, after="", limit=8, max_bytes=32768):
+        from simple_harness_memory.backends.procedure_discovery import discover
+        return await discover(self, principal=principal, scope=scope,
+            disclosure_context=disclosure_context, query=query, after=after,
+            limit=limit, max_bytes=max_bytes)
+
     @history_source_operation
     async def read_procedure_use_target(self, *, principal, scope, memory_id, revision, allow_observation_rebase=False):
         from simple_harness.runtime import ProcedureMemoryPayload

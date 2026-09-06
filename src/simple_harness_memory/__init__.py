@@ -41,6 +41,7 @@ from simple_harness_memory.core.history import (
     HistoryEvidenceBinding,
     HistoryRecallBinding,
     HistoryShortHorizonBinding,
+    HistoryProcedureDraftBinding,
     HistoryVisibilityItem,
     HistoryVisibilitySnapshot,
 )
@@ -179,6 +180,9 @@ __all__ = [
     "HistoryEvidenceBinding",
     "HistoryRecallBinding",
     "HistoryShortHorizonBinding",
+    "HistoryProcedureDraftBinding",
+    "ProcedureDraftCandidate",
+    "ProcedureDraftPage",
     "HistoryVisibilityItem",
     "HistoryVisibilitySnapshot",
     "ShortHorizonSourceItem",
@@ -284,3 +288,5 @@ __all__ = [
 ]
 
 __version__ = "0.6.18"
+
+from simple_harness_memory.core.procedure_discovery import ProcedureDraftCandidate, ProcedureDraftPage

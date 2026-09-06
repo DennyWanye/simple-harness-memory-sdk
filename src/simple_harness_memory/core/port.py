@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     )
 
     from simple_harness_memory.core.jobs import AnalysisLineage
+    from simple_harness_memory.core.procedure_discovery import ProcedureDraftPage
 
 from simple_harness_memory.cognitive.twin_builder import TwinGraphView
 from simple_harness_memory.core.audit import (
@@ -404,6 +405,10 @@ class CognitiveMemoryBackend(Protocol):
         *,
         principal: MemoryPrincipal | None = None,
     ) -> SuppressionDecision: ...
+
+    async def discover_procedure_drafts(self, *, principal: MemoryPrincipal,
+        scope: MemoryScope, disclosure_context: DisclosureContext, query: str,
+        after: str = "", limit: int = 8, max_bytes: int = 32768) -> ProcedureDraftPage: ...
 
     async def read_procedure_use_target(self, *, principal: MemoryPrincipal,
         scope: MemoryScope, memory_id: str, revision: int, allow_observation_rebase: bool = False) -> object: ...

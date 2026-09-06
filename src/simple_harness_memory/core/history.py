@@ -86,7 +86,26 @@ class HistoryShortHorizonBinding:
         }
 
 
-HistoryBinding = HistoryEvidenceBinding | HistoryRecallBinding | HistoryShortHorizonBinding
+@dataclass(frozen=True, slots=True)
+class HistoryProcedureDraftBinding:
+    """Exact preview payload; recheck current draft, owner and source before use."""
+    memory_id: str
+    revision: int
+    candidate_hash: str
+
+    def __post_init__(self):
+        _identifier(self.memory_id, "memory_id")
+        if type(self.revision) is not int or self.revision < 1:
+            raise ValueError("procedure_draft_revision_invalid")
+        if type(self.candidate_hash) is not str or len(self.candidate_hash)!=64 or any(c not in "0123456789abcdef" for c in self.candidate_hash):
+            raise ValueError("procedure_draft_hash_invalid")
+
+    def to_json(self):
+        return {"kind":"procedure_draft", "memory_id":self.memory_id,
+                "revision":self.revision,"candidate_hash":self.candidate_hash}
+
+
+HistoryBinding = HistoryEvidenceBinding | HistoryRecallBinding | HistoryShortHorizonBinding | HistoryProcedureDraftBinding
 
 
 @dataclass(frozen=True, slots=True)

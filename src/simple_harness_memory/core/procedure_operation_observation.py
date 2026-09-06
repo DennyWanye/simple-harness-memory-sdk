@@ -6,7 +6,7 @@ from dataclasses import dataclass, field, replace
 from uuid import uuid4
 
 from simple_harness.runtime import (
-    EvidenceSpanRef, ProcedureApplicabilityContext, ProcedureObservationAuthorityRef,
+    DisclosureContext, EvidenceSpanRef, ProcedureApplicabilityContext, ProcedureObservationAuthorityRef,
     ProcedureObservationIntent, ProcedureObservationKind, ProcedureObservationOutcome,
     ProcedureHazard,
 )
@@ -18,7 +18,7 @@ from simple_harness_memory.core.errors import (
 from simple_harness_memory.core.suppression import SuppressionDenied
 from simple_harness_memory.core.operation_audit import _digest, _hash
 
-OPERATIONS = frozenset({"prepare_procedure_observation", "read_procedure_use_target", "record_procedure_observation"})
+OPERATIONS = frozenset({"discover_procedure_drafts", "prepare_procedure_observation", "read_procedure_use_target", "record_procedure_observation"})
 
 
 def error_outcome(error):
@@ -52,7 +52,7 @@ def procedure_operation_binding(operation, principal, scope, arguments):
             return value
         if type(value) in (ProcedureObservationKind, ProcedureObservationOutcome, ProcedureHazard):
             return value.value
-        if type(value) in (EvidenceSpanRef, ProcedureApplicabilityContext, ProcedureObservationAuthorityRef):
+        if type(value) in (DisclosureContext, EvidenceSpanRef, ProcedureApplicabilityContext, ProcedureObservationAuthorityRef):
             return value.to_json()
         raise ValueError("unbound argument")
     owner = None

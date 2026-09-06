@@ -29,6 +29,7 @@ from simple_harness_memory.core.history import (
     HistoryEvidenceBinding,
     HistoryRecallBinding,
     HistoryShortHorizonBinding,
+    HistoryProcedureDraftBinding,
     HistoryVisibilityItem,
     HistoryVisibilitySnapshot,
     history_hash,
@@ -361,6 +362,7 @@ async def check_history_visibility(
             HistoryEvidenceBinding,
             HistoryRecallBinding,
             HistoryShortHorizonBinding,
+            HistoryProcedureDraftBinding,
         ):
             raise TypeError("history binding type invalid")
         if isinstance(binding, HistoryEvidenceBinding):
@@ -434,6 +436,11 @@ async def check_history_visibility(
                     reason = "history_disclosure_denied"
                 elif isinstance(binding, HistoryEvidenceBinding):
                     reason = await _evidence(backend, principal, context, binding, batch, work)
+                elif isinstance(binding, HistoryProcedureDraftBinding):
+                    from simple_harness_memory.backends.procedure_discovery import read_candidate
+                    candidate, deadline = await read_candidate(backend, principal, context,
+                        binding.memory_id, binding.revision, now, work)
+                    reason = "history_visible" if candidate is not None and candidate.source_hash == binding.candidate_hash else "history_source_stale"
                 elif isinstance(binding, HistoryShortHorizonBinding):
                     from simple_harness_memory.backends.short_history_visibility import check_short
 

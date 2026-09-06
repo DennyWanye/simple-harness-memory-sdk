@@ -1303,6 +1303,14 @@ class MemoryManager:
             SQLiteMemoryBackend.restore_backup_sync, backup, self._backend._db_path
         )
 
+    async def discover_procedure_drafts(self, *, principal, scope, disclosure_context,
+                                       query, after="", limit=8, max_bytes=32768):
+        """Bounded SELF draft previews, separately revalidated before model use."""
+        from simple_harness_memory.core.procedure_operation_observation import observed_procedure_call
+        return await observed_procedure_call(self, "discover_procedure_drafts",
+            principal=principal, scope=scope, disclosure_context=disclosure_context,
+            query=query, after=after, limit=limit, max_bytes=max_bytes)
+
     async def read_procedure_use_target(self, *, principal, scope, memory_id, revision, **recovery):
         """Exact owner-scoped metadata and safe per-call observation; no grant."""
         from simple_harness_memory.core.procedure_operation_observation import observed_procedure_call
