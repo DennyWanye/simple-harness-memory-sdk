@@ -405,6 +405,10 @@ class CognitiveMemoryBackend(Protocol):
         principal: MemoryPrincipal | None = None,
     ) -> SuppressionDecision: ...
 
+    async def prepare_procedure_observation(
+        self, *, principal: MemoryPrincipal, scope: MemoryScope, **observation: object,
+    ) -> object: ...
+
     async def record_procedure_observation(
         self,
         *,

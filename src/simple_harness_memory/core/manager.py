@@ -1303,6 +1303,33 @@ class MemoryManager:
             SQLiteMemoryBackend.restore_backup_sync, backup, self._backend._db_path
         )
 
+    async def prepare_procedure_observation(self, *, principal, scope, **observation):
+        """Prepare an authority-free intent from current public SDK facts."""
+        import asyncio
+        from uuid import uuid4
+
+        invocation = "procedure-prepare-" + uuid4().hex
+        operation = getattr(self._backend, "prepare_procedure_observation", None)
+        try:
+            if operation is None:
+                raise RuntimeError("backend does not support Procedure observation preparation")
+            result = await operation(principal=principal, scope=scope, **observation)
+        except BaseException as error:
+            self._observability.emit(
+                "memory.procedure_preparation.observed", operation="prepare_procedure_observation",
+                outcome="failed", entity_id=invocation,
+                attributes={"stage": "cancelled" if isinstance(error, asyncio.CancelledError)
+                            else "rejected", "state_version": 1},
+            )
+            raise
+        self._observability.emit(
+            "memory.procedure_preparation.observed", operation="prepare_procedure_observation",
+            outcome="succeeded", entity_id=invocation,
+            attributes={"fingerprint": result.intent_hash, "stage": "prepared",
+                        "to_state": result.transition_to.value, "state_version": 1},
+        )
+        return result
+
     async def record_procedure_observation(self, *, principal, scope, reference):
         operation = getattr(self._backend, "record_procedure_observation", None)
         if operation is None:

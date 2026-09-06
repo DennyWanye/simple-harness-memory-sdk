@@ -5482,6 +5482,209 @@ class SQLiteHumanMemoryBackend:
         )
 
     @history_source_operation
+    async def prepare_procedure_observation(
+        self, *, principal, scope, observation_id, target_memory_id, target_revision,
+        kind, applicability, hazard, task_scope_id, evidence_span,
+        terminal_receipt_id, terminal_receipt_hash, outcome, attributable,
+        observed_at, run_id, operation_id,
+    ):
+        """Read a current intent, never an observation grant or consumption.
+
+        The Host must verify actual use/terminal attribution before issuing its
+        authority. Consumption repeats this exact decision in its transaction.
+        """
+        from dataclasses import replace
+        from simple_harness.runtime import (
+            MemoryScopeRef, ProcedureHazard, ProcedureLifecycleState,
+            ProcedureObservationIntent, ProcedureObservationKind,
+            ProcedureObservationOutcome, ProcedureRiskLevel,
+        )
+        from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
+
+        if type(principal) is not MemoryPrincipal or type(scope) is not MemoryScope:
+            raise TypeError("principal and scope must use Memory identity types")
+        scope.authorize(principal)
+        _audit_identifier(target_memory_id, "target_memory_id")
+        if type(target_revision) is not int or target_revision < 1:
+            raise MemoryValidationError("procedure_observation_revision_invalid")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v7 backend is not initialized")
+        kind = ProcedureObservationKind(kind)
+        outcome = None if outcome is None else ProcedureObservationOutcome(outcome)
+        hazard = ProcedureHazard(hazard)
+        await prepare_history_source_context(self, principal)
+        async with self._write_lock:
+            await self._db.execute("BEGIN IMMEDIATE")
+            try:
+                async with self._db.execute(
+                    "SELECT r.lifecycle_state,p.risk_level FROM cognitive_memory_heads h "
+                    "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
+                    "AND r.revision=h.current_revision JOIN procedure_records p "
+                    "ON p.memory_id=r.memory_id AND p.revision=r.revision "
+                    "WHERE h.memory_id=? AND h.current_revision=? AND h.principal_id=? "
+                    "AND h.deployment_id=? AND h.household_id=? AND h.scope_kind=? "
+                    "AND h.scope_owner=?",
+                    (target_memory_id, target_revision, principal.actor_id,
+                     principal.deployment_id, principal.household_id, scope.kind.value, scope.owner_id),
+                ) as cursor:
+                    row = await cursor.fetchone()
+                if row is None:
+                    raise MemoryWriterConflict("procedure_observation_target_unavailable_or_stale")
+                state = ProcedureLifecycleState(row[0])
+                # This local value is only structural validation; it is never
+                # issued or returned before the shared decision is computed.
+                candidate = ProcedureObservationIntent(
+                    observation_id=observation_id, subject=principal.actor_id,
+                    scope=MemoryScopeRef(scope.kind.value, scope.owner_id),
+                    target_memory_id=target_memory_id, target_revision=target_revision,
+                    kind=kind, applicability=applicability, risk_level=ProcedureRiskLevel(row[1]),
+                    hazard=hazard, task_scope_id=task_scope_id, evidence_span=evidence_span,
+                    terminal_receipt_id=terminal_receipt_id, terminal_receipt_hash=terminal_receipt_hash,
+                    outcome=outcome, attributable=attributable, observed_at=observed_at,
+                    transition_from=state,
+                    transition_to=(ProcedureLifecycleState.REVISED if
+                        outcome is ProcedureObservationOutcome.FAILURE and attributable else state),
+                    run_id=run_id, operation_id=operation_id,
+                )
+                decision = await self._procedure_observation_decision_unlocked(
+                    candidate, principal, scope, _timestamp(self._now()))
+                prepared = replace(candidate, transition_to=decision[7])
+                await self._db.execute("COMMIT")
+                return prepared
+            except BaseException:
+                with suppress(Exception):
+                    await self._db.execute("ROLLBACK")
+                raise
+
+    async def _procedure_observation_decision_unlocked(self, intent, principal, scope, consumed_at):
+        """Shared preparation/consumption decision; caller owns the transaction."""
+        from simple_harness.runtime import (
+            ProcedureHazard, ProcedureLifecycleState, ProcedureObservationKind,
+            ProcedureObservationOutcome, ProcedureRiskLevel,
+        )
+        from simple_harness_memory.core.lifecycle_results import UNBOUND_PROCEDURE_APPLICABILITY
+
+        async with self._db.execute(
+            "SELECT h.memory_type,h.current_revision,h.scope_kind,h.scope_owner,"
+            "r.lifecycle_state,p.risk_level,p.qualification_epoch,"
+            "p.applicability_fingerprint,p.bound_hazard "
+            "FROM cognitive_memory_heads h JOIN cognitive_memory_revisions r "
+            "ON r.memory_id=h.memory_id AND r.revision=h.current_revision "
+            "JOIN procedure_records p ON p.memory_id=r.memory_id "
+            "AND p.revision=r.revision WHERE h.principal_id=? "
+            "AND h.deployment_id=? AND h.household_id=? AND h.memory_id=?",
+            (
+                principal.actor_id,
+                principal.deployment_id,
+                principal.household_id,
+                intent.target_memory_id,
+            ),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            raise MemoryValidationError("procedure_observation_target_not_found")
+        if str(row[0]) != "procedure":
+            raise MemoryValidationError("procedure_observation_target_type_differs")
+        if (str(row[2]), str(row[3])) != (
+            scope.kind.value,
+            scope.owner_id,
+        ):
+            raise MemoryOwnershipConflict("procedure_observation_scope_differs")
+        base_revision = int(row[1])
+        if base_revision != intent.target_revision:
+            raise MemoryWriterConflict("procedure_observation_revision_stale")
+        current_state = ProcedureLifecycleState(str(row[4]))
+        if current_state is not intent.transition_from:
+            raise MemoryWriterConflict("procedure_observation_lifecycle_stale")
+        if str(row[5]) != intent.risk_level.value:
+            raise MemoryValidationError("procedure_observation_risk_differs")
+        qualification_epoch = str(row[6])
+        current_fingerprint = str(row[7])
+        current_hazard = None if row[8] is None else str(row[8])
+        await self._verify_procedure_evidence_unlocked(intent)
+        if intent.observed_at > consumed_at:
+            raise MemoryValidationError("procedure_observation_occurred_at_future")
+        bound_fingerprint = current_fingerprint
+        bound_hazard = current_hazard
+        reason_code = "procedure_observation_recorded"
+        if current_fingerprint == UNBOUND_PROCEDURE_APPLICABILITY:
+            bound_fingerprint = intent.applicability.fingerprint
+            bound_hazard = intent.hazard.value
+            reason_code = "procedure_applicability_bound"
+        fingerprint_matches = bound_fingerprint == intent.applicability.fingerprint
+        hazard_matches = bound_hazard == intent.hazard.value
+        window_start = max(0.0, consumed_at - 90.0 * 24.0 * 60.0 * 60.0)
+        async with self._db.execute(
+            "SELECT COUNT(*),SUM(CASE WHEN outcome='failure' THEN 1 ELSE 0 END) "
+            "FROM procedure_observations WHERE memory_id=? "
+            "AND qualification_epoch=? AND applicability_fingerprint=? "
+            "AND occurred_at>=? AND occurred_at<=? AND ("
+            "(outcome='success' AND attributable=1) OR outcome='failure')",
+            (
+                intent.target_memory_id,
+                qualification_epoch,
+                bound_fingerprint,
+                window_start,
+                consumed_at,
+            ),
+        ) as cursor:
+            count_row = await cursor.fetchone()
+        if count_row is None:
+            raise MemoryCorruptionError("procedure evidence count is missing")
+        failure_count = int(count_row[1] or 0)
+        success_count = int(count_row[0]) - failure_count
+        counts_in_window = (
+            intent.observed_at >= window_start and intent.observed_at <= consumed_at
+        )
+        next_state = current_state
+        if not fingerprint_matches or not hazard_matches:
+            next_state = ProcedureLifecycleState.INAPPLICABLE
+            reason_code = "procedure_applicability_or_hazard_drift"
+        elif intent.kind is ProcedureObservationKind.TERMINAL_OUTCOME:
+            if intent.outcome is ProcedureObservationOutcome.FAILURE:
+                if counts_in_window:
+                    failure_count += 1
+                if intent.attributable:
+                    next_state = ProcedureLifecycleState.REVISED
+                    reason_code = "procedure_attributable_failure"
+                else:
+                    reason_code = "procedure_non_attributable_failure"
+            elif intent.outcome is ProcedureObservationOutcome.SUCCESS:
+                if intent.attributable and counts_in_window:
+                    success_count += 1
+                if (
+                    intent.attributable
+                    and intent.risk_level is ProcedureRiskLevel.LOW
+                    and intent.hazard is ProcedureHazard.NONE
+                ):
+                    threshold_state = (
+                        ProcedureLifecycleState.DRAFT
+                        if success_count < 2
+                        else ProcedureLifecycleState.ELIGIBLE_FOR_ACTIVATION
+                        if success_count < 3
+                        else ProcedureLifecycleState.ACTIVE
+                    )
+                    ranks = {
+                        ProcedureLifecycleState.DRAFT: 0,
+                        ProcedureLifecycleState.ELIGIBLE_FOR_ACTIVATION: 1,
+                        ProcedureLifecycleState.ACTIVE: 2,
+                        ProcedureLifecycleState.REINFORCED: 3,
+                    }
+                    if current_state in ranks and (
+                        ranks[threshold_state] > ranks[current_state]
+                    ):
+                        next_state = threshold_state
+                    reason_code = "procedure_low_risk_success"
+                else:
+                    reason_code = (
+                        "procedure_non_attributable_success"
+                        if not intent.attributable
+                        else "procedure_unsafe_auto_activation_blocked"
+                    )
+        return (base_revision, current_state, qualification_epoch, bound_fingerprint,
+                bound_hazard, success_count, failure_count, next_state, reason_code)
+
+    @history_source_operation
     async def record_procedure_observation(
         self,
         *,
@@ -5583,123 +5786,10 @@ class SQLiteHumanMemoryBackend:
                     consumed_at = _timestamp(self._now())
                     if consumed_at < authority.issued_at or consumed_at >= authority.expires_at:
                         raise MemoryValidationError("procedure_observation_authority_expired")
-                    async with self._db.execute(
-                        "SELECT h.memory_type,h.current_revision,h.scope_kind,h.scope_owner,"
-                        "r.lifecycle_state,p.risk_level,p.qualification_epoch,"
-                        "p.applicability_fingerprint,p.bound_hazard "
-                        "FROM cognitive_memory_heads h JOIN cognitive_memory_revisions r "
-                        "ON r.memory_id=h.memory_id AND r.revision=h.current_revision "
-                        "JOIN procedure_records p ON p.memory_id=r.memory_id "
-                        "AND p.revision=r.revision WHERE h.principal_id=? "
-                        "AND h.deployment_id=? AND h.household_id=? AND h.memory_id=?",
-                        (
-                            principal.actor_id,
-                            principal.deployment_id,
-                            principal.household_id,
-                            intent.target_memory_id,
-                        ),
-                    ) as cursor:
-                        row = await cursor.fetchone()
-                    if row is None:
-                        raise MemoryValidationError("procedure_observation_target_not_found")
-                    if str(row[0]) != "procedure":
-                        raise MemoryValidationError("procedure_observation_target_type_differs")
-                    if (str(row[2]), str(row[3])) != (
-                        scope.kind.value,
-                        scope.owner_id,
-                    ):
-                        raise MemoryOwnershipConflict("procedure_observation_scope_differs")
-                    base_revision = int(row[1])
-                    if base_revision != intent.target_revision:
-                        raise MemoryWriterConflict("procedure_observation_revision_stale")
-                    current_state = ProcedureLifecycleState(str(row[4]))
-                    if current_state is not intent.transition_from:
-                        raise MemoryWriterConflict("procedure_observation_lifecycle_stale")
-                    if str(row[5]) != intent.risk_level.value:
-                        raise MemoryValidationError("procedure_observation_risk_differs")
-                    qualification_epoch = str(row[6])
-                    current_fingerprint = str(row[7])
-                    current_hazard = None if row[8] is None else str(row[8])
-                    await self._verify_procedure_evidence_unlocked(intent)
-                    if intent.observed_at > consumed_at:
-                        raise MemoryValidationError("procedure_observation_occurred_at_future")
-                    bound_fingerprint = current_fingerprint
-                    bound_hazard = current_hazard
-                    reason_code = "procedure_observation_recorded"
-                    if current_fingerprint == UNBOUND_PROCEDURE_APPLICABILITY:
-                        bound_fingerprint = intent.applicability.fingerprint
-                        bound_hazard = intent.hazard.value
-                        reason_code = "procedure_applicability_bound"
-                    fingerprint_matches = bound_fingerprint == intent.applicability.fingerprint
-                    hazard_matches = bound_hazard == intent.hazard.value
-                    window_start = max(0.0, consumed_at - 90.0 * 24.0 * 60.0 * 60.0)
-                    async with self._db.execute(
-                        "SELECT COUNT(*),SUM(CASE WHEN outcome='failure' THEN 1 ELSE 0 END) "
-                        "FROM procedure_observations WHERE memory_id=? "
-                        "AND qualification_epoch=? AND applicability_fingerprint=? "
-                        "AND occurred_at>=? AND occurred_at<=? AND ("
-                        "(outcome='success' AND attributable=1) OR outcome='failure')",
-                        (
-                            intent.target_memory_id,
-                            qualification_epoch,
-                            bound_fingerprint,
-                            window_start,
-                            consumed_at,
-                        ),
-                    ) as cursor:
-                        count_row = await cursor.fetchone()
-                    if count_row is None:
-                        raise MemoryCorruptionError("procedure evidence count is missing")
-                    failure_count = int(count_row[1] or 0)
-                    success_count = int(count_row[0]) - failure_count
-                    counts_in_window = (
-                        intent.observed_at >= window_start and intent.observed_at <= consumed_at
-                    )
-                    next_state = current_state
-                    if not fingerprint_matches or not hazard_matches:
-                        next_state = ProcedureLifecycleState.INAPPLICABLE
-                        reason_code = "procedure_applicability_or_hazard_drift"
-                    elif intent.kind is ProcedureObservationKind.TERMINAL_OUTCOME:
-                        if intent.outcome is ProcedureObservationOutcome.FAILURE:
-                            if counts_in_window:
-                                failure_count += 1
-                            if intent.attributable:
-                                next_state = ProcedureLifecycleState.REVISED
-                                reason_code = "procedure_attributable_failure"
-                            else:
-                                reason_code = "procedure_non_attributable_failure"
-                        elif intent.outcome is ProcedureObservationOutcome.SUCCESS:
-                            if intent.attributable and counts_in_window:
-                                success_count += 1
-                            if (
-                                intent.attributable
-                                and intent.risk_level is ProcedureRiskLevel.LOW
-                                and intent.hazard is ProcedureHazard.NONE
-                            ):
-                                threshold_state = (
-                                    ProcedureLifecycleState.DRAFT
-                                    if success_count < 2
-                                    else ProcedureLifecycleState.ELIGIBLE_FOR_ACTIVATION
-                                    if success_count < 3
-                                    else ProcedureLifecycleState.ACTIVE
-                                )
-                                ranks = {
-                                    ProcedureLifecycleState.DRAFT: 0,
-                                    ProcedureLifecycleState.ELIGIBLE_FOR_ACTIVATION: 1,
-                                    ProcedureLifecycleState.ACTIVE: 2,
-                                    ProcedureLifecycleState.REINFORCED: 3,
-                                }
-                                if current_state in ranks and (
-                                    ranks[threshold_state] > ranks[current_state]
-                                ):
-                                    next_state = threshold_state
-                                reason_code = "procedure_low_risk_success"
-                            else:
-                                reason_code = (
-                                    "procedure_non_attributable_success"
-                                    if not intent.attributable
-                                    else "procedure_unsafe_auto_activation_blocked"
-                                )
+                    (base_revision, current_state, qualification_epoch, bound_fingerprint,
+                     bound_hazard, success_count, failure_count, next_state, reason_code) = (
+                        await self._procedure_observation_decision_unlocked(
+                            intent, principal, scope, consumed_at))
                     if next_state is not intent.transition_to:
                         raise MemoryValidationError(
                             "procedure_observation_expected_transition_differs"
