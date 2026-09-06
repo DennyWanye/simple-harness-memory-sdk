@@ -1,6 +1,6 @@
 # SDK 7.3 invalidation终局实现：源码交接
 
-2026-09-06。按[已接受的执行边界](未注册invalidation-patch边界.md)实施SDK部分，原边界文件保留。本叶不使用plan-test流程。基线2553bd6；版本字符串预留0.6.17，仅源码候选，未构建、未安装、未独审。原M616制品/native候选不改，Host52由主实施。业务源码固定5ee3c6bf5a18e710ba328c876423f1173c36797c；新增12项已分批通过，测试只修正future emit断言对topic的范围。
+2026-09-06。按[已接受的执行边界](未注册invalidation-patch边界.md)实施SDK部分，原边界文件保留。本叶不使用plan-test流程。基线2553bd6；主已转Dirac对5ee3c6b/32b9b94源码限定ACCEPT；0.6.17已完成单次offline构建与独有target验证（见文末），未验证Host52组合。原M616制品/native候选不改，Host52由主实施。业务源码固定5ee3c6bf5a18e710ba328c876423f1173c36797c；新增12项已分批通过，测试只修正future emit断言对topic的范围。
 
 ## 公开调用和类型
 
@@ -80,7 +80,7 @@ r1/r2/r3均是145默认共享锁BUSY、exit75，未启动child，不算测试结
 
 ## 给主和Dirac的固定审查范围
 
-当前工具没有可直接联系的Dirac子代理入口，请主转交此源码及4份新raw。独审尚未完成。重点审同事务absence+terminal后登记门、old7.2保真/新marker及回滚、receipt replay与canonical manifest、v2 helper抽取仍保留原wire、Host必须按类型分支而非伪ACK。后继Host52/source/audit消费与installed组合未测，本叶不宣称scheduler全链完成。
+当前工具没有可直接联系的Dirac子代理入口；主已转达对此源码及新证据的限定ACCEPT。重点审同事务absence+terminal后登记门、old7.2保真/新marker及回滚、receipt replay与canonical manifest、v2 helper抽取仍保留原wire、Host必须按类型分支而非伪ACK。独有installed已完成文末3项控制；后继Host52/source/audit实际组合未测，本叶不宣称scheduler全链完成。
 
 下表是2553bd6之后的源码/测试文件SHA-256（测试为topic断言修正后的当前文件）。按路径排序，将 `hash + 两个空格 + 路径 + LF` 拼接后SHA-256，集合指纹：`823aa8eab7651ab5bdfaaf29c23dc9a2d3fd1732d36b89fa9472788ce97c4ab3`。该指纹不是运行时DTO.source_hash。
 
@@ -101,3 +101,25 @@ r1/r2/r3均是145默认共享锁BUSY、exit75，未启动child，不算测试结
 | `src/simple_harness_memory/migrations/schema_upgrade.py` | `3589b5b287f01f37a312f39439fb5713a12e2f56b136298a35f976fbdb206baf` |
 | `src/simple_harness_memory/migrations/settlement_upgrade.py` | `bceac9733997d1bcac1965c0d1712970eadd5627e09074c7945643df84029169` |
 | `tests/integration/test_prospective_invalidation_settlement.py` | `36503c3935247bd272c7c7739f69d52c83f98c40212e44469f522a6901734a00` |
+
+## 0.6.17单次构建与独有安装交付
+
+主转Dirac源码ACCEPT后，按已授权共享145默认锁执行一次offline hatchling wheel build，uv offline/no-deps安装到独有target；未新建venv。构建固定提交 `32b9b9410cdf0f05ad205a18b42a5fc3ade55211`，沿615/616已核构建工具，不重复双build或旧包全成员扫描。
+
+- wheel：`/Users/denny/projects/simple-harness-memory-sdk-typed-short-sources/.local-test-evidence/2026-09-06/prospective-settlement/artifact-617/build/simple_harness_memory_sdk-0.6.17-py3-none-any.whl`
+- SHA-256：`e119cdcc29cd8d3566848e80a1e1c3ebb897715d666b7311643af1b514de869c`；379311 bytes。
+- own installed：`/Users/denny/projects/simple-harness-memory-sdk-typed-short-sources/.local-test-evidence/2026-09-06/prospective-settlement/artifact-617/installed`。
+- 仅核相对冻结616源码931b8c7的16个变动包成员：固定源码=wheel=own installed；未重扫旧包/旧证据，M616旧wheel和旧native环境未改。
+- `-I -B`实际导入own target，确认Memory版本0.6.17、借用Harness0.7.3；所有已加载Memory模块位于该target，无Memory src overlay。根路径只用于加载测试夹具。
+- 仅选3项新能力：旧7.2真实遗留命令→公开升级/终局/reopen及metadata；pending请求真实依赖并ACK/取消；future emit保留r1取消且不产生r2空对象命令。**3 PASS、9 deselected，0.68秒**，未重复旧V2八项。
+- resource：PGID70661、exit0、elapsed1.522秒、峰147104KiB、remaining_group_members=[]；另行ps核PGID为空，槽释放。
+- 不把此target验证称作Host52/c48/timer组合或native验收；主取得wheel后负责实际新组合。
+
+| 新raw相对树根路径 | SHA-256 |
+| --- | --- |
+| `.local-test-evidence/2026-09-06/prospective-settlement/build_install_617.py` | `3a150bc0e8922c9c43ac572b59821097fa46a635eb051b73c0f4dd6a939d65b6` |
+| `.local-test-evidence/2026-09-06/prospective-settlement/build-617-r1/command.log` | `4f1fa0e8df4e8dc783b17fb65c62255e103559928335c08db99bd28fd185c57c` |
+| `.local-test-evidence/2026-09-06/prospective-settlement/build-617-r1/resource.json` | `1db0edf3f780afdd53e070708d1be1904101e1e915ad0e73dd7235d357188623` |
+| `.local-test-evidence/2026-09-06/prospective-settlement/artifact-617/manifest.json` | `c32ed4fe3b5bf1e1abcab77c07f513593ad2cbbf866583a04550c27a79f9fbda` |
+| `.local-test-evidence/2026-09-06/prospective-settlement/artifact-617/runtime-identity.json` | `9c597b8ab31f5645bb7340472484da8addba9d08c52d421bc691e60ad044af70` |
+| `.local-test-evidence/2026-09-06/prospective-settlement/artifact-617/installed_consumer.py` | `465e7c1b20c9957abe7c5a74931b8284ba2a04878d88952a55d68459d3a49bab` |
