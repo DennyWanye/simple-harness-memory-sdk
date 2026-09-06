@@ -1580,10 +1580,10 @@ class SQLiteHumanMemoryBackend:
             )
             return await self._append_suppression_decision_unlocked(decision)
 
-    async def check_current_input_visibility(self, *, principal, disclosure_context, binding):
+    async def check_current_input_visibility(self, *, principal, disclosure_context, binding, bindings=None):
         from simple_harness_memory.backends.input_visibility import check_current_input_visibility
         return await check_current_input_visibility(self, principal=principal,
-            disclosure_context=disclosure_context, binding=binding)
+            disclosure_context=disclosure_context, binding=binding, bindings=bindings)
 
     async def check_history_visibility(
         self,

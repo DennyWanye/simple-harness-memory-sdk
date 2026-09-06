@@ -5,7 +5,6 @@ suppression check uses one current SQLite snapshot. Ordinary history is unchange
 """
 from __future__ import annotations
 import hashlib
-import math
 from dataclasses import asdict
 
 from simple_harness import DisclosureContext
@@ -21,9 +20,8 @@ from simple_harness_memory.core.input_visibility import (
     CurrentInputBindingV1, CurrentInputAuthorityV1, CurrentInputVisibilityV1,
 )
 from simple_harness_memory.backends.history_source_guard import (
-    history_source_operation, prepare_history_source_context, proof_hashes,
+    history_source_operation,
 )
-from simple_harness_memory.backends.history_visibility import _evidence_source_checks, _EvidenceWork
 
 
 class _ResolvedItem:
@@ -59,7 +57,7 @@ def _span(envelope, receipt):
 
 
 @history_source_operation
-async def check_current_input_visibility(backend, *, principal, disclosure_context, binding):
+async def check_current_input_visibility(backend, *, principal, disclosure_context, binding, bindings=None):
     if (type(principal) is not MemoryPrincipal or type(disclosure_context) is not DisclosureContext
             or type(binding) is not CurrentInputBindingV1):
         raise TypeError("current_input_canonical_types_required")
@@ -104,39 +102,21 @@ async def check_current_input_visibility(backend, *, principal, disclosure_conte
         if item.required_privacy_class.value != expected or item.required_information_attributes:
             raise ValueError("current_input_classification_mismatch")
         reason = "current_input_visible"
-    if backend._db is None or backend._receipt is None:
-        raise RuntimeError("human-memory v7 backend is not initialized")
-    await prepare_history_source_context(backend, principal, pending=(binding.evidence,))
-    async with backend._write_lock:
-        await backend._db.execute("BEGIN")
-        try:
-            await backend._authorize_short_horizon_principal_unlocked(principal)
-            now = float(backend._now())
-            if not math.isfinite(now) or now < 0:
-                raise ValueError("current_input_clock_invalid")
-            if reason == "current_input_visible":
-                source_reason = await _evidence_source_checks(backend, principal, context, binding.evidence,
-                    {span.evidence_id: binding.evidence}, _EvidenceWork(now), frozenset())
-                if source_reason != "history_visible":
-                    reason = source_reason
-            async with backend._db.execute(
-                "SELECT authority_epoch,policy_hash FROM recall_authority_heads WHERE principal_id=?",
-                (principal.actor_id,),
-            ) as cursor:
-                head = await cursor.fetchone()
-            result = CurrentInputVisibilityV1(binding.binding_hash,
-                history_hash("memory.current-input.request.v1", {"principal": asdict(principal),
-                    "disclosure": context.to_json(), "binding_hash": binding.binding_hash}),
-                now, 0 if head is None else int(head[0]),
-                history_hash("memory.current-input.policy.v1", {
-                    "recall_policy": None if head is None else str(head[1]),
-                    "source_proofs": proof_hashes(backend),
-                    "authority_hash": None if authority is None else authority.authority_hash}),
-                reason == "current_input_visible", reason,
-                None if authority is None else authority.declaration_kind,
-                None if authority is None else authority.authority_hash)
-            await backend._db.execute("COMMIT")
-            return result
-        except BaseException:
-            await backend._db.execute("ROLLBACK")
-            raise
+    from simple_harness_memory.backends.history_visibility import check_history_visibility
+    checked_bindings = (binding.evidence,) if bindings is None else bindings
+    if type(checked_bindings) is not tuple or binding.evidence not in checked_bindings:
+        raise ValueError("current_input_batch_missing_exact_item")
+    snapshot = await check_history_visibility(backend, principal=principal, disclosure_context=context,
+        bindings=checked_bindings, _require_principal_binding=True,
+        _current_input=None if authority is None else (binding.evidence, authority.authority_hash))
+    exact_hash = history_hash("memory.history.binding.v1", binding.evidence.to_json())
+    source = next(item for item in snapshot.items if item.binding_hash == exact_hash)
+    if authority is not None:
+        reason = "current_input_visible" if source.visible else source.reason
+    return CurrentInputVisibilityV1(binding.binding_hash,
+        history_hash("memory.current-input.request.v1", {"principal": asdict(principal),
+            "disclosure": context.to_json(), "binding_hash": binding.binding_hash}),
+        snapshot.checked_at, snapshot.authority_epoch, snapshot.policy_hash,
+        reason == "current_input_visible", reason,
+        None if authority is None else authority.declaration_kind,
+        None if authority is None else authority.authority_hash, history_visibility=snapshot)

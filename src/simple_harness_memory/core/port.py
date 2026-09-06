@@ -328,7 +328,7 @@ class CognitiveMemoryBackend(Protocol):
     """
 
     async def check_current_input_visibility(self, *, principal: MemoryPrincipal,
-        disclosure_context: DisclosureContext, binding):
+        disclosure_context: DisclosureContext, binding, bindings=None):
         """Current explicit item input only; not an ordinary history grant."""
         ...
 

@@ -358,6 +358,7 @@ async def check_history_visibility(
     bindings: tuple[HistoryBinding, ...],
     _short_sources: list[tuple[Any, ...]] | None = None,
     _require_principal_binding: bool = False,
+    _current_input: tuple[HistoryEvidenceBinding, str] | None = None,
 ) -> HistoryVisibilitySnapshot:
     if type(principal) is not MemoryPrincipal or type(disclosure_context) is not DisclosureContext:
         raise TypeError("history requires canonical principal and DisclosureContext")
@@ -405,9 +406,9 @@ async def check_history_visibility(
                 registered = await cursor.fetchone()
                 # S1 ingestion uses subject-only placeholder identity. Match the existing
                 # mutation admission convention without promoting it during a read.
-                if registered is not None and (
+                if _current_input is not None or (registered is not None and (
                     _require_principal_binding or tuple(registered) != (principal.actor_id,) * 3
-                ):
+                )):
                     await backend._authorize_short_horizon_principal_unlocked(principal)
             now = float(backend._now())
             if not math.isfinite(now) or now < 0:
@@ -427,6 +428,9 @@ async def check_history_visibility(
                     else backend._classification_policy.policy_hash,
                 },
             )
+            if _current_input is not None:
+                policy_hash = history_hash("memory.current-input.batch-policy.v1", {
+                    "ordinary_policy": policy_hash, "input_authority_hash": _current_input[1]})
             items = []
             deadlines = []
             work = _EvidenceWork(now)
@@ -435,6 +439,11 @@ async def check_history_visibility(
                 sources: list[Any] | None = [] if _short_sources is not None else None
                 if context.subject != principal.actor_id:
                     reason = "history_subject_mismatch"
+                elif _current_input is not None and type(binding) is HistoryEvidenceBinding and binding == _current_input[0]:
+                    # Only the new purpose-verifying entry point supplies this
+                    # exact non-inheritable item. Parents/recall/short remain ordinary.
+                    reason = await _evidence_source_checks(backend, principal, context,
+                        binding, batch, work, frozenset())
                 elif (
                     not backend._ordinary_recall_disclosure_allowed(context)
                     or (
@@ -480,6 +489,7 @@ async def check_history_visibility(
                         "principal": asdict(principal),
                         "disclosure": context.to_json(),
                         "bindings": cast(JsonValue, hashes),
+                        **({"input_authority_hash": _current_input[1]} if _current_input is not None else {}),
                     },
                 ),
                 now,

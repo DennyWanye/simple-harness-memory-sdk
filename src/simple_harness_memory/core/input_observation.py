@@ -43,7 +43,7 @@ class CurrentInputObservationV1:
             if name != "observation_hash"}}
 
 
-async def observed_check(manager, *, principal, disclosure_context, binding):
+async def observed_check(manager, *, principal, disclosure_context, binding, bindings=None):
     invocation = _hash("memory.current-input.invocation.v1", str(uuid4()))
     request = None
     if type(binding) is CurrentInputBindingV1:
@@ -63,7 +63,7 @@ async def observed_check(manager, *, principal, disclosure_context, binding):
 
     try:
         result = await manager._backend.check_current_input_visibility(
-            principal=principal, disclosure_context=disclosure_context, binding=binding)
+            principal=principal, disclosure_context=disclosure_context, binding=binding, bindings=bindings)
     except BaseException as error:
         outcome = ("cancelled" if isinstance(error, asyncio.CancelledError) else
             "rejected" if isinstance(error, (TypeError, ValueError, MemoryOwnershipConflict, MemoryLimitError)) else "failed")

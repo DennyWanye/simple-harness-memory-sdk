@@ -177,11 +177,11 @@ class MemoryManager:
         )
 
     async def check_current_input_visibility(self, *, principal: MemoryPrincipal,
-        disclosure_context: DisclosureContext, binding):
+        disclosure_context: DisclosureContext, binding, bindings=None):
         """Observe exact current request input, never grant ordinary/output disclosure."""
         from simple_harness_memory.core.input_observation import observed_check
         return await observed_check(self, principal=principal,
-            disclosure_context=disclosure_context, binding=binding)
+            disclosure_context=disclosure_context, binding=binding, bindings=bindings)
 
     async def check_history_visibility(
         self,

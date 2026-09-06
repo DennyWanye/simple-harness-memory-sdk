@@ -7,7 +7,7 @@ from typing import Protocol, Literal
 
 from simple_harness import DisclosureContext
 from simple_harness.runtime import AdmittedEvidenceAuthority
-from simple_harness_memory.core.history import HistoryEvidenceBinding, history_hash
+from simple_harness_memory.core.history import HistoryEvidenceBinding, HistoryVisibilitySnapshot, history_hash
 from simple_harness_memory.core.history_sources import HistorySourceOriginReceipt
 from simple_harness_memory.core.identity import MemoryPrincipal
 from simple_harness_memory.core.operation_audit import _digest, _identifier
@@ -98,6 +98,7 @@ class CurrentInputVisibilityV1:
     final_audience_disclosure_authorized: bool = False
     schema_version: int = 1
     operation_observation: object | None = field(default=None, compare=False)
+    history_visibility: HistoryVisibilitySnapshot | None = None
 
     def __post_init__(self):
         for value in (self.binding_hash, self.request_hash, self.policy_hash):
@@ -116,7 +117,9 @@ class CurrentInputVisibilityV1:
             raise ValueError("current_input_visibility_invalid")
 
     def to_json(self):
-        return {key: getattr(self, key) for key in self.__dataclass_fields__ if key != "operation_observation"}
+        return {key: (self.history_visibility.to_json() if self.history_visibility is not None else None)
+            if key == "history_visibility" else getattr(self, key)
+            for key in self.__dataclass_fields__ if key != "operation_observation"}
 
     @property
     def snapshot_hash(self):
