@@ -1,4 +1,8 @@
-# Procedure首次发现公共增量契约（待独审，未运行）
+# Procedure首次发现公共增量契约
+
+终审更新（2026-09-06）：Dirac限定接受SDKf03dab0及Host242f1688/测试ade0d79a的6唯一source-overlay控制；原误绿已撤回，两个真实遗忘负控及对应新证据已独核。不覆盖共同current-input组合、新制品、native或完整TC-HM04。
+
+2026-09-06结果更新：固定f03dab0的两个新SDK公共控制2PASS/0.42s；Host有效4项新控（含撤回一项误绿后只修两负控）累计6个唯一控制通过。待Dirac终审与主nonSELF共同出口。准确命令、原失败/撤回、raw hash及PG清理见[Host结果](/Users/denny/projects/simple_harness-corpus-clock/plans/2026-09-06-procedure-adoption/DISCOVERY-RESULTS.md)。本树不build、不更改版本。
 
 2026-09-06，基于da7728b；保留M618及原恢复13项证据。本叶不建表、不改版本、不产独立wheel，后续与nonSELF e500556合并共同出口。
 
@@ -15,3 +19,5 @@
 新操作沿`ProcedureOperationObservationV1`，operation=`discover_procedure_drafts`；request/claimed-owner/invocation/observation hash域仍是既有`memory.procedure.operation.*.v1`。成功source_hash为page hash，拒绝/异常/取消有原规范元数据；没有新业务真相账本。Host sidecar明确登记新operation，本叶不声称旧sealed OA1全量coverage已自动扩展。
 
 待运行2个新SDK控制：实际public创建UNBOUND draft→预览/完整预算/精确历史绑定/forget，以及非SELF/非法界限/无匹配；Host另有3个实际运行控制。新方法及联合消费待Dirac与资源槽，未计入既有绿色验收。真实工具失败的公共prepare/record已支持FAILURE+attributable=False，本次SDK不放宽该协议。
+
+联合边界：主已发现current-input request hash白名单及对应Host审计缺新增HistoryProcedureDraftBinding，正在共同source树补同wire/hash域的类型覆盖。本f03源码及以上6项不包含该组合修订，不能视为新制品/跨权限联合已验。
