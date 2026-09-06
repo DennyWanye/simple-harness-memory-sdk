@@ -1,5 +1,7 @@
 # Procedure首次发现公共增量契约
 
+终审更新（2026-09-06）：Dirac限定接受SDKf03dab0及Host242f1688/测试ade0d79a的6唯一source-overlay控制；原误绿已撤回，两个真实遗忘负控及对应新证据已独核。不覆盖共同current-input组合、新制品、native或完整TC-HM04。
+
 2026-09-06结果更新：固定f03dab0的两个新SDK公共控制2PASS/0.42s；Host有效4项新控（含撤回一项误绿后只修两负控）累计6个唯一控制通过。待Dirac终审与主nonSELF共同出口。准确命令、原失败/撤回、raw hash及PG清理见[Host结果](/Users/denny/projects/simple_harness-corpus-clock/plans/2026-09-06-procedure-adoption/DISCOVERY-RESULTS.md)。本树不build、不更改版本。
 
 2026-09-06，基于da7728b；保留M618及原恢复13项证据。本叶不建表、不改版本、不产独立wheel，后续与nonSELF e500556合并共同出口。
