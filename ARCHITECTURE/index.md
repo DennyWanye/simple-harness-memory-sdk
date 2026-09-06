@@ -1,3 +1,5 @@
+最后更新：2026-09-06。主候选源码组合：Procedure f03dab0（含已审恢复）与current-input e500556合入独立后继分支，保留两组公共入口和HistoryProcedureDraftBinding检查。当前只是组合源码，未构建新wheel、未切Host pin；Procedure discovery新控/组合审查仍待完成，旧M618身份不改。[本轮输入接口](CURRENT_INPUT.md)。
+
 # ARCHITECTURE 索引
 
 ## 2026-09-06 M618 实际安装恢复控制

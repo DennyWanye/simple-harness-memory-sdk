@@ -176,6 +176,13 @@ class MemoryManager:
             envelope, receipt, analysis_lineage=analysis_lineage
         )
 
+    async def check_current_input_visibility(self, *, principal: MemoryPrincipal,
+        disclosure_context: DisclosureContext, binding, bindings=None):
+        """Observe exact current request input, never grant ordinary/output disclosure."""
+        from simple_harness_memory.core.input_observation import observed_check
+        return await observed_check(self, principal=principal,
+            disclosure_context=disclosure_context, binding=binding, bindings=bindings)
+
     async def check_history_visibility(
         self,
         *,
@@ -543,6 +550,7 @@ class MemoryManager:
         evidence_authority: object | None = None,
         conversation_evidence_authority: object | None = None,
         history_source_authority: HistorySourceAuthorityPort | None = None,
+        current_input_authority: object | None = None,
         classification_policy: InformationClassificationPolicy | None = None,
         memory_action_authority: object | None = None,
         procedure_observation_authority: object | None = None,
@@ -587,6 +595,7 @@ class MemoryManager:
             evidence_authority=evidence_authority,
             conversation_evidence_authority=conversation_evidence_authority,
             history_source_authority=history_source_authority,
+            current_input_authority=current_input_authority,
             classification_policy=classification_policy,
             memory_action_authority=memory_action_authority,
             procedure_observation_authority=procedure_observation_authority,

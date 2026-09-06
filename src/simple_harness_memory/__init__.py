@@ -290,3 +290,11 @@ __all__ = [
 __version__ = "0.6.18"
 
 from simple_harness_memory.core.procedure_discovery import ProcedureDraftCandidate, ProcedureDraftPage
+# Bounded current USER input use. Ordinary history/recall policy is unchanged.
+from simple_harness_memory.core.input_visibility import (
+    CurrentInputBindingV1, CurrentInputAuthorityV1, CurrentInputAuthorityPort,
+    CurrentInputVisibilityV1,
+)
+from simple_harness_memory.core.input_observation import CurrentInputObservationV1
+__all__ += ["CurrentInputBindingV1", "CurrentInputAuthorityV1", "CurrentInputAuthorityPort",
+    "CurrentInputVisibilityV1", "CurrentInputObservationV1"]

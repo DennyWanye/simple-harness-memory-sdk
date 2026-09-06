@@ -1,3 +1,5 @@
+最后更新：2026-09-06。主候选源码组合：Procedure f03dab0（含已审恢复）与current-input e500556合入独立后继分支，保留两组公共入口和HistoryProcedureDraftBinding检查。当前只是组合源码，未构建新wheel、未切Host pin；Procedure discovery新控/组合审查仍待完成，旧M618身份不改。[本轮输入接口](CURRENT_INPUT.md)。
+
 最后更新：2026-09-06。Procedure恢复源码Host ea63ddc6/c76da29c、Memory978ae99：新增12唯一控制分批通过（SDK3，Host9），原四夹具失败保留且只重试四红；明确54增量attempt journal、过期重开/lostACK、同epoch旧revision、同Scope拒绝、真实drift物理0、高risk及timer兼容。全部资源组清空，临时vendor恢复；待新叶独审和统一制品，未合主/非native。首次草稿发现、失败归因、TC-HM04仍未完成。[结果与边界](../plans/2026-09-06-procedure-observation-prepare/RECOVERY.md)。
 
 # PROJECT STATUS — simple-harness-memory-sdk
