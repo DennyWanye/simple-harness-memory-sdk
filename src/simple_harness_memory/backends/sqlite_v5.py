@@ -5482,6 +5482,77 @@ class SQLiteHumanMemoryBackend:
         )
 
     @history_source_operation
+    async def read_procedure_use_target(self, *, principal, scope, memory_id, revision):
+        from simple_harness.runtime import ProcedureMemoryPayload
+        from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
+        from simple_harness_memory.core.procedure_use import ProcedureUseTarget
+        from simple_harness_memory.core.suppression import (
+            OrdinaryMemoryPurpose, SuppressionCandidate, SuppressionDenied,
+        )
+        if type(principal) is not MemoryPrincipal or type(scope) is not MemoryScope:
+            raise TypeError("principal and scope must use Memory identity types")
+        scope.authorize(principal)
+        _audit_identifier(memory_id, "memory_id")
+        if type(revision) is not int or revision < 1:
+            raise MemoryValidationError("procedure_use_revision_invalid")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v7 backend is not initialized")
+        await prepare_history_source_context(self, principal)
+        async with self._write_lock:
+            await self._db.execute("BEGIN IMMEDIATE")
+            try:
+                now = _timestamp(self._now())
+                async with self._db.execute(
+                    "SELECT r.lifecycle_state,r.content_json,r.content_hash,p.* FROM cognitive_memory_heads h "
+                    "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
+                    "AND r.revision=h.current_revision JOIN procedure_records p "
+                    "ON p.memory_id=r.memory_id AND p.revision=r.revision "
+                    "WHERE h.memory_type='procedure' AND h.memory_id=? AND h.current_revision=? AND h.principal_id=? "
+                    "AND h.deployment_id=? AND h.household_id=? AND h.scope_kind=? AND h.scope_owner=? "
+                    "AND r.conflict_status='uncontested' AND (r.valid_from IS NULL OR r.valid_from<=?) "
+                    "AND (r.valid_to IS NULL OR ?<r.valid_to) AND r.effective_privacy_class<>'restricted'",
+                    (memory_id, revision, principal.actor_id, principal.deployment_id,
+                     principal.household_id, scope.kind.value, scope.owner_id, now, now),
+                ) as cursor:
+                    row = await cursor.fetchone()
+                if row is None or row["lifecycle_state"] not in (
+                    "draft", "eligible_for_activation", "active", "reinforced",
+                ):
+                    raise MemoryWriterConflict("procedure_use_target_unavailable_or_stale")
+                _, evidence_ids, _ = await self._cognitive_recall_lineage_unlocked(memory_id, revision)
+                for candidate in (SuppressionCandidate(principal.actor_id, memory_id=memory_id), *(
+                    SuppressionCandidate(principal.actor_id, evidence_id=eid) for eid in evidence_ids
+                )):
+                    if (await self._resolve_suppression_unlocked(candidate, OrdinaryMemoryPurpose.RECALL)).denied:
+                        raise SuppressionDenied()
+                try:
+                    content = json.loads(row["content_json"])
+                    payload = ProcedureMemoryPayload.from_json(content)
+                except (TypeError, ValueError, KeyError) as error:
+                    raise MemoryCorruptionError("procedure use content is invalid") from error
+                if (canonical_json(content) != row["content_json"]
+                        or hashlib.sha256(row["content_json"].encode()).hexdigest() != row["content_hash"]
+                        or row["steps_json"] != canonical_json(list(payload.steps))
+                        or row["name"] != payload.name
+                        or row["applicability_json"] != canonical_json(list(payload.applicability))
+                        or row["risk_level"] != payload.proposed_risk_level.value):
+                    raise MemoryCorruptionError("procedure use payload differs")
+                steps = list(payload.steps)
+                if not isinstance(steps, list) or not 1 <= len(steps) <= 16 or any(
+                    type(step) is not str or not step.strip() for step in steps
+                ):
+                    raise MemoryValidationError("procedure_use_steps_unrepresentable")
+                result = ProcedureUseTarget(memory_id, revision, row["lifecycle_state"], row["risk_level"],
+                    row["qualification_epoch"], row["applicability_fingerprint"], row["bound_hazard"],
+                    tuple(hashlib.sha256(step.encode()).hexdigest() for step in steps))
+                await self._db.execute("COMMIT")
+                return result
+            except BaseException:
+                with suppress(Exception):
+                    await self._db.execute("ROLLBACK")
+                raise
+
+    @history_source_operation
     async def prepare_procedure_observation(
         self, *, principal, scope, observation_id, target_memory_id, target_revision,
         kind, applicability, hazard, task_scope_id, evidence_span,

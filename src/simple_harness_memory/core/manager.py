@@ -1303,6 +1303,28 @@ class MemoryManager:
             SQLiteMemoryBackend.restore_backup_sync, backup, self._backend._db_path
         )
 
+    async def read_procedure_use_target(self, *, principal, scope, memory_id, revision):
+        """Read exact owner-scoped hashes for a proposed explicit use, not raw steps."""
+        import asyncio
+        from uuid import uuid4
+
+        invocation = "procedure-use-target-" + uuid4().hex
+        try:
+            result = await self._backend.read_procedure_use_target(
+                principal=principal, scope=scope, memory_id=memory_id, revision=revision)
+        except BaseException as error:
+            self._observability.emit(
+                "memory.procedure_use_target.observed", operation="read_procedure_use_target",
+                outcome="failed", entity_id=invocation,
+                attributes={"stage": "cancelled" if isinstance(error, asyncio.CancelledError)
+                            else "rejected", "state_version": 1})
+            raise
+        self._observability.emit(
+            "memory.procedure_use_target.observed", operation="read_procedure_use_target",
+            outcome="succeeded", entity_id=invocation,
+            attributes={"fingerprint": result.source_hash, "stage": "read", "state_version": 1})
+        return result
+
     async def prepare_procedure_observation(self, *, principal, scope, **observation):
         """Prepare an authority-free intent from current public SDK facts."""
         import asyncio

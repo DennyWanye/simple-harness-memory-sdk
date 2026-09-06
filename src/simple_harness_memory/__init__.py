@@ -69,6 +69,7 @@ from simple_harness_memory.core.lifecycle_results import (
     ProcedureObservationApplyResult,
     ProspectiveSignalApplyResult,
 )
+from simple_harness_memory.core.procedure_use import ProcedureUseTarget
 from simple_harness_memory.core.manager import (
     MemoryManager,
     build_human_memory_v6,
@@ -267,6 +268,7 @@ __all__ = [
     "MemoryValidationError",
     "LifecycleApplyOutcome",
     "ProcedureObservationApplyResult",
+    "ProcedureUseTarget",
     "ProspectiveSignalApplyResult",
     "ShortHorizonDegradationCode",
     "ShortHorizonGenerationBuildResult",
