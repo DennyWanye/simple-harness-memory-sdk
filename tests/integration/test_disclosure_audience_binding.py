@@ -6,7 +6,7 @@ import simple_harness as h
 import simple_harness_memory as m
 
 from tests.integration.test_cognitive_mutation_repository_v5 import (
-    _prepared, _principal, _operation, _plan,
+    _admitted, _span, _Authority, _classification_policy, _principal, _operation, _plan,
 )
 from tests.integration.test_typed_recall_v6 import _context, _recall_plan, _disclosure
 
@@ -15,9 +15,14 @@ from tests.integration.test_typed_recall_v6 import _context, _recall_plan, _disc
 @pytest.mark.parametrize("audience", [h.IntendedAudience.EXTERNAL, h.IntendedAudience.PUBLIC,
                                      h.IntendedAudience.TASK_COLLABORATORS])
 async def test_self_recipient_cannot_recall_for_a_different_final_audience(tmp_path, audience):
-    backend, envelope, _, span, _ = await _prepared(tmp_path / "audience.db")
-    manager = m.MemoryManager(backend, None)
+    envelope, admission = _admitted()
+    span = _span(envelope, admission)
+    authority = _Authority(envelope, admission, span)
+    manager = await m.build_human_memory_v7(tmp_path / "audience.db",
+        clock=lambda: 20.0, evidence_authority=authority, memory_action_authority=authority,
+        classification_policy=_classification_policy())
     try:
+        await manager.ingest_committed_evidence(envelope, admission)
         await manager.apply_memory_mutation_plan(principal=_principal(),
             scope=m.MemoryScope.personal("actor-1"), plan=_plan(envelope, _operation(span)))
         personal = _context()
