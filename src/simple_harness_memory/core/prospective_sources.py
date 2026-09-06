@@ -1,4 +1,5 @@
 """Factual target lineage for an exact scheduler outbox command; never a grant."""
+import math
 from dataclasses import dataclass
 
 from simple_harness.runtime import (
@@ -15,6 +16,7 @@ class ProspectiveOutboxSourceView:
     subject: str
     outbox_id: str
     outbox_payload_hash: str
+    outbox_created_at: float
     command: str
     target_memory_id: str
     target_revision: int
@@ -36,6 +38,10 @@ class ProspectiveOutboxSourceView:
     schema_version: int = 1
 
     def __post_init__(self):
+        if (type(self.outbox_created_at) not in (int, float)
+                or not math.isfinite(self.outbox_created_at) or self.outbox_created_at < 0):
+            raise ValueError("prospective_outbox_created_at_invalid")
+        object.__setattr__(self, "outbox_created_at", float(self.outbox_created_at))
         for field in ("subject", "outbox_id", "target_memory_id", "target_run_id", "target_plan_id",
                       "target_operation_id", "target_operation_kind"):
             _identifier(getattr(self, field), field)
@@ -61,6 +67,7 @@ class ProspectiveOutboxSourceView:
         return {
             "schema_version": 1, "subject": self.subject,
             "outbox_id": self.outbox_id, "outbox_payload_hash": self.outbox_payload_hash,
+            "outbox_created_at": self.outbox_created_at,
             "command": self.command, "target_memory_id": self.target_memory_id,
             "target_revision": self.target_revision, "registration_revision": self.registration_revision,
             "target_scope": {"kind": self.target_scope.kind.value, "owner_id": self.target_scope.owner_id},

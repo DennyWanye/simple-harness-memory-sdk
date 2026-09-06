@@ -1,6 +1,5 @@
 """Public source facts over genuine mutation/outbox persistence, not signal grants."""
 import asyncio
-import hashlib
 import sqlite3
 from dataclasses import replace
 
@@ -79,6 +78,8 @@ async def test_public_exact_source_reopen_read_only(world):
     before = await w['manager'].read_outbox(principal=PRINCIPAL)
     source = await read(w)
     assert isinstance(source, m.ProspectiveOutboxSourceView)
+    assert source.outbox_created_at == w['entry'].created_at == 20.0
+    assert replace(source, outbox_created_at=21.0).source_hash != source.source_hash
     assert source.subject == PRINCIPAL.actor_id and source.target_scope == SCOPE
     assert source.target_run_id == w['plan'].run_id
     assert source.target_plan_hash == w['plan'].plan_hash
@@ -150,6 +151,8 @@ async def test_exact_args_no_fallback(world, changes):
 
 
 @pytest.mark.parametrize('sql', [
+    "UPDATE outbox SET idempotency_key='other' WHERE topic='memory.prospective.registration.requested'",
+    "UPDATE outbox SET created_at=1e999 WHERE topic='memory.prospective.registration.requested'",
     "UPDATE outbox SET topic='memory.prospective.invalidation.requested' WHERE topic='memory.prospective.registration.requested'",
     "DROP TRIGGER cognitive_memory_revisions_immutable_update; UPDATE cognitive_memory_revisions SET content_hash='bad'",
     "DROP TRIGGER memory_mutation_receipts_immutable_update; UPDATE memory_mutation_receipts SET run_id='other-run'",

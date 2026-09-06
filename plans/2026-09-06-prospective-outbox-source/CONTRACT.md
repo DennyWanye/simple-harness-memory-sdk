@@ -21,6 +21,7 @@ await manager.read_prospective_outbox_source(
 | `schema_version` | `int`，固定 1 |
 | `subject` | `str`，持久 principal 的 actor_id |
 | `outbox_id`, `outbox_payload_hash` | `str`，确切持久命令与规范 payload SHA-256 |
+| `outbox_created_at` | `float`，实际持久 outbox.created_at；有限且非负，纳入 to_json/source_hash；仅 emit 时间，不证明生成 Run/cause |
 | `command` | `str`，`registration` 或 `invalidation` |
 | `target_memory_id`, `target_revision` | `str`, `int`，命令指向的真实历史认知 revision |
 | `registration_revision` | `int`，本 wire 与 target_revision 相等；SDK 核对而非 Host 推断 |
@@ -40,9 +41,11 @@ await manager.read_prospective_outbox_source(
 
 SDK 在同一只读数据库快照内核对：principal 持久 deployment/household/actor 三元组、outbox owner、目标 revision owner，以及 MemoryScope.authorize。session_id 是当前调用身份字段，不要求重开后的会话等于创建时会话。Host 仍负责 principal 来自可信运行配置；DTO/hash 本身不建立调用者身份。
 
-同时核验 outbox topic/稳定 ID/完整 payload/hash，目标 revision 的 content/trigger/hash、真实 plan/receipt 及 committed decision 的 operation/after_ref。只使用命令明确的 target_revision，不以 head、当前 clock、outbox created_at 或猜测的前一 run 替代。
+同时核验 outbox topic/稳定 ID/完整 payload/hash、idempotency_key==outbox_id 与有限非负 created_at，目标 revision 的 content/trigger/hash、真实 plan/receipt 及 committed decision 的 operation/after_ref。只使用命令明确的 target_revision，不以 head、当前 clock、outbox created_at 或猜测的前一 run 替代。
 
 例如 G1 创建 revision 1=PENDING，G2 改写 head 并产生 invalidation(revision 1)：返回 G1 的 target_run_id/operation/scope 与 revision 1 的 PENDING。Host 构造后继协议时，`transition_from` 来源是 `target_lifecycle_state`，不是 G2/current head。此返回不声称 G1 生成了该 invalidation。
+
+Host 可用 reader.outbox_created_at 与 entry.created_at 精确匹配并要求不晚于可信 now；SDK reader 不用当前时钟改写事实或猜测 lineage。
 
 读取历史 source 不要求目标仍是当前 head；不能因 head 更新重写来源事实。当前 ack 资格仍由实际 SDK signal 门核查：target state、确切 outbox；invalidation 还必须有真实 accepted registration。reader 成功不等于这些门已通过，也不替代 Harness authority source 的协议验证。
 

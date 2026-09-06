@@ -44,11 +44,13 @@ async def _read(backend, db, principal, outbox_id, payload_hash):
     owner = await _one(db, "SELECT deployment_id,household_id,actor_id FROM principals WHERE principal_id=?", (principal.actor_id,))
     if owner is None or tuple(owner) != (principal.deployment_id, principal.household_id, principal.actor_id):
         raise MemoryOwnershipConflict("prospective_outbox_source_not_owned")
-    outbox = await _one(db, "SELECT outbox_id,principal_id,topic,payload_hash,"
+    outbox = await _one(db, "SELECT outbox_id,principal_id,topic,payload_hash,created_at,idempotency_key,"
         "substr(payload,1,?) AS payload FROM outbox WHERE outbox_id=? AND principal_id=?",
         (MAX_WIRE_BYTES + 1, outbox_id, principal.actor_id))
     if outbox is None:
         raise MemoryValidationError("prospective_outbox_source_not_found")
+    if outbox["idempotency_key"] != outbox_id:
+        _corrupt()
     payload = _json(outbox["payload"])
     if (outbox["payload_hash"] != payload_hash
             or hashlib.sha256(canonical_json(payload).encode()).hexdigest() != payload_hash):
@@ -145,7 +147,7 @@ async def _read(backend, db, principal, outbox_id, payload_hash):
             or raw_decision.get("reason_code") != operation.reason_code
             or decision["after_ref"] != raw_decision["after_ref"] or decision["outcome"] != "committed"):
         _corrupt()
-    return ProspectiveOutboxSourceView(principal.actor_id, outbox_id, payload_hash, kind,
+    return ProspectiveOutboxSourceView(principal.actor_id, outbox_id, payload_hash, outbox["created_at"], kind,
         memory_id, revision, payload["registration_revision"], scope, target["task_scope_id"],
         ProspectiveLifecycleState(target["lifecycle_state"]), receipt.run_id, plan.plan_id, plan.plan_hash,
         operation.operation_id, operation.kind.value, MemoryMutationApplyReceiptRef(receipt.receipt_id, receipt.receipt_hash),
