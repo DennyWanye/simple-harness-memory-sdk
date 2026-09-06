@@ -127,10 +127,10 @@ class CurrentInputVisibilityV1:
 
 
 def current_input_request_hash(principal, context, binding, bindings=None):
-    from simple_harness_memory.core.history import HistoryRecallBinding, HistoryShortHorizonBinding
+    from simple_harness_memory.core.history import HistoryRecallBinding, HistoryShortHorizonBinding, HistoryProcedureDraftBinding
     values = (binding.evidence,) if bindings is None else bindings
     if type(values) is not tuple or not 1 <= len(values) <= 256 or any(
-        type(value) not in (HistoryEvidenceBinding, HistoryRecallBinding, HistoryShortHorizonBinding) for value in values
+        type(value) not in (HistoryEvidenceBinding, HistoryRecallBinding, HistoryShortHorizonBinding, HistoryProcedureDraftBinding) for value in values
     ):
         raise ValueError("current_input_batch_invalid")
     return history_hash("memory.current-input.request.v1", {"principal": asdict(principal),
