@@ -1,7 +1,7 @@
 """Current request input observations, never ordinary recall or output grants."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 import math
 from typing import Protocol, Literal
 
@@ -51,12 +51,14 @@ class CurrentInputAuthorityV1:
     declaration_kind: Literal["current_user", "public_material"]
     admission_fact_hash: str
     turn_hash: str
+    principal: MemoryPrincipal
     common_policy_hash: str = COMMON_INPUT_POLICY_HASH
 
     def __post_init__(self):
         for value in (self.binding_hash, self.admission_fact_hash, self.turn_hash, self.common_policy_hash):
             _digest(value)
-        if (type(self.admitted) is not AdmittedEvidenceAuthority
+        if (type(self.principal) is not MemoryPrincipal
+                or type(self.admitted) is not AdmittedEvidenceAuthority
                 or type(self.origin) is not HistorySourceOriginReceipt
                 or type(self.disclosure_context) is not DisclosureContext
                 or type(self.declaration_kind) is not str
@@ -67,7 +69,7 @@ class CurrentInputAuthorityV1:
     @property
     def authority_hash(self):
         return history_hash("memory.current-input.authority.v1", {
-            "binding_hash": self.binding_hash, "disclosure": self.disclosure_context.to_json(),
+            "principal": asdict(self.principal), "binding_hash": self.binding_hash, "disclosure": self.disclosure_context.to_json(),
             "item_authority": self.admitted.item_authority.authority_hash,
             "origin_hash": self.origin.origin_hash, "declaration_kind": self.declaration_kind,
             "admission_fact_hash": self.admission_fact_hash, "turn_hash": self.turn_hash,

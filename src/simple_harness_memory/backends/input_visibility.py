@@ -91,6 +91,8 @@ async def check_current_input_visibility(backend, *, principal, disclosure_conte
                 or authority.admitted.envelope != binding.evidence.envelope
                 or authority.admitted.receipt != binding.evidence.receipt):
             raise ValueError("current_input_authority_binding_mismatch")
+        if authority.principal != principal:
+            raise MemoryOwnershipConflict("current_input_authority_principal_mismatch")
         origin = authority.origin
         if (origin.namespace.subject != principal.actor_id or origin.proof_kind != "atomic"
                 or origin.evidence_id != span.evidence_id or origin.envelope_hash != span.envelope_hash
