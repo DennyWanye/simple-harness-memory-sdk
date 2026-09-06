@@ -1,5 +1,9 @@
 # PROJECT STATUS — simple-harness-memory-sdk
 
+## 2026-09-06 M618 实际安装恢复控制
+
+最后更新：2026-09-06。主转Dirac限定接受d46bf1f/cf7c8d5及Host6b53f27c/e37c42bb，版本d8d80d5固定0.6.18。一次offline wheel SHA010b4281…，两变动包成员fixedGit/source/wheel/独有target一致；H077依赖、无Memory源码覆盖的完整cohort及Host原普通异常升级两控通过（0.11s/0.73s）。PG1723/exit0/2.408s/峰189120KiB/remaining=[]，锁释放。M617/主环境不动；制品独审与主H078组合另验，Procedure观察/适用性仍待接线。[准确制品、hash及证据](../plans/2026-09-06-analysis-retry-protocol/CANDIDATE-0.6.18.md)。
+
 ## 2026-09-06 完整 analysis 重试输入恢复
 
 最后更新：2026-09-06。后继源码d46bf1f保留普通失败批次完整request语义及原成员顺序，只替换attempt身份；新job独立使用新配置，篡改请求／成员拒绝。SDK三控及H077/M617依赖上的Host源码覆盖五控通过，含原v3普通异常→v4配置零新增Provider；旧24绿未跑。PG1149/exit0/3.834s/峰191648KiB/remaining=[]，共享槽释放。M617冻结不变，0.6.18.dev0未构建；待最终源码独审与实际installed，不称完整Procedure功能通过。[必要控制、原红边界与证据](../plans/2026-09-06-analysis-retry-protocol/RESULTS.md)。
