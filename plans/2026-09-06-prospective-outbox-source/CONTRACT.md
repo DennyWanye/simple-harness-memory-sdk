@@ -1,6 +1,6 @@
 # Prospective outbox 公开源事实接口
 
-最后更新：2026-09-06。接口供 Host S5c RegistrationAuthoritySource 并行接线；source reader 已完成限定测试，审计 metadata 增量已完成定向验证；尚未独审、构建或安装，不属于冻结 M0.6.15。工作树 `simple-harness-memory-sdk-typed-short-sources`，分支 `feat/prospective-outbox-source`，base `139dd889720764eae2e9ec580c6cb45b10326c3d`。
+最后更新：2026-09-06。接口供 Host S5c RegistrationAuthoritySource 并行接线；source reader 已完成限定测试，审计 metadata 增量已完成定向验证；已构建候选并完成独有 installed 小集合；尚未独审或 Host 组合，不属于冻结 M0.6.15。工作树 `simple-harness-memory-sdk-typed-short-sources`，分支 `feat/prospective-outbox-source`，base `139dd889720764eae2e9ec580c6cb45b10326c3d`。
 
 ## 固定调用契约
 
@@ -82,3 +82,25 @@ signal 创建的 revision 使用 synthetic plan_id，可能没有对应 mutation
 资源入口 `/Users/denny/projects/simple_harness-test-resource-cleanup/scripts/run_resource_bounded.py`，默认同一 OS 锁，2048MiB/180秒；未运行模型/Provider/native/build/install，无新环境。冻结615分支/制品与SDK schema/旧 reader 保持原样。按主分配，当前后继源码版本0.6.16；冻结615分支/制品不改。独审需主转Dirac（本会话无可调用子代理入口，现有任务列表也无Dirac）；当前尚无独审ACCEPT，制品准备不等于独审闭合。
 
 源码测试使用主 M614 解释器借用依赖，并显式 PYTHONPATH 指向本树 src 与根目录；这是开发源码载体，不是 installed 组合。原始日志、resource.json、测试 DB 都在本树 ignored `.local-test-evidence/2026-09-06/prospective-outbox-source/`，r1 原临时 DB 已移入同批 cases，未删除原红。固定绿色源码与旧制品未重复全量 hash 扫描；后续只运行本次变动或真实失败所需的定向项。
+
+
+## M0.6.16 本地候选制品
+
+源码固定 `931b8c77076bb5b42ad41a3297ed4eb58bcaaab9`（包含44eefe3、6836ff3、6b8d87f）；单次 offline hatchling build，继承615已核构建方式，不重复双build/旧包全成员扫描。此制品尚待主转 Dirac 独审；已准备可审查候选，不宣称独审或 Host source/scheduler 完成。
+
+- wheel：`/Users/denny/projects/simple-harness-memory-sdk-typed-short-sources/.local-test-evidence/2026-09-06/prospective-outbox-source/artifact-616/build/simple_harness_memory_sdk-0.6.16-py3-none-any.whl`
+- SHA-256：`00937eb5d79c1ea989112c658eaf543e434fb211106f4edfbecbc10002bca9bf`；358630 bytes。
+- 独有安装路径：`/Users/denny/projects/simple-harness-memory-sdk-typed-short-sources/.local-test-evidence/2026-09-06/prospective-outbox-source/artifact-616/installed`。
+- 借用原 M614 Python/H073 依赖，用 `-I -B` 消费实际616 target，无 Memory src overlay；只跑 public source/reopen、历史 invalidation+真实 registration 门、真实 metadata sink 三项：3 PASS/0.55秒。只核本叶7个变动包成员=wheel=owninstalled；未写旧installed、未重扫旧包。
+- r9-artifact：PGID47559/exit0/elapsed1.322秒/峰141744KiB/无残留；最低磁盘3112MiB，测试槽释放。
+- 实际命令保存在 ignored `build_install_616.py`；固定源检查→offline build→uv offline no-deps target→隔离 Python installed consumer 均在同一默认资源锁内。没有新完整venv/网络安装/模型/native。
+
+本次制品证据索引（只核新产物，不重复旧证据）：
+
+| ignored 相对路径 | SHA-256 |
+| --- | --- |
+| `build_install_616.py` | `e49b72c33a93a1d6300194972337e2ec558e9374dc1f2d8472aca4b9267ef6f4` |
+| `r9-artifact/command.log` | `0dcc37603a267e5fff55114b3573a83ea4d9b5f91c0926a80d53d80c8d1ec5f1` |
+| `r9-artifact/resource.json` | `bec0a4c5a240b08dfe06962e9be31516b106ccd7332fbb3fd2ee7ca05e1fa311` |
+| `artifact-616/manifest.json` | `38627e706a83c0607fde8965db0d67e42350e740f295850faa6e3f0922e74461` |
+| `artifact-616/runtime-identity.json` | `874ccc0053a48724bbd6f4348dcde34d44cc28140343442c4891007cf44719b9` |
