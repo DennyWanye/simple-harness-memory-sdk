@@ -10,7 +10,7 @@ from simple_harness_memory.core.identity import MemoryPrincipal
 from simple_harness_memory.core.errors import MemoryOwnershipConflict, MemoryLimitError
 
 from simple_harness_memory.core.operation_audit import _hash, _digest
-from simple_harness_memory.core.input_visibility import CurrentInputBindingV1
+from simple_harness_memory.core.input_visibility import CurrentInputBindingV1, current_input_request_hash
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,8 +49,7 @@ async def observed_check(manager, *, principal, disclosure_context, binding, bin
     if type(binding) is CurrentInputBindingV1:
         try:
             if type(principal) is MemoryPrincipal and type(disclosure_context) is DisclosureContext:
-                request = _hash("memory.current-input.request.v1", {"principal": asdict(principal),
-                    "disclosure": disclosure_context.to_json(), "binding_hash": binding.binding_hash})
+                request = current_input_request_hash(principal, disclosure_context, binding, bindings)
         except (ValueError, TypeError):
             pass
 

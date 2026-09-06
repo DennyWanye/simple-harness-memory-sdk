@@ -17,7 +17,7 @@ from simple_harness_memory.core.errors import MemoryOwnershipConflict
 from simple_harness_memory.core.evidence import validate_sanitized_evidence
 from simple_harness_memory.core.history import history_hash
 from simple_harness_memory.core.input_visibility import (
-    CurrentInputBindingV1, CurrentInputAuthorityV1, CurrentInputVisibilityV1,
+    CurrentInputBindingV1, CurrentInputAuthorityV1, CurrentInputVisibilityV1, current_input_request_hash,
 )
 from simple_harness_memory.backends.history_source_guard import (
     history_source_operation,
@@ -71,6 +71,7 @@ async def check_current_input_visibility(backend, *, principal, disclosure_conte
     validate_sanitized_evidence(binding.evidence.envelope, binding.evidence.receipt,
         supported_filter_policies=backend._supported_filter_policies)
     span = _span(binding.evidence.envelope, binding.evidence.receipt)
+    request_hash = current_input_request_hash(principal, context, binding, bindings)
     port = backend._current_input_authority
     if port is None:
         raise ValueError("current_input_authority_unavailable")
@@ -114,8 +115,7 @@ async def check_current_input_visibility(backend, *, principal, disclosure_conte
     if authority is not None:
         reason = "current_input_visible" if source.visible else source.reason
     return CurrentInputVisibilityV1(binding.binding_hash,
-        history_hash("memory.current-input.request.v1", {"principal": asdict(principal),
-            "disclosure": context.to_json(), "binding_hash": binding.binding_hash}),
+        request_hash,
         snapshot.checked_at, snapshot.authority_epoch, snapshot.policy_hash,
         reason == "current_input_visible", reason,
         None if authority is None else authority.declaration_kind,
