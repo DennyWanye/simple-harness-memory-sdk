@@ -162,6 +162,57 @@ async def _evidence_uncached(
     work: _EvidenceWork,
     seen: frozenset[str] = frozenset(),
 ) -> str:
+    reason = await _evidence_source_checks(backend, principal, context, binding, batch, work, seen)
+    if reason != "history_visible":
+        return reason
+    envelope = binding.envelope
+    policy = backend._classification_policy
+    if policy is None:
+        return "history_classification_unverifiable"
+    # S1 proves sanitation, not permission to disclose arbitrary personal text to others.
+    # Without item-level authority, admit only the authenticated subject's own audience.
+    if context.recipient.value != "user_self" or context.recipient_id != principal.actor_id:
+        return "history_disclosure_denied"
+    if not backend._candidate_disclosure_allowed(
+        context,
+        policy.required_privacy_class.value,
+        tuple(item.value for item in policy.required_information_attributes),
+    ):
+        return "history_disclosure_denied"
+    async with backend._db.execute(
+        "SELECT DISTINCT r.effective_privacy_class,r.information_attributes_json "
+        "FROM cognitive_evidence_spans s JOIN cognitive_memory_heads h "
+        "ON h.memory_id=s.memory_id JOIN cognitive_memory_revisions r "
+        "ON r.memory_id=s.memory_id AND r.revision=s.revision "
+        "WHERE s.evidence_id=? AND h.principal_id=?",
+        (envelope.evidence_id, principal.actor_id),
+    ) as cursor:
+        for row in await cursor.fetchall():
+            if not backend._candidate_disclosure_allowed(
+                context, str(row[0]), tuple(json.loads(str(row[1])))
+            ):
+                return "history_disclosure_denied"
+    async with backend._db.execute(
+        "SELECT effective_privacy_class,information_attributes_json "
+        "FROM conversation_evidence_registrations WHERE evidence_id=? AND principal_id=?",
+        (envelope.evidence_id, principal.actor_id),
+    ) as cursor:
+        row = await cursor.fetchone()
+        if (
+            row is not None
+            and row[0] is not None
+            and not backend._candidate_disclosure_allowed(
+                context, str(row[0]), tuple(json.loads(str(row[1])))
+            )
+        ):
+            return "history_disclosure_denied"
+    return "history_visible"
+
+
+async def _evidence_source_checks(
+    backend, principal, context, binding, batch, work, seen,
+):
+    """Shared S1/canonical/upstream/reverse-suppression checks; not a use grant."""
     if len(seen) >= 64:
         return "history_lineage_limit"
     envelope, receipt = binding.envelope, binding.receipt
@@ -213,46 +264,6 @@ async def _evidence_uncached(
         )
     ).denied:
         return denial_reason(backend, envelope.evidence_id)
-    policy = backend._classification_policy
-    if policy is None:
-        return "history_classification_unverifiable"
-    # S1 proves sanitation, not permission to disclose arbitrary personal text to others.
-    # Without item-level authority, admit only the authenticated subject's own audience.
-    if context.recipient.value != "user_self" or context.recipient_id != principal.actor_id:
-        return "history_disclosure_denied"
-    if not backend._candidate_disclosure_allowed(
-        context,
-        policy.required_privacy_class.value,
-        tuple(item.value for item in policy.required_information_attributes),
-    ):
-        return "history_disclosure_denied"
-    async with backend._db.execute(
-        "SELECT DISTINCT r.effective_privacy_class,r.information_attributes_json "
-        "FROM cognitive_evidence_spans s JOIN cognitive_memory_heads h "
-        "ON h.memory_id=s.memory_id JOIN cognitive_memory_revisions r "
-        "ON r.memory_id=s.memory_id AND r.revision=s.revision "
-        "WHERE s.evidence_id=? AND h.principal_id=?",
-        (envelope.evidence_id, principal.actor_id),
-    ) as cursor:
-        for row in await cursor.fetchall():
-            if not backend._candidate_disclosure_allowed(
-                context, str(row[0]), tuple(json.loads(str(row[1])))
-            ):
-                return "history_disclosure_denied"
-    async with backend._db.execute(
-        "SELECT effective_privacy_class,information_attributes_json "
-        "FROM conversation_evidence_registrations WHERE evidence_id=? AND principal_id=?",
-        (envelope.evidence_id, principal.actor_id),
-    ) as cursor:
-        row = await cursor.fetchone()
-        if (
-            row is not None
-            and row[0] is not None
-            and not backend._candidate_disclosure_allowed(
-                context, str(row[0]), tuple(json.loads(str(row[1])))
-            )
-        ):
-            return "history_disclosure_denied"
     return "history_visible"
 
 

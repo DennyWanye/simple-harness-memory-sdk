@@ -360,6 +360,7 @@ class SQLiteHumanMemoryBackend:
         evidence_authority: EvidenceAuthorityVerifierPort | None = None,
         conversation_evidence_authority: ConversationEvidenceAuthorityVerifierPort | None = None,
         history_source_authority: HistorySourceAuthorityPort | None = None,
+        current_input_authority: object | None = None,
         classification_policy: InformationClassificationPolicy | None = None,
         memory_action_authority: MemoryActionAuthorityPort | None = None,
         procedure_observation_authority: ProcedureObservationAuthorityPort | None = None,
@@ -395,6 +396,9 @@ class SQLiteHumanMemoryBackend:
         self._analysis_delivery_authority = analysis_delivery_authority
         self._evidence_authority = evidence_authority
         self._conversation_evidence_authority = conversation_evidence_authority
+        self._current_input_authority = current_input_authority
+        if current_input_authority is not None and not callable(getattr(current_input_authority, "resolve_current_input", None)):
+            raise TypeError("current_input_authority must implement CurrentInputAuthorityPort")
         self._history_source_authority = history_source_authority
         if history_source_authority is not None and any(
             not callable(getattr(history_source_authority, name, None))
@@ -1575,6 +1579,11 @@ class SQLiteHumanMemoryBackend:
                 _stable_id("suppression-rebuild-outbox", directive_id),
             )
             return await self._append_suppression_decision_unlocked(decision)
+
+    async def check_current_input_visibility(self, *, principal, disclosure_context, binding):
+        from simple_harness_memory.backends.input_visibility import check_current_input_visibility
+        return await check_current_input_visibility(self, principal=principal,
+            disclosure_context=disclosure_context, binding=binding)
 
     async def check_history_visibility(
         self,
