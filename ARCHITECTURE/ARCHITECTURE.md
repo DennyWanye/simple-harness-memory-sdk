@@ -1,4 +1,4 @@
-最后更新：2026-09-06。Procedure来源边界四个唯一新控分批通过，原fixture/载体失败保留；Host5e513eda/SDKdb7ca22三Scope正向已由主转Dirac限定接受。新增过期恢复/旧revision/drift源码尚未验证，未build、未合主、TC-HM04未完成。[后继契约](../plans/2026-09-06-procedure-observation-prepare/RECOVERY.md)。
+最后更新：2026-09-06。Procedure恢复源码Host ea63ddc6/c76da29c、Memory978ae99：新增12唯一控制分批通过（SDK3，Host9），原四夹具失败保留且只重试四红；明确54增量attempt journal、过期重开/lostACK、同epoch旧revision、同Scope拒绝、真实drift物理0、高risk及timer兼容。全部资源组清空，临时vendor恢复；待新叶独审和统一制品，未合主/非native。首次草稿发现、失败归因、TC-HM04仍未完成。[结果与边界](../plans/2026-09-06-procedure-observation-prepare/RECOVERY.md)。
 
 <!-- last-calibrated: 6ba269537e45d443629aee56e9cfabec9de2e833 -->
 

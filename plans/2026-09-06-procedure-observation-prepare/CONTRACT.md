@@ -1,5 +1,7 @@
 # Procedure 公开观察预备接口（源码候选）
 
+当前补充（2026-09-06）：原六控不重跑，来源边界四项及恢复十二项（跨Host/SDK）分批通过；5e513eda/db7ca22原三Scope独审限定接受，978ae99恢复叶待独审。详见[新恢复结果](RECOVERY.md)。
+
 2026-09-06。自有原Memory树 `feat/procedure-observation-prepare`；M618 wheel/旧证据不变。e84e334六项公共新控通过；f82c2b8再由Host三Scope真实source-only交叉原红→绿验证。未独审、构建或分配后继制品。
 
 公开 `MemoryManager.prepare_procedure_observation(*, principal, scope, observation_id, target_memory_id, target_revision, kind, applicability, hazard, task_scope_id, evidence_span, terminal_receipt_id, terminal_receipt_hash, outcome, attributable, observed_at, run_id, operation_id)`；当前后继返回 `PreparedProcedureObservation(intent, operation_observation)`，其中intent为既有 Harness `ProcedureObservationIntent`；不返回authority/ref，不写观察或递增资格。subject、risk、transition_from/to由实际持久owner、当前revision和SDK资格算法给出，不允许调用者覆盖这些参数。
