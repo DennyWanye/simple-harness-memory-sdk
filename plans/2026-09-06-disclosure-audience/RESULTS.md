@@ -2,6 +2,10 @@
 
 最后更新：2026-09-06。自有feat/disclosure-audience-binding基于43be680，业务修复d7cb3ca经Dirac限定ACCEPT；候选源码27dceffe05247415ba9b48a55e865a0faba37629，版本0.6.14。后继只加版本及公共builder/零候选查询断言，没有重写0.6.13源f2a6a706或任何旧wheel。schema/数据格式/哈希域未变，无迁移/发布/Host pin变更。
 
+## 独立复核与后继Host组合
+
+2026-09-06：Dirac对固定2b5e761对应的M614制品、源27dceff和双构建/installed consumer证据限定ACCEPT，无P0/P1；未重复构建或测试。CANDIDATE JSON保留生成时状态和原始hash，不改制品身份。后继Host ec046e84/文档30f6b2d4以单独6.3MiB环境安装H073/M0614/S0313，169/76/121成员核对，32 tests及2 subtests通过，峰399MiB且组清空。这是Host受控组合测试，非实际Provider/native或完整原程序完成。
+
 ## 实际修复
 
 ordinary与candidate两层都要求当前接收者和最终受众处于同一已支持范围：self/self、household/household、task_collaborator/task_collaborators。原始字符串拼写不同不再误拒合法协作者语义。当前SELF不能凭这一标签为外部、公开或协作者最终受众查询本人私密记忆；全局不匹配在候选查询前拒绝。
