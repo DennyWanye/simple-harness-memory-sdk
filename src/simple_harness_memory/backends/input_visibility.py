@@ -76,6 +76,12 @@ async def check_current_input_visibility(backend, *, principal, disclosure_conte
     port = backend._current_input_authority
     if port is None:
         raise ValueError("current_input_authority_unavailable")
+    # This new use boundary requires a real public owner registration, including
+    # deployment and household. Ordinary history's cold placeholder rule is not a grant.
+    if backend._db is None or backend._receipt is None:
+        raise RuntimeError("human-memory v7 backend is not initialized")
+    async with backend._write_lock:
+        await backend._authorize_short_horizon_principal_unlocked(principal)
     # No external Host callbacks while holding Memory SQLite's read/write lock.
     authority = await port.resolve_current_input(principal=principal, disclosure_context=context, binding=binding)
     reason = "current_input_authority_unverifiable"
@@ -102,13 +108,7 @@ async def check_current_input_visibility(backend, *, principal, disclosure_conte
     async with backend._write_lock:
         await backend._db.execute("BEGIN")
         try:
-            async with backend._db.execute(
-                "SELECT deployment_id,household_id,actor_id FROM principals WHERE principal_id=?",
-                (principal.actor_id,),
-            ) as cursor:
-                registered = await cursor.fetchone()
-            if registered is not None and tuple(registered) != (principal.actor_id,) * 3:
-                await backend._authorize_short_horizon_principal_unlocked(principal)
+            await backend._authorize_short_horizon_principal_unlocked(principal)
             now = float(backend._now())
             if not math.isfinite(now) or now < 0:
                 raise ValueError("current_input_clock_invalid")
