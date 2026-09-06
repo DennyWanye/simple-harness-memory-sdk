@@ -1,3 +1,5 @@
+最后更新：2026-09-06。Procedure首次草稿发现公共增量f03dab0：SELF真实源/完整预览/当前historybinding/forget/审计两个SDK控制通过0.42s，Host有效4新控通过，共6唯一source-overlay控制。原一项夹具误绿已撤回并修复只重跑受影响两项，全部资源组清空；待Dirac终审和主nonSELF公共出口联合制品，未build或改版本。整FAILED Run来源/语义缺陷归因/TC-HM04仍不闭合。[接口及结果索引](../plans/2026-09-06-procedure-observation-prepare/DISCOVERY.md)。
+
 最后更新：2026-09-06。Procedure恢复源码Host ea63ddc6/c76da29c、Memory978ae99：新增12唯一控制分批通过（SDK3，Host9），原四夹具失败保留且只重试四红；明确54增量attempt journal、过期重开/lostACK、同epoch旧revision、同Scope拒绝、真实drift物理0、高risk及timer兼容。全部资源组清空，临时vendor恢复；待新叶独审和统一制品，未合主/非native。首次草稿发现、失败归因、TC-HM04仍未完成。[结果与边界](../plans/2026-09-06-procedure-observation-prepare/RECOVERY.md)。
 
 <!-- last-calibrated: 6ba269537e45d443629aee56e9cfabec9de2e833 -->
