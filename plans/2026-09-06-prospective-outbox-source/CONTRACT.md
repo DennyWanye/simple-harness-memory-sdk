@@ -1,6 +1,6 @@
 # Prospective outbox 公开源事实接口
 
-最后更新：2026-09-06。接口供 Host S5c RegistrationAuthoritySource 并行接线；实现 WIP、尚未测试或安装，不属于冻结 M0.6.15。工作树 `simple-harness-memory-sdk-typed-short-sources`，分支 `feat/prospective-outbox-source`，base `139dd889720764eae2e9ec580c6cb45b10326c3d`。
+最后更新：2026-09-06。接口供 Host S5c RegistrationAuthoritySource 并行接线；source reader 已完成限定测试，审计 metadata 增量已完成定向验证；尚未独审、构建或安装，不属于冻结 M0.6.15。工作树 `simple-harness-memory-sdk-typed-short-sources`，分支 `feat/prospective-outbox-source`，base `139dd889720764eae2e9ec580c6cb45b10326c3d`。
 
 ## 固定调用契约
 
@@ -37,6 +37,10 @@ await manager.read_prospective_outbox_source(
 
 `to_json()` 不包括派生属性 source_hash；scope 编码 `{kind, owner_id}`，lifecycle/operation kind 编码枚举字符串，receipt ref 和 trigger 用各自 `to_json()`。返回不含用户原文、action 正文、authority、grant、ready 或可直接执行的 Run。
 
+成功时新增 `operation_observation: ProspectiveSourceReadObservationV1` 属性；它不进入 to_json/source_hash，也不参与事实 DTO 的相等比较。拒绝/取消时同型值在异常的 `operation_observation`。其 schema_version=1、operation 固定方法名，包含真实单次调用 invocation_ref_hash、request_hash、claimed_owner_ref_hash、成功时 source_hash（失败为 None）、有限 outcome/reason、物理观察 observed_at 与 observation_hash。owner 只是请求身份的 hash，不代表身份已通过；缺少可安全编码的输入时相应 hash 为 None。重试会有新 invocation，目标事实 hash 不变。
+
+审计接线沿 OA1 的 Host 持久化 observation 边界：`persistence_status=host_persistence_unverified`，Host 必须将完整 observation JSON/hash 与自身真实 attempt 关联落盘；它不是 Run、grant 或 Memory mutation receipt。SDK 同时向既有 MemoryObservability 投影 fingerprint/stage/to_state/state_version，严格遵守 H073 白名单。日志/sink 可观测不等于持久审计成功。OA1 现有九类持久表没有通用 reader 调用 producer，本叶不伪造旧 family，也不宣称 sealed OA1 已收录这些调用；Host durable 接收仍是组合义务。
+
 ## 身份与历史绑定
 
 SDK 在同一只读数据库快照内核对：principal 持久 deployment/household/actor 三元组、outbox owner、目标 revision owner，以及 MemoryScope.authorize。session_id 是当前调用身份字段，不要求重开后的会话等于创建时会话。Host 仍负责 principal 来自可信运行配置；DTO/hash 本身不建立调用者身份。
@@ -59,6 +63,22 @@ signal 创建的 revision 使用 synthetic plan_id，可能没有对应 mutation
 
 实现预算拟定：每个读取 JSON 文档上限 1 MiB，独立只读快照和 SQLite VM 步数上限 200,000；超过显式失败，未承诺大库全量吞吐。本版不改变冻结 schema/旧 reader 行为。
 
-## 必需验证（待执行）
+## 必需验证与当前结果
 
-真实 public mutation→receipt/outbox→reader；重开一致；历史 invalidation 与不同 head/run；跨 actor/deployment/household 拒绝；确切 hash 与持久绑定破坏拒绝；signal 派生目标明确缺口；限额/取消后正常重开；无授权 reader 不产生 ack/grant。测试结果及独审后另写结果文档，不在本契约中预填通过。
+真实 public mutation→receipt/outbox→reader；重开一致；历史 invalidation 与不同 head/run；跨 actor/deployment/household 拒绝；确切 hash 与持久绑定破坏拒绝；signal 派生目标明确缺口；限额/取消后正常重开；无授权 reader 不产生 ack/grant。结果按下表区分，不将 source 测试当 installed/Host scheduler 验收。
+
+
+| 批次 | 实际结果与范围 |
+| --- | --- |
+| r1 | 19 fixture ERROR：误将 public OutboxPageV1 当 iterable；尚未触达 reader |
+| r2 | 14 PASS、5 FAIL；失败位于 fixture 的 run/disclosure、不可变触发器、未注册 signal 协议构造 |
+| r3 | 修正这些 fixture 后定向 8 PASS（11 deselected）；未放松 SDK 业务门 |
+| r4-fixed | 固定 6b8d87f：23 专项 + 2 原 prospective 邻居 = 25 PASS，2.32 秒；PGID45976/峰119440KiB/无残留 |
+| r5-observation | 新 observation 元数据、取消、corruption/limit 三项 PASS，0.55秒；PGID46817/无残留；首次 sink 载体是替身，不能证明真实白名单接线 |
+| r6-sink-red | 改为真实 H073 RecordingSink 后 1 FAIL，实际0/4条；完整 observation 字段不在 safe attributes 白名单；PGID46873/无残留 |
+| r7-sink-fix | 首次 BUSY75 未启动；后续实际收到4/4事件，但测试误用事件 to_json（真实为 to_dict），1 FAIL；PGID47303/无残留 |
+| r8-sink-green | 仅修测试序列化调用后真实sink 1 PASS/0.44秒；PGID47377/峰114768KiB/无残留 |
+
+资源入口 `/Users/denny/projects/simple_harness-test-resource-cleanup/scripts/run_resource_bounded.py`，默认同一 OS 锁，2048MiB/180秒；未运行模型/Provider/native/build/install，无新环境。冻结615分支/制品与SDK schema/旧 reader 保持原样。按主分配，当前后继源码版本0.6.16；冻结615分支/制品不改。独审需主转Dirac（本会话无可调用子代理入口，现有任务列表也无Dirac）；当前尚无独审ACCEPT，制品准备不等于独审闭合。
+
+源码测试使用主 M614 解释器借用依赖，并显式 PYTHONPATH 指向本树 src 与根目录；这是开发源码载体，不是 installed 组合。原始日志、resource.json、测试 DB 都在本树 ignored `.local-test-evidence/2026-09-06/prospective-outbox-source/`，r1 原临时 DB 已移入同批 cases，未删除原红。固定绿色源码与旧制品未重复全量 hash 扫描；后续只运行本次变动或真实失败所需的定向项。

@@ -220,3 +220,71 @@ async def test_source_dto_rejects_invalid_emission_time(world, timestamp):
     source = await read(world)
     with pytest.raises(ValueError, match='prospective_outbox_created_at_invalid'):
         replace(source, outbox_created_at=timestamp)
+
+
+async def test_observation_per_call_without_payload_or_fact_hash_drift(world):
+    import json
+    from simple_harness.observability import RecordingSink
+    from simple_harness_memory.core.observability import MemoryObservability
+    sink = RecordingSink()
+    world['manager']._observability.close()
+    world['manager']._observability = MemoryObservability(sink)
+    first, second = await read(world), await read(world)
+    assert first == second and first.source_hash == second.source_hash
+    a, b = first.operation_observation, second.operation_observation
+    assert isinstance(a, m.ProspectiveSourceReadObservationV1)
+    assert a.invocation_ref_hash != b.invocation_ref_hash
+    assert a.request_hash == b.request_hash and a.source_hash == first.source_hash
+    assert a.outcome == 'observed' and a.persistence_status == 'host_persistence_unverified'
+    assert 'operation_observation' not in first.to_json()
+    assert a.observation_hash != b.observation_hash
+    for kwargs, reason in [({'payload_hash': 'wrong-secret'}, 'input_or_binding_rejected'),
+            ({'principal': replace(PRINCIPAL, household_id='wrong-household')}, 'ownership_rejected')]:
+        with pytest.raises((MemoryValidationError, MemoryOwnershipConflict)) as rejected:
+            await read(world, **kwargs)
+        event = rejected.value.operation_observation
+        assert event.reason == reason and event.source_hash is None
+        assert event.outcome == 'rejected'
+    assert world['manager']._observability.runtime.flush(1.0)
+    emitted = sink.events()
+    assert len(emitted) == 4
+    wire = json.dumps([event.to_dict() for event in emitted])
+    for secret in ['send report', 'wrong-secret', 'wrong-household', 'actor-1',
+            world['entry'].outbox_id, 'Asia/Shanghai']:
+        assert secret not in wire
+
+
+async def test_cancelled_source_read_exposes_observation_and_remains_usable(world, monkeypatch):
+    from simple_harness_memory.backends import prospective_sources as module
+    original = module._read
+    entered = asyncio.Event()
+    async def slow(*args):
+        entered.set()
+        await asyncio.Event().wait()
+    monkeypatch.setattr(module, '_read', slow)
+    task = asyncio.create_task(read(world))
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError) as cancelled:
+        await task
+    event = cancelled.value.operation_observation
+    assert event.outcome == 'cancelled' and event.source_hash is None
+    assert event.reason == 'source_read_cancelled'
+    monkeypatch.setattr(module, '_read', original)
+    assert (await read(world)).operation_observation.outcome == 'observed'
+
+
+async def test_corruption_and_budget_metadata_are_finite(world, monkeypatch):
+    from simple_harness_memory.backends import prospective_sources as module
+    monkeypatch.setattr(module, 'MAX_SQL_STEPS', 1)
+    with pytest.raises(MemoryLimitError) as exhausted:
+        await read(world)
+    assert exhausted.value.operation_observation.reason == 'resource_limit'
+    monkeypatch.setattr(module, 'MAX_SQL_STEPS', 200_000)
+    with sqlite3.connect(world['path']) as db:
+        db.executescript("DROP TRIGGER memory_mutation_receipts_immutable_update; "
+            "UPDATE memory_mutation_receipts SET run_id='not-public-secret'")
+    with pytest.raises(MemoryCorruptionError) as corrupt:
+        await read(world)
+    assert corrupt.value.operation_observation.reason == 'source_corrupt'
+    assert 'not-public-secret' not in str(corrupt.value.operation_observation.to_json())

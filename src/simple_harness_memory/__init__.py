@@ -82,6 +82,7 @@ from simple_harness_memory.core.models import (
     Message,
 )
 from simple_harness_memory.core.prospective_sources import ProspectiveOutboxSourceView
+from simple_harness_memory.core.prospective_source_observation import ProspectiveSourceReadObservationV1
 from simple_harness_memory.core.mutation_receipts import (
     MemoryMutationCommittedOperationView,
     MemoryMutationReceiptView,
@@ -234,6 +235,7 @@ __all__ = [
     "MemoryMutationCommittedOperationView",
     "MemoryMutationReceiptView",
     "ProspectiveOutboxSourceView",
+    "ProspectiveSourceReadObservationV1",
     "BoundedRecallResult",
     "MemoryResourceBounds",
     "MemoryPrincipal",
@@ -255,4 +257,4 @@ __all__ = [
     "ShortHorizonRecallResult",
 ]
 
-__version__ = "0.6.15"
+__version__ = "0.6.16"

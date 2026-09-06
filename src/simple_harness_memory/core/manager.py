@@ -397,8 +397,10 @@ class MemoryManager:
         self, *, principal: MemoryPrincipal, outbox_id: str, payload_hash: str,
     ) -> ProspectiveOutboxSourceView:
         """Read verified historical target lineage; this does not issue a grant."""
-        return await self._backend.read_prospective_outbox_source(
-            principal=principal, outbox_id=outbox_id, payload_hash=payload_hash
+        from simple_harness_memory.core.prospective_source_observation import observed_read
+
+        return await observed_read(
+            self, principal=principal, outbox_id=outbox_id, payload_hash=payload_hash
         )
 
     async def read_outbox(

@@ -1,6 +1,6 @@
 """Factual target lineage for an exact scheduler outbox command; never a grant."""
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from simple_harness.runtime import (
     MemoryMutationApplyReceiptRef, ProspectiveLifecycleState, prospective_trigger_hash,
@@ -9,6 +9,7 @@ from simple_harness_memory.core.history import history_hash
 from simple_harness_memory.core.identity import MemoryScope
 from simple_harness_memory.core.mutation_receipts import _digest, _identifier, _revision
 from simple_harness_memory.core.prospective import normalize_trigger
+from simple_harness_memory.core.prospective_source_observation import ProspectiveSourceReadObservationV1
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +37,7 @@ class ProspectiveOutboxSourceView:
     # lineage must not be silently promoted into the outbox's generating cause.
     outbox_cause_status: str = "not_persisted"
     schema_version: int = 1
+    operation_observation: ProspectiveSourceReadObservationV1 | None = field(default=None, compare=False, repr=False)
 
     def __post_init__(self):
         if (type(self.outbox_created_at) not in (int, float)
