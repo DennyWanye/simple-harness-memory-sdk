@@ -1011,6 +1011,15 @@ class SQLiteHumanMemoryBackend:
                     with suppress(Exception):
                         await self._db.execute("ROLLBACK")
 
+    async def read_prospective_outbox_source(
+        self, *, principal: MemoryPrincipal, outbox_id: str, payload_hash: str,
+    ):
+        from simple_harness_memory.backends.prospective_sources import read_prospective_outbox_source
+
+        return await read_prospective_outbox_source(
+            self, principal=principal, outbox_id=outbox_id, payload_hash=payload_hash
+        )
+
     async def read_outbox(
         self,
         *,

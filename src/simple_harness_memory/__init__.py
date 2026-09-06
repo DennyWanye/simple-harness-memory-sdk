@@ -81,6 +81,7 @@ from simple_harness_memory.core.models import (
     MemoryApplyResult,
     Message,
 )
+from simple_harness_memory.core.prospective_sources import ProspectiveOutboxSourceView
 from simple_harness_memory.core.mutation_receipts import (
     MemoryMutationCommittedOperationView,
     MemoryMutationReceiptView,
@@ -232,6 +233,7 @@ __all__ = [
     "MemoryApplyResult",
     "MemoryMutationCommittedOperationView",
     "MemoryMutationReceiptView",
+    "ProspectiveOutboxSourceView",
     "BoundedRecallResult",
     "MemoryResourceBounds",
     "MemoryPrincipal",
