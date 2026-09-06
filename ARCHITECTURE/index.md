@@ -1,5 +1,11 @@
 # ARCHITECTURE 索引
 
+## 2026-09-06 空assistant短期完整组源码候选
+
+最后更新：2026-09-06。自有feat/short-empty-assistant/base6361edca，版本保持WIP0.6.14；仅允许合法ASSISTANT空字符串并保留完整ordinal/工具parent来源，两条投影路径排除全空角色标签伪命中。USER空/空白、NUL、UTF-8字节、identifier/hash及完整组门保持。9项公开API契约已写，待Dirac源码复核后145同锁原红/绿及必要邻居，未测试、未build/install/分配615/合主。Host真实SDK11turn工具组由主后继接线验证，不冒称Memory fixture为Host E2E。
+[最小接口、源位置、测试边界与指纹](../plans/2026-09-06-short-empty-assistant/CONTRACT.md)。
+
+
 ## 2026-09-06 最终受众约束0.6.14候选
 
 最后更新：2026-09-06。业务d7cb3ca已独审限定ACCEPT，ordinary/candidate联合检查当前接收者与最终受众，修正协作者枚举不同拼写的history误拒；未放开external/public、非self原始history或classification/来源/遗忘门。原4反例红→必要源码13绿；27dceff后继0.6.14两次wheel一致、独立Memory安装target4个公开API检查通过。76个Memory和借用H073的169个安装成员匹配；非新完整venv，未更新Host pin或SDK main，未发布。资源串行/有界/无残留；[行为、边界和精确身份](../plans/2026-09-06-disclosure-audience/RESULTS.md)。

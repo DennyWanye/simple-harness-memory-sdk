@@ -2069,6 +2069,10 @@ class SQLiteHumanMemoryBackend:
             for key, items in complete_groups.items():
                 if key in recent:
                     continue
+                if not any(str(item["public_text"]).strip() for item in items):
+                    # Retain registrations, but never index an all-empty group
+                    # as a synthetic hit on the rendered role labels.
+                    continue
                 first = items[0]
                 occurred_at = max(float(item["occurred_at"]) for item in items)
                 expires_at = occurred_at + SHORT_HORIZON_RETENTION_SECONDS
