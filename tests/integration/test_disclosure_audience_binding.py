@@ -29,6 +29,7 @@ async def test_self_recipient_cannot_recall_for_a_different_final_audience(tmp_p
         denied = await manager.execute_typed_recall(principal=_principal(), context=context,
             plan=_recall_plan(context, idempotency_key="final-audience-denied"))
         assert not denied.result.items and not denied.result.confirmation_groups
+        assert not denied.candidate_query_started and denied.candidate_query_count == 0
         item = good.result.items[0]
         visible = await manager.check_history_visibility(principal=_principal(),
             disclosure_context=context.disclosure_context,
