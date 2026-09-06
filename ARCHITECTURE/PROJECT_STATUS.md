@@ -1,5 +1,10 @@
 # PROJECT STATUS — simple-harness-memory-sdk
 
+## 2026-09-06 可信输入绑定已复核并纳入 main
+
+最后更新：2026-09-06。固定 `6e23c22` 的21条可见源片段绑定已经子代理实现、主代理逐例复核，以 `5edf0c5` 纳入 main；8项源契约验收通过。C05-07及C12全20条的用户语句、可信配置需求、共同政策和缺失字段显式分开，未改变r4或第一层编译器。运行链路仍缺实际Host身份/受众/用途政策、时钟与公共setup接线，240正式执行仍0；SDK源码仍0.6.3。详见[主代理复核](../scripts/corpus_trusted_bindings/主代理复核.md)。下文未合入、待复核等描述保留为当时历史，不覆盖本节当前状态。
+
+
 2026-09-06主复核：源规格编译固定b72dbff限定ACCEPT并FF main；SDK源码仍0.6.3，15项源契约分批闭合，240正式执行仍0。详见[主复核](../scripts/corpus_runtime_input/主代理复核.md)；Host隔离组合18ec7194的M0613安装/模型short/资源验证与此源编译独立，见[续接记录](../plans/2026-08-29-human-memory-digital-twin/RESUME-2026-09-05.md)。
 
 ## 2026-09-06 21例可信字段source adapter验收
