@@ -1,0 +1,13 @@
+{
+  "producer_type": "runtime-probe",
+  "producer_version": "semantic-relation-regression-runner@b67c978cb3e3",
+  "artifact_kind": "execution-log",
+  "generated_at": "2026-08-31T22:54:35Z",
+  "root_run_id": "rel-regression-20260901-02",
+  "business_facts": {
+    "business_terminal": "completed+valid",
+    "harness_full_regression": "1728_passed_2_skipped_full_pytest_ruff_changed_surface_mypy",
+    "memory_full_regression": "1066_passed_8_skipped_full_pytest_ruff_mypy",
+    "oracle_self_checks": "public_and_integrity_pass"
+  }
+}

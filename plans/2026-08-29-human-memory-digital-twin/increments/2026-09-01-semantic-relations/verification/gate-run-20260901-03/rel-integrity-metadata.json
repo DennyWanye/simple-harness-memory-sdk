@@ -1,0 +1,17 @@
+{
+  "producer_type": "runtime-probe",
+  "producer_version": "semantic-relation-integrity-runner@6ec3b646700e",
+  "artifact_kind": "fault-recovery-log",
+  "generated_at": "2026-08-31T22:53:04Z",
+  "root_run_id": "rel-integrity-20260901-02",
+  "business_facts": {
+    "business_terminal": "completed+valid",
+    "recovered_state": "all-old-or-all-new-no-orphan",
+    "verified_case_count_40": true,
+    "half_state_zero": true,
+    "raw_evidence_unchanged": "PASS_BYTE_IDENTICAL_ALL_CASES",
+    "corruption_fail_closed": true,
+    "candidate_harness_wheel_sha256": "d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd",
+    "candidate_memory_wheel_sha256": "844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e"
+  }
+}

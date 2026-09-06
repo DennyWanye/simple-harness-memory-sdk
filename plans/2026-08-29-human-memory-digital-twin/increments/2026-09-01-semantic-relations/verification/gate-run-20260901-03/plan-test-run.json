@@ -1,0 +1,2431 @@
+{
+  "acceptance": {
+    "path": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/acceptance.md",
+    "sha256": "c482949678ca1faf6e6116d84bb8aba40254f241e0b55f5b62486261cfce2e46"
+  },
+  "active_run_required": true,
+  "applicability": {
+    "input_sensitive": {
+      "decided_by": "user",
+      "rationale": "本增量只验证冻结的 typed relation plan 与确定性 SDK 行为；自然语言提取质量留待真实主模型门",
+      "value": false
+    },
+    "llm_payload_driven": {
+      "decided_by": "user",
+      "rationale": "生产上由 LLM 提案，但本增量输入是预冻结的严格 v5 payload；不把 provider 质量纳入 SDK slice",
+      "value": false
+    },
+    "stateful_init": {
+      "decided_by": "user",
+      "rationale": "fresh schema v7、原子 relation write、close/reopen、fault replay 与 corruption 都是本增量核心",
+      "value": true
+    }
+  },
+  "attestations": [
+    {
+      "change_kind": "behavioral",
+      "changed_count": 12,
+      "changed_paths": [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-02/artifacts/exec-REL-INTEGRITY-0002.log",
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-02/artifacts/exec-REL-REGRESSION-0003.log",
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-02/artifacts/exec-REL-VALUE-0001.log",
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-02/artifacts/rel-integrity-fault-recovery.log",
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-02/artifacts/rel-value-business-result.log",
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-02/plan-test-run.json",
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-02/rel-integrity-metadata.json",
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-02/rel-value-metadata.json",
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901/artifacts/exec-REL-VALUE-0001.log",
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901/artifacts/rel-value-business-result.log",
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901/plan-test-run.json",
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901/rel-value-metadata.json"
+      ],
+      "content_digest": "41137247aa268397f9c2213724cd64484267aa097604379dce53298e6d7ffd68",
+      "dirty_patch_sha256": "5fc9755ec9b13ea873e134895469a9ba358f020246736f0a3c05658c6f056e27",
+      "exclusion_count": 11,
+      "exclusion_scope": [
+        ".plan-test/active-run.json",
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+      ],
+      "exclusions": [
+        [
+          ".plan-test/active-run.json",
+          "declared-scope:.plan-test/active-run.json"
+        ],
+        [
+          "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/exec-REL-INTEGRITY-0002.log",
+          "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+        ],
+        [
+          "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/exec-REL-REGRESSION-0003.log",
+          "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+        ],
+        [
+          "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/exec-REL-VALUE-0001.log",
+          "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+        ],
+        [
+          "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/rel-integrity-fault-recovery.log",
+          "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+        ],
+        [
+          "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/rel-regression-result.log",
+          "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+        ],
+        [
+          "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/rel-value-business-result.log",
+          "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+        ],
+        [
+          "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/plan-test-run.json",
+          "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+        ],
+        [
+          "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/rel-integrity-metadata.json",
+          "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+        ],
+        [
+          "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/rel-regression-metadata.json",
+          "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+        ],
+        [
+          "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/rel-value-metadata.json",
+          "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+        ]
+      ],
+      "head": "9de7635f490c34c4a9c5f144637a05f207e2717e",
+      "reason": "superseded gate ledgers moved intact to ignored local evidence to satisfy sibling-run policy without deleting raw data",
+      "recorded_at": "2026-09-01T06:55:49+0800",
+      "runs_index": 3
+    }
+  ],
+  "audit_findings": [],
+  "auditor": {
+    "audited_at": "2026-09-01T07:13:51+0800",
+    "engine": "independent-codex-agent",
+    "facts_digest": "9bb076303ac01f364f83f7e2bb270c5087e0b697c340b3e613c5a8406db08178",
+    "input_path": "auditor-input-final.json",
+    "input_sha256": "50996c40d1eab341c320b28ed8be9dc9a87d8c404ba63a5c8568f8466329c8ba",
+    "output_path": "auditor-output-final.json",
+    "output_sha256": "c980ae85bafc3e20380f427a3d96585ab41ad35b7c84a97fa9ba7098780dc6fd",
+    "verdict": "PASS"
+  },
+  "auditor_engine": "independent-codex-agent",
+  "baseline": {
+    "content_digest": "bfb5b96c52c8452f1908835d640a619a84a4c8d43d1ed9a52b27fa0e4e543f6c",
+    "dirty_patch_sha256": "f99f8123f25bfb71562880beb22bd169029ff963f7d2e4e9d267ee2350c89316",
+    "exclusion_count": 1,
+    "exclusion_scope": [
+      ".plan-test/active-run.json",
+      "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+    ],
+    "exclusions": [
+      [
+        ".plan-test/active-run.json",
+        "declared-scope:.plan-test/active-run.json"
+      ]
+    ],
+    "head": "9de7635f490c34c4a9c5f144637a05f207e2717e",
+    "recorded_at": "2026-09-01T06:51:17+0800"
+  },
+  "behavior_changes": [],
+  "behavior_contract": {},
+  "challenge_loops": [],
+  "challenger_engine": null,
+  "compiled_manifest": {
+    "case_sets": {
+      "full": [
+        "REL-INTEGRITY",
+        "REL-REGRESSION",
+        "REL-VALUE"
+      ]
+    },
+    "input_hashes": {
+      "acceptance": "c482949678ca1faf6e6116d84bb8aba40254f241e0b55f5b62486261cfce2e46",
+      "assurance_contract": "7e47e55b3b2dfd9a397f3d2e9b9703af2e7c892a169f13fd24e4470e9e9ea9ad",
+      "reuse_report": "4d1baebdf087e775eb051dc56562fa810cd60559ab36cc897149648a4931bdb8",
+      "testcase_inventory": "4b8c63f15b2e246d86374c86783254ae948ace30eb4857a02d191b6c38ef713c",
+      "verification_spec": "42230016f3356d73e321f8fa97ac495fb1b015bb68ac58523105af176ac4c85e"
+    },
+    "input_paths": {
+      "acceptance": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/acceptance.md",
+      "assurance_contract": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/assurance-contract.json",
+      "reuse_report": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/testcase-reuse-report.json",
+      "testcase_inventory": "/Users/denny/projects/simple_harness-memory-plan/testcase/index.json",
+      "verification_spec": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification-spec.json"
+    },
+    "seal_sha256": "21d2aa0e32e020f086ee882a6eeeadc2c407bb58d240d4e92e76aa9d3196bd4e",
+    "selected_testcase_ids": [
+      "TC-HM-08",
+      "TC-HM-12"
+    ],
+    "tool_version": "1.5.0"
+  },
+  "created_at": "2026-09-01T06:51:17+0800",
+  "declared_statuses": [
+    {
+      "recorded_at": "2026-09-01T06:51:54+0800",
+      "scenario_id": "REL-VALUE",
+      "source": "testcase-result",
+      "status": "PASS"
+    },
+    {
+      "recorded_at": "2026-09-01T06:53:24+0800",
+      "scenario_id": "REL-INTEGRITY",
+      "source": "testcase-result",
+      "status": "PASS"
+    },
+    {
+      "recorded_at": "2026-09-01T06:54:58+0800",
+      "scenario_id": "REL-REGRESSION",
+      "source": "testcase-result",
+      "status": "PASS"
+    },
+    {
+      "recorded_at": "2026-09-01T07:00:06+0800",
+      "scenario_id": "REL-VALUE",
+      "source": "testcase-retest",
+      "status": "PASS"
+    },
+    {
+      "recorded_at": "2026-09-01T07:00:06+0800",
+      "scenario_id": "REL-INTEGRITY",
+      "source": "testcase-retest",
+      "status": "PASS"
+    },
+    {
+      "recorded_at": "2026-09-01T07:00:06+0800",
+      "scenario_id": "REL-REGRESSION",
+      "source": "testcase-retest",
+      "status": "PASS"
+    }
+  ],
+  "delivery": {
+    "recorded_at": "2026-09-01T07:10:43+0800",
+    "verdict": "PASS"
+  },
+  "doc_only_globs": null,
+  "events": [
+    {
+      "action": "start",
+      "at": "2026-08-31T22:51:17Z",
+      "note": "fresh final execution after baseline-aware regression contract",
+      "phase": "phase-4",
+      "type": "phase"
+    },
+    {
+      "action": "end",
+      "at": "2026-08-31T22:54:58Z",
+      "note": "all three required scenarios fresh PASS",
+      "phase": "phase-4",
+      "status": "ok",
+      "type": "phase"
+    },
+    {
+      "action": "start",
+      "at": "2026-08-31T22:54:58Z",
+      "note": "independent completion audit and final gate",
+      "phase": "phase-5",
+      "type": "phase"
+    },
+    {
+      "action": "end",
+      "at": "2026-08-31T23:10:43Z",
+      "note": "independent full audit PASS with zero P0/P1",
+      "phase": "phase-5",
+      "status": "ok",
+      "type": "phase"
+    }
+  ],
+  "evidence": [
+    {
+      "artifact_kind": "execution-log",
+      "attached_at": "2026-09-01T06:51:34+0800",
+      "business_facts": {
+        "business_terminal": "completed+valid"
+      },
+      "evidence_id": "ev-625c3bef9876",
+      "file_mtime": "2026-08-31T22:51:34Z",
+      "generated_at": "2026-08-31T22:51:34Z",
+      "kind": "primary",
+      "path": "artifacts/exec-REL-VALUE-0001.log",
+      "producer_type": "gate-exec",
+      "producer_version": "1.5.0",
+      "root_run_id": "rel-value-20260901-03",
+      "scenario_id": "REL-VALUE",
+      "session_id": null,
+      "sha256": "625c3bef9876cec4fe9880e1a6cf28c552adf195b71ecb4e49011f4a60a283d0"
+    },
+    {
+      "artifact_kind": "business-result",
+      "attached_at": "2026-09-01T06:51:53+0800",
+      "business_facts": {
+        "business_terminal": "completed+valid",
+        "candidate_harness_wheel_sha256": "d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd",
+        "candidate_memory_wheel_sha256": "844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e",
+        "package_root_public_only": true,
+        "relation_node_zero": true,
+        "suppression_reopen_zero_edge": true,
+        "two_nodes_one_edge": true
+      },
+      "evidence_id": "ev-rel-value-business",
+      "file_mtime": "2026-08-31T22:51:40Z",
+      "generated_at": "2026-08-31T22:51:34Z",
+      "kind": "primary",
+      "path": "artifacts/rel-value-business-result.log",
+      "producer_type": "runtime-probe",
+      "producer_version": "semantic-relation-public-runner@8a8d4bdc169f",
+      "root_run_id": "rel-value-20260901-03",
+      "scenario_id": "REL-VALUE",
+      "sha256": "625c3bef9876cec4fe9880e1a6cf28c552adf195b71ecb4e49011f4a60a283d0"
+    },
+    {
+      "artifact_kind": "execution-log",
+      "attached_at": "2026-09-01T06:53:04+0800",
+      "business_facts": {
+        "business_terminal": "completed+valid"
+      },
+      "evidence_id": "ev-070f3327eb38",
+      "file_mtime": "2026-08-31T22:53:04Z",
+      "generated_at": "2026-08-31T22:53:04Z",
+      "kind": "primary",
+      "path": "artifacts/exec-REL-INTEGRITY-0002.log",
+      "producer_type": "gate-exec",
+      "producer_version": "1.5.0",
+      "root_run_id": "rel-integrity-20260901-02",
+      "scenario_id": "REL-INTEGRITY",
+      "session_id": null,
+      "sha256": "070f3327eb3820ae235353feca5962768536ece3390b9f6fa8533f4ddd36c965"
+    },
+    {
+      "artifact_kind": "fault-recovery-log",
+      "attached_at": "2026-09-01T06:53:24+0800",
+      "business_facts": {
+        "business_terminal": "completed+valid",
+        "candidate_harness_wheel_sha256": "d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd",
+        "candidate_memory_wheel_sha256": "844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e",
+        "corruption_fail_closed": true,
+        "half_state_zero": true,
+        "raw_evidence_unchanged": "PASS_BYTE_IDENTICAL_ALL_CASES",
+        "recovered_state": "all-old-or-all-new-no-orphan",
+        "verified_case_count_40": true
+      },
+      "evidence_id": "ev-rel-integrity-fault",
+      "file_mtime": "2026-08-31T22:53:10Z",
+      "generated_at": "2026-08-31T22:53:04Z",
+      "kind": "primary",
+      "negative_assertion": true,
+      "path": "artifacts/rel-integrity-fault-recovery.log",
+      "producer_type": "runtime-probe",
+      "producer_version": "semantic-relation-integrity-runner@6ec3b646700e",
+      "root_run_id": "rel-integrity-20260901-02",
+      "scenario_id": "REL-INTEGRITY",
+      "sha256": "070f3327eb3820ae235353feca5962768536ece3390b9f6fa8533f4ddd36c965"
+    },
+    {
+      "artifact_kind": "execution-log",
+      "attached_at": "2026-09-01T06:54:35+0800",
+      "business_facts": {
+        "business_terminal": "completed+valid"
+      },
+      "evidence_id": "ev-440c89587d4e",
+      "file_mtime": "2026-08-31T22:54:35Z",
+      "generated_at": "2026-08-31T22:54:35Z",
+      "kind": "primary",
+      "path": "artifacts/exec-REL-REGRESSION-0003.log",
+      "producer_type": "gate-exec",
+      "producer_version": "1.5.0",
+      "root_run_id": "rel-regression-20260901-02",
+      "scenario_id": "REL-REGRESSION",
+      "session_id": null,
+      "sha256": "440c89587d4e11cd3164c6c5ab57f0e3732b763a94bceffab52fa2fe9eea007d"
+    },
+    {
+      "artifact_kind": "execution-log",
+      "attached_at": "2026-09-01T06:54:58+0800",
+      "business_facts": {
+        "business_terminal": "completed+valid",
+        "harness_full_regression": "1728_passed_2_skipped_full_pytest_ruff_changed_surface_mypy",
+        "memory_full_regression": "1066_passed_8_skipped_full_pytest_ruff_mypy",
+        "oracle_self_checks": "public_and_integrity_pass"
+      },
+      "evidence_id": "ev-rel-regression-result",
+      "file_mtime": "2026-08-31T22:54:44Z",
+      "generated_at": "2026-08-31T22:54:35Z",
+      "kind": "primary",
+      "path": "artifacts/rel-regression-result.log",
+      "producer_type": "runtime-probe",
+      "producer_version": "semantic-relation-regression-runner@b67c978cb3e3",
+      "root_run_id": "rel-regression-20260901-02",
+      "scenario_id": "REL-REGRESSION",
+      "sha256": "440c89587d4e11cd3164c6c5ab57f0e3732b763a94bceffab52fa2fe9eea007d"
+    },
+    {
+      "artifact_kind": "execution-log",
+      "attached_at": "2026-09-01T06:56:19+0800",
+      "business_facts": {
+        "business_terminal": "completed+valid"
+      },
+      "evidence_id": "ev-034c571a22cc",
+      "file_mtime": "2026-08-31T22:56:19Z",
+      "generated_at": "2026-08-31T22:56:19Z",
+      "kind": "primary",
+      "path": "artifacts/exec-REL-VALUE-0004.log",
+      "producer_type": "gate-exec",
+      "producer_version": "1.5.0",
+      "root_run_id": "rel-value-20260901-04",
+      "scenario_id": "REL-VALUE",
+      "session_id": null,
+      "sha256": "034c571a22cc1825ee9ff3cd0182f696ff07c3a4aeb0ec8511351e977f781ea7"
+    },
+    {
+      "artifact_kind": "business-result",
+      "attached_at": "2026-09-01T06:56:50+0800",
+      "business_facts": {
+        "business_terminal": "completed+valid",
+        "candidate_harness_wheel_sha256": "d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd",
+        "candidate_memory_wheel_sha256": "844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e",
+        "package_root_public_only": true,
+        "relation_node_zero": true,
+        "suppression_reopen_zero_edge": true,
+        "two_nodes_one_edge": true
+      },
+      "evidence_id": "ev-rel-value-business-retest",
+      "file_mtime": "2026-08-31T22:56:28Z",
+      "generated_at": "2026-08-31T22:56:19Z",
+      "kind": "primary",
+      "path": "artifacts/rel-value-business-result-retest.log",
+      "producer_type": "runtime-probe",
+      "producer_version": "semantic-relation-public-runner@8a8d4bdc169f",
+      "root_run_id": "rel-value-20260901-04",
+      "scenario_id": "REL-VALUE",
+      "sha256": "034c571a22cc1825ee9ff3cd0182f696ff07c3a4aeb0ec8511351e977f781ea7"
+    },
+    {
+      "artifact_kind": "execution-log",
+      "attached_at": "2026-09-01T06:58:03+0800",
+      "business_facts": {
+        "business_terminal": "completed+valid"
+      },
+      "evidence_id": "ev-54aac6373b5c",
+      "file_mtime": "2026-08-31T22:58:03Z",
+      "generated_at": "2026-08-31T22:58:03Z",
+      "kind": "primary",
+      "path": "artifacts/exec-REL-INTEGRITY-0005.log",
+      "producer_type": "gate-exec",
+      "producer_version": "1.5.0",
+      "root_run_id": "rel-integrity-20260901-03",
+      "scenario_id": "REL-INTEGRITY",
+      "session_id": null,
+      "sha256": "54aac6373b5c0da5ee5ed6bb83d0fa768e6a23a5ae88bc9b809cb2e510337781"
+    },
+    {
+      "artifact_kind": "fault-recovery-log",
+      "attached_at": "2026-09-01T06:58:28+0800",
+      "business_facts": {
+        "business_terminal": "completed+valid",
+        "candidate_harness_wheel_sha256": "d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd",
+        "candidate_memory_wheel_sha256": "844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e",
+        "corruption_fail_closed": true,
+        "half_state_zero": true,
+        "raw_evidence_unchanged": "PASS_BYTE_IDENTICAL_ALL_CASES",
+        "recovered_state": "all-old-or-all-new-no-orphan",
+        "verified_case_count_40": true
+      },
+      "evidence_id": "ev-rel-integrity-fault-retest",
+      "file_mtime": "2026-08-31T22:58:10Z",
+      "generated_at": "2026-08-31T22:58:03Z",
+      "kind": "primary",
+      "negative_assertion": true,
+      "path": "artifacts/rel-integrity-fault-recovery-retest.log",
+      "producer_type": "runtime-probe",
+      "producer_version": "semantic-relation-integrity-runner@6ec3b646700e",
+      "root_run_id": "rel-integrity-20260901-03",
+      "scenario_id": "REL-INTEGRITY",
+      "sha256": "54aac6373b5c0da5ee5ed6bb83d0fa768e6a23a5ae88bc9b809cb2e510337781"
+    },
+    {
+      "artifact_kind": "execution-log",
+      "attached_at": "2026-09-01T06:59:39+0800",
+      "business_facts": {
+        "business_terminal": "completed+valid"
+      },
+      "evidence_id": "ev-aec91b729109",
+      "file_mtime": "2026-08-31T22:59:39Z",
+      "generated_at": "2026-08-31T22:59:39Z",
+      "kind": "primary",
+      "path": "artifacts/exec-REL-REGRESSION-0006.log",
+      "producer_type": "gate-exec",
+      "producer_version": "1.5.0",
+      "root_run_id": "rel-regression-20260901-03",
+      "scenario_id": "REL-REGRESSION",
+      "session_id": null,
+      "sha256": "aec91b72910988f9039b362e62e4eb23cd98fae8dd6290d460a741eca368afcf"
+    },
+    {
+      "artifact_kind": "execution-log",
+      "attached_at": "2026-09-01T07:00:06+0800",
+      "business_facts": {
+        "business_terminal": "completed+valid",
+        "harness_full_regression": "1728_passed_2_skipped_full_pytest_ruff_changed_surface_mypy",
+        "memory_full_regression": "1066_passed_8_skipped_full_pytest_ruff_mypy",
+        "oracle_self_checks": "public_and_integrity_pass"
+      },
+      "evidence_id": "ev-rel-regression-result-retest",
+      "file_mtime": "2026-08-31T22:59:49Z",
+      "generated_at": "2026-08-31T22:59:39Z",
+      "kind": "primary",
+      "path": "artifacts/rel-regression-result-retest.log",
+      "producer_type": "runtime-probe",
+      "producer_version": "semantic-relation-regression-runner@b67c978cb3e3",
+      "root_run_id": "rel-regression-20260901-03",
+      "scenario_id": "REL-REGRESSION",
+      "sha256": "aec91b72910988f9039b362e62e4eb23cd98fae8dd6290d460a741eca368afcf"
+    },
+    {
+      "artifact_kind": "execution-log",
+      "attached_at": "2026-09-01T07:00:26+0800",
+      "business_facts": {
+        "business_terminal": "completed+valid"
+      },
+      "evidence_id": "ev-d2341a18b8dd",
+      "file_mtime": "2026-08-31T23:00:26Z",
+      "generated_at": "2026-08-31T23:00:26Z",
+      "kind": "primary",
+      "path": "artifacts/exec-REL-VALUE-0007.log",
+      "producer_type": "gate-exec",
+      "producer_version": "1.5.0",
+      "root_run_id": "rel-value-20260901-05",
+      "scenario_id": "REL-VALUE",
+      "session_id": null,
+      "sha256": "d2341a18b8ddf3d456f3d917aeb63179be13f6d38aed9c23b68113f095045972"
+    },
+    {
+      "artifact_kind": "execution-log",
+      "attached_at": "2026-09-01T07:01:35+0800",
+      "business_facts": {
+        "business_terminal": "completed+valid"
+      },
+      "evidence_id": "ev-82c16942f42c",
+      "file_mtime": "2026-08-31T23:01:35Z",
+      "generated_at": "2026-08-31T23:01:35Z",
+      "kind": "primary",
+      "path": "artifacts/exec-REL-INTEGRITY-0008.log",
+      "producer_type": "gate-exec",
+      "producer_version": "1.5.0",
+      "root_run_id": "rel-integrity-20260901-04",
+      "scenario_id": "REL-INTEGRITY",
+      "session_id": null,
+      "sha256": "82c16942f42cfff2c2b096c9e43a0cc86f27f5595ab4c97c1bb71b1406c70acd"
+    },
+    {
+      "artifact_kind": "execution-log",
+      "attached_at": "2026-09-01T07:02:46+0800",
+      "business_facts": {
+        "business_terminal": "completed+valid"
+      },
+      "evidence_id": "ev-a31a8b9c3524",
+      "file_mtime": "2026-08-31T23:02:46Z",
+      "generated_at": "2026-08-31T23:02:46Z",
+      "kind": "primary",
+      "path": "artifacts/exec-REL-REGRESSION-0009.log",
+      "producer_type": "gate-exec",
+      "producer_version": "1.5.0",
+      "root_run_id": "rel-regression-20260901-04",
+      "scenario_id": "REL-REGRESSION",
+      "session_id": null,
+      "sha256": "a31a8b9c3524b2d81d1095494e4890b81fe2ecdea7f1ea096cdcb53b450643a1"
+    }
+  ],
+  "exclusion_scope": [
+    ".plan-test/active-run.json",
+    "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+  ],
+  "executor_engine": "codex",
+  "external_run_dir": false,
+  "fixture_only": false,
+  "flow_tier": {
+    "decided_by": "user",
+    "rationale": "新增跨仓公共协议、fresh 持久化 schema、原子关系状态机、故障恢复与永久 evidence 完整性门",
+    "value": "FULL"
+  },
+  "integrity": {
+    "chain": "ae36eab31ee356550c69a5700c4465a7b91403635ecbb59eb153e09bc448c93c",
+    "genesis": "876367fc108696c9ed9c4337157a0e467f1b8dedca6ac753f3cc16c5d24666f6",
+    "log": [
+      {
+        "at": "2026-09-01T06:51:17+0800",
+        "chain": "a6befaefd7bb8f5497be2c82d67d91fc7da8bcc983907f04c06b5c510e5bd3d2",
+        "facts_digest": "31e2f573708155f11e226f42ab355da18b76482e81d45f4da2aeb4f4facc6bf9",
+        "op": "init",
+        "seq": 1
+      },
+      {
+        "at": "2026-09-01T06:51:17+0800",
+        "chain": "35d26e3b4075416ef081042b7ea1576e2591f66653e802c695ac0f5374de5321",
+        "facts_digest": "f660cd6ed603ca7057fefa80adcdc7d6866eac5a042445eaa8572e5d8c23ea9d",
+        "op": "phase-start",
+        "seq": 2
+      },
+      {
+        "at": "2026-09-01T06:51:34+0800",
+        "chain": "a80c473e6070685d840ce2b3400bd80bc15c10fcdd4b7ba74b5c2104d1d05d68",
+        "facts_digest": "27a9d77fcc89893defe0c55783b1ec1e29dd156b7d0a1b3d63e86ca116d4fb1f",
+        "op": "record-run",
+        "seq": 3
+      },
+      {
+        "at": "2026-09-01T06:51:34+0800",
+        "chain": "86df087f0f42184f854c631b68a2153c363db2e09af06610ec3aab56b7e9fa74",
+        "facts_digest": "86b97176c54a6899edaa4d8bf3adff94c16960aefe54d43d1df1605c0466791e",
+        "op": "record-timing",
+        "seq": 4
+      },
+      {
+        "at": "2026-09-01T06:51:53+0800",
+        "chain": "c552c9fd5b1c6b831d5c025120eef5dabe6eff8e2637c13225f8b689499006e8",
+        "facts_digest": "b210a2123dbea6eaacde4710204c14c6c8b18dd50bfee3e5c94726ffa8cbd690",
+        "op": "attach-evidence",
+        "seq": 5
+      },
+      {
+        "at": "2026-09-01T06:51:54+0800",
+        "chain": "3cba628620575e75e98cf2bfe6c10ba6493c9396ee633ddc07c25c7e2de6b696",
+        "facts_digest": "f66ed6252ef748e46f07eb344f1fa18475c51c6b0bcf72a86a665210d52764f3",
+        "op": "declare-status",
+        "seq": 6
+      },
+      {
+        "at": "2026-09-01T06:53:04+0800",
+        "chain": "06f740f6ae24cb14ada7cb77da0429fcb94eeb270fadf2bb7e320291690fec40",
+        "facts_digest": "b30e8ede82b82a997ea482b45d340e1d7c7891c5e0d1423341e4f5b6b7d6660d",
+        "op": "record-run",
+        "seq": 7
+      },
+      {
+        "at": "2026-09-01T06:53:04+0800",
+        "chain": "3d19f668a8d38e7b577f9fd01bf754f415a9f2386e2b481a39c80065db00ad3d",
+        "facts_digest": "ca5f0985cccbd8ada58d1895b98821b8e8f365ae08097bb78925d3a4bfb13e48",
+        "op": "record-timing",
+        "seq": 8
+      },
+      {
+        "at": "2026-09-01T06:53:24+0800",
+        "chain": "1a0b0b6fb4ce8c638127c9412f1bae01dc455d052c5c228667d9fe795915604e",
+        "facts_digest": "d549061457bbf94e7e26afc1fbbba7356b13b1fa679ac1a9d7d8a34b7072ed71",
+        "op": "attach-evidence",
+        "seq": 9
+      },
+      {
+        "at": "2026-09-01T06:53:24+0800",
+        "chain": "936df2cb6fad2333d902a815353f941d6ebb6212e4d1b837e569fc5a3681d8fe",
+        "facts_digest": "e794717de25e7c39ca708750473a99cc78b21600fd8ef6996a85d7ba93533bd3",
+        "op": "declare-status",
+        "seq": 10
+      },
+      {
+        "at": "2026-09-01T06:54:35+0800",
+        "chain": "30e121e8dcab979ddb57397b0a44645ebc245423a1b9eccfce659a9d10f9c0d3",
+        "facts_digest": "c81af54cdd7bb86eece4b477cba402bf02f830d59cce808e6ef14552dc057f3d",
+        "op": "record-run",
+        "seq": 11
+      },
+      {
+        "at": "2026-09-01T06:54:35+0800",
+        "chain": "c0f107ac6c2f44eb9c53fff56a5162947b9daa1d1cdb180c5dba80b3adf1f47b",
+        "facts_digest": "e2e5a1fe362aa25a1bb4847274f892a2ebd078a689bc7621ffb0b16fe3bd0238",
+        "op": "record-timing",
+        "seq": 12
+      },
+      {
+        "at": "2026-09-01T06:54:58+0800",
+        "chain": "f06a03f64b8115bbc611c09e23deaeadda6b5d761be3b04c8457d10954b195d9",
+        "facts_digest": "6a61f990581d570799ea488dde11949d446fe79374545b1b3d5b86d67eb0176a",
+        "op": "attach-evidence",
+        "seq": 13
+      },
+      {
+        "at": "2026-09-01T06:54:58+0800",
+        "chain": "025646fa944413e7014a91092f45a03052104f1f3224b4700ae9746410aed8ff",
+        "facts_digest": "39de663b3d8eefd78a12dd240cd7436cbc7faca65f8a0355458f3904dac49a96",
+        "op": "declare-status",
+        "seq": 14
+      },
+      {
+        "at": "2026-09-01T06:54:58+0800",
+        "chain": "2cc626bf86bfe5ca89e11a4523ec98be2041f4dce1c973f1e1bde8597061122b",
+        "facts_digest": "aee29712713d9491cb27b623531ef9e36aec0fe7f29d8f9af7b0142023de48d6",
+        "op": "phase-end",
+        "seq": 15
+      },
+      {
+        "at": "2026-09-01T06:54:58+0800",
+        "chain": "aaa438b56a3fc13d955012a98a4ee1b393ba5a6c35b5a75a4e368f7e59f17cef",
+        "facts_digest": "c9fdfc608efd050fea756fdef6f4fef875be7b2f6aa21613750112e301f86437",
+        "op": "phase-start",
+        "seq": 16
+      },
+      {
+        "at": "2026-09-01T06:55:49+0800",
+        "chain": "ef8f370f47e6f2a6ca8852db24e6e765381d3239aac9ca3287f0e77434583b68",
+        "facts_digest": "b8a2b00cdbee32d5cd70d8e4b25ea9a26dd6fc737638d898c564552a00b84625",
+        "op": "re-attest",
+        "seq": 17
+      },
+      {
+        "at": "2026-09-01T06:56:19+0800",
+        "chain": "55b9cb62a138a55ee61c711ffac6a9a4104b418a23e0f8df51de46d9cac66a77",
+        "facts_digest": "d007ae4656e412d7a0ee1c27ea6f297b89b4a2d99a580fdf0b3281644a3288e4",
+        "op": "record-run",
+        "seq": 18
+      },
+      {
+        "at": "2026-09-01T06:56:19+0800",
+        "chain": "85660b9293b231f4ac55231dbe572464e5230e175f87f91ebeed802997eff609",
+        "facts_digest": "c350189fc6120f28c24cf82508bbe85b07a67095b57ffd325125a91e79a49578",
+        "op": "record-timing",
+        "seq": 19
+      },
+      {
+        "at": "2026-09-01T06:56:50+0800",
+        "chain": "892292cfbf93476fe6ef7c269e93a3375bfa013854eecccd83b019c65116d01d",
+        "facts_digest": "42a3a67143243e22bc43cc668dd2e326e16ec7c68c9726326cd073789602af33",
+        "op": "attach-evidence",
+        "seq": 20
+      },
+      {
+        "at": "2026-09-01T06:58:03+0800",
+        "chain": "60569d56a89e6e42470c5e15988e2af45429866fce366f15b998db4e280e592f",
+        "facts_digest": "f71f08bb3d4ab3c490ab3d04f29d8efdf7976f1e69ebcfcd3dfc810e816f4e00",
+        "op": "record-run",
+        "seq": 21
+      },
+      {
+        "at": "2026-09-01T06:58:03+0800",
+        "chain": "71b6e33f8f16aae116bc1ce552f2b80b77bac8d1ff680adcfcff81ff2d85a4a4",
+        "facts_digest": "46bdd86a9ef2890207571efe6a4280215c9e1b983369413b703f6b64ca7e097f",
+        "op": "record-timing",
+        "seq": 22
+      },
+      {
+        "at": "2026-09-01T06:58:28+0800",
+        "chain": "9207cfbd2bb7b6aa29cf0c0cd5c0046598d0a5afef0e8ebf70ed5f74591d0130",
+        "facts_digest": "e8fc5e0334603c18dd25407d7fdf80a769ee5bc42ee2a18cf826153d1cd2e10b",
+        "op": "attach-evidence",
+        "seq": 23
+      },
+      {
+        "at": "2026-09-01T06:59:39+0800",
+        "chain": "9b0af6232f7b0782b4fcd879996108637dfd75356eee6b8f65453133af5fe91f",
+        "facts_digest": "93da13798c469b274bbd7970e0635037ef449e756f5915221c1fd2d96d93abb1",
+        "op": "record-run",
+        "seq": 24
+      },
+      {
+        "at": "2026-09-01T06:59:39+0800",
+        "chain": "0deea3b2afb2bec696db0c25f5f11f149a6f076e62ec6581655794db385e0274",
+        "facts_digest": "c14a1ca2ecb861b2cb9d8aacffffedb37b9aa953e1be27eaffef37131b212612",
+        "op": "record-timing",
+        "seq": 25
+      },
+      {
+        "at": "2026-09-01T07:00:06+0800",
+        "chain": "f5eb7eede5b193b8e903851333b170ac6128fafe7fd43cfce667909fa6ffde82",
+        "facts_digest": "afe197ee72b16849164c74bf0c12d63bc1a0da43841fbee3bd176c3226b88b6f",
+        "op": "attach-evidence",
+        "seq": 26
+      },
+      {
+        "at": "2026-09-01T07:00:06+0800",
+        "chain": "41006d62baf6b8fbdeeb7c8b8c67fa18a3f8140aa5c3b437a8951e319f1840e6",
+        "facts_digest": "dbfaaad56d4e9e5a0d07f33f2349a8a2c31173bd711dda8fa297f76b21394c4e",
+        "op": "declare-status",
+        "seq": 27
+      },
+      {
+        "at": "2026-09-01T07:00:06+0800",
+        "chain": "9047539193222fb9a8a71c638040a0ea8fbcefeb1ba0bf2cbe5a0e476632e272",
+        "facts_digest": "d03a0ac301b1f1963923f9f9997c41658dcaf624f2a61dc2487693b72ddd2545",
+        "op": "declare-status",
+        "seq": 28
+      },
+      {
+        "at": "2026-09-01T07:00:06+0800",
+        "chain": "376b5bff9704a277d1829390fe98fa4c22dedf5c633d2ccd37de75d80f2aa7a0",
+        "facts_digest": "6d29708d538751584b2f8802aeb01353feee4d619c2777a66c89b9d84de990a4",
+        "op": "declare-status",
+        "seq": 29
+      },
+      {
+        "at": "2026-09-01T07:00:26+0800",
+        "chain": "41eb965c0190ce2adefd962e82b0c85496dd19460324f3846af91c72e243de9d",
+        "facts_digest": "190015b110b42d45c6eee8b4ff7eef2c78a46edf979921c23642110dbadf4f55",
+        "op": "record-run",
+        "seq": 30
+      },
+      {
+        "at": "2026-09-01T07:01:35+0800",
+        "chain": "103892f091fbab7652a8d69734783ce70fe8894aa444961106314572ac4d5f61",
+        "facts_digest": "559dac87d1833eb9cc27d20cb420f3571530d2f7f5989674c29ece206590b5de",
+        "op": "record-run",
+        "seq": 31
+      },
+      {
+        "at": "2026-09-01T07:02:46+0800",
+        "chain": "42b4781fe126e3c77c225ce0a4f41aadf9fef0bf1826bd5f05648e4ff30293d3",
+        "facts_digest": "4b1291924230b3f5ff69a568d2b2acb35d69230c10e1f3e24d803aa032034e13",
+        "op": "record-run",
+        "seq": 32
+      },
+      {
+        "at": "2026-09-01T07:10:43+0800",
+        "chain": "64e667b1ace3a336ea28b864c9288b6a3f57b78d90bc4fdab9b040a3e229946c",
+        "facts_digest": "14d50dfdece24968c4350fea8f2a084efdef261c8436853656fa80e2a8337aeb",
+        "op": "audit",
+        "seq": 33
+      },
+      {
+        "at": "2026-09-01T07:10:43+0800",
+        "chain": "587bb674ae05f0314d61eb4b8a02622d97fd946d087e20d8f8a0b4f99b8c84aa",
+        "facts_digest": "1e79f6f6a14a58088f5b974c935f528958e175596939bf4f24c4e65d65ab77ec",
+        "op": "set-delivery",
+        "seq": 34
+      },
+      {
+        "at": "2026-09-01T07:10:43+0800",
+        "chain": "1b55de43b5e6581d5cd6519b1c9ceb0ef4a77d01b7384443db4a3e2b8966f8b4",
+        "facts_digest": "23e182b85e870f30a0bc360455a34b1b2cd804cce814655f313e9d248f17ae5c",
+        "op": "phase-end",
+        "seq": 35
+      },
+      {
+        "at": "2026-09-01T07:13:51+0800",
+        "chain": "ae36eab31ee356550c69a5700c4465a7b91403635ecbb59eb153e09bc448c93c",
+        "facts_digest": "8be454a9ab350b7a4ecab9dee101994d09ac83486262a06c3580637bd7e124f6",
+        "op": "audit",
+        "seq": 36
+      }
+    ]
+  },
+  "related_run_dirs": [],
+  "release_unit": {
+    "concurrent_layer_kinds": 3,
+    "high_risk_subsystems": 3,
+    "must_ac_count": 4,
+    "parent_program": "human-memory-digital-twin",
+    "plan_lines": 251,
+    "scope_hash": "db170e30d1727350072ae824606b9781909f234c957380ce74f16aa0100440f5",
+    "slice_id": "S3-T6-RELATION",
+    "task_count": 7
+  },
+  "repo_root": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan",
+  "revision": 36,
+  "run_id": "run-20260901-065117",
+  "runs": [
+    {
+      "business_terminal": "completed+valid",
+      "command": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/runners/run_twin_graph_public_consumer.py --harness-wheel /Users/denny/projects/simple-harness-sdk-memory-program/.local-test-evidence/2026-09-01/semantic-relations-build/harness-a/simple_harness_sdk-0.7.0-py3-none-any.whl --harness-wheel-sha256 d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd --harness-source-commit 3e7a71af1dfea2e065530208225ac13fc5f17300 --memory-wheel /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-build/memory-receipt-a/simple_harness_memory_sdk-0.6.0-py3-none-any.whl --memory-wheel-sha256 844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e --memory-source-commit 64284059f9ee82d886d85151a95c542660d09c1a --manager-entrypoint /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/adapters/semantic_relation_public_manager.py --artifact-dir /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-public-run05",
+      "driver": "ai",
+      "elapsed_ms": 2262,
+      "ended_at": "2026-08-31T22:51:34Z",
+      "engine_terminal": "completed",
+      "exec_exit_code": 0,
+      "kind": "root",
+      "lane": "fresh",
+      "recorded_at": "2026-09-01T06:51:34+0800",
+      "result": "pass",
+      "run_id_under_test": "rel-value-20260901-03",
+      "scenario_id": "REL-VALUE",
+      "started_at": "2026-08-31T22:51:31Z"
+    },
+    {
+      "business_terminal": "completed+valid",
+      "command": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/runners/run_semantic_relation_integrity_evidence.py --harness-wheel /Users/denny/projects/simple-harness-sdk-memory-program/.local-test-evidence/2026-09-01/semantic-relations-build/harness-a/simple_harness_sdk-0.7.0-py3-none-any.whl --harness-wheel-sha256 d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd --harness-source-commit 3e7a71af1dfea2e065530208225ac13fc5f17300 --memory-wheel /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-build/memory-receipt-a/simple_harness_memory_sdk-0.6.0-py3-none-any.whl --memory-wheel-sha256 844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e --memory-source-commit 64284059f9ee82d886d85151a95c542660d09c1a --case-entrypoint /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/adapters/semantic_relation_integrity_request.py --artifact-root /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-integrity-run24",
+      "driver": "ai",
+      "elapsed_ms": 56379,
+      "ended_at": "2026-08-31T22:53:04Z",
+      "engine_terminal": "completed",
+      "exec_exit_code": 0,
+      "kind": "root",
+      "lane": "temporal-fault",
+      "recorded_at": "2026-09-01T06:53:04+0800",
+      "result": "pass",
+      "run_id_under_test": "rel-integrity-20260901-02",
+      "scenario_id": "REL-INTEGRITY",
+      "started_at": "2026-08-31T22:52:08Z"
+    },
+    {
+      "business_terminal": "completed+valid",
+      "command": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/runners/run_semantic_relation_regression.py --harness-root /Users/denny/projects/simple-harness-sdk-memory-program --memory-root /Users/denny/projects/simple-harness-memory-sdk-memory-plan --testcase-root /Users/denny/projects/simple_harness-memory-plan",
+      "driver": "ai",
+      "elapsed_ms": 61872,
+      "ended_at": "2026-08-31T22:54:35Z",
+      "engine_terminal": "completed",
+      "exec_exit_code": 0,
+      "kind": "root",
+      "lane": "full",
+      "recorded_at": "2026-09-01T06:54:35+0800",
+      "result": "pass",
+      "run_id_under_test": "rel-regression-20260901-02",
+      "scenario_id": "REL-REGRESSION",
+      "started_at": "2026-08-31T22:53:33Z"
+    },
+    {
+      "business_terminal": "completed+valid",
+      "command": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/runners/run_twin_graph_public_consumer.py --harness-wheel /Users/denny/projects/simple-harness-sdk-memory-program/.local-test-evidence/2026-09-01/semantic-relations-build/harness-a/simple_harness_sdk-0.7.0-py3-none-any.whl --harness-wheel-sha256 d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd --harness-source-commit 3e7a71af1dfea2e065530208225ac13fc5f17300 --memory-wheel /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-build/memory-receipt-a/simple_harness_memory_sdk-0.6.0-py3-none-any.whl --memory-wheel-sha256 844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e --memory-source-commit 64284059f9ee82d886d85151a95c542660d09c1a --manager-entrypoint /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/adapters/semantic_relation_public_manager.py --artifact-dir /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-public-run06",
+      "driver": "ai",
+      "elapsed_ms": 3733,
+      "ended_at": "2026-08-31T22:56:19Z",
+      "engine_terminal": "completed",
+      "exec_exit_code": 0,
+      "kind": "retry",
+      "lane": "fresh",
+      "recorded_at": "2026-09-01T06:56:19+0800",
+      "result": "pass",
+      "run_id_under_test": "rel-value-20260901-04",
+      "scenario_id": "REL-VALUE",
+      "started_at": "2026-08-31T22:56:15Z"
+    },
+    {
+      "business_terminal": "completed+valid",
+      "command": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/runners/run_semantic_relation_integrity_evidence.py --harness-wheel /Users/denny/projects/simple-harness-sdk-memory-program/.local-test-evidence/2026-09-01/semantic-relations-build/harness-a/simple_harness_sdk-0.7.0-py3-none-any.whl --harness-wheel-sha256 d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd --harness-source-commit 3e7a71af1dfea2e065530208225ac13fc5f17300 --memory-wheel /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-build/memory-receipt-a/simple_harness_memory_sdk-0.6.0-py3-none-any.whl --memory-wheel-sha256 844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e --memory-source-commit 64284059f9ee82d886d85151a95c542660d09c1a --case-entrypoint /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/adapters/semantic_relation_integrity_request.py --artifact-root /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-integrity-run25",
+      "driver": "ai",
+      "elapsed_ms": 56354,
+      "ended_at": "2026-08-31T22:58:03Z",
+      "engine_terminal": "completed",
+      "exec_exit_code": 0,
+      "kind": "retry",
+      "lane": "temporal-fault",
+      "recorded_at": "2026-09-01T06:58:03+0800",
+      "result": "pass",
+      "run_id_under_test": "rel-integrity-20260901-03",
+      "scenario_id": "REL-INTEGRITY",
+      "started_at": "2026-08-31T22:57:07Z"
+    },
+    {
+      "business_terminal": "completed+valid",
+      "command": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/runners/run_semantic_relation_regression.py --harness-root /Users/denny/projects/simple-harness-sdk-memory-program --memory-root /Users/denny/projects/simple-harness-memory-sdk-memory-plan --testcase-root /Users/denny/projects/simple_harness-memory-plan",
+      "driver": "ai",
+      "elapsed_ms": 62906,
+      "ended_at": "2026-08-31T22:59:39Z",
+      "engine_terminal": "completed",
+      "exec_exit_code": 0,
+      "kind": "retry",
+      "lane": "full",
+      "recorded_at": "2026-09-01T06:59:39+0800",
+      "result": "pass",
+      "run_id_under_test": "rel-regression-20260901-03",
+      "scenario_id": "REL-REGRESSION",
+      "started_at": "2026-08-31T22:58:36Z"
+    },
+    {
+      "business_terminal": "completed+valid",
+      "command": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/runners/run_twin_graph_public_consumer.py --harness-wheel /Users/denny/projects/simple-harness-sdk-memory-program/.local-test-evidence/2026-09-01/semantic-relations-build/harness-a/simple_harness_sdk-0.7.0-py3-none-any.whl --harness-wheel-sha256 d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd --harness-source-commit 3e7a71af1dfea2e065530208225ac13fc5f17300 --memory-wheel /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-build/memory-receipt-a/simple_harness_memory_sdk-0.6.0-py3-none-any.whl --memory-wheel-sha256 844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e --memory-source-commit 64284059f9ee82d886d85151a95c542660d09c1a --manager-entrypoint /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/adapters/semantic_relation_public_manager.py --artifact-dir /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-public-run07",
+      "driver": "ai",
+      "elapsed_ms": 2068,
+      "ended_at": "2026-08-31T23:00:26Z",
+      "engine_terminal": "completed",
+      "exec_exit_code": 0,
+      "kind": "root",
+      "lane": "fresh",
+      "recorded_at": "2026-09-01T07:00:26+0800",
+      "result": "pass",
+      "run_id_under_test": "rel-value-20260901-05",
+      "scenario_id": "REL-VALUE",
+      "started_at": "2026-08-31T23:00:24Z"
+    },
+    {
+      "business_terminal": "completed+valid",
+      "command": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/runners/run_semantic_relation_integrity_evidence.py --harness-wheel /Users/denny/projects/simple-harness-sdk-memory-program/.local-test-evidence/2026-09-01/semantic-relations-build/harness-a/simple_harness_sdk-0.7.0-py3-none-any.whl --harness-wheel-sha256 d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd --harness-source-commit 3e7a71af1dfea2e065530208225ac13fc5f17300 --memory-wheel /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-build/memory-receipt-a/simple_harness_memory_sdk-0.6.0-py3-none-any.whl --memory-wheel-sha256 844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e --memory-source-commit 64284059f9ee82d886d85151a95c542660d09c1a --case-entrypoint /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/adapters/semantic_relation_integrity_request.py --artifact-root /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-integrity-run26",
+      "driver": "ai",
+      "elapsed_ms": 55656,
+      "ended_at": "2026-08-31T23:01:35Z",
+      "engine_terminal": "completed",
+      "exec_exit_code": 0,
+      "kind": "root",
+      "lane": "temporal-fault",
+      "recorded_at": "2026-09-01T07:01:35+0800",
+      "result": "pass",
+      "run_id_under_test": "rel-integrity-20260901-04",
+      "scenario_id": "REL-INTEGRITY",
+      "started_at": "2026-08-31T23:00:40Z"
+    },
+    {
+      "business_terminal": "completed+valid",
+      "command": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/runners/run_semantic_relation_regression.py --harness-root /Users/denny/projects/simple-harness-sdk-memory-program --memory-root /Users/denny/projects/simple-harness-memory-sdk-memory-plan --testcase-root /Users/denny/projects/simple_harness-memory-plan",
+      "driver": "ai",
+      "elapsed_ms": 62906,
+      "ended_at": "2026-08-31T23:02:46Z",
+      "engine_terminal": "completed",
+      "exec_exit_code": 0,
+      "kind": "root",
+      "lane": "full",
+      "recorded_at": "2026-09-01T07:02:46+0800",
+      "result": "pass",
+      "run_id_under_test": "rel-regression-20260901-04",
+      "scenario_id": "REL-REGRESSION",
+      "started_at": "2026-08-31T23:01:43Z"
+    }
+  ],
+  "runtime_attestation": {
+    "change_kind": "behavioral",
+    "changed_count": 12,
+    "changed_paths": [
+      "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-02/artifacts/exec-REL-INTEGRITY-0002.log",
+      "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-02/artifacts/exec-REL-REGRESSION-0003.log",
+      "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-02/artifacts/exec-REL-VALUE-0001.log",
+      "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-02/artifacts/rel-integrity-fault-recovery.log",
+      "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-02/artifacts/rel-value-business-result.log",
+      "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-02/plan-test-run.json",
+      "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-02/rel-integrity-metadata.json",
+      "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-02/rel-value-metadata.json",
+      "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901/artifacts/exec-REL-VALUE-0001.log",
+      "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901/artifacts/rel-value-business-result.log",
+      "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901/plan-test-run.json",
+      "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901/rel-value-metadata.json"
+    ],
+    "content_digest": "41137247aa268397f9c2213724cd64484267aa097604379dce53298e6d7ffd68",
+    "content_entries": [
+      [
+        ".github/workflows/ci.yml",
+        "-:67d63459c4222ca522b3ccb711eb07f019a4d9029d84a3dc8d00561957137d74"
+      ],
+      [
+        ".github/workflows/release.yml",
+        "-:fc12be1f48cc0422e231622869777e97d1d5d704dff204aea15964d54177ab0e"
+      ],
+      [
+        ".gitignore",
+        "-:748e612b2b9431203c85c401754521f51b9633e5f0f3f06070ceb11e944aa0d9"
+      ],
+      [
+        "ARCHITECTURE/ARCHITECTURE.md",
+        "-:e82ce7c24886817f301bcd30d6a62e1022d0ce33fcd21eb0558bb0a0bc996f1e"
+      ],
+      [
+        "ARCHITECTURE/PROJECT_STATUS.md",
+        "-:660455eeb9796a8d0fcb825a4613e26ee3a082b34e441ad19831e195fcaddca4"
+      ],
+      [
+        "ARCHITECTURE/index.md",
+        "-:a8ed3b0dcbf95d7857dc9e769c9b9b93ef8bc908366986331fc0575aded67f5a"
+      ],
+      [
+        "CHANGELOG.md",
+        "-:d94cf469f409076a75fc28d4609e2c4e7a2892de2815356dca35c79f59103ed0"
+      ],
+      [
+        "LICENSES/BUSL-1.1.txt",
+        "-:d90560217049db1d6020ec7cf482da4198bfa372dffd22270ba08fd8088cd93b"
+      ],
+      [
+        "README.md",
+        "-:854ecb468b2f31f738a64aad9cb8b73d09d535341169f7c5f361d489d2b3c9ac"
+      ],
+      [
+        "REUSE.toml",
+        "-:488b15c3aa7fee94ce93800bc9914d2ef3e2c5b609c87956472d2b7c3e858ab2"
+      ],
+      [
+        "acceptance.md",
+        "-:8a6c63c446202587c172cbb1718108f0fbbc95b75600f3e45a80a607fbac6359"
+      ],
+      [
+        "assurance-contract.json",
+        "-:7ad44b0740e18e45df44afa40d5ff4f18fde6348038227d89b85c24cb19531ff"
+      ],
+      [
+        "docs/agent-memory-v1.md",
+        "-:87fa01a3142b50ca2ad489a3398f1663a045a1899267c09065c39da5acc1f61b"
+      ],
+      [
+        "docs/architecture.md",
+        "-:2b925a4ccb229d9cce7412950cf8eccd36c258e220f04644e484277f6ee6e08c"
+      ],
+      [
+        "docs/build-and-release.md",
+        "-:d968c90e271db9924e311f45e83a8d3509bda85d0c35465db5bd5738d7dc73c8"
+      ],
+      [
+        "docs/harness-compatibility-candidate-0.5.1-ac2e2add.json",
+        "-:3cf6227997a98fa50012a25da546d0d75e9ae05aec4aa257d44da34cab7fb22c"
+      ],
+      [
+        "docs/harness-compatibility-candidate-0.5.1.json",
+        "-:97d6bfe50c6b6ee0a87a592067f25b9a9c206904011f353076191c24be7e739b"
+      ],
+      [
+        "docs/harness-compatibility-release-0.5.1.json",
+        "-:70d0a052d727c5dded0b4e8223a23ffe58863676e05a8e557f4c80c0f7c62cf2"
+      ],
+      [
+        "docs/human-memory-v1-schema.md",
+        "-:b48a5f23f5161dcd9285464a69b8064b1243270ef5eb18f2c6115084050daea7"
+      ],
+      [
+        "docs/integration-status.md",
+        "-:32501838d6260e40ba8dafc788fca814ec1722d2bba89cb1f577985041e4b114"
+      ],
+      [
+        "docs/migration-v4.md",
+        "-:9bf553cc692e6f69a581ac9a84553e13c1420f98f992041acc981aaed62fd23a"
+      ],
+      [
+        "plans/2026-08-20-memory-m1-recall-privacy/acceptance.md",
+        "-:de0512efed495ea99727572ca5b263d9f59a87f7c9c33cbffde14d17d327e63c"
+      ],
+      [
+        "plans/2026-08-20-memory-m1-recall-privacy/assurance-contract.json",
+        "-:d57053626179fae88995b112046de6508ee4813a12531eae4907762ec9e1219a"
+      ],
+      [
+        "plans/2026-08-20-memory-m1-recall-privacy/manifest.json",
+        "-:1f2113f9565a03eedc1b81266bd289df73c07b2030cffaebc9fb87f0966eb125"
+      ],
+      [
+        "plans/2026-08-20-memory-m1-recall-privacy/plan.md",
+        "-:4e86f9f14a3d17f46d3493d8ea13fcf513fadd2798cb42f79cb0b929f2546582"
+      ],
+      [
+        "plans/2026-08-20-memory-m2-persistence/acceptance.md",
+        "-:50c06681ab814b5d6a0e329d66044ecdd79dd8b306b79e95f2cf35239a0651cb"
+      ],
+      [
+        "plans/2026-08-20-memory-m2-persistence/assurance-contract.json",
+        "-:f0b5758754e060fa1cbee78b0a57e63e422e62c25cf6edfb8b72601bc16079da"
+      ],
+      [
+        "plans/2026-08-20-memory-m2-persistence/manifest.json",
+        "-:1f90c02425870afe6b1c24248937a62670c63315026ed323680758ef36c4b5b6"
+      ],
+      [
+        "plans/2026-08-20-memory-m2-persistence/plan.md",
+        "-:0ee2cf5d9efe234c4c19eaf02adcc19ac0e7e12d6325d1435be29c4c770a3708"
+      ],
+      [
+        "plans/2026-08-20-memory-m3-delete-lineage-limits/acceptance.md",
+        "-:4d1957241fba7f85232355ade2475d53b749bb5ae313a0241fcbb3297a0253ef"
+      ],
+      [
+        "plans/2026-08-20-memory-m3-delete-lineage-limits/assurance-contract.json",
+        "-:4339d446aadc1ba6e6f045deb0f9ee4fb22ebe3d5eb2dfce9eea9079dbfaa713"
+      ],
+      [
+        "plans/2026-08-20-memory-m3-delete-lineage-limits/manifest.json",
+        "-:d96e2a0ac2fc719b4b561172e1d251bb6233ab48e953219712ec801a479d6a0d"
+      ],
+      [
+        "plans/2026-08-20-memory-m3-delete-lineage-limits/plan.md",
+        "-:53a45ab5be6d78f10207429044bb03b83fa1e03cf1e8fb23c5ba673e4696e234"
+      ],
+      [
+        "plans/2026-08-20-memory-m4-cloud-embedder/acceptance.md",
+        "-:96327109c6f698513fe5308e16c35bdc3a92f61a0c2d92e1658d3b9c2b2b015d"
+      ],
+      [
+        "plans/2026-08-20-memory-m4-cloud-embedder/assurance-contract.json",
+        "-:5a61361ccdcc45f7e1696668635fce64084792f78214a2b638511b27c02c39e2"
+      ],
+      [
+        "plans/2026-08-20-memory-m4-cloud-embedder/manifest.json",
+        "-:41c45d54ff45d5c99af26f0461c3a12bac2982f2eded5540ba3b1af1d38ba961"
+      ],
+      [
+        "plans/2026-08-20-memory-m4-cloud-embedder/plan.md",
+        "-:01e8f97ef501b4552b3d054efada576c4698f548fd173f8da635decf18debbc5"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/README.md",
+        "-:458ac5cb1ad74aefc98c9a2cb55eafdd3b2633f1fd4298466ee70c26f960ba7c"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/acceptance.md",
+        "-:d0d78dfbd7f6d3743f047f9e2d2bd11fdbf60a1770cc13d20a7e8b432a26b2b8"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/architecture-baseline.md",
+        "-:c8cf207fb9cd8e49382ff7cbcf0de852d338aab37dc2e130d766f0ac9705112e"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/assurance-contract.json",
+        "-:49b13eabedd7af8b3d67ed84db52e128efe126ab3fc2a0d764e1d0db97e9be21"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline.md",
+        "-:960f14c79cb712bf159683b840b695fdd3d48f813ff5cbb01b943e9d4ec03e68"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/BASELINE-INTERPRETATION.md",
+        "-:23787b86ea4559483e47c17e6e3abebbc0e987d092158b05d58d59d302706036"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/BASELINE-MANIFEST.md",
+        "-:e56c24730a6686f822b5df43856a69cfe23e77b3450f1f74b53b3bf0d15e3841"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/host-baseline-state-v2.json",
+        "-:61ea0f1d0ceb843fb8a537de3e81fa36149852cd7d7cdd97566bc870a4a0531f"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/host-baseline-state.json",
+        "-:ce05279277ca9232dac39e5e9be0a3303060ea080aba968a824740406bcae2c9"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/host-worktree-shards.json",
+        "-:79157acf1bcf5f89adf8ab343218568b44a911a9625b85cdc87accc10f2fa3fe"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/original-2026-08-17/01-memory-sdk-cognitive-architecture.md",
+        "-:b68a33296f92b493c19f414aeae34335995d55b11dec03c0cb05c0774ea539c0"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/original-2026-08-17/02-memory-sdk-deep-dive.md",
+        "-:3aa737326810f49f756665caccede3896f2e8f3660eaa4454b82f0fb701d2d93"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/original-2026-08-17/03-memory-sdk-design.md",
+        "-:36533fd89a4c8990046fb65f5fd28b342fa8be4140b1ccb49c86c1b9ecc08f07"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/original-2026-08-17/04-world-model-architecture.md",
+        "-:85479ecf54a206531778926a50e5cb300f3f18d4cb4ac99a4bda4d9e669933d6"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/original-2026-08-17/05-refactor-plan.md",
+        "-:4891f4aef427a8e72cc57f0712c590024f0d99b9f017d9870d65b1808557b30f"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/original-2026-08-17/06-memory-sdk-architecture.md",
+        "-:322e498d03fa3b9084955917b874ba2576af75e28520d15d9e23a6a72a90f353"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/best-practices.md",
+        "-:ea11560dd4f3159a4331fa7ec78f7baf00a052354953611ffcbd9a505e7da404"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/evidence/phase-0-architecture-challenge.md",
+        "-:fc31f54ac2e52d403c7267e8742ca838941eaed51d01b3986e1681627f2543f1"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/evidence/phase-2-spike-index.md",
+        "-:819a1936cd15d094bdec514a7079d0ffb69a0a91791016bd5e45f42b621fae18"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/acceptance.md",
+        "-:c482949678ca1faf6e6116d84bb8aba40254f241e0b55f5b62486261cfce2e46"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/assurance-contract.json",
+        "-:7e47e55b3b2dfd9a397f3d2e9b9703af2e7c892a169f13fd24e4470e9e9ea9ad"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/baseline.md",
+        "-:c32be68bc40a70651329e89a7df37f747da2e647d35f172557325486914c4991"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/minimality-plan-pass.json",
+        "-:a16ebab2a54f22a78e754400f8e27cb66789fb066fa89e719a7f20a318451e50"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/plan.md",
+        "-:cce4ad26468adcf0df9ac3127d4f6e98251acb640350cb5ce418f2a32e5d263e"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/spikes/run_relation_spikes.py",
+        "-:8201bf2692bb35d68ed914fd2418fe27187d5d4d9848ce3e38eb58a0d76d3468"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/testcase-reuse-report.json",
+        "-:4d1baebdf087e775eb051dc56562fa810cd60559ab36cc897149648a4931bdb8"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification-spec.json",
+        "-:42230016f3356d73e321f8fa97ac495fb1b015bb68ac58523105af176ac4c85e"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/manifest.json",
+        "-:385cc45b227a19d2adcc67579681e1631c9515efc510b037925ab590bb414b3d"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/challenge-synthesis.json",
+        "-:e654b2c534bcd874b14ebf5dc611c8a3863aed4a956c2d16adafef518205ff5c"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/closure-round-2.json",
+        "-:e95806035fc74eafd18808afccab510149418acd145efe34fcfa346e4ecbf465"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/closure-round-3.json",
+        "-:03f19f2203e421c758fa47bec2c3dacd26952d01dfdede0e6e6a710fc05f0860"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/plan-test-run.json",
+        "-:4800b3d45a4e30f33cc3d8c9386aae0c3d3cf108c51d3d02e09dd930f5831122"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/primary-clusters.json",
+        "-:fe61fb44e136061bb1c28817d99e8df5447c80508d772ba327fc1e5816985885"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/primary-round.json",
+        "-:7bd6eb157dbb4af34c89903ea4d50a259f0b591b94a158a793703fac1788360b"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/specialist-cluster-immutable-evidence-rollback.json",
+        "-:6021a05e0f070b230f095fb4610fb9db5fce59cbb6b036a05bb856b7eb7283ac"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/specialist-cluster-parser-to-backend-audit-chain.json",
+        "-:5e09dbc9e0db84285170f21aae7317ca749d1919ba2516987f774ce825a0927f"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/specialist-cluster-relation-lineage-compatibility.json",
+        "-:bc761debdd5ee35b8a715827c1d3673919a73d11862af921fad8443990f230cb"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/specialist-cluster-value-and-oracle-sequencing.json",
+        "-:44923fa8c7f0f71bb5532d4840d4c63de44803b1c5e32c8b51dff9ec5b740128"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/testcase-iteration-03.md",
+        "-:4db62fe59e3d13275cbc8c5c79e1baa6fa206e1c5bca8046cbd5b3cb7886cfac"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/testcase-iteration-04.md",
+        "-:1276c2f4f773e3dea040fdbfe384f8134abba98f170080748a70a5139f9d9711"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/testcase-iteration-05.md",
+        "-:bdb049e9b6a6cebca59bd4269a84f08efb30461362db62832541cdae859ba1a4"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/testcase-iteration-06.md",
+        "-:57ca43e73e3416ef663a1436577c3ed891d5e9b332404b5ba596d73779597f60"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/testcase-iteration-07.md",
+        "-:735cd4c641a7e0fb1e422feac8cb765d4accb9efaac21588f2424f78e12b9a99"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/testcase-iteration-08.md",
+        "-:9dd020bc27fc464d2b113baf3f84dae9940e4021c9c764970ad08dec5a6051dd"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/testcase-iteration-09.md",
+        "-:293df4c13f247ebf4e14de0fa3fa2fcaebaaf615ce43fd5096815cd02139fbcd"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/testcase-iteration-10.md",
+        "-:72723b0ff15669249e4fe0922d1d80aa215dc3b75e9c3590568725c5dfa8a304"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/plan.md",
+        "-:6327e6c36af648f021bb8b4eebcd8b730c56f647b3badf33eeeb727022774d8b"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/README.md",
+        "-:67dbe31a1924ec13110805b94feddf29c5c52112c9ccac13b989cca84101bbe1"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/generate_corpus.py",
+        "-:c5720e94331d2e2c2b0b356ca08a902336837267582d4b5c656caa966a3369cc"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/manifest.json",
+        "-:c8ec4bcbd667dc5445538c0958f1d1dbc2637db6899ac0299403bd63536dde13"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/recall-candidates.jsonl",
+        "-:e3d39fdf68ded5c4af94b7c7ca04587b724b46643d1ea6fd2ccecb0003e039d5"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/validate_corpus.py",
+        "-:e6036f731220964b5677ad1c776d074318f9d3c558d2278fe9d49be863464122"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/01-human-memory-cognitive-architecture-2026.md",
+        "-:e5923e42ad4be4730cae16bed14d438fabac83c020056dead74083f49c6207ef"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/02-memory-retrieval-routing-2026.md",
+        "-:dab25d91739a5b54aae25da1baff0fd4d012d8f3ef23a4ef60c05a92f8680f0f"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/03-recall-router-method-audit.md",
+        "-:a8570c67c075ae9112a08629345f6ceb304b3044edd35d7f1831fba08ec4c422"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/04-memory-write-evolution-audit-architecture.md",
+        "-:5cc8a2e7b7081ae859b8b2046e4cda1fc6aed6f81b98c350b08a623502b220b6"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/05-single-stream-dynamic-context-architecture.md",
+        "-:4f7527d78234b1dff8eb1c8938609f7e7d36a5e335c6c91b1eeb61ba003cc0a7"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/06-task-scope-code-execution-architecture.md",
+        "-:3eb568683dbe58927480430333a7f7a96cfa5ffada873a1ea5372a10d7ea75b8"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/07-durable-task-scope-archive-and-retrieval.md",
+        "-:8edc4f38ea11cb5a529dbee6f68f11584ef028adbacb51baf7622bb46fc95f23"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/08-task-scope-creation-and-folder-binding.md",
+        "-:8eb2e447f5dc3f6c41aebd9cd0822125a9ca5bea74659e639aeb114596c7910a"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/09-multi-root-task-scope-options.md",
+        "-:7d70302fec56ed420aeec7d99a4adb45bf77a13961f7756d80b553a297f219ef"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/10-task-scope-information-carriers.md",
+        "-:6425f0afcabc8c0209298ebb76e74a08057b37424aad5c9fc3b2a9069a484ac3"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/11-permanent-audit-privacy-and-logical-forgetting.md",
+        "-:c22783f3147d1d4f2b9803c3ed2a084ef35a7212defbd36dfd32d83592ddd458"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/12-task-scope-event-and-semantic-update-pipeline.md",
+        "-:d88e45d7ae4682133915acabc79ab1b42c9d46d6b54e21aa92774db7362fbb17"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/13-task-scope-routing-outcomes.md",
+        "-:bcd090668ded01d9ea42a97e2069902d5c56002616c16009b03db658549a97e8"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/14-initial-version-core-settings.md",
+        "-:32cedf0a1a58df1dc836a0e416e23e0df9f4b1a9d2b15a29d3e748471b56a73c"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/15-single-react-run-and-future-concurrency-boundary.md",
+        "-:c3b84973d1910b69a9b49ad3c15320fe322197c144c044f030e6471165b6274a"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/S1-protocol-and-react-barrier.md",
+        "-:0acd4026bed005e133f9e823855c3fffb8ee1f845a1db256c83487d1a6ce6369"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/S2-memory-evidence-audit-suppression.md",
+        "-:70fbeafb66659ac196ecebad994e0695ff7203633e175b802141a5a174e5797c"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/S3-cognitive-systems-recall.md",
+        "-:1996b8bcac3a64e984415d10aec0cb6ac671ea7c1f6a5eca2b71a8bdb1c8353e"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/S4-host-primary-taskscope.md",
+        "-:79f9772add15af1d0690c3b21c74f9f89b488a0764b7dc5fbb99db72225f0f0c"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/S5-host-context-integration.md",
+        "-:8be7828b889816bafea3385e397e9c2d5c9bcfd7a26028640cd34c20ccf45ff6"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/S6-ui-and-program-verification.md",
+        "-:fa537bd77b84aabc8f78cdddfa8081c1fcaa0cf70b69ca3ed1a5f086ea7dfa67"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/V0-verification-and-spikes.md",
+        "-:8d16d048abc14ad4a9437ad57333edfb252086bad6324755a165b832f7177070"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/spikes/README.md",
+        "-:ddf7c03d331571636b0b28a8b606001451056e8e0c70ed105543eb7d52d6ff50"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/spikes/manifests/spike-manifest.json",
+        "-:13a2f2b5a1f4d74993a573bac31ffdddd228dd782a78c31411eea04caaf3c326"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/spikes/results/capacity-results.json",
+        "-:8fe7cfd072393c341ecfe0c8fa7fdd5f8d94ed86fed55132695de5281919f296"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/spikes/results/protocol-results.json",
+        "-:cae43f696e195311d88619455ec77661365dade255d0aa1334065b1215815a01"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/spikes/run_capacity_spikes.py",
+        "-:b19896217ac7b28a8af423d4fb0410e86e46bbf74f793de4a236a01270048dd5"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/spikes/run_protocol_spikes.py",
+        "-:e2e04d787947b33f0f6a9c45def4046b4ef5e62ee503aeae3e39458c9c2d3884"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/verification/manifest.json",
+        "-:3a1f79a45b8c0250ecc13c02c0f1b376fd40b72f19ecce6bd6960b764634f4c1"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/verification/testcase-reuse-report.json",
+        "-:10e07fd2c0463276687e26200cd0286d161320c38733eef6d9d920b5068d25d0"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/verification/v0-closure.md",
+        "-:1482f961d03922d2a909797bf6af61fdce923b31493832cb741499af8897c430"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/verification/verification-spec.json",
+        "-:b70965a31b63742c23bc27d2607e6552d12a13c782ddda8ae8c2fa22bcdfb178"
+      ],
+      [
+        "plans/phase1-local-core/gate-manifest.json",
+        "-:b7a5e28a648c62fafec25982e46005f8aa8abd84a723ba71f752f6927834d3af"
+      ],
+      [
+        "plans/phase1-local-core/plan.md",
+        "-:c9c11685c99a464181f21e80039b3b470717b3acce37c784cf93d2e53064e913"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/auditor-input.json",
+        "-:3c8f4706cd4b2586079eb348490d254c128354531164d2990b92b954da66f393"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/auditor-output.json",
+        "-:d1b3efb9f5ed65f8cd357d9eee096cc22ba68ee3a6d8738c5f455f1c9903f9af"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/gate-receipt.json",
+        "-:3799930bb101345d046d2e3ed105bb1db02dd33e7afbb34a970a4b02e552ae27"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/plan-test-run.json",
+        "-:3f182d278006eb80c154cc958406ff8d82e84218d3aa9b573e484689f87b3e2b"
+      ],
+      [
+        "plans/phase2-embeddings/gate-manifest.json",
+        "-:4e60719678d5fb8642c475dd4d626a86eee8dc038e431d7d29bd2b5f402b3c49"
+      ],
+      [
+        "plans/phase2-embeddings/plan.md",
+        "-:94217ead11e300de26ace12504dba11a172ed6b58d01375f678eb869906b1422"
+      ],
+      [
+        "plans/phase2-embeddings/verification/run-1/auditor-input.json",
+        "-:b01b4f2c832e89da0f1d1cd9a7af494bb6166f62b3bfd055fce1c2689b217d49"
+      ],
+      [
+        "plans/phase2-embeddings/verification/run-1/auditor-output.json",
+        "-:c4422152fda941ef010fe9a23b708feb75f9982ec66cab6fa47ef27210d07798"
+      ],
+      [
+        "plans/phase2-embeddings/verification/run-1/gate-receipt.json",
+        "-:950949cc79348bcfef9c299bd0b8a628ca8c1c60781df27b6245a5fe4257d0be"
+      ],
+      [
+        "plans/phase2-embeddings/verification/run-1/plan-test-run.json",
+        "-:d7057bb3908a13d4972bf963565d7ccc711daa558ad4ff738ce9c79edbb82eda"
+      ],
+      [
+        "pyproject.toml",
+        "-:2e0708ace407788f9f6566337b3c2437a9c64973a47a1879f3a9874f2610e02d"
+      ],
+      [
+        "scripts/harness_compatibility_consumer.py",
+        "-:47c733a538345e96e94f1ed9f592905788650d47216c06dbebd66114d375a622"
+      ],
+      [
+        "scripts/verify_harness_compatibility.py",
+        "-:87bb05fd4932248958c75fad00d51d1317a1a3059e711db7312cc92387324ab3"
+      ],
+      [
+        "scripts/verify_quickstart.sh",
+        "x:e8ddc0fcc7b7fb077f0ccc55e7847f5b2b56d5de7ce3cbe476dd8dced2dfb230"
+      ],
+      [
+        "scripts/write_candidate_metadata.py",
+        "-:7797fa9cbbb753c182a7ff769910167b2fa8b830e2aff9690ff99f7cc3e31623"
+      ],
+      [
+        "src/simple_harness_memory/__init__.py",
+        "-:38f7017ddaa33cdda0629937d38d7b9d69de5f95af4fb13d2c19776f278ec970"
+      ],
+      [
+        "src/simple_harness_memory/backends/__init__.py",
+        "-:a3a54e31caa7cad22ea8a51a4a552e57a3656ae3308534f58408a404334cf551"
+      ],
+      [
+        "src/simple_harness_memory/backends/base.py",
+        "-:555e3ecf10298da4b673969446e06f16d0577cdd6aa3161f4973c6b00292a25b"
+      ],
+      [
+        "src/simple_harness_memory/backends/mock.py",
+        "-:c16ae63240796deb2406b2947635046b1ffda0dd16f3ea94cae1a16944507877"
+      ],
+      [
+        "src/simple_harness_memory/backends/schema_v5.py",
+        "-:e5d15358ce5fdadfbcecb17375dbf94e0b265e6f327a7769866f94760ddd0b4d"
+      ],
+      [
+        "src/simple_harness_memory/backends/sqlite.py",
+        "-:29118efc7545207426c95c1771863ed08a2f7e125303d4043e4d1bf355b1147c"
+      ],
+      [
+        "src/simple_harness_memory/backends/sqlite_v5.py",
+        "-:dcc3697cf56ddbce85cfa72d7b302b020d03317f5a8a0ecbb03e8c822e064796"
+      ],
+      [
+        "src/simple_harness_memory/backends/storage.py",
+        "-:74446fcb41239ae5e9ead85b9d9d41eaddf82427431a016f1a3d6f7909cd8cc3"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/__init__.py",
+        "-:67c31f354d34b748dfd9432b02a8721862c9b2f9704ad2f95797c62b08d7927f"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/decay.py",
+        "-:98b8a2125fbd40188bbd6dd15491816d3d571a686d5fcdcbbaa52652d9cfa5d1"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/salience.py",
+        "-:2d96ea6377558f6cb57ed7e97a553931e3f6f299d50550937851a1697b473902"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/session_affinity.py",
+        "-:e6fcfc18202b19c878ecea49be9e97eaba314f55d923e584bf22dcb4cb46b80a"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/twin_builder.py",
+        "-:b344ffe5788c011b1ae41b90069600f4a1bd3ac0adaa9b47a7a4d0ea24ebcc15"
+      ],
+      [
+        "src/simple_harness_memory/config.py",
+        "-:ee17c152efcc537ed2cc2531c53d9a20f59484d5f8845c65a2a6bebe2721d924"
+      ],
+      [
+        "src/simple_harness_memory/core/__init__.py",
+        "-:7207c5dd7395b7ee57ccda3f25f0297c65fc57147ef87d30a2dfaf00752f078a"
+      ],
+      [
+        "src/simple_harness_memory/core/audit.py",
+        "-:76d771502fe40e948306d6b4cc739c025620f0357ee90ec0da5678e40c7d7f46"
+      ],
+      [
+        "src/simple_harness_memory/core/cognitive.py",
+        "-:63766c51f85219afb5c994124b7a2ddfb2e3905c5575620bfb360f34cbf05205"
+      ],
+      [
+        "src/simple_harness_memory/core/conversation.py",
+        "-:6ff87f184c98529e4ca6ae033b2fcfdb141bcc56251a5feb32c4cb229e546d79"
+      ],
+      [
+        "src/simple_harness_memory/core/embedding.py",
+        "-:bf51b994fe76d1dcfd7adc13d44c8b83efad6b64e570ca8940c4fcfeb8f2a6db"
+      ],
+      [
+        "src/simple_harness_memory/core/errors.py",
+        "-:f33701b5da3440c19a3d347731391b169d62af4fbf4aeae5047e69905287921e"
+      ],
+      [
+        "src/simple_harness_memory/core/evidence.py",
+        "-:e0b549a6059ccde1f2148fb4f42409fa2bfd701e9ce27b89fbb2c81922141570"
+      ],
+      [
+        "src/simple_harness_memory/core/identity.py",
+        "-:943ef0e1d97e38979e3f1471793131342c44db99f91050023034f9c2bea4dbe1"
+      ],
+      [
+        "src/simple_harness_memory/core/jobs.py",
+        "-:792315f207d20ee438ffc38fea8b2b51f6d81ca32cd332ca25c089e9e80df2d1"
+      ],
+      [
+        "src/simple_harness_memory/core/lifecycle_results.py",
+        "-:4744dc2ddc0386fa7cf091d5041d116001cf3d702f75a8caa228f8105c7cf842"
+      ],
+      [
+        "src/simple_harness_memory/core/manager.py",
+        "-:fb46640388dd672868c65106b5b3d1ae4c20f8634c577928c0f42d60104f415b"
+      ],
+      [
+        "src/simple_harness_memory/core/models.py",
+        "-:e2f7e0b8b38627714342b156467f9cf68b975b54811d3309aa6f40aa44fd4dab"
+      ],
+      [
+        "src/simple_harness_memory/core/mutation_receipts.py",
+        "-:76e538170e15c89994e4dee11fcaf98003cc01f63f9c722163c80f189436a987"
+      ],
+      [
+        "src/simple_harness_memory/core/mutations.py",
+        "-:effbbfa429859d8cb46ecf1266e43559299d5456185b9e0ce0cb06eb5d8fef39"
+      ],
+      [
+        "src/simple_harness_memory/core/observability.py",
+        "-:2733de92f0b8188dc430f005685cd558d5e7381b8651dd87d3c77011b463b254"
+      ],
+      [
+        "src/simple_harness_memory/core/port.py",
+        "-:79fbc684e9f1279df9728e55b3dcbd3b18c67bbf2b29cf72227724a46f3cbe79"
+      ],
+      [
+        "src/simple_harness_memory/core/prospective.py",
+        "-:1fff05456db666399f0ebcc94f3cefe69966f847f40a26c16081ce8a81122838"
+      ],
+      [
+        "src/simple_harness_memory/core/recall.py",
+        "-:37dae90c3329810ee6b90f89d564249c01271444a4aedae13af3ee0cbcb48c7f"
+      ],
+      [
+        "src/simple_harness_memory/core/short_horizon.py",
+        "-:6d57deb453ea117af1a493ab14e745cb50c8adbda7e4c1cb87be9d8c35f1dfbe"
+      ],
+      [
+        "src/simple_harness_memory/core/suppression.py",
+        "-:8964ebb1a5caf9e8af4844e4edf6d2dd9db58497f99a685b62889ad075b2af6f"
+      ],
+      [
+        "src/simple_harness_memory/core/twin.py",
+        "-:059b3b4912afe84df18e436bbb7cd3ceee0be17812d9d5cf033e00cc33493be2"
+      ],
+      [
+        "src/simple_harness_memory/embedders/__init__.py",
+        "-:3ad0863ec2c06d0ab76d529cbcf100e14e2c405b36392604b579c1f36789c13b"
+      ],
+      [
+        "src/simple_harness_memory/embedders/base.py",
+        "-:9259c3e5ecf3d37f6aba643cabc33870b90e6217c4170ca3eb2d268eaa2c3ffd"
+      ],
+      [
+        "src/simple_harness_memory/embedders/bge.py",
+        "-:d8544e1933330256036c08c85277c5bd69bd260c1cd17401502d03c31403af9e"
+      ],
+      [
+        "src/simple_harness_memory/embedders/cloud.py",
+        "-:4484bae2a578b33fc1435fd7cb441a304257b0e051bf34ecf91688061e1912b2"
+      ],
+      [
+        "src/simple_harness_memory/embedders/factory.py",
+        "-:0ef44e07f8e2ef79759180893d7fc7b0bde0c9a1b55c6f1e26ca30d8a57971af"
+      ],
+      [
+        "src/simple_harness_memory/embedders/mock.py",
+        "-:30900d01f1eeeea25f6b4a12b69fba687b994571a0e1b10c5ed366554e5cb348"
+      ],
+      [
+        "src/simple_harness_memory/embedders/openai_compatible.py",
+        "-:bef29a39d2364bdb1e5561242d728e8a94ee565bd4e4fb30439f5426883873b3"
+      ],
+      [
+        "src/simple_harness_memory/features/__init__.py",
+        "-:6806195e95a58a039fed60ab0ec0d393f73ae569fcac27ef5b59d9da20ab1d24"
+      ],
+      [
+        "src/simple_harness_memory/features/lexical.py",
+        "-:0236a2c91e0d455aeb74826b94f0587d9f5a8840fcfd22d574ab7c39aea1690b"
+      ],
+      [
+        "src/simple_harness_memory/features/reranker.py",
+        "-:939e26bdada527a2a88dc9dab01e3707bcc9f68a114c3f06fed412c0bf88b6d2"
+      ],
+      [
+        "src/simple_harness_memory/features/retriever.py",
+        "-:96a4ac30fd10a15317591353bd460741c4d3570163ea3fbfe6233a9397abd20d"
+      ],
+      [
+        "src/simple_harness_memory/features/rrf.py",
+        "-:21a95fc7802d8a2daefe3bbc602647e73760c13fc9e1128dc316ff5c27800feb"
+      ],
+      [
+        "src/simple_harness_memory/features/summarizer.py",
+        "-:10c71b4e8c3400b7a43a4f04b576583f61b48b64b4ffa687550ea9a5d32db51f"
+      ],
+      [
+        "src/simple_harness_memory/migrations/__init__.py",
+        "-:3e3fac9e755d913f8ba499aff3ce1a4830293ce4582685cb2f31edc092408b62"
+      ],
+      [
+        "src/simple_harness_memory/migrations/contracts.py",
+        "-:ddd1efbf081b0ddfdd0385c6ccafcf1a0a92821ea56afff420e8ef48b2dd7d7b"
+      ],
+      [
+        "src/simple_harness_memory/migrations/runtime.py",
+        "-:9acddf2867000b0c85f23ac011890bd3e8d9187aebd1d7d316e95b66a87df45d"
+      ],
+      [
+        "src/simple_harness_memory/migrations/v3_to_v4.py",
+        "-:c020f950b8343e4495bf49b2e4d0dd6e843ecfc3cb6b2b687e413cdc68497b9d"
+      ],
+      [
+        "src/simple_harness_memory/py.typed",
+        "-:01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+      ],
+      [
+        "src/simple_harness_memory/world/__init__.py",
+        "-:02ce6af950b38f653871f14e12736aa5335d8113694c01f51983d2ba99d0c00f"
+      ],
+      [
+        "src/simple_harness_memory/world/events.py",
+        "-:65631e08add963bb115a2c94d0bbb9276e6a2165c022d8855a9d0481dc889aca"
+      ],
+      [
+        "src/simple_harness_memory/world/geography.py",
+        "-:82015e9375d4976817aee52966f3f471cf5acab4a3c73c6c2a9698655f4c98f7"
+      ],
+      [
+        "src/simple_harness_memory/world/knowledge.py",
+        "-:0b10f5c30a7ea1eee01b62eda341160b6ff37366cc29b7c2d1e5d7f4c903ac73"
+      ],
+      [
+        "src/simple_harness_memory/world/model.py",
+        "-:48fd449aa32c6c5ee40f6c6b695be28ff40f4f5d7c4ee316b7526ab18401efbf"
+      ],
+      [
+        "src/simple_harness_memory/world/port.py",
+        "-:e790b246a8e457759800e3577af7ada7cf00c57196cad9b8edb8eb1e752f9f65"
+      ],
+      [
+        "src/simple_harness_memory/world/temporal.py",
+        "-:0808c2159f1c0e795d5f3b301eea797f3709d4bdbe381ba907562eecff71f323"
+      ],
+      [
+        "tests/__init__.py",
+        "-:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      [
+        "tests/artifact/conftest.py",
+        "-:4aa96852d23fa2ded800871da2dc039eafb25fca27b4cc05d54fbeec60be3696"
+      ],
+      [
+        "tests/artifact/public-api-0.4.0.json",
+        "-:7f18a5d26235b3713455876774c35e5ced2f69f466ff46225f0f5ca10668d52e"
+      ],
+      [
+        "tests/artifact/public-api-0.5.0.json",
+        "-:79d4be9a34ec6f45d4d1892aa80afe9f9647d81663cff833d84074a6cc1cbb62"
+      ],
+      [
+        "tests/artifact/public-api-0.5.1.json",
+        "-:4cbbb289c1f23353fe0e2836b60ee49d4a1e157d9baaa9d0347b81ebb5fbb7e4"
+      ],
+      [
+        "tests/artifact/public-api-0.5.2.json",
+        "-:11cc765df5634e315163b73a5dbb9a0d2fc54d3ad4683350cde1982990c7eb89"
+      ],
+      [
+        "tests/artifact/public-api-0.6.0.json",
+        "-:76e8faf1c85cd697944c6f6a7c7a69f4b90f5b55deeba37d85e2e363fc7091f9"
+      ],
+      [
+        "tests/artifact/test_exact_wheel_consumer.py",
+        "-:d44ac669741a64342538ed8c38ceb6794e52500e9573451ef70a25c2f756a1c1"
+      ],
+      [
+        "tests/artifact/test_harness_compatibility_receipt.py",
+        "-:33b8cade08dcdfdd463fd9c60c061b4ba436e057f53e030f45f192cddf8c2123"
+      ],
+      [
+        "tests/artifact/test_harness_extra_resolution.py",
+        "-:a7ac65ea8468b062a022d716212a7f2e1919793c1c1f6b6970286926cb451568"
+      ],
+      [
+        "tests/artifact/test_legacy_public_paths_removed.py",
+        "-:898467b63d70c2d997063f821bfc857ef5a80d7d578cb4e879e56db7d16b615a"
+      ],
+      [
+        "tests/artifact/test_public_api_snapshot.py",
+        "-:cdd9084af539de1f6e146bd4f09e00e986dbb62310a254d80295bd1421912e3c"
+      ],
+      [
+        "tests/artifact/test_release_candidate_contract.py",
+        "-:f5eeae1719658d94b16cce02d76b6a49f5ad0d43853b58f3ef42687f4dbcaaee"
+      ],
+      [
+        "tests/artifact/test_twin_graph_isolation.py",
+        "-:33b4fc9f12eb9ae04c9558dbd81acd83bf261d017529c4f290e4a08b21ddd1e7"
+      ],
+      [
+        "tests/fixtures/__init__.py",
+        "-:2d44d8c90aeb3fa6a02fab2b90a678adee9454849742041113f6c6d0cbbf2571"
+      ],
+      [
+        "tests/fixtures/legacy_fact_jobs.py",
+        "-:c64b67295d2033516a99eb90a8c1cb915de0a71ef4e2782fa0041e992c073005"
+      ],
+      [
+        "tests/fixtures/legacy_facts.py",
+        "-:4e1927b58fae726d97e02594db971291ad1064c713626fd8cff9fd400449cef1"
+      ],
+      [
+        "tests/integration/__init__.py",
+        "-:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      [
+        "tests/integration/test_agent_memory_v4.py",
+        "-:09541784e51a54425fcd317bda85a9496bb27399d7f0029305fc271cb5f8170f"
+      ],
+      [
+        "tests/integration/test_audit_access_v6.py",
+        "-:70a1bbce84505715eec197719870c1eb68e648eca4130e28df31c005b0c91d38"
+      ],
+      [
+        "tests/integration/test_audit_ledger_v5.py",
+        "-:be178e2ece58f6a287717c0deabd943778a023228849b7a8ef2e62dd947940f4"
+      ],
+      [
+        "tests/integration/test_bounded_recall.py",
+        "-:24b7befa75c259398216ff1871b18e9fad19ff0387819b10edfad99cb7bbc2ac"
+      ],
+      [
+        "tests/integration/test_cognitive_mutation_repository_v5.py",
+        "-:caaed86f2db76f7849b3dfe0ea7b2b1263f036f9d3da3f16585de73357f670df"
+      ],
+      [
+        "tests/integration/test_cognitive_schema_foundation.py",
+        "-:5b5d31c13d9d392824e7d10476cf81a3f6b4326fe55337ceee9b607917aefdd0"
+      ],
+      [
+        "tests/integration/test_durable_memory_jobs_v5.py",
+        "-:7bac63c667123c57e36873892827711b2936919a147ac2b3ebfed0fa43e8103d"
+      ],
+      [
+        "tests/integration/test_evidence_ingestion_v5.py",
+        "-:8b26fd00caaeca07cda44d83a75f11b1c43b509cdd5e8b03433be40b23f1bd08"
+      ],
+      [
+        "tests/integration/test_manager.py",
+        "-:f47fd51a0409545d75e4ece7e1e344a64dfe8ea45c36ac948fc7ad40ce80efef"
+      ],
+      [
+        "tests/integration/test_observability.py",
+        "-:37fc8e583416c6386627acf7da1548485785ce3a7dc37f19ae4ae4d39eeae271"
+      ],
+      [
+        "tests/integration/test_procedure_observation_repository_v5.py",
+        "-:7ab48f5a4164eb80e3b835571c61ae8a1b00b81a732d9bf292b38ded6dc17ced"
+      ],
+      [
+        "tests/integration/test_prospective_signal_repository_v5.py",
+        "-:01d42bf69134bbc38515b3604ca74d7ce5a4ac1194a566483f0e740c0a9d8101"
+      ],
+      [
+        "tests/integration/test_recall_result_idempotency.py",
+        "-:a4cc236b69dff99360da4af6ff870b38c4a652ace3b99f8dbaf3c8ac1eb32e0e"
+      ],
+      [
+        "tests/integration/test_recall_retention_horizon.py",
+        "-:956296459017c967fc5692e84cc220992e4868abbd33258e34d643300f761622"
+      ],
+      [
+        "tests/integration/test_schema_v3.py",
+        "-:eb0d901a944d4cb8fc42062b025ce2f7cc1eb00e8cef10f794c5dbf3fee2e775"
+      ],
+      [
+        "tests/integration/test_schema_v5_initialization.py",
+        "-:a115721a91d31db7dcc4ea0985d88e0eb0575da867cc3813479e957a6ec3bfc1"
+      ],
+      [
+        "tests/integration/test_short_horizon_repository_v5.py",
+        "-:d23d298465e5b6f301a013d70036bc8b855c7aa2be49260a0e25235e7add6aee"
+      ],
+      [
+        "tests/integration/test_source_event_idempotency.py",
+        "-:a03e30adfb53e2bc1ce4fe53defed7688653b64494418d7c77e6b6382fab025c"
+      ],
+      [
+        "tests/integration/test_sqlite_backend.py",
+        "-:ffa4c3d43615e7ece6a086b82dc09d0a8b06f2f40624b11077ceac37c5f27c9e"
+      ],
+      [
+        "tests/integration/test_sqlite_concurrency_deadlines.py",
+        "-:e4969d674eeeeef75518c4a89280ade0811996eb16f2d8f31615c2f537f2e469"
+      ],
+      [
+        "tests/integration/test_sqlite_s4_operations.py",
+        "-:e5093269e550253e772ff72f776f0cc4d19f16f6bae93495f971d125fc7ae7f9"
+      ],
+      [
+        "tests/integration/test_storage_permissions.py",
+        "-:64ce566af617391d19cb119547b0617a2bcb77448b261560538c7aead82899ff"
+      ],
+      [
+        "tests/integration/test_suppression_v5.py",
+        "-:c73dc0ccee61d3019ab3de9936249c4b1185aeb91cb7e47eef8f52050a229940"
+      ],
+      [
+        "tests/integration/test_twin_graph_view_v6.py",
+        "-:359f937d74a3e3da7b9c112eaf76da9bb32d2a3e05ac2d1e63a307b739f62232"
+      ],
+      [
+        "tests/integration/test_typed_recall_v6.py",
+        "-:d1fa1ec437ab1561a93c06d32ddef0da58554813e4d08dbe85f65eeb707a389f"
+      ],
+      [
+        "tests/integration/test_user_scoped_maintenance.py",
+        "-:bc22faa13fd32837e82ee66e30ac8962b63786c5b037118737881cd9e5588382"
+      ],
+      [
+        "tests/integration/test_user_session_scope.py",
+        "-:000a4ec838e89c9d4223ba961089add345579202a9ae9b0e762bf7f6c66b0909"
+      ],
+      [
+        "tests/integration/test_v3_to_v4_migration.py",
+        "-:f1b5ab2cc5f152fd68156a523665c056d52c5dd2239c10c70b116324abc6d4c8"
+      ],
+      [
+        "tests/unit/__init__.py",
+        "-:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      [
+        "tests/unit/test_cloud_embedder.py",
+        "-:25aa2977abd15c5a23a032a13aab07966dbce2f697446803186acce46a274ec4"
+      ],
+      [
+        "tests/unit/test_cognitive.py",
+        "-:bc2d045c6e07b022c523fe17e71a83033d83c038d35316b20b08abecc644ffc7"
+      ],
+      [
+        "tests/unit/test_cognitive_kernel_v5.py",
+        "-:f3c1cc486cb2da5e900e0f3b2d9db8d3d13a4feaf83a6fea7b715dde7b4b6f34"
+      ],
+      [
+        "tests/unit/test_embedders.py",
+        "-:954d6032a33d63e03040d193b976cf9b7eda6217101772ef6a52eb68322a7ff8"
+      ],
+      [
+        "tests/unit/test_embedding_lineage.py",
+        "-:d2258a265a01b5857fa41fcce6841bea0528ec7cda3be9a7833173124e60d624"
+      ],
+      [
+        "tests/unit/test_facts.py",
+        "-:92770550858a72d0b2299f3848a846b0e135814e1cbb47c2b6cbe6aafb9d03c3"
+      ],
+      [
+        "tests/unit/test_logging_observability.py",
+        "-:c245035206b97311eacc5e353186f23bd0ddd3e394b4a4e3f486ef5a5c794525"
+      ],
+      [
+        "tests/unit/test_manager_recall_contract.py",
+        "-:ba36862eadea1866fd6bb062b784cb53964e61809070ac5b905349b710dd6e2e"
+      ],
+      [
+        "tests/unit/test_memory_mutations_v5.py",
+        "-:0b0bd968f9581f897f8446fac721392ee9cd9dd81fe9c7c0eefd1d9a05747bb3"
+      ],
+      [
+        "tests/unit/test_mock_backend.py",
+        "-:3aba3f55522058f71d8c42af77a6b0d516e31e32ed52cd23a2c15d48a4fa3284"
+      ],
+      [
+        "tests/unit/test_prospective_kernel_v5.py",
+        "-:f1f87e364b22c83d1f7c3a9f7354b6c5cd3d83434f0757c6c2005dccd1f6a1a3"
+      ],
+      [
+        "tests/unit/test_rrf.py",
+        "-:c17b4058db34862e64c1ec9ccf9d2acefd9cf2afecde3aae71338712765bc0eb"
+      ],
+      [
+        "tests/unit/test_short_horizon_v5.py",
+        "-:a5c58d2553f362763dc8bab254c315ed68b67f3ca2e7dc1b9217e93b5a65b17e"
+      ],
+      [
+        "tests/unit/test_twin_builder.py",
+        "-:32219c8bad82526424bb46cd593e30e868187642cb60d2bf2afa492b38e5bf7d"
+      ],
+      [
+        "tests/unit/test_twin_graph_builder.py",
+        "-:0e5021b559282ff3cc70978826a655f15c06b91e6cef54f5a5fa69875c0ddb0b"
+      ],
+      [
+        "tests/unit/test_typed_recall_eligibility_policy.py",
+        "-:4e70c2a4ee82501f3132faa7e64a71dad39676b1c0a850ce8d10d21f05efe56c"
+      ],
+      [
+        "tests/unit/test_typed_recall_selection.py",
+        "-:e88cbd60454b3d4a6a05853a03851d1eed4293da1f4d6b4c4e4b450fc3fcf073"
+      ],
+      [
+        "tests/unit/test_world.py",
+        "-:0dff02a49b0b382d0bfc6ad94e50d877213560645a44c6ef325334fa01ca7d31"
+      ],
+      [
+        "tests/unit/test_writer_lock_platform.py",
+        "-:96b249367f10203cd3212fb6df69bb26bd507d9d8230d61fa582976c401c5fb7"
+      ],
+      [
+        "uv.lock",
+        "-:893441f3b8f3facbe61fd4a9598f3de0cdd885f3b446cf7e7c87edf56f7d8de2"
+      ]
+    ],
+    "dirty_patch_sha256": "5fc9755ec9b13ea873e134895469a9ba358f020246736f0a3c05658c6f056e27",
+    "exclusion_count": 11,
+    "exclusion_scope": [
+      ".plan-test/active-run.json",
+      "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+    ],
+    "exclusions": [
+      [
+        ".plan-test/active-run.json",
+        "declared-scope:.plan-test/active-run.json"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/exec-REL-INTEGRITY-0002.log",
+        "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/exec-REL-REGRESSION-0003.log",
+        "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/exec-REL-VALUE-0001.log",
+        "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/rel-integrity-fault-recovery.log",
+        "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/rel-regression-result.log",
+        "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/rel-value-business-result.log",
+        "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/plan-test-run.json",
+        "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/rel-integrity-metadata.json",
+        "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/rel-regression-metadata.json",
+        "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/rel-value-metadata.json",
+        "declared-scope:plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+      ]
+    ],
+    "head": "9de7635f490c34c4a9c5f144637a05f207e2717e",
+    "reason": "superseded gate ledgers moved intact to ignored local evidence to satisfy sibling-run policy without deleting raw data",
+    "recorded_at": "2026-09-01T06:55:49+0800",
+    "runs_index": 3
+  },
+  "scenarios": [
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "two_nodes_one_edge",
+          "relation_node_zero",
+          "suppression_reopen_zero_edge",
+          "package_root_public_only",
+          "candidate_harness_wheel_sha256",
+          "candidate_memory_wheel_sha256"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "src/simple_harness_memory/**",
+        "/Users/denny/projects/simple-harness-sdk-memory-program/src/simple_harness/**"
+      ],
+      "input_class": "exact-wheel-public-relation-value",
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "adapter_sha256": "21209b70eb38de4e77635e1fb9edc4adeb1acdfc03cdb9e64f84f75f6492684e",
+        "candidate_harness_source_commit": "3e7a71af1dfea2e065530208225ac13fc5f17300",
+        "candidate_harness_wheel_sha256": "d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd",
+        "candidate_memory_source_commit": "64284059f9ee82d886d85151a95c542660d09c1a",
+        "candidate_memory_wheel_sha256": "844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e",
+        "fixture_revision": 1,
+        "fixture_sha256": "224d8f864eb52f285d96f957cd60a455b37eaa97e18fe1f36f8674d055b8f439",
+        "runner_sha256": "8a8d4bdc169f3cbc2e254f8b888d350e8e9245c749bad564ef8affa19ce3e1b0",
+        "testcase_sha256": "3565ffb286eb367dce7777990f92c81b5668ca2d269872e37a57bd8a3d876b96"
+      },
+      "required": true,
+      "scenario_id": "REL-VALUE",
+      "testcase_ids": [
+        "TC-HM-12"
+      ],
+      "testcase_revisions": {
+        "TC-HM-12": 3
+      },
+      "ui": false
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "recovered_state",
+          "verified_case_count_40",
+          "half_state_zero",
+          "raw_evidence_unchanged",
+          "corruption_fail_closed",
+          "candidate_harness_wheel_sha256",
+          "candidate_memory_wheel_sha256"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "src/simple_harness_memory/**",
+        "/Users/denny/projects/simple-harness-sdk-memory-program/src/simple_harness/**"
+      ],
+      "input_class": "relation-admission-atomicity-replay-lifecycle-corruption",
+      "lanes": [
+        "temporal-fault"
+      ],
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "adapter_sha256": "f98ba55ed7d44170363bbac5de1e0b07fcc6f8e285a5913c7a55bf2a2e1956d8",
+        "candidate_harness_source_commit": "3e7a71af1dfea2e065530208225ac13fc5f17300",
+        "candidate_harness_wheel_sha256": "d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd",
+        "candidate_memory_source_commit": "64284059f9ee82d886d85151a95c542660d09c1a",
+        "candidate_memory_wheel_sha256": "844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e",
+        "fixture_revision": 1,
+        "fixture_sha256": "fe03e8eaa283626766829689b6d46507a3b9f308986bb15702fdf65ede552d91",
+        "runner_sha256": "6ec3b646700eab44321630b1fb5dd185759a2d8cb62e35e6016c5ba7fc75055f",
+        "testcase_sha256": "550eb75cbd6901e02233f33368444c1ce317e9416f30f0dcc1df19f10947df2f"
+      },
+      "required": true,
+      "scenario_id": "REL-INTEGRITY",
+      "testcase_ids": [
+        "TC-HM-08",
+        "TC-HM-12"
+      ],
+      "testcase_revisions": {
+        "TC-HM-08": 4,
+        "TC-HM-12": 3
+      },
+      "ui": false
+    },
+    {
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "harness_full_regression",
+          "memory_full_regression",
+          "oracle_self_checks"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "src/simple_harness_memory/**",
+        "/Users/denny/projects/simple-harness-sdk-memory-program/src/simple_harness/**"
+      ],
+      "input_class": "cross-repository-full-regression",
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "runner_sha256": "b67c978cb3e344193a3bea9b3feee1405b5ae8b8c612bbbd35482890aa72aedc"
+      },
+      "required": true,
+      "scenario_id": "REL-REGRESSION",
+      "testcase_ids": [
+        "TC-HM-08",
+        "TC-HM-12"
+      ],
+      "testcase_revisions": {
+        "TC-HM-08": 4,
+        "TC-HM-12": 3
+      },
+      "ui": false
+    }
+  ],
+  "schema_version": "1.5.0",
+  "source_request": {
+    "inline": true,
+    "sha256": "ff036f01b5dc3b6860f61cd2771846e8416480c840119d86f26202842490c416"
+  },
+  "structured_audit_required": true,
+  "testcase_lock": {
+    "files": [
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-08-invalid-plan-recovery.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-08-invalid-plan-recovery.md",
+        "sha256": "550eb75cbd6901e02233f33368444c1ce317e9416f30f0dcc1df19f10947df2f"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-12-digital-twin-views.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-12-digital-twin-views.md",
+        "sha256": "3565ffb286eb367dce7777990f92c81b5668ca2d269872e37a57bd8a3d876b96"
+      }
+    ],
+    "locked_at": "2026-09-01T06:51:17+0800"
+  },
+  "thresholds": {},
+  "timing": [
+    {
+      "abort": false,
+      "activity_class": "automated_test",
+      "command": "python3 /Users/denny/.codex/skill-sources/plan-test-skill/skills/plan-test/scripts/plan_test_gate.py record-run --run-dir plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03 --scenario REL-VALUE --kind root --driver ai --lane fresh --engine-terminal completed --business-terminal completed+valid --run-id-under-test rel-value-20260901-03 --exec -- /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/runners/run_twin_graph_public_consumer.py --harness-wheel /Users/denny/projects/simple-harness-sdk-memory-program/.local-test-evidence/2026-09-01/semantic-relations-build/harness-a/simple_harness_sdk-0.7.0-py3-none-any.whl --harness-wheel-sha256 d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd --harness-source-commit 3e7a71af1dfea2e065530208225ac13fc5f17300 --memory-wheel /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-build/memory-receipt-a/simple_harness_memory_sdk-0.6.0-py3-none-any.whl --memory-wheel-sha256 844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e --memory-source-commit 64284059f9ee82d886d85151a95c542660d09c1a --manager-entrypoint /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/adapters/semantic_relation_public_manager.py --artifact-dir /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-public-run05",
+      "elapsed_ms": 2318,
+      "ended_at": "2026-08-31T22:51:34Z",
+      "evidence_ids": [],
+      "exec_exit_code": 0,
+      "measured": true,
+      "phase": "phase-4",
+      "recorded_at": "2026-09-01T06:51:34+0800",
+      "retry": 0,
+      "runtime_identity": {
+        "head": "9de7635f490c34c4a9c5f144637a05f207e2717e"
+      },
+      "slice": "S3-T6-RELATION",
+      "started_at": "2026-08-31T22:51:31Z",
+      "task": "REL-VALUE",
+      "test_count": 1,
+      "timing_id": "t-0001",
+      "tool": "exact-wheel-public-runner"
+    },
+    {
+      "abort": false,
+      "activity_class": "automated_test",
+      "command": "python3 /Users/denny/.codex/skill-sources/plan-test-skill/skills/plan-test/scripts/plan_test_gate.py record-run --run-dir plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03 --scenario REL-INTEGRITY --kind root --driver ai --lane temporal-fault --engine-terminal completed --business-terminal completed+valid --run-id-under-test rel-integrity-20260901-02 --exec -- /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/runners/run_semantic_relation_integrity_evidence.py --harness-wheel /Users/denny/projects/simple-harness-sdk-memory-program/.local-test-evidence/2026-09-01/semantic-relations-build/harness-a/simple_harness_sdk-0.7.0-py3-none-any.whl --harness-wheel-sha256 d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd --harness-source-commit 3e7a71af1dfea2e065530208225ac13fc5f17300 --memory-wheel /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-build/memory-receipt-a/simple_harness_memory_sdk-0.6.0-py3-none-any.whl --memory-wheel-sha256 844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e --memory-source-commit 64284059f9ee82d886d85151a95c542660d09c1a --case-entrypoint /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/adapters/semantic_relation_integrity_request.py --artifact-root /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-integrity-run24",
+      "elapsed_ms": 56435,
+      "ended_at": "2026-08-31T22:53:04Z",
+      "evidence_ids": [],
+      "exec_exit_code": 0,
+      "measured": true,
+      "phase": "phase-4",
+      "recorded_at": "2026-09-01T06:53:04+0800",
+      "retry": 0,
+      "runtime_identity": {
+        "head": "9de7635f490c34c4a9c5f144637a05f207e2717e"
+      },
+      "slice": "S3-T6-RELATION",
+      "started_at": "2026-08-31T22:52:07Z",
+      "task": "REL-INTEGRITY",
+      "test_count": 40,
+      "timing_id": "t-0002",
+      "tool": "exact-wheel-integrity-runner"
+    },
+    {
+      "abort": false,
+      "activity_class": "automated_test",
+      "command": "python3 /Users/denny/.codex/skill-sources/plan-test-skill/skills/plan-test/scripts/plan_test_gate.py record-run --run-dir plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03 --scenario REL-REGRESSION --kind root --driver ai --lane full --engine-terminal completed --business-terminal completed+valid --run-id-under-test rel-regression-20260901-02 --exec -- /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/runners/run_semantic_relation_regression.py --harness-root /Users/denny/projects/simple-harness-sdk-memory-program --memory-root /Users/denny/projects/simple-harness-memory-sdk-memory-plan --testcase-root /Users/denny/projects/simple_harness-memory-plan",
+      "elapsed_ms": 61931,
+      "ended_at": "2026-08-31T22:54:35Z",
+      "evidence_ids": [],
+      "exec_exit_code": 0,
+      "measured": true,
+      "phase": "phase-4",
+      "recorded_at": "2026-09-01T06:54:35+0800",
+      "retry": 0,
+      "runtime_identity": {
+        "head": "9de7635f490c34c4a9c5f144637a05f207e2717e"
+      },
+      "slice": "S3-T6-RELATION",
+      "started_at": "2026-08-31T22:53:33Z",
+      "task": "REL-REGRESSION",
+      "test_count": 2794,
+      "timing_id": "t-0003",
+      "tool": "cross-repo-regression-runner"
+    },
+    {
+      "abort": false,
+      "activity_class": "automated_test",
+      "command": "python3 /Users/denny/.codex/skill-sources/plan-test-skill/skills/plan-test/scripts/plan_test_gate.py record-run --run-dir plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03 --scenario REL-VALUE --kind retry --driver ai --lane fresh --engine-terminal completed --business-terminal completed+valid --run-id-under-test rel-value-20260901-04 --exec -- /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/runners/run_twin_graph_public_consumer.py --harness-wheel /Users/denny/projects/simple-harness-sdk-memory-program/.local-test-evidence/2026-09-01/semantic-relations-build/harness-a/simple_harness_sdk-0.7.0-py3-none-any.whl --harness-wheel-sha256 d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd --harness-source-commit 3e7a71af1dfea2e065530208225ac13fc5f17300 --memory-wheel /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-build/memory-receipt-a/simple_harness_memory_sdk-0.6.0-py3-none-any.whl --memory-wheel-sha256 844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e --memory-source-commit 64284059f9ee82d886d85151a95c542660d09c1a --manager-entrypoint /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/adapters/semantic_relation_public_manager.py --artifact-dir /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-public-run06",
+      "elapsed_ms": 3789,
+      "ended_at": "2026-08-31T22:56:19Z",
+      "evidence_ids": [],
+      "exec_exit_code": 0,
+      "measured": true,
+      "phase": "phase-5",
+      "recorded_at": "2026-09-01T06:56:19+0800",
+      "retry": 1,
+      "runtime_identity": {
+        "head": "9de7635f490c34c4a9c5f144637a05f207e2717e"
+      },
+      "slice": "S3-T6-RELATION",
+      "started_at": "2026-08-31T22:56:15Z",
+      "task": "REL-VALUE-RETEST",
+      "test_count": 1,
+      "timing_id": "t-0004",
+      "tool": "exact-wheel-public-runner"
+    },
+    {
+      "abort": false,
+      "activity_class": "automated_test",
+      "command": "python3 /Users/denny/.codex/skill-sources/plan-test-skill/skills/plan-test/scripts/plan_test_gate.py record-run --run-dir plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03 --scenario REL-INTEGRITY --kind retry --driver ai --lane temporal-fault --engine-terminal completed --business-terminal completed+valid --run-id-under-test rel-integrity-20260901-03 --exec -- /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/runners/run_semantic_relation_integrity_evidence.py --harness-wheel /Users/denny/projects/simple-harness-sdk-memory-program/.local-test-evidence/2026-09-01/semantic-relations-build/harness-a/simple_harness_sdk-0.7.0-py3-none-any.whl --harness-wheel-sha256 d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd --harness-source-commit 3e7a71af1dfea2e065530208225ac13fc5f17300 --memory-wheel /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-build/memory-receipt-a/simple_harness_memory_sdk-0.6.0-py3-none-any.whl --memory-wheel-sha256 844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e --memory-source-commit 64284059f9ee82d886d85151a95c542660d09c1a --case-entrypoint /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/adapters/semantic_relation_integrity_request.py --artifact-root /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.local-test-evidence/2026-09-01/semantic-relations-integrity-run25",
+      "elapsed_ms": 56411,
+      "ended_at": "2026-08-31T22:58:03Z",
+      "evidence_ids": [],
+      "exec_exit_code": 0,
+      "measured": true,
+      "phase": "phase-5",
+      "recorded_at": "2026-09-01T06:58:03+0800",
+      "retry": 1,
+      "runtime_identity": {
+        "head": "9de7635f490c34c4a9c5f144637a05f207e2717e"
+      },
+      "slice": "S3-T6-RELATION",
+      "started_at": "2026-08-31T22:57:07Z",
+      "task": "REL-INTEGRITY-RETEST",
+      "test_count": 40,
+      "timing_id": "t-0005",
+      "tool": "exact-wheel-integrity-runner"
+    },
+    {
+      "abort": false,
+      "activity_class": "automated_test",
+      "command": "python3 /Users/denny/.codex/skill-sources/plan-test-skill/skills/plan-test/scripts/plan_test_gate.py record-run --run-dir plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03 --scenario REL-REGRESSION --kind retry --driver ai --lane full --engine-terminal completed --business-terminal completed+valid --run-id-under-test rel-regression-20260901-03 --exec -- /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python /Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/runners/run_semantic_relation_regression.py --harness-root /Users/denny/projects/simple-harness-sdk-memory-program --memory-root /Users/denny/projects/simple-harness-memory-sdk-memory-plan --testcase-root /Users/denny/projects/simple_harness-memory-plan",
+      "elapsed_ms": 62963,
+      "ended_at": "2026-08-31T22:59:39Z",
+      "evidence_ids": [],
+      "exec_exit_code": 0,
+      "measured": true,
+      "phase": "phase-5",
+      "recorded_at": "2026-09-01T06:59:39+0800",
+      "retry": 1,
+      "runtime_identity": {
+        "head": "9de7635f490c34c4a9c5f144637a05f207e2717e"
+      },
+      "slice": "S3-T6-RELATION",
+      "started_at": "2026-08-31T22:58:36Z",
+      "task": "REL-REGRESSION-RETEST",
+      "test_count": 2794,
+      "timing_id": "t-0006",
+      "tool": "cross-repo-regression-runner"
+    }
+  ],
+  "toolchain": {
+    "gate_path": "/Users/denny/.codex/skill-sources/plan-test-skill/skills/plan-test/scripts/plan_test_gate.py",
+    "gate_sha256": "4d1ad47e37e1cfe4a2a3819e268ab59c847dbd5d3704f1ab47e0d8a0317d38f3",
+    "gate_version": "1.5.0",
+    "host": "Mac",
+    "platform": "Darwin-25.4.0-arm64",
+    "plugin_version": "0.6.1",
+    "python_version": "3.9.6",
+    "recorded_at": "2026-09-01T06:51:17+0800"
+  }
+}

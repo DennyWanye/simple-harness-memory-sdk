@@ -1,0 +1,33 @@
+{
+  "mode": "full-audit",
+  "release_unit": "S3-T6-RELATION",
+  "executor_engine": "codex",
+  "required_auditor_engine": "independent-codex-agent",
+  "reason_for_final_audit": "The first independent PASS was recorded before delivery verdict and phase-end facts; this final audit freezes the complete ledger after those expected bookkeeping events.",
+  "repositories": {
+    "memory": {"root": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan", "head": "9de7635"},
+    "harness": {"root": "/Users/denny/projects/simple-harness-sdk-memory-program", "head": "00dbd6d"},
+    "testcase": {"root": "/Users/denny/projects/simple_harness-memory-plan", "head": "892aa15c"}
+  },
+  "frozen_inputs": {
+    "acceptance_sha256": "c482949678ca1faf6e6116d84bb8aba40254f241e0b55f5b62486261cfce2e46",
+    "assurance_contract_sha256": "7e47e55b3b2dfd9a397f3d2e9b9703af2e7c892a169f13fd24e4470e9e9ea9ad",
+    "verification_spec_sha256": "42230016f3356d73e321f8fa97ac495fb1b015bb68ac58523105af176ac4c85e",
+    "ledger_path": "plan-test-run.json",
+    "ledger_sha256_before_final_audit": "fda90dfb7f5ccbb49fb9784f79f296583c2d9461dc219b51e29c11653d426c7d",
+    "prior_independent_output_path": "auditor-output.json",
+    "prior_independent_output_sha256": "880c4c9bda34a2bd5aec88208a2bdf00e3a3d3aad1bd5e5e75f58d5e2915dfc8"
+  },
+  "required_scenario_logs": {
+    "REL-VALUE": {"path": "artifacts/exec-REL-VALUE-0007.log", "sha256": "d2341a18b8ddf3d456f3d917aeb63179be13f6d38aed9c23b68113f095045972"},
+    "REL-INTEGRITY": {"path": "artifacts/exec-REL-INTEGRITY-0008.log", "sha256": "82c16942f42cfff2c2b096c9e43a0cc86f27f5595ab4c97c1bb71b1406c70acd"},
+    "REL-REGRESSION": {"path": "artifacts/exec-REL-REGRESSION-0009.log", "sha256": "a31a8b9c3524b2d81d1095494e4890b81fe2ecdea7f1ea096cdcb53b450643a1"}
+  },
+  "required_checks": [
+    "Repeat the full HM-AC-2/6/7/8 and HM-TO-A2/A6/A7/A8/R9 closure audit against the current ledger.",
+    "Confirm delivery verdict PASS and phase-5 end are consistent with the evidence and introduce no new product claim.",
+    "Confirm all three latest root logs, evidence contracts, exact identities and blocked followups remain unchanged.",
+    "Return PASS only with zero P0/P1 findings and no stale or forged PASS route."
+  ],
+  "required_output_fields": ["verdict", "mode", "auditor_engine", "reviewed_ac_ids", "reviewed_scenario_ids", "findings", "blocked_followups", "summary"]
+}

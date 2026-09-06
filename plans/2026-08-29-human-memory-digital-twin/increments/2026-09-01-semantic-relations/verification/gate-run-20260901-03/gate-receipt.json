@@ -1,0 +1,60 @@
+{
+  "acceptance_sha256": "c482949678ca1faf6e6116d84bb8aba40254f241e0b55f5b62486261cfce2e46",
+  "auditor_input_sha256": "50996c40d1eab341c320b28ed8be9dc9a87d8c404ba63a5c8568f8466329c8ba",
+  "auditor_output_sha256": "c980ae85bafc3e20380f427a3d96585ab41ad35b7c84a97fa9ba7098780dc6fd",
+  "content_basis": "worktree-content-excluding-declared-scope",
+  "content_digest": "9095e6062ff389e8971b0e652fc20ed708e33dc424521a6fe65bc98d9bd45ce2",
+  "dirty_patch_sha256": "5fc9755ec9b13ea873e134895469a9ba358f020246736f0a3c05658c6f056e27",
+  "evidence_manifest_sha256": "62d479ddbf6585769d8af2fd757fd2e5dfdf0f9dca217e9dc5fe81a49b138ac8",
+  "evidence_summary": {
+    "distinct_artifacts": 9,
+    "distinct_root_runs": 6,
+    "records": 15,
+    "shared_artifact_sha256": [
+      "034c571a22cc1825ee9ff3cd0182f696ff07c3a4aeb0ec8511351e977f781ea7",
+      "070f3327eb3820ae235353feca5962768536ece3390b9f6fa8533f4ddd36c965",
+      "440c89587d4e11cd3164c6c5ab57f0e3732b763a94bceffab52fa2fe9eea007d",
+      "54aac6373b5c0da5ee5ed6bb83d0fa768e6a23a5ae88bc9b809cb2e510337781",
+      "625c3bef9876cec4fe9880e1a6cf28c552adf195b71ecb4e49011f4a60a283d0",
+      "aec91b72910988f9039b362e62e4eb23cd98fae8dd6290d460a741eca368afcf"
+    ]
+  },
+  "exclusion_scope": [
+    ".plan-test/active-run.json",
+    "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03"
+  ],
+  "finalized_at": "2026-09-01T07:13:51+0800",
+  "fixture_only": false,
+  "head": "9de7635f490c34c4a9c5f144637a05f207e2717e",
+  "ledger_sha256": "eb73f40dd54f6f45b1ebe6e8d0d03aaab511b7d09ce295eeba81184aefe4a222",
+  "receipt_version": 1,
+  "retired": false,
+  "run_id": "run-20260901-065117",
+  "scenario_statuses": {
+    "REL-INTEGRITY": "PASS",
+    "REL-REGRESSION": "PASS",
+    "REL-VALUE": "PASS"
+  },
+  "schema_version": "1.5.0",
+  "state": "SHIPPABLE",
+  "superseded_by": null,
+  "testcase_lock_sha256": "72b1c2505228f70226bb1984ecf15dca164d50da0846cd63f7094b792901aa0f",
+  "tested_code_head": "9de7635f490c34c4a9c5f144637a05f207e2717e",
+  "timing_summary": {
+    "declared_ms": 0,
+    "entries": 6,
+    "measured_ms": 243847
+  },
+  "toolchain": {
+    "gate_path": "/Users/denny/.codex/skill-sources/plan-test-skill/skills/plan-test/scripts/plan_test_gate.py",
+    "gate_sha256": "4d1ad47e37e1cfe4a2a3819e268ab59c847dbd5d3704f1ab47e0d8a0317d38f3",
+    "gate_version": "1.5.0",
+    "host": "Mac",
+    "platform": "Darwin-25.4.0-arm64",
+    "plugin_version": "0.6.1",
+    "python_version": "3.9.6",
+    "recorded_at": "2026-09-01T06:51:17+0800"
+  },
+  "validator_version": "1.5.0",
+  "waivers": []
+}

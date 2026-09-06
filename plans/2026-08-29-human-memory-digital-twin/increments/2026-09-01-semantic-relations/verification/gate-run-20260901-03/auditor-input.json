@@ -1,0 +1,70 @@
+{
+  "mode": "full-audit",
+  "release_unit": "S3-T6-RELATION",
+  "executor_engine": "codex",
+  "required_auditor_engine": "independent-codex-agent",
+  "repositories": {
+    "memory": {
+      "root": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan",
+      "head": "9de7635"
+    },
+    "harness": {
+      "root": "/Users/denny/projects/simple-harness-sdk-memory-program",
+      "head": "00dbd6d"
+    },
+    "testcase": {
+      "root": "/Users/denny/projects/simple_harness-memory-plan",
+      "head": "892aa15c"
+    }
+  },
+  "frozen_inputs": {
+    "acceptance": {
+      "path": "../../acceptance.md",
+      "sha256": "c482949678ca1faf6e6116d84bb8aba40254f241e0b55f5b62486261cfce2e46"
+    },
+    "assurance_contract": {
+      "path": "../../assurance-contract.json",
+      "sha256": "7e47e55b3b2dfd9a397f3d2e9b9703af2e7c892a169f13fd24e4470e9e9ea9ad"
+    },
+    "verification_spec": {
+      "path": "../../verification-spec.json",
+      "sha256": "42230016f3356d73e321f8fa97ac495fb1b015bb68ac58523105af176ac4c85e"
+    },
+    "ledger": {
+      "path": "plan-test-run.json",
+      "sha256_before_audit": "59f34f4c9380f685290cd87cf1c48027d76cce80b9082d04ac8f4b0ecd4ad0cb"
+    }
+  },
+  "required_scenarios": [
+    {
+      "scenario_id": "REL-VALUE",
+      "latest_root_log": "artifacts/exec-REL-VALUE-0007.log",
+      "sha256": "d2341a18b8ddf3d456f3d917aeb63179be13f6d38aed9c23b68113f095045972"
+    },
+    {
+      "scenario_id": "REL-INTEGRITY",
+      "latest_root_log": "artifacts/exec-REL-INTEGRITY-0008.log",
+      "sha256": "82c16942f42cfff2c2b096c9e43a0cc86f27f5595ab4c97c1bb71b1406c70acd"
+    },
+    {
+      "scenario_id": "REL-REGRESSION",
+      "latest_root_log": "artifacts/exec-REL-REGRESSION-0009.log",
+      "sha256": "a31a8b9c3524b2d81d1095494e4890b81fe2ecdea7f1ea096cdcb53b450643a1"
+    }
+  ],
+  "audit_questions": [
+    "Does each of HM-AC-2, HM-AC-6, HM-AC-7 and HM-AC-8 have a current root run, primary evidence and valid business terminal?",
+    "Are HM-TO-A2, HM-TO-A6, HM-TO-A7, HM-TO-A8 and HM-TO-R9 covered without importing historical PASS?",
+    "Does the exact-wheel public lane use only package-root public APIs and prove 2 nodes, 1 applies_to edge, zero relation nodes, then zero edge after suppression and reopen?",
+    "Does the 40-case integrity lane prove admission, atomicity, replay, lifecycle, corruption fail-closed and byte-identical raw evidence retention?",
+    "Do candidate commits, wheel hashes, testcase revisions, fixture/runner/adapter hashes and installed module origins agree?",
+    "Are Host durable pre-admission audit and real LLM quality still honestly NOT_RUN/BLOCKED and excluded from this SDK slice?",
+    "Are the failed/superseded gate histories retained rather than hidden, and is the Harness-wide mypy red baseline explicitly disclosed rather than called green?",
+    "Are there any P0/P1 findings, forged PASS routes, stale evidence, status contradictions, missing architecture updates or unauthorized push/tag/publish/merge actions?"
+  ],
+  "required_output": {
+    "format": "JSON",
+    "fields": ["verdict", "mode", "auditor_engine", "reviewed_ac_ids", "reviewed_scenario_ids", "findings", "blocked_followups", "summary"],
+    "pass_condition": "verdict PASS only when there are no P0 or P1 findings and every required AC/scenario closes with current evidence"
+  }
+}

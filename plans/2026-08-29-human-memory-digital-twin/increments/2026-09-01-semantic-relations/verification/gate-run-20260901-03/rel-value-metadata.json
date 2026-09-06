@@ -1,0 +1,16 @@
+{
+  "producer_type": "runtime-probe",
+  "producer_version": "semantic-relation-public-runner@8a8d4bdc169f",
+  "artifact_kind": "business-result",
+  "generated_at": "2026-08-31T22:51:34Z",
+  "root_run_id": "rel-value-20260901-03",
+  "business_facts": {
+    "business_terminal": "completed+valid",
+    "two_nodes_one_edge": true,
+    "relation_node_zero": true,
+    "suppression_reopen_zero_edge": true,
+    "package_root_public_only": true,
+    "candidate_harness_wheel_sha256": "d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd",
+    "candidate_memory_wheel_sha256": "844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e"
+  }
+}

@@ -1,0 +1,3264 @@
+{
+  "acceptance": {
+    "path": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/acceptance.md",
+    "sha256": "fd4957c85b3693b8f5a6e056bde7ec492849d57e2f8a44f70d130d419c3c3523"
+  },
+  "active_run_required": true,
+  "applicability": {
+    "input_sensitive": {
+      "decided_by": "user",
+      "rationale": "S4 验证冻结 typed DTO、容量上限和确定性 Host 状态机，自然语言路由质量属 S5/S6",
+      "value": false
+    },
+    "llm_payload_driven": {
+      "decided_by": "user",
+      "rationale": "S4 不新增 LLM 输出解析，所有验证输入都是预冻结 deterministic fixture 与公开 Host API",
+      "value": false
+    },
+    "stateful_init": {
+      "decided_by": "user",
+      "rationale": "fresh human-memory-v1、projection/search/Run/FIFO/recovery 持久化状态以及冷重启是 S4 核心验收面",
+      "value": true
+    }
+  },
+  "auditor_engine": "independent-codex-agent",
+  "baseline": {
+    "content_digest": "f579f4bfb118a917dc53bbbfef9a23d2525b8be6ac2b81c047e5ef43e4d6e892",
+    "dirty_patch_sha256": "2d3edaa8426669da644bc7ac26124836ecaa3bce4953197438db4fd88a3d49a9",
+    "exclusion_count": 1,
+    "exclusion_scope": [
+      ".plan-test/active-run.json",
+      "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/gate-run"
+    ],
+    "exclusions": [
+      [
+        ".plan-test/active-run.json",
+        "declared-scope:.plan-test/active-run.json"
+      ]
+    ],
+    "head": "7a57ee1bf5658bab8e3d68e3698c7f0518c3a63a",
+    "recorded_at": "2026-09-01T08:57:23+0800"
+  },
+  "behavior_changes": [],
+  "behavior_contract": {},
+  "challenge_loops": [
+    {
+      "acceptance_snapshots": [
+        {
+          "path": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/acceptance.md",
+          "recorded_at": "2026-09-01T08:57:32+0800",
+          "sha256": "fd4957c85b3693b8f5a6e056bde7ec492849d57e2f8a44f70d130d419c3c3523"
+        },
+        {
+          "path": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/acceptance.md",
+          "recorded_at": "2026-09-01T11:38:22+0800",
+          "sha256": "1849b31a25a7274965f8df7cfe2c9bf4a191bcfd512efe35cb72ca9bd4eec3cc"
+        },
+        {
+          "path": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/acceptance.md",
+          "recorded_at": "2026-09-01T12:03:37+0800",
+          "sha256": "6e4ef78e3feab3870b57e24917f17bf02d22f1bc55c623985c67c2b90a9672e4"
+        }
+      ],
+      "baseline_hash": "00a59caa1fe3b2311226709a89591949a3ab29cd24440c314a07f24371196fec",
+      "challenge_clusters": [
+        {
+          "cluster_id": "cluster-value-gate-order",
+          "parent_finding_ids": [
+            "value-smoke-requires-not-yet-built-fifo"
+          ],
+          "question": "Which tasks are direct prerequisites of the exact frozen minimum value action, and where must the value milestone sit in that dependency graph?",
+          "required_evidence": [
+            "acceptance minimum-validation text",
+            "HM-S4-TO-VALUE oracle",
+            "task dependency graph including queued turns"
+          ],
+          "specialist_required": false,
+          "specialty": "architecture"
+        },
+        {
+          "cluster_id": "cluster-projection-versioning-and-bounds",
+          "parent_finding_ids": [
+            "projection-version-omits-event-checkpoint-change-identity",
+            "evidence-page-cardinality-byte-bound-unproven"
+          ],
+          "question": "What immutable source identity and bounded page representation can cover independently appended events, checkpoints, evidence refs and canonical revisions while preserving byte-identical rebuild and historical reads?",
+          "required_evidence": [
+            "v36 projection and outbox keys",
+            "event and checkpoint producer transactions",
+            "proposed composite projection identity",
+            "500-event minimal and worst-case encoded-size spike",
+            "old-revision replay matrix"
+          ],
+          "specialist_required": true,
+          "specialty": "data-state"
+        },
+        {
+          "cluster_id": "cluster-entry-trust-composition",
+          "parent_finding_ids": [
+            "fresh-epoch-startup-dispatch-undefined",
+            "public-facade-subject-authority-contract-undefined"
+          ],
+          "question": "What exact pre-migration startup dispatch and authenticated public-facade contract selects fresh versus legacy/future epochs and binds every operation to Host-derived subject and durable object lineage?",
+          "required_evidence": [
+            "backend main lifespan ordering",
+            "empty and legacy database classification",
+            "LocalAuthSnapshot subject derivation",
+            "public request and response DTO inventory",
+            "subject TaskScope evidence Run binding matrix",
+            "legacy CRUD entrypoint inventory"
+          ],
+          "specialist_required": true,
+          "specialty": "architecture"
+        },
+        {
+          "cluster_id": "cluster-foreground-run-state-machine",
+          "parent_finding_ids": [
+            "foreground-control-state-machine-not-closed"
+          ],
+          "question": "What durable Run, queued-turn, lease and control transition system preserves one foreground owner, immediate control, FIFO and idempotent restart across every claim and terminal crash boundary?",
+          "required_evidence": [
+            "complete state and transition table",
+            "pause stop cancel precedence",
+            "idempotency and lost-ACK keys",
+            "lease generation and recovery rules",
+            "TC-HM-11 S4 crash-boundary mapping"
+          ],
+          "specialist_required": true,
+          "specialty": "data-state"
+        },
+        {
+          "cluster_id": "cluster-recovery-integrity",
+          "parent_finding_ids": [
+            "recovery-fence-lacks-write-quiescence-boundary",
+            "raw-integrity-manifest-comparison-ambiguous"
+          ],
+          "question": "How does recovery establish a transaction-level no-new-writes boundary and compute a delta-aware integrity/export manifest that distinguishes protected immutable rows, legitimate append-only receipts and derived caches?",
+          "required_evidence": [
+            "all canonical writer entrypoints",
+            "fence generation and in-flight writer drain protocol",
+            "SQLite checkpoint and consistent snapshot semantics",
+            "raw and derived table allowlists",
+            "old-row equality plus append-delta oracle",
+            "busy checkpoint and crash restart traces"
+          ],
+          "specialist_required": true,
+          "specialty": "failure-recovery"
+        },
+        {
+          "cluster_id": "cluster-required-host-oracle",
+          "parent_finding_ids": [
+            "required-host-recovery-oracle-omitted"
+          ],
+          "question": "Which frozen testcase set provides required black-box coverage for all seven S4 obligations without importing S5 routing or S6 UI assertions?",
+          "required_evidence": [
+            "TC-HM-02/09/10/11/12 obligation bindings",
+            "TC-HM-14 obligation bindings and public-only oracle",
+            "verification-spec bidirectional AC and obligation mapping"
+          ],
+          "specialist_required": false,
+          "specialty": "testability-evidence"
+        }
+      ],
+      "clusters_recorded_round": 1,
+      "contract_snapshots": [
+        {
+          "acceptance_ids": [
+            "HM-AC-1",
+            "HM-AC-3",
+            "HM-AC-4",
+            "HM-AC-6",
+            "HM-AC-7",
+            "HM-AC-8"
+          ],
+          "acceptance_sha256": "fd4957c85b3693b8f5a6e056bde7ec492849d57e2f8a44f70d130d419c3c3523",
+          "assurance_ids": [
+            "ADV-DUPLICATE-DELIVERY",
+            "ADV-SEARCH-INPUT",
+            "ASSET-AUDIT-LINEAGE",
+            "ASSET-FOREGROUND-RUN-ORDER",
+            "ASSET-RAW-EVIDENCE",
+            "ASSET-TASK-CONTINUITY",
+            "ASSET-TASK-SEARCH-AUTHORITY",
+            "FAIL-DATA-LOSS",
+            "FAIL-FOREGROUND-RUN-CONCURRENCY",
+            "FAIL-PRIMARY-STREAM-SPLIT",
+            "FAIL-PROTOCOL-REPLAY",
+            "FAIL-READ-VIEW-GROWTH",
+            "FAIL-TASK-RESUME-LOSS",
+            "FAIL-TASK-SEARCH-AUTHORITY",
+            "OOS-COMPROMISED-HOST",
+            "OOS-LEGACY-DATA",
+            "OOS-MULTI-AGENT-RUN",
+            "OOS-S5-CONTEXT",
+            "OOS-S6-UI",
+            "TRUST-AUTH-CONTEXT",
+            "TRUST-FRESH-DATA-DIR",
+            "TRUST-LOCAL-HOST"
+          ],
+          "path": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/assurance-contract.json",
+          "profile": "standard",
+          "recorded_at": "2026-09-01T08:57:32+0800",
+          "scope_hash": "9f59fd21290c8f28bf64f2d6223ddcbff4cf00a725f97369d024b9e28b98b7ee",
+          "sha256": "624bd31f159480b274d84ead7bb1fa0a5df522a7d10f4718d6826687d6863fd8",
+          "threat_model_hash": "97cfa13b13a25da21568ab69521bd7d1bdde3d5b8f89fddfd0bfca553053a8d1"
+        },
+        {
+          "acceptance_ids": [
+            "HM-AC-1",
+            "HM-AC-3",
+            "HM-AC-4",
+            "HM-AC-6",
+            "HM-AC-7",
+            "HM-AC-8"
+          ],
+          "acceptance_sha256": "1849b31a25a7274965f8df7cfe2c9bf4a191bcfd512efe35cb72ca9bd4eec3cc",
+          "assurance_ids": [
+            "ADV-DUPLICATE-DELIVERY",
+            "ADV-SEARCH-INPUT",
+            "ADV-STALE-SCHEDULER",
+            "ASSET-AUDIT-LINEAGE",
+            "ASSET-FOREGROUND-RUN-ORDER",
+            "ASSET-RAW-EVIDENCE",
+            "ASSET-RUNTIME-ADMISSION",
+            "ASSET-TASK-CONTINUITY",
+            "ASSET-TASK-SEARCH-AUTHORITY",
+            "FAIL-DATA-LOSS",
+            "FAIL-FOREGROUND-RUN-CONCURRENCY",
+            "FAIL-PRIMARY-STREAM-SPLIT",
+            "FAIL-PROTOCOL-REPLAY",
+            "FAIL-READ-VIEW-GROWTH",
+            "FAIL-RUNTIME-AUTHORITY-DRIFT",
+            "FAIL-RUNTIME-ORPHAN",
+            "FAIL-TASK-RESUME-LOSS",
+            "FAIL-TASK-SEARCH-AUTHORITY",
+            "OOS-COMPROMISED-HOST",
+            "OOS-LEGACY-DATA",
+            "OOS-MULTI-AGENT-RUN",
+            "OOS-S5-CONTEXT",
+            "OOS-S6-UI",
+            "TRUST-AUTH-CONTEXT",
+            "TRUST-FRESH-DATA-DIR",
+            "TRUST-LOCAL-HOST",
+            "TRUST-PRODUCT-RUNTIME"
+          ],
+          "path": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/assurance-contract.json",
+          "profile": "standard",
+          "recorded_at": "2026-09-01T11:38:22+0800",
+          "scope_hash": "f555c9d7a241797d3b405f41437015817aa12adacee04d229aad588231e3dd5b",
+          "sha256": "699b593e1d84ae1205dfda129cc4b955cbee875e161d3005ebeb657e29b598aa",
+          "threat_model_hash": "c6a3893055154b5ceba6409843d17666e1b751242cdd04946502e2bce0d58d21"
+        },
+        {
+          "acceptance_ids": [
+            "HM-AC-1",
+            "HM-AC-3",
+            "HM-AC-4",
+            "HM-AC-6",
+            "HM-AC-7",
+            "HM-AC-8"
+          ],
+          "acceptance_sha256": "6e4ef78e3feab3870b57e24917f17bf02d22f1bc55c623985c67c2b90a9672e4",
+          "assurance_ids": [
+            "ADV-DUPLICATE-DELIVERY",
+            "ADV-SEARCH-INPUT",
+            "ADV-STALE-SCHEDULER",
+            "ASSET-AUDIT-LINEAGE",
+            "ASSET-FOREGROUND-RUN-ORDER",
+            "ASSET-RAW-EVIDENCE",
+            "ASSET-RUNTIME-ADMISSION",
+            "ASSET-TASK-CONTINUITY",
+            "ASSET-TASK-SEARCH-AUTHORITY",
+            "FAIL-DATA-LOSS",
+            "FAIL-FOREGROUND-RUN-CONCURRENCY",
+            "FAIL-PRIMARY-STREAM-SPLIT",
+            "FAIL-PROTOCOL-REPLAY",
+            "FAIL-READ-VIEW-GROWTH",
+            "FAIL-RUNTIME-AUTHORITY-DRIFT",
+            "FAIL-RUNTIME-ORPHAN",
+            "FAIL-TASK-RESUME-LOSS",
+            "FAIL-TASK-SEARCH-AUTHORITY",
+            "OOS-COMPROMISED-HOST",
+            "OOS-LEGACY-DATA",
+            "OOS-MULTI-AGENT-RUN",
+            "OOS-S5-CONTEXT",
+            "OOS-S6-UI",
+            "TRUST-AUTH-CONTEXT",
+            "TRUST-FRESH-DATA-DIR",
+            "TRUST-LOCAL-HOST",
+            "TRUST-PRODUCT-RUNTIME"
+          ],
+          "path": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/assurance-contract.json",
+          "profile": "standard",
+          "recorded_at": "2026-09-01T12:03:37+0800",
+          "scope_hash": "308a69f95f0bac56a15b35693c0d3d42f71ca83197ad5b7eac00506b283e79a8",
+          "sha256": "699b593e1d84ae1205dfda129cc4b955cbee875e161d3005ebeb657e29b598aa",
+          "threat_model_hash": "c6a3893055154b5ceba6409843d17666e1b751242cdd04946502e2bce0d58d21"
+        }
+      ],
+      "control_events": [
+        {
+          "acceptance_sha256": "1849b31a25a7274965f8df7cfe2c9bf4a191bcfd512efe35cb72ca9bd4eec3cc",
+          "action": "scope-change-approved",
+          "after_round": 2,
+          "approval_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+          "evidence": "User selected option A: include claimed-turn read, Context/Provider/Tool authority, sole SDK start/bind, terminal/restart, real workspace binding, and HUMAN lifespan production composition.",
+          "initiator": "user-initiated",
+          "outcome": "scope-change",
+          "recorded_at": "2026-09-01T11:38:22+0800",
+          "scope_hash": "f555c9d7a241797d3b405f41437015817aa12adacee04d229aad588231e3dd5b",
+          "threat_model_hash": "c6a3893055154b5ceba6409843d17666e1b751242cdd04946502e2bce0d58d21",
+          "triggering_state": "CONVERGED"
+        },
+        {
+          "acceptance_sha256": "6e4ef78e3feab3870b57e24917f17bf02d22f1bc55c623985c67c2b90a9672e4",
+          "action": "scope-change-approved",
+          "after_round": 2,
+          "approval_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+          "evidence": "A2 approved scope refined into explicit initial-route provenance, inert pre-claim draft, Session-independent runtime ports, v44 recovery taxonomy, and exact candidate-wheel oracle without changing the user-approved behavior.",
+          "initiator": "user-initiated",
+          "outcome": "scope-change",
+          "recorded_at": "2026-09-01T12:03:37+0800",
+          "scope_hash": "308a69f95f0bac56a15b35693c0d3d42f71ca83197ad5b7eac00506b283e79a8",
+          "threat_model_hash": "c6a3893055154b5ceba6409843d17666e1b751242cdd04946502e2bce0d58d21",
+          "triggering_state": "CONVERGED"
+        }
+      ],
+      "limits": {
+        "hard": 8,
+        "soft": 3,
+        "user_review": 5
+      },
+      "loop_id": "plan-iteration-001",
+      "loop_type": "plan-iteration",
+      "orchestration": "clustered",
+      "primary_contradiction": {
+        "acceptance_ids": [
+          "HM-AC-3",
+          "HM-AC-4",
+          "HM-AC-6",
+          "HM-AC-7"
+        ],
+        "id": "pc-long-term-task-resume",
+        "summary": "The accepted core contradiction is a single, value-first question: whether a distant TaskScope can be recovered correctly and within fixed bounds from canonical Host facts. Its current minimum validation is not executable because queued turns are frozen into that action while the plan schedules FIFO implementation after the value milestone."
+      },
+      "rounds": [
+        {
+          "based_on_plan_hash": null,
+          "coverage": {
+            "acceptance_coverage": true,
+            "data_flow_and_persistence": true,
+            "entry_and_trust_chain": true,
+            "failure_and_recovery": true,
+            "identity_permissions_concurrency_cleanup": true,
+            "release_and_rollback": true,
+            "tests_and_evidence": true,
+            "trusted_boundary_stop": true
+          },
+          "findings": [
+            {
+              "assurance_contract_ids": [
+                "FAIL-FOREGROUND-RUN-CONCURRENCY"
+              ],
+              "evidence": "acceptance.md:10-11 and 49-53 freeze queued turns/FIFO into the minimum value action and HM-S4-TO-VALUE. plan.md:5-7 repeats queued turns but declares Task 3 as the value gate and says only views/checkpoint/search/open precede it; plan.md:79-83 omits queued turns, while v41 queue/FIFO is first implemented in Task 4 at plan.md:85-91.",
+              "id": "value-smoke-requires-not-yet-built-fifo",
+              "origin": "pre-existing",
+              "root_cause": "The task dependency graph excludes a frozen prerequisite from the value milestone, so Task 3 cannot execute the approved minimum validation action or legitimately open the expensive-test gate.",
+              "scope_relation": "in-scope",
+              "severity": "P0",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-3"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-TASK-RESUME-LOSS",
+                "FAIL-READ-VIEW-GROWTH",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "plan.md:65-67 derives six views from canonical revision plus events/checkpoints but binds page identity only to scope/revision/kind/page-index/hash and lists no change to task_scope/store.py. Baseline backend/deskpet/task_scope/store.py:143-196 appends Host events by only advancing mutable task_scope_heads.event_watermark; lines 300-352 append checkpoints without a projection/search outbox; lines 373-390 emit projection/search outbox only from create/mutation. Migration 028 lines 132-174 makes projection revision/cache/outbox/search-outbox unique by task_scope_id + canonical_revision. Thus 100k events and a later checkpoint can leave canonical_revision unchanged and have no immutable projection generation to render or replay.",
+              "id": "projection-version-omits-event-checkpoint-change-identity",
+              "origin": "pre-existing",
+              "root_cause": "The plan treats semantic canonical revision as the complete projection source version even though append-only events and checkpoints advance independently; the producer and schema lack a composite immutable input identity and outbox trigger for those changes.",
+              "scope_relation": "in-scope",
+              "severity": "P0",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-6",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-TASK-RESUME-LOSS",
+                "FAIL-READ-VIEW-GROWTH"
+              ],
+              "evidence": "acceptance.md:34 simultaneously requires every page <=32 KiB, exactly 500 events per EVIDENCE page, and recovery of every canonical field/ref. plan.md:65-69 repeats those limits but defines neither a frozen page wire schema nor an indirection/overflow rule or size spike. Five hundred 64-character hashes alone consume 32,000 bytes before event IDs, ordering, kinds, JSON framing, content refs, or page metadata.",
+              "id": "evidence-page-cardinality-byte-bound-unproven",
+              "origin": "pre-existing",
+              "root_cause": "The plan copies mutually constraining count, completeness, and byte limits without proving a representation that can satisfy all three, leaving the core paging contract structurally non-executable.",
+              "scope_relation": "in-scope",
+              "severity": "P0",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-6",
+                "HM-AC-7"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-PRIMARY-STREAM-SPLIT",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "plan.md:40 and 100-106 says a fresh prototype data dir defaults to the new service while a legacy epoch follows a separate path, but gives no pre-migration dispatch algorithm or lifecycle ordering. Baseline backend/main.py:3025-3038 unconditionally runs initialize_state_db(_state_db_path), which advances a fresh database through the legacy v34 path before SessionDB startup; only the opt-in human-memory initializer can durably claim an empty database for the v35+ epoch.",
+              "id": "fresh-epoch-startup-dispatch-undefined",
+              "origin": "pre-existing",
+              "root_cause": "The production composition task names both startup modes but does not define the atomic empty/fresh/legacy/future decision point before the existing legacy initializer mutates the database.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-TASK-SEARCH-AUTHORITY",
+                "FAIL-PRIMARY-STREAM-SPLIT",
+                "FAIL-FOREGROUND-RUN-CONCURRENCY"
+              ],
+              "evidence": "plan.md:38,48-50 and 71-77 introduces public Host APIs and an authenticated subject but leaves endpoint DTOs, the trusted subject derivation, allowed-scope derivation, and per-operation lineage checks unspecified; plan.md:88 only says enqueue_turn validates a primary evidence ref. Baseline CanonicalTaskScopeStore.create_task_scope accepts caller-provided subject, append_host_event has no subject parameter (store.py:90-96,143-152), and _verify_refs_tx checks only evidence ID/hash rather than subject ownership (store.py:407-410). The facade therefore needs an explicit authority contract for every create/append/mutate/open/binding/queue/control call.",
+              "id": "public-facade-subject-authority-contract-undefined",
+              "origin": "pre-existing",
+              "root_cause": "The plan relies on a facade name to close trust boundaries but does not specify which values are Host-derived versus untrusted payloads or the cross-object subject/TaskScope/evidence/Run checks required before calling reusable stores.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-3",
+                "HM-AC-4"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-FOREGROUND-RUN-CONCURRENCY",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "plan.md:87-91 lists active/running uniqueness, pause/stop/cancel receipts, signaling, terminal settlement, leases and restart, but supplies no frozen Run/turn/control state transition table, control precedence, idempotency identity, paused-Run ownership rule, durable control replay rule, or lease-generation fence. TC-HM-11 S4-2/S4-3 requires pause followed by stop/cancel, rejection of a second foreground owner, and crash recovery on both sides of claim and terminal receipt.",
+              "id": "foreground-control-state-machine-not-closed",
+              "origin": "pre-existing",
+              "root_cause": "Schema nouns and happy-path ordering are specified without the transition and replay contract that determines whether a durable control is terminal, superseded, re-applied after restart, or permits the next FIFO turn.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-3",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-DATA-LOSS",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "plan.md:93-98 orders close ingress -> drain/park outboxes -> wal_checkpoint(FULL) -> manifest, but does not define how already-admitted store transactions are drained, how direct reusable-store writers observe the fence, or which generation is rechecked at commit. Baseline CanonicalTaskScopeStore methods independently open SQLite connections and begin their own IMMEDIATE transactions, so a facade precheck alone cannot prevent an in-flight append from committing during checkpoint/manifest computation.",
+              "id": "recovery-fence-lacks-write-quiescence-boundary",
+              "origin": "pre-existing",
+              "root_cause": "The recovery design fences new requests but lacks a transaction-level writer barrier and consistent snapshot boundary covering all canonical writers before WAL and integrity attestation.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-DATA-LOSS",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "plan.md:12 and 108-112 freezes reuse to TC-HM-02/09/10/11/12. The current testcase candidate TC-HM-14-host-closure-recovery.md:1-14 is the only testcase directly bound to HM-S4-TO-INTEGRATION, HM-S4-TO-DATA and HM-S4-TO-REGRESSION, and lines 27-36 define the public-only fresh composition, four legacy CRUD fences, drain/park/WAL/export, raw-integrity and affected-API oracle. Omitting it leaves three of the seven required obligations without the named reusable required testcase that already exists in the validation track.",
+              "id": "required-host-recovery-oracle-omitted",
+              "origin": "pre-existing",
+              "root_cause": "The plan's testcase reuse inventory was frozen before the Host closure/recovery oracle produced by the parallel validation track was incorporated.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-DATA-LOSS"
+              ],
+              "evidence": "plan.md:95-98 and 112 calls for raw row-count/content-hash manifests and pre/post comparison but never freezes the raw-versus-derived table inventory or distinguishes immutable old-row equality from legitimate append-only recovery/control receipts. TC-HM-14:30-35 explicitly expects new receipts to append while existing raw rows remain unchanged. A whole-table equality oracle would reject correct recovery; a monotonic-count-only oracle could miss mutation of existing rows.",
+              "id": "raw-integrity-manifest-comparison-ambiguous",
+              "origin": "pre-existing",
+              "root_cause": "The integrity test lacks a canonical table taxonomy and delta-aware comparison rule, so its claimed raw-data invariant is not deterministic.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            }
+          ],
+          "new_critical_findings": 9,
+          "plan_hash": "00a59caa1fe3b2311226709a89591949a3ab29cd24440c314a07f24371196fec",
+          "review_mode": "breadth",
+          "reviewer_verdict": null,
+          "round": 1,
+          "scope_hash": "9f59fd21290c8f28bf64f2d6223ddcbff4cf00a725f97369d024b9e28b98b7ee",
+          "threat_model_hash": "97cfa13b13a25da21568ab69521bd7d1bdde3d5b8f89fddfd0bfca553053a8d1",
+          "timestamp": "2026-09-01T08:57:32+0800"
+        },
+        {
+          "based_on_plan_hash": "00a59caa1fe3b2311226709a89591949a3ab29cd24440c314a07f24371196fec",
+          "coverage": null,
+          "findings": [
+            {
+              "assurance_contract_ids": [
+                "FAIL-FOREGROUND-RUN-CONCURRENCY"
+              ],
+              "evidence": "Resolved by current plan.md:6-7 and 85-111. Task 3 now implements the durable FIFO reducer before Task 4, and Task 4 is the value gate. The Task 4 smoke explicitly creates queued turns through the typed facade, cold-restarts, and checks FIFO together with the 100k candidate-search-to-exact-open recovery result; expensive recovery/full-regression/finalize work remains prohibited until that smoke passes.",
+              "id": "value-smoke-requires-not-yet-built-fifo",
+              "origin": "pre-existing",
+              "root_cause": "The task dependency graph excludes a frozen prerequisite from the value milestone, so Task 3 cannot execute the approved minimum validation action or legitimately open the expensive-test gate.",
+              "scope_relation": "in-scope",
+              "severity": "P0",
+              "status": "resolved",
+              "violated_acceptance_ids": [
+                "HM-AC-3"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-TASK-RESUME-LOSS",
+                "FAIL-READ-VIEW-GROWTH",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "Resolved by current plan.md:18-20, 30, 62 and 68-75. TaskScopeProjectionSourceV1 now binds scope, monotonic source sequence, canonical revision/state hash, event watermark/prefix root including event/step/evidence-link hashes, checkpoint sequence/set root, binding revision/receipt hash, renderer contract version and total source hash. Every listed source producer must append source-change plus projection outbox in the same authority transaction; coalescing records the covered sequence range, exact historical requests materialize the exact source, old sources remain queryable, and producer crash/lost-ACK/coalescing/rebuild cases are required tests. The synthesis conflict is closed using canonical P0 severity rather than the specialist's lower P1.",
+              "id": "projection-version-omits-event-checkpoint-change-identity",
+              "origin": "pre-existing",
+              "root_cause": "The plan treats semantic canonical revision as the complete projection source version even though append-only events and checkpoints advance independently; the producer and schema lack a composite immutable input identity and outbox trigger for those changes.",
+              "scope_relation": "in-scope",
+              "severity": "P0",
+              "status": "resolved",
+              "violated_acceptance_ids": [
+                "HM-AC-6",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-TASK-RESUME-LOSS",
+                "FAIL-READ-VIEW-GROWTH"
+              ],
+              "evidence": "Resolved by current plan.md:63 and 70-75. Five hundred events is now a stable logical group rather than one physical page. Content-addressed group manifest/index/leaf/chunk blocks are each bounded to 32 KiB; oversized payload bytes are recursively chunked without changing group boundaries; stable IDs bind scope/source/group/block/content hashes; all canonical fields and refs remain byte-recoverable. Required verification covers Unicode, a single oversized event, a 500-event group spanning multiple blocks, 1k/10k/100k limits and byte-identical rebuild.",
+              "id": "evidence-page-cardinality-byte-bound-unproven",
+              "origin": "pre-existing",
+              "root_cause": "The plan copies mutually constraining count, completeness, and byte limits without proving a representation that can satisfy all three, leaving the core paging contract structurally non-executable.",
+              "scope_relation": "in-scope",
+              "severity": "P0",
+              "status": "resolved",
+              "violated_acceptance_ids": [
+                "HM-AC-6",
+                "HM-AC-7"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-PRIMARY-STREAM-SPLIT",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "Resolved by current plan.md:29 and 95-99. A single decision-lock owner now classifies FRESH, HUMAN_RESUME, LEGACY, INVALID or FUTURE before every writable state.db opener, initialize_state_db(), SessionDB.initialize(), MemoryManager/provider/worker/API or backup. FRESH is restricted to the approved prototype lane and an absent/zero-byte/valid empty-v0 database and is durably claimed by the human initializer through v42; HUMAN_RESUME validates marker/checksum and resumes the exact v0..v42 chain; LEGACY stays in explicit legacy composition with stable human endpoint rejection; INVALID/FUTURE fail before business writes, reset, backup or recovery. Every consumer receives the frozen composition mode and cannot redispatch independently.",
+              "id": "fresh-epoch-startup-dispatch-undefined",
+              "origin": "pre-existing",
+              "root_cause": "The production composition task names both startup modes but does not define the atomic empty/fresh/legacy/future decision point before the existing legacy initializer mutates the database.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "resolved",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-TASK-SEARCH-AUTHORITY",
+                "FAIL-PRIMARY-STREAM-SPLIT",
+                "FAIL-FOREGROUND-RUN-CONCURRENCY"
+              ],
+              "evidence": "Resolved by current plan.md:99-108 and 124-130. The facade derives subject from the trusted Host auth snapshot and forbids payload authority over subject, allowed scope IDs, mode, binding/context revisions or worker role. The frozen operation matrix assigns payload selectors versus Host-derived primary/scope/evidence/run/binding/checkpoint lineage, applies canonical ownership/permission before search ranking, keeps exact open authority-neutral, derives Auto binding from the current foreground generation, keeps claim/settle internal, and makes recovery/export constructor-bound Host lifecycle operations. Task 6 enumerates every facade method and requires pre-store stable rejection for wrong subject/primary/scope/evidence/run/binding lineage. Its shared legacy guard covers project/session creation, direct SessionDB creation, chat remap/switch, rename and delete at both ingress and final mutation boundaries, preserving human_memory_primary_authority_immutable before reads, writes, remaps, cancellation or success events.",
+              "id": "public-facade-subject-authority-contract-undefined",
+              "origin": "pre-existing",
+              "root_cause": "The plan relies on a facade name to close trust boundaries but does not specify which values are Host-derived versus untrusted payloads or the cross-object subject/TaskScope/evidence/Run checks required before calling reusable stores.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "resolved",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-3",
+                "HM-AC-4"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-FOREGROUND-RUN-CONCURRENCY",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "Resolved by current plan.md:61 and 85-93. Host owns admission/FIFO/control/lease/current-Run snapshots while the published SDK remains the only Agent execution engine; host_run_id binds idempotently one-to-one to sdk_run_id and timeout/unknown cannot start a replacement. The plan freezes queued-turn and Run reducers, terminal immutability, CANCEL > STOP > PAUSE, stronger-control supersession, terminal-first and control-first race semantics, pause slot retention, resume generation advancement, signal-outbox durability, lease identity/generation fencing, stale-owner read-only behavior, same-Run restart recovery, background namespace exclusion and a per-subject nonterminal unique constraint. Verification covers duplicate/lost ACK and every transaction boundary, control/terminal races, stale generations, lease expiry, background rejection, SDK binding and Auto snapshot lineage. Canonical primary AC/contract bindings are retained despite the specialist's differing binding set.",
+              "id": "foreground-control-state-machine-not-closed",
+              "origin": "pre-existing",
+              "root_cause": "Schema nouns and happy-path ordering are specified without the transition and replay contract that determines whether a durable control is terminal, superseded, re-applied after restart, or permits the next FIFO turn.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "resolved",
+              "violated_acceptance_ids": [
+                "HM-AC-3",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-DATA-LOSS",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "Resolved by current plan.md:30 and 113-122. Recovery now has a durable OPEN→CLOSING→QUIESCED→SEALED→OPEN generation state machine with FAILED_CLOSED recovery. Every canonical writer must BEGIN IMMEDIATE and check the fence in the same transaction before its first mutation; the close coordinator obtains the writer lock and commits CLOSING/cutoff after earlier writers, while exact allowlist triggers catch unregistered writers. The registry explicitly covers primary/evidence, TaskScope producers, provisioning, binding and foreground queue/control/terminal. Cutoff outboxes and worker leases require acknowledgements and gap receipts before QUIESCED. FULL WAL checkpoint runs under the closed fence and recovery mutex in autocommit and requires a nonempty busy=0, log_frames=checkpointed_frames result; unknown/busy/gap states remain FAILED_CLOSED. Barrier races, unregistered SQL, worker ack/park/replay, generations and fault/restart are explicit tests.",
+              "id": "recovery-fence-lacks-write-quiescence-boundary",
+              "origin": "pre-existing",
+              "root_cause": "The recovery design fences new requests but lacks a transaction-level writer barrier and consistent snapshot boundary covering all canonical writers before WAL and integrity attestation.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "resolved",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-DATA-LOSS",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "Resolved by current plan.md:132-138 and verification-spec.json. Task 7 now explicitly adds and versions TC-HM-14 as the recovery/integration Host lane and freezes inventory, reuse and verification-spec hashes. The structured verification spec contains all seven approved obligations and pins TC-HM-14 revision 2 to required S4-INTEGRATION, S4-DATA-RECOVERY and S4-REGRESSION scenarios, including fresh epoch/primary/legacy CRUD/export, fence/drain/WAL/raw integrity and critical/affected/full regression evidence contracts. The unchanged plan summary at line 12 is superseded by the executable Task 7 instruction and structured required scenario mapping rather than omitting TC-HM-14 from delivery.",
+              "id": "required-host-recovery-oracle-omitted",
+              "origin": "pre-existing",
+              "root_cause": "The plan's testcase reuse inventory was frozen before the Host closure/recovery oracle produced by the parallel validation track was incorporated.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "resolved",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-DATA-LOSS"
+              ],
+              "evidence": "Resolved by current plan.md:119-122 and 136. The manifest uses an exact schema allowlist and separates A protected immutable authority rows, B CAS-only coordination, C legal immutable recovery/audit deltas and D disposable derived state. At the fence cutoff M0 records schema/typed-column hashes, primary-key-sorted counts and typed row-leaf roots for each A table; post-check proves each preexisting key and leaf unchanged rather than relying on aggregate equality. B uses referential/CAS invariants, C reports delta count/root separately, D uses rebuild oracles, and unknown protected tables/columns fail closed. Emergency export is derived from the SEALED snapshot with explicit A/B/C inclusion, D/legacy/auth/config/private-provider exclusion, deterministic typed serialization, content-addressed chunks and a non-self-referential artifact receipt. Canonical primary assurance binding remains FAIL-DATA-LOSS although the specialist additionally discussed replay risk.",
+              "id": "raw-integrity-manifest-comparison-ambiguous",
+              "origin": "pre-existing",
+              "root_cause": "The integrity test lacks a canonical table taxonomy and delta-aware comparison rule, so its claimed raw-data invariant is not deterministic.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "resolved",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            }
+          ],
+          "new_critical_findings": 0,
+          "plan_hash": "cf089e02f45192e03a7484f7b2df969e05f597c66183440b928c99e2548f9b85",
+          "review_mode": "diff",
+          "reviewer_verdict": null,
+          "round": 2,
+          "scope_hash": "9f59fd21290c8f28bf64f2d6223ddcbff4cf00a725f97369d024b9e28b98b7ee",
+          "threat_model_hash": "97cfa13b13a25da21568ab69521bd7d1bdde3d5b8f89fddfd0bfca553053a8d1",
+          "timestamp": "2026-09-01T09:08:54+0800"
+        }
+      ],
+      "specialist_challenges": [
+        {
+          "cluster_id": "cluster-projection-versioning-and-bounds",
+          "output": {
+            "cluster_id": "cluster-projection-versioning-and-bounds",
+            "conclusion": {
+              "status": "refined",
+              "summary": "Both parent findings are confirmed. Projection versioning needs a composite, transactionally emitted source identity with explicit immutable-history rules; canonical_revision alone cannot observe event, checkpoint or binding changes. The 500-event and 32 KiB requirements are compatible only when 500 denotes a logical page group and physical storage uses bounded hashed indirection/chunking. Without these plan-level definitions, HM-AC-6/7 cannot be implemented or decisively tested."
+            },
+            "cross_cluster_refs": [],
+            "findings": [
+              {
+                "assurance_contract_ids": [
+                  "FAIL-TASK-RESUME-LOSS",
+                  "FAIL-READ-VIEW-GROWTH",
+                  "FAIL-PROTOCOL-REPLAY"
+                ],
+                "evidence": "migration 028 lines 120-163 keys checkpoints, projection revisions/cache/outbox by canonical_revision and enforces UNIQUE(task_scope_id,canonical_revision). store.py lines 143-196 append a Host event and advance only head.event_watermark without creating a canonical revision or projection outbox; lines 300-352 append a checkpoint at an existing canonical revision without projection invalidation; lines 354-390 rebuild/write projection from state_json alone. The increment plan lines 63-69 instead requires views from canonical revision, events, steps, evidence refs, bindings and checkpoints, while TC-HM-12 S4-1/S4-4 requires event/checkpoint-sensitive immutable historical revisions and byte-identical rebuild. Therefore two different source states can currently share the same projection identity.",
+                "id": "projection-version-omits-event-checkpoint-change-identity",
+                "origin": "pre-existing",
+                "root_cause": "canonical_revision is only the mutation-reduced state revision, not a complete projection-source identity. The plan must define an executable v39 TaskScopeProjectionSourceV1 identity containing task_scope_id, monotonic projection_source_sequence, canonical_revision+state_hash, event_watermark+event_prefix_root where each event leaf commits the event row and ordered step/evidence-link hashes, checkpoint_sequence+checkpoint_set_root, binding_set_revision+binding_receipt_hash, and renderer_contract_version; source_identity_hash is the canonical hash of that tuple. Every source-changing writer—create scope/mutation, append_host_event, ExecutionEvidence ingress, checkpoint commit and binding-set commit—must append a source-change ledger row plus projection outbox row in the same SQLite transaction as its authority write. The outbox may audibly coalesce only contiguous source sequences, recording covered_from/covered_through; explicit checkpoint/projection requests must materialize their exact source identity. Projection revision/page IDs must bind source_identity_hash and renderer version, not canonical_revision alone. Exact replay returns the original receipt; any component change creates a new immutable source/projection revision even when canonical_revision is unchanged; old revisions stay queryable; latest is only a rebuildable pointer; a renderer change creates a new contract-version derivative and never overwrites old bytes.",
+                "scope_relation": "in-scope",
+                "severity": "P1",
+                "status": "open",
+                "violated_acceptance_ids": [
+                  "HM-AC-6",
+                  "HM-AC-7",
+                  "HM-AC-8"
+                ]
+              },
+              {
+                "assurance_contract_ids": [
+                  "FAIL-TASK-RESUME-LOSS",
+                  "FAIL-READ-VIEW-GROWTH"
+                ],
+                "evidence": "The frozen AC and plan require both EVIDENCE 500 events/page and every page <=32 KiB, plus complete recovery of all canonical fields/refs. TC-HM-12 lines 88-92 repeats this and explicitly includes Unicode and oversized fields. Static arithmetic gives only 32768/500 = 65.536 bytes per event including framing. migration 028 lines 24-35 already has a 64-character payload_hash per event before event_id, source_event_id, kinds, reason, timestamps, payload JSON, steps or evidence refs; store.py permits source_event_id up to 512 characters and does not impose a 32 KiB event-payload ceiling. Thus a physical page containing 500 complete events cannot satisfy the byte cap, and a single oversized event can exceed it alone. TC-HM-14 covers recovery/raw manifests but supplies no page-layout oracle that resolves this contradiction.",
+                "id": "evidence-page-cardinality-byte-bound-unproven",
+                "origin": "pre-existing",
+                "root_cause": "The plan conflates a logical 500-event grouping rule with one physical <=32 KiB serialization unit. Preserve the AC by defining one logical EvidencePageGroup per consecutive 500-event range, backed by indirection: a bounded group manifest commits scope/source identity, group index, exact sequence range/count, before/after event roots, group content root and a root block ref; adaptive content-addressed index/leaf blocks are each <=32 KiB. Event descriptors commit every canonical field plus ordered step/evidence refs; oversized canonical JSON/scalars are represented by ordered byte chunks, each <=32 KiB, so exact UTF-8 bytes remain recoverable. Use a bounded Merkle/B-tree page index so the six-view top level contains only a fixed root ref rather than all groups. Stable IDs bind source_identity_hash, logical group index, physical block path and content hash. Reconstruction must traverse and verify group count/range/root, block hashes and exact field/ref coverage. The oracle must separately assert 500 events per logical group, every physical manifest/index/leaf/chunk <=32 KiB, fixed-size top-level roots, and byte-exact recovery for maximum-length Unicode/payload/ref fixtures; requiring 500 full events in one physical page remains structurally impossible.",
+                "scope_relation": "in-scope",
+                "severity": "P0",
+                "status": "open",
+                "violated_acceptance_ids": [
+                  "HM-AC-6",
+                  "HM-AC-7"
+                ]
+              }
+            ],
+            "parent_finding_ids": [
+              "projection-version-omits-event-checkpoint-change-identity",
+              "evidence-page-cardinality-byte-bound-unproven"
+            ],
+            "specialty": "data-state"
+          },
+          "output_path": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/challenge/specialist-projection-bounds.json",
+          "output_sha256": "9cec21480e468d6633f2b6396a16571e147cd49b3b71e1861f573bf54400bb42",
+          "recorded_at": "2026-09-01T08:57:42+0800",
+          "specialty": "data-state",
+          "status": "completed"
+        },
+        {
+          "cluster_id": "cluster-entry-trust-composition",
+          "output": {
+            "cluster_id": "cluster-entry-trust-composition",
+            "conclusion": {
+              "status": "refined",
+              "summary": "Both parent findings remain open. Static composition proves the fresh epoch can currently be preempted by legacy initialization, and the reused stores cannot serve directly as public authorization boundaries. The review supplies an executable epoch dispatch state machine, fresh-default semantics, complete facade authority/lineage matrix, and the concrete legacy CRUD fence surface without expanding S5, S6, legacy migration, or multi-agent scope."
+            },
+            "cross_cluster_refs": [],
+            "findings": [
+              {
+                "assurance_contract_ids": [
+                  "FAIL-PRIMARY-STREAM-SPLIT",
+                  "FAIL-PROTOCOL-REPLAY"
+                ],
+                "evidence": "The finding is confirmed and refined. backend/main.py:3036-3038 unconditionally calls initialize_state_db(state.db) before HumanMemoryHostService composition; backend/deskpet/memory/session_db.py:260-265 independently calls the same legacy initializer; HumanMemoryProgramStore.initialize_subject() only later calls initialize_human_memory_program_state_db(). On a missing database, the first legacy initializer therefore creates v34 without the human-memory bootstrap marker, after which human initialization rejects it as legacy. The plan must freeze this pre-migration dispatch before any state.db opener, SessionDB.initialize(), MemoryManager, provider, worker, API, backup, or writable SQLite connection: (1) acquire one startup epoch-decision lock and inspect read-only; (2) FRESH is only the approved fresh-prototype userdata lane plus an absent state.db, a zero-byte file, or valid SQLite user_version=0 with no non-SQLite user tables and no epoch marker; select HUMAN, immediately call initialize_human_memory_program_state_db(), durably claim human-memory-v1 before base migrations, and enable HumanMemoryHostService by default without a feature flag; (3) HUMAN-RESUME is a valid human_memory_program_bootstrap marker with user_version 0..42, including an interrupted base migration, or a fully valid recognized v35..v42 marker chain; select the human initializer and resume the exact chain, with valid v39-v41 treated as resumable partial S4 states rather than future or legacy; (4) LEGACY is an existing valid legacy database without a human bootstrap/marker, normally user_version 1..34; select only the unchanged explicit legacy composition, never apply v35-v42, never construct or lazily initialize HumanMemoryHostService, and return human_memory_program_legacy_database_unsupported from every human-memory endpoint; (5) INVALID is user_version=0 with legacy/user tables, v35..v42 without the required bootstrap/marker chain, mixed/checksum-invalid markers, or corrupt/ambiguous format; fail closed before either migrator or any business write; (6) FUTURE is user_version>42 or an unsupported epoch/min-max range; fail state-dependent startup before either initializer, SessionDB, backup/reset, queue recovery, or export that assumes the current schema. After HUMAN selection, all consumers receive the frozen composition mode and open the already initialized v42 database; SessionDB must not independently redispatch it as legacy. Fresh default therefore means automatic HUMAN composition only for the approved genuinely fresh lane, persistence of that choice across restart through the bootstrap/epoch markers, and never an on-first-request upgrade of an existing or reset legacy userdata directory.",
+                "id": "fresh-epoch-startup-dispatch-undefined",
+                "origin": "pre-existing",
+                "root_cause": "The plan names fresh, legacy, and future outcomes but does not assign a single pre-side-effect epoch classifier and initializer owner in lifespan. Existing composition has two legacy initialization calls and leaves human initialization to a later store method, so startup order—not the frozen data-format contract—currently decides the epoch.",
+                "scope_relation": "in-scope",
+                "severity": "P1",
+                "status": "open",
+                "violated_acceptance_ids": [
+                  "HM-AC-1",
+                  "HM-AC-8"
+                ]
+              },
+              {
+                "assurance_contract_ids": [
+                  "FAIL-TASK-SEARCH-AUTHORITY",
+                  "FAIL-PRIMARY-STREAM-SPLIT",
+                  "FAIL-FOREGROUND-RUN-CONCURRENCY"
+                ],
+                "evidence": "The finding is confirmed and refined. The established authority pattern is LocalAuthSnapshotProvider.current_snapshot() -> validate_auth_snapshot() -> HumanIdentity.identity_namespace_hash, with CompanionControlIngress._identity() comparing any supplied snapshot to the trusted snapshot and ValidatedLocalMemoryIdentityAuthority.bind() deriving actor identity rather than accepting it. The reused stores are not themselves a public trust boundary: HumanMemoryProgramStore.initialize_subject/open_primary_conversation use caller subject; append_evidence uses envelope.subject; CanonicalTaskScopeStore.create_task_scope uses caller subject, append_host_event/create_checkpoint/rebuild_projection have no subject argument, apply_mutation_plan only compares its embedded subject to the scope row, and _verify_refs_tx checks evidence_id/hash but not evidence subject or primary; TaskWorkspaceBindingStore accepts subject/run/scope-bearing DTOs, while current_receipt(task_scope_id) has no subject check. The required facade matrix is: primary.open — Host derives subject; payload may contain only requested primary ID/idempotency metadata; resolved primary.subject must equal Host subject and an exact requested ID must match. evidence.append — Host derives subject; payload supplies the frozen sanitized envelope/receipt; envelope.subject and receipt.subject must equal Host subject, their evidence/run/source/envelope/receipt hashes must agree, primary_conversation_id must be the Host subject's writable primary, and any referenced durable Run must belong to that subject. task_scope.create — Host derives subject; payload supplies scope ID, title, and idempotency key; persisted scope owner is always Host subject. task_scope.append_event/mutate/checkpoint/rebuild — Host derives subject; payload supplies exact scope/revision/event/plan/metadata; before every read or write the canonical scope.subject must equal Host subject; every evidence ref must resolve by ID plus hash plus subject plus Host primary, and every run-bearing ref must resolve to the same subject and compatible scope. search — Host derives subject and computes allowed scope IDs from canonical ownership plus any durable permission relation; payload supplies query, cursor, and bounds only and may not supply subject or allowed IDs; authorization relation is applied before MATCH/rank/snippet. open_exact — Host derives subject; payload supplies exact scope ID, expected source revision, page selectors, and bounded live probe; the scope must be in the Host-computed authorized set and the revision must match; it must not mutate cursor, binding, or grants. binding.manual_append — Host derives subject; payload supplies proposal/root/idempotency and signed interaction evidence; embedded subject must equal Host subject, scope owner and evidence must match it, run must be the current same-subject/same-scope Run, and the Host-issued authorization decision—not a payload flag—is authority. binding.auto_append — Host derives subject and loads the durable current Run snapshot; payload may select exact run/scope and propose a root but may not choose mode, subject, run revision, binding revision, context snapshot/revision/hash, configuration revision, or authority receipt; all run/scope/binding/context/config fields must match the Host-issued snapshot. queue.enqueue — Host derives subject; payload supplies idempotency, turn content, exact optional scope selector, and committed primary evidence ref; evidence must match Host subject/primary/hash, scope must be owned by Host subject, and any pre-existing run reference must be compatible; the queue row freezes this lineage before acknowledgement. queue.claim/settle — worker-internal only, not a caller-selectable public subject operation; Host selects the oldest eligible durable row, derives subject/scope/evidence from it, transactionally enforces the one-foreground-Run constraint, rejects background worker kinds, and settles only the claimed run generation. control — Host derives subject; payload supplies request ID, exact run ID, pause/stop/cancel kind, and reason; Host loads the current Run, verifies run.subject equals Host subject and active generation, then records immediate control outside normal FIFO. audit.refs — Host derives subject; payload supplies exact IDs and pagination bounds; every returned projection/search/checkpoint/binding/run/recovery receipt must trace to a Host-owned scope or primary and immutable hashes, with no arbitrary table/path selector. recovery/emergency-export — capability is owned by trusted Host lifecycle, not payload identity; per-subject material is restricted to Host-derived subject, payload contains only bounded action/idempotency/export options, and it cannot choose subject, database path, raw table, epoch, or min/max compatibility. The legacy CRUD fence must be a shared guard returning human_memory_primary_authority_immutable before any SQL write, handoff read, peer remap, workflow cancellation, or success event at these entries: project_protocol session_create and its SessionCreationService.create_conversation_session boundary, including source/requested/generated IDs; the chat new-session branch in backend/main.py around 15279 and its post-create remap around 15448; SessionDB.create_session and ensure_session for direct/internal creation; session_messages_load around 14201 before _remap_chat_peer_group as the effective public switch; every externally reachable _remap_chat_peer_group call after resolving its target; session_rename before SessionDB.set_session_title plus the set_session_title boundary; session_delete before SessionCreationService.mark_deleted or SessionDB.clear plus both mutation boundaries. Current delete/rename handlers swallow exceptions into ok=false, so the stable code must be carried in the response. memory_clear is not a separate Session CRUD authority, but if its backing store reaches SessionDB.clear the shared clear guard must still reject the primary.",
+                "id": "public-facade-subject-authority-contract-undefined",
+                "origin": "pre-existing",
+                "root_cause": "The plan lists facade verbs without defining which fields are Host-derived, which payload fields are selectors only, or the mandatory subject-to-primary-to-scope-to-evidence-to-run-to-binding/context joins. Reused stores validate internal DTO consistency but intentionally do not authenticate callers, and legacy mutation handlers lack a common primary-authority fence.",
+                "scope_relation": "in-scope",
+                "severity": "P1",
+                "status": "open",
+                "violated_acceptance_ids": [
+                  "HM-AC-1",
+                  "HM-AC-3",
+                  "HM-AC-4"
+                ]
+              }
+            ],
+            "parent_finding_ids": [
+              "fresh-epoch-startup-dispatch-undefined",
+              "public-facade-subject-authority-contract-undefined"
+            ],
+            "specialty": "architecture"
+          },
+          "output_path": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/challenge/specialist-entry-trust.json",
+          "output_sha256": "aac9366bf25c94f23d8434eb7aca3c9a08bbd31bf40524756234d39d3032b847",
+          "recorded_at": "2026-09-01T08:57:43+0800",
+          "specialty": "architecture",
+          "status": "completed"
+        },
+        {
+          "cluster_id": "cluster-recovery-integrity",
+          "output": {
+            "cluster_id": "cluster-recovery-integrity",
+            "conclusion": {
+              "status": "refined",
+              "summary": "Both parent findings are confirmed. A correct fence requires a durable generation, BEGIN IMMEDIATE linearization, in-transaction checks by every canonical writer, quiesced worker acknowledgements and strict FULL-checkpoint result validation. Integrity must compare the exact cutoff set of preexisting immutable rows while separately accounting for allowlisted recovery appends and mutable/derived state. Emergency export needs a sealed logical manifest and explicit privacy/table allowlist; existing backup/reset/export paths are unsuitable."
+            },
+            "cross_cluster_refs": [],
+            "findings": [
+              {
+                "assurance_contract_ids": [
+                  "FAIL-DATA-LOSS",
+                  "FAIL-PROTOCOL-REPLAY"
+                ],
+                "evidence": "The current writers do not share an admission fence: human_memory_program.py lines 508-575 and 601-699, task_scope/store.py lines 90-350, and workspace_bindings.py lines 180-839 independently open SQLite connections and use BEGIN IMMEDIATE/commit. append_evidence even initializes the subject in a separate transaction before its evidence transaction. Closing only an HTTP/WS ingress cannot stop direct store, execution-ingress, provisioning, binding, queue or recovery writers. The required evidence path backend/deskpet/memory/evidence_ingress.py is absent, so the supplied writer inventory itself is not exhaustive. migrator.py lines 255-319 provides a legacy backup helper but it performs wal_checkpoint(TRUNCATE), copies the whole DB and prunes older backups; it is not the required recovery fence. main.py lines 12679-12787 exposes legacy list/delete/clear/export only and supplies neither write quiescence nor a sealed fresh-program export.",
+                "id": "recovery-fence-lacks-write-quiescence-boundary",
+                "origin": "pre-existing",
+                "root_cause": "Task 5 must freeze a DB-level linearization protocol, not only an API order. Add a durable fence singleton with generation and states OPEN→CLOSING→QUIESCED→SEALED→OPEN or FAILED_CLOSED. The coordinator starts BEGIN IMMEDIATE, CASes OPEN to CLOSING with a new generation/cutoff, then commits; acquiring the SQLite writer lock makes this commit occur after every writer transaction that started earlier. Every canonical writer must, after its own BEGIN IMMEDIATE and before its first mutation, read the same fence generation/state and reject unless OPEN; checking before BEGIN is racy. Add defense-in-depth triggers on the exact canonical/Run/FIFO table allowlist so an unregistered writer also receives a stable human_memory_ingress_fenced error. The writer registry must explicitly cover primary init/evidence, TaskScope host/execution/mutation/checkpoint, provisioning, binding, foreground queue/control/terminal and any later canonical writer. After CLOSING, only a constructor-bound recovery coordinator may append allowlisted drain/park/checkpoint/manifest/export audit receipts or mutate declared derived coordination tables. It drains or parks every outbox at or below the cutoff, revokes/awaits worker leases, records acknowledgements, and CASes QUIESCED. Under the same process recovery mutex, run PRAGMA wal_checkpoint(FULL) in autocommit mode and require a non-null result with busy=0 and log_frames=checkpointed_frames; busy readers/writers, a gap, or an unknown result leaves FAILED_CLOSED and produces no success manifest. Because checkpointing cannot be protected by an open write transaction, the durable fence plus complete writer checks and quiesced-worker acknowledgements must remain active across checkpoint and the subsequent BEGIN IMMEDIATE manifest snapshot. Reopen is legal only after the sealed manifest and requested export receipts commit; crash recovery resumes from the durable fence state/generation and never guesses that ingress is open.",
+                "scope_relation": "in-scope",
+                "severity": "P1",
+                "status": "open",
+                "violated_acceptance_ids": [
+                  "HM-AC-1",
+                  "HM-AC-7",
+                  "HM-AC-8"
+                ]
+              },
+              {
+                "assurance_contract_ids": [
+                  "FAIL-DATA-LOSS",
+                  "FAIL-PROTOCOL-REPLAY"
+                ],
+                "evidence": "The plan says to compare row-count/content-hash before and after recovery while also permitting earlier in-flight writes to finish and requiring new drain/park/checkpoint/manifest/export receipts. A single whole-database count/hash therefore either falsely fails on legitimate append-only audit rows or falsely passes if it ignores which preexisting row changed. Existing stores contain immutable authority rows plus mutable heads/watermarks, and projection/search caches are explicitly disposable, so they cannot share one equality oracle. migrator.backup_db hashes SQLite file bytes after TRUNCATE and main.py memory_export includes only legacy sessions/turns plus a nondeterministic exported_at timestamp; neither defines a logical canonical-row manifest or the emergency-export privacy allowlist.",
+                "id": "raw-integrity-manifest-comparison-ambiguous",
+                "origin": "pre-existing",
+                "root_cause": "Freeze an exact v42 table taxonomy in schema/plan, not a name-prefix heuristic: A=protected immutable authority rows (primary/init/sanitization/evidence; TaskScope events, steps, evidence links, mutation decisions/attempts, canonical revisions and checkpoints; provisioning/binding immutable rows; Run/FIFO/control/terminal facts); B=authority coordination rows allowed to change only by CAS (heads, watermarks, current binding head, queue/run lease heads); C=immutable derived/audit rows allowed during recovery (projection/page/search receipts, drain/park, WAL checkpoint, manifest and export receipts); D=disposable derived state (projection cache, FTS/index bodies, worker cursors or rebuildable leases explicitly declared disposable). The fence commit is the cutoff: all transactions that began before it have serialized and are included in baseline M0; no application canonical A row may be appended after it. M0 stores, per exact allowlisted table, schema/column-type hash, primary-key-sorted row count and a root over typed canonical row leaves. Post-recovery verification must prove every M0 primary key still exists with the identical leaf hash; it must not merely compare aggregate hashes. B rows use explicit referential/CAS invariants and must point to existing immutable rows. C may only append rows whose source fence generation/cutoff and parent receipt are valid; report their exact delta count/root separately. D is excluded from raw equality and is instead deleted/rebuilt with byte/hash or semantic index oracles. Unknown tables or columns in any protected namespace fail manifest creation closed. Emergency export must be generated from one SEALED manifest snapshot using an explicit allowlist of A, the current necessary B snapshot, and required C lineage; exclude D, FTS/cache bodies, legacy Session tables, authentication/configuration secrets and private provider payloads. Serialize table/column identities and typed values deterministically, sort by encoded primary key, chunk content-addressably, include format epoch, migration/checksum set, DB instance, fence generation/cutoff, per-table counts/roots and overall root. The export artifact binds the sealed manifest hash; its immutable receipt is appended afterward and binds artifact SHA-256/size without including itself in the artifact, avoiding self-reference. Do not reuse backup_db or the legacy memory_export endpoint.",
+                "scope_relation": "in-scope",
+                "severity": "P1",
+                "status": "open",
+                "violated_acceptance_ids": [
+                  "HM-AC-1",
+                  "HM-AC-7",
+                  "HM-AC-8"
+                ]
+              }
+            ],
+            "parent_finding_ids": [
+              "recovery-fence-lacks-write-quiescence-boundary",
+              "raw-integrity-manifest-comparison-ambiguous"
+            ],
+            "specialty": "failure-recovery"
+          },
+          "output_path": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/challenge/specialist-recovery-integrity.json",
+          "output_sha256": "dc0c7807d22ed6b26b5876c42628c7a5a3a47cf2e894d130aab46d5315b6c499",
+          "recorded_at": "2026-09-01T08:57:50+0800",
+          "specialty": "failure-recovery",
+          "status": "completed"
+        },
+        {
+          "cluster_id": "cluster-foreground-run-state-machine",
+          "output": {
+            "cluster_id": "cluster-foreground-run-state-machine",
+            "conclusion": {
+              "status": "refined",
+              "summary": "The parent finding is confirmed. The current plan and testcases state the desired FIFO/control outcomes but do not define a deterministic durable reducer or reconcile Host scheduling authority with the existing SDK execution owner. The state machine above is the minimum plan-level closure needed to make pause/stop/cancel races, lost ACK, lease recovery and background-worker exclusion executable and auditable without expanding S4 into S5 Context or multi-agent scope."
+            },
+            "cross_cluster_refs": [],
+            "findings": [
+              {
+                "assurance_contract_ids": [
+                  "FAIL-FOREGROUND-RUN-CONCURRENCY",
+                  "FAIL-PROTOCOL-REPLAY",
+                  "FAIL-DATA-LOSS"
+                ],
+                "evidence": "S4 plan Task 4 only states a subject-unique active constraint, enqueue/claim, immediate controls and restart recovery, but does not freeze queued-turn states, Run states, legal transitions, control precedence, signal-delivery recovery, lease generation or the mapping to the existing SDK Run owner. TC-HM-11 S4-1..S4-4 asserts FIFO, immediate controls, restart and background-worker rejection but has no exact transition/result oracle. TC-HM-14 step 5 requires drain/park/replay but likewise does not define how a claimed or control-requested Run is recovered. Current ARCHITECTURE/ARCHITECTURE.md lines 358-362 and 425-480 states that the SDK Runtime owns execution identity/lifecycle and exposes start/signal/cancel; without a frozen one-to-one Host scheduling-to-SDK execution binding, implementing Task 4 can accidentally create a second Run owner.",
+                "id": "foreground-control-state-machine-not-closed",
+                "origin": "pre-existing",
+                "root_cause": "The plan specifies desired outcomes but not a durable reducer. It must define Host as the sole foreground admission/FIFO/current-Run-snapshot authority while retaining SDK Runtime as the sole Agent execution engine: one Host foreground_run row binds exactly once to one public SDK root-Run admission receipt/run_id, and only the foreground scheduler may invoke SDK start/signal/cancel. All state changes use append-only events plus CAS heads; no process-local Queue, boolean paused flag or caller-supplied worker_kind may grant authority.",
+                "scope_relation": "in-scope",
+                "severity": "P1",
+                "status": "open",
+                "violated_acceptance_ids": [
+                  "HM-AC-3",
+                  "HM-AC-8"
+                ]
+              }
+            ],
+            "parent_finding_ids": [
+              "foreground-control-state-machine-not-closed"
+            ],
+            "required_oracles": [
+              "Freeze the exact transition matrix and stable error/outcome codes in TC-HM-11 rather than asserting only final behavior.",
+              "Exercise every claim/admission/control/ack/terminal transaction boundary with crash-before, crash-after and lost-ACK replay.",
+              "Race pause/stop/cancel and terminal commits under barriers; verify CANCEL > STOP > PAUSE, terminal causal handling and no state downgrade.",
+              "Expire a lease while the old owner is still alive; prove generation fencing rejects its state/effect/terminal writes and recovery reuses the same Run.",
+              "Attempt foreground claim and Auto-binding snapshot creation from each background worker identity; require stable rejection and zero foreground-row mutation.",
+              "Verify public SDK admission/run identity is exactly one-to-one with the Host foreground row and that no Host code path executes a second Agent loop."
+            ],
+            "required_state_machine": {
+              "authority_boundary": {
+                "binding": "A foreground claim creates one stable host_run_id. A successful public SDK start receipt atomically/idempotently binds one sdk_run_id to it; divergent sdk_run_id replay is rejected. Background SDK clients cannot create this binding.",
+                "host": "Owns durable primary turn admission, per-subject foreground slot, FIFO order, control intent, lease generation, frozen TaskScope/binding/context lineage and Auto-binding current-Run snapshot.",
+                "sdk_runtime": "Owns actual root Agent execution and emits authenticated admission, signal acknowledgement and terminal evidence. Host never implements a second ReAct loop or fabricates SDK terminal state."
+              },
+              "background_worker_exclusion": [
+                "Use separate worker/outbox lease tables or namespaces; projection, search and extraction workers never call the foreground claim API.",
+                "Foreground claim requires a constructor-bound Host authority object/receipt. Caller fields such as kind=foreground, metadata or model output cannot mint it.",
+                "Database constraints enforce one nonterminal foreground row per subject and require run_kind=foreground for every foreground lease/snapshot row. Worker identities are rejected before claim CAS.",
+                "Only the bound foreground scheduler can call the SDK root start/signal/cancel adapter. Background clients use separate SDK entrypoints and cannot bind an sdk_run_id to a queued turn.",
+                "Auto-binding current-Run reads only the subject’s nonterminal foreground row, exact current generation and frozen lineage; worker leases/jobs are excluded by schema and public DTO.",
+                "Worker completion may append objective evidence/outbox results but cannot mutate TaskScope semantics, settle a queued turn, release the foreground slot or authorize an Agent effect."
+              ],
+              "control_precedence": {
+                "order": [
+                  "CANCEL",
+                  "STOP",
+                  "PAUSE"
+                ],
+                "rules": [
+                  "Controls are append-only intents, never ordinary FIFO turns.",
+                  "A stronger control may supersede a weaker nonterminal intent; a weaker control after a stronger one returns a stable already_superseded receipt and cannot downgrade state.",
+                  "Exact control replay returns the original receipt; same idempotency key with different run, generation, kind or payload is rejected.",
+                  "The control transaction atomically writes control intent, reduced desired-control state and a durable signal outbox. Crash before physical SDK signal is recovered by redelivering the same signal identity.",
+                  "A terminal receipt committed first makes later controls stable already_terminal no-ops. If a control commits first, terminal acceptance must use SDK causal evidence as specified in the transition table; Host must not invent a cancellation terminal.",
+                  "Resume is legal only from PAUSED with no STOP/CANCEL intent. Pause never frees the foreground slot."
+                ]
+              },
+              "lease_and_restart_rules": [
+                "Lease identity is (host_run_id, owner_id, generation, expires_at). Generation starts at 1 and increments on ownership transfer, expired-lease reclaim or paused-run resume; heartbeat only extends expires_at and never changes generation.",
+                "Every start, signal acknowledgement, Run-state CAS, effect admission, terminal write and Auto-binding snapshot read must present the current generation. A stale owner may observe data but cannot mutate state or execute a new effect.",
+                "Lease expiry is not terminal and never requeues the turn or frees the per-subject slot. Recovery reclaims the same host_run_id/queued_turn_id with generation+1 after checking durable SDK state.",
+                "Crash before claim commit leaves the turn QUEUED. Crash after claim commit but before SDK admission leaves it CLAIMED and recovery reconciles/replays the same public start identity. Crash after SDK admission reclaims the same Run; it never starts a replacement Run.",
+                "A PAUSED Run remains PAUSED across restart and acquires no execution lease until explicit resume. STOP_REQUESTED/CANCEL_REQUESTED recovery redelivers or reconciles the exact control before any normal execution or next-turn claim.",
+                "Terminal receipt, queued-turn settlement, lease closure and foreground-slot release are one transaction. The next sequence may be claimed only after that transaction commits. Lost terminal ACK returns the existing receipt."
+              ],
+              "queued_turn_transitions": [
+                {
+                  "atomic_effect": "append queue receipt with subject, evidence ref/hash, monotonically allocated FIFO sequence and payload hash. Exact replay returns the original receipt; same key with changed payload is a conflict.",
+                  "from": "ABSENT",
+                  "guards": "authenticated subject; exact durable primary evidence ref/hash; ingress open; idempotency key unused or exact replay",
+                  "to": "QUEUED",
+                  "trigger": "enqueue_turn"
+                },
+                {
+                  "atomic_effect": "create stable host_run_id in CLAIMED, freeze TaskScope/binding/context lineage, bind queued_turn_id, acquire lease generation 1 and occupy the subject foreground slot in one transaction.",
+                  "from": "QUEUED",
+                  "guards": "row is the lowest unsettled subject sequence; no nonterminal foreground Run for subject; constructor-bound foreground claim authority; no recovery fence",
+                  "to": "CLAIMED",
+                  "trigger": "claim_next"
+                },
+                {
+                  "atomic_effect": "append queue settlement and terminal receipt, close the foreground slot and make the next FIFO row eligible in one transaction. It never returns to QUEUED.",
+                  "from": "CLAIMED",
+                  "guards": "same host_run_id/queued_turn_id and accepted terminal evidence",
+                  "to": "SETTLED",
+                  "trigger": "matching immutable Run terminal receipt"
+                }
+              ],
+              "run_transitions": [
+                {
+                  "effect": "stable Run identity, frozen lineage and lease generation 1 are committed before SDK start.",
+                  "from": "ABSENT",
+                  "guards": "subject unique nonterminal index and queue-head CAS",
+                  "to": "CLAIMED",
+                  "trigger": "successful queue claim"
+                },
+                {
+                  "effect": "append admission receipt. Lost ACK replay returns the same binding.",
+                  "from": "CLAIMED",
+                  "guards": "exact host_run_id, queued_turn_id, sdk_run_id, request hash and current lease generation; one-time binding",
+                  "to": "RUNNING",
+                  "trigger": "public SDK admission/start receipt"
+                },
+                {
+                  "effect": "append terminal failure and settle the queued turn. Timeout or unknown remains CLAIMED for reconciliation and must not create another Run.",
+                  "from": "CLAIMED",
+                  "guards": "authenticated final rejection, not timeout/unknown",
+                  "to": "FAILED",
+                  "trigger": "stable SDK admission rejection"
+                },
+                {
+                  "effect": "append control receipt and signal-outbox row atomically.",
+                  "from": "RUNNING",
+                  "guards": "current run/generation; no stronger control or terminal",
+                  "to": "PAUSE_REQUESTED",
+                  "trigger": "pause control commit"
+                },
+                {
+                  "effect": "append ack; retain subject foreground slot; stop new provider/effect admission.",
+                  "from": "PAUSE_REQUESTED",
+                  "guards": "ack binds control receipt, sdk_run_id and generation",
+                  "to": "PAUSED",
+                  "trigger": "exact SDK pause acknowledgement"
+                },
+                {
+                  "effect": "append failed-control outcome; do not claim another Run.",
+                  "from": "PAUSE_REQUESTED",
+                  "guards": "rejection binds the exact control receipt",
+                  "to": "RUNNING",
+                  "trigger": "stable SDK pause rejection"
+                },
+                {
+                  "effect": "append resume receipt and reacquire execution lease with generation+1 while retaining host_run_id/sdk_run_id.",
+                  "from": "PAUSED",
+                  "guards": "no STOP/CANCEL intent; exact paused Run; fresh lease generation",
+                  "to": "RUNNING",
+                  "trigger": "resume control acknowledgement"
+                },
+                {
+                  "effect": "append stronger control intent and signal-outbox row atomically; prohibit new normal provider/effect admission.",
+                  "from": "RUNNING|PAUSE_REQUESTED|PAUSED",
+                  "guards": "no CANCEL intent or terminal",
+                  "to": "STOP_REQUESTED",
+                  "trigger": "stop control commit"
+                },
+                {
+                  "effect": "append highest-priority intent and signal-outbox row atomically; prohibit new provider/effect admission.",
+                  "from": "RUNNING|PAUSE_REQUESTED|PAUSED|STOP_REQUESTED",
+                  "guards": "not terminal",
+                  "to": "CANCEL_REQUESTED",
+                  "trigger": "cancel control commit"
+                },
+                {
+                  "effect": "append immutable terminal and settle queue/foreground slot atomically.",
+                  "from": "RUNNING|PAUSE_REQUESTED|PAUSED",
+                  "guards": "terminal gate/watermark complete; matching sdk_run_id and lineage",
+                  "to": "COMPLETED|FAILED",
+                  "trigger": "authenticated SDK terminal evidence"
+                },
+                {
+                  "effect": "append immutable STOPPED terminal and settle queue.",
+                  "from": "STOP_REQUESTED",
+                  "guards": "terminal evidence binds the stop signal/ack or its causal sequence",
+                  "to": "STOPPED",
+                  "trigger": "authenticated SDK stop terminal evidence"
+                },
+                {
+                  "effect": "append immutable CANCELLED terminal and settle queue.",
+                  "from": "CANCEL_REQUESTED",
+                  "guards": "terminal evidence binds the cancel signal/ack or its causal sequence",
+                  "to": "CANCELLED",
+                  "trigger": "authenticated SDK cancel terminal evidence"
+                },
+                {
+                  "effect": "record control outcome as terminal_raced and preserve the real terminal fact; never rewrite it as stopped/cancelled.",
+                  "from": "STOP_REQUESTED|CANCEL_REQUESTED",
+                  "guards": "evidence proves the execution terminal occurred before the stronger control took effect; otherwise contradictory terminal evidence fails closed and the slot remains occupied for recovery",
+                  "to": "COMPLETED|FAILED",
+                  "trigger": "racing authenticated SDK terminal evidence"
+                },
+                {
+                  "effect": "return original receipt; divergent replay and every transition back to nonterminal are rejected.",
+                  "from": "ANY_TERMINAL",
+                  "guards": "same terminal idempotency key and payload hash",
+                  "to": "ANY_TERMINAL",
+                  "trigger": "exact replay only"
+                }
+              ]
+            },
+            "specialty": "data-state"
+          },
+          "output_path": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/challenge/specialist-foreground-run.json",
+          "output_sha256": "6501de86e41c04a85a072c8187fb40c4c51778d08ecf6aaffba66ae224358f7c",
+          "recorded_at": "2026-09-01T09:03:14+0800",
+          "specialty": "data-state",
+          "status": "completed"
+        }
+      ],
+      "started_at": "2026-09-01T08:57:32+0800",
+      "status": "CONVERGED",
+      "synthesis": {
+        "after_round": 1,
+        "input_path": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/challenge/challenge-synthesis.json",
+        "input_sha256": "5bd1535079db6c141f800c53333989bc7561f28972b3c5b115d51bca4d08d323",
+        "payload": {
+          "canonical_findings": [
+            {
+              "assurance_contract_ids": [
+                "FAIL-FOREGROUND-RUN-CONCURRENCY"
+              ],
+              "evidence": "acceptance.md:10-11 and 49-53 freeze queued turns/FIFO into the minimum value action and HM-S4-TO-VALUE. plan.md:5-7 repeats queued turns but declares Task 3 as the value gate and says only views/checkpoint/search/open precede it; plan.md:79-83 omits queued turns, while v41 queue/FIFO is first implemented in Task 4 at plan.md:85-91.",
+              "id": "value-smoke-requires-not-yet-built-fifo",
+              "origin": "pre-existing",
+              "root_cause": "The task dependency graph excludes a frozen prerequisite from the value milestone, so Task 3 cannot execute the approved minimum validation action or legitimately open the expensive-test gate.",
+              "scope_relation": "in-scope",
+              "severity": "P0",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-3"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-TASK-RESUME-LOSS",
+                "FAIL-READ-VIEW-GROWTH",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "plan.md:65-67 derives six views from canonical revision plus events/checkpoints but binds page identity only to scope/revision/kind/page-index/hash and lists no change to task_scope/store.py. Baseline backend/deskpet/task_scope/store.py:143-196 appends Host events by only advancing mutable task_scope_heads.event_watermark; lines 300-352 append checkpoints without a projection/search outbox; lines 373-390 emit projection/search outbox only from create/mutation. Migration 028 lines 132-174 makes projection revision/cache/outbox/search-outbox unique by task_scope_id + canonical_revision. Thus 100k events and a later checkpoint can leave canonical_revision unchanged and have no immutable projection generation to render or replay.",
+              "id": "projection-version-omits-event-checkpoint-change-identity",
+              "origin": "pre-existing",
+              "root_cause": "The plan treats semantic canonical revision as the complete projection source version even though append-only events and checkpoints advance independently; the producer and schema lack a composite immutable input identity and outbox trigger for those changes.",
+              "scope_relation": "in-scope",
+              "severity": "P0",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-6",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-TASK-RESUME-LOSS",
+                "FAIL-READ-VIEW-GROWTH"
+              ],
+              "evidence": "acceptance.md:34 simultaneously requires every page <=32 KiB, exactly 500 events per EVIDENCE page, and recovery of every canonical field/ref. plan.md:65-69 repeats those limits but defines neither a frozen page wire schema nor an indirection/overflow rule or size spike. Five hundred 64-character hashes alone consume 32,000 bytes before event IDs, ordering, kinds, JSON framing, content refs, or page metadata.",
+              "id": "evidence-page-cardinality-byte-bound-unproven",
+              "origin": "pre-existing",
+              "root_cause": "The plan copies mutually constraining count, completeness, and byte limits without proving a representation that can satisfy all three, leaving the core paging contract structurally non-executable.",
+              "scope_relation": "in-scope",
+              "severity": "P0",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-6",
+                "HM-AC-7"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-PRIMARY-STREAM-SPLIT",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "plan.md:40 and 100-106 says a fresh prototype data dir defaults to the new service while a legacy epoch follows a separate path, but gives no pre-migration dispatch algorithm or lifecycle ordering. Baseline backend/main.py:3025-3038 unconditionally runs initialize_state_db(_state_db_path), which advances a fresh database through the legacy v34 path before SessionDB startup; only the opt-in human-memory initializer can durably claim an empty database for the v35+ epoch.",
+              "id": "fresh-epoch-startup-dispatch-undefined",
+              "origin": "pre-existing",
+              "root_cause": "The production composition task names both startup modes but does not define the atomic empty/fresh/legacy/future decision point before the existing legacy initializer mutates the database.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-TASK-SEARCH-AUTHORITY",
+                "FAIL-PRIMARY-STREAM-SPLIT",
+                "FAIL-FOREGROUND-RUN-CONCURRENCY"
+              ],
+              "evidence": "plan.md:38,48-50 and 71-77 introduces public Host APIs and an authenticated subject but leaves endpoint DTOs, the trusted subject derivation, allowed-scope derivation, and per-operation lineage checks unspecified; plan.md:88 only says enqueue_turn validates a primary evidence ref. Baseline CanonicalTaskScopeStore.create_task_scope accepts caller-provided subject, append_host_event has no subject parameter (store.py:90-96,143-152), and _verify_refs_tx checks only evidence ID/hash rather than subject ownership (store.py:407-410). The facade therefore needs an explicit authority contract for every create/append/mutate/open/binding/queue/control call.",
+              "id": "public-facade-subject-authority-contract-undefined",
+              "origin": "pre-existing",
+              "root_cause": "The plan relies on a facade name to close trust boundaries but does not specify which values are Host-derived versus untrusted payloads or the cross-object subject/TaskScope/evidence/Run checks required before calling reusable stores.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-3",
+                "HM-AC-4"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-FOREGROUND-RUN-CONCURRENCY",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "plan.md:87-91 lists active/running uniqueness, pause/stop/cancel receipts, signaling, terminal settlement, leases and restart, but supplies no frozen Run/turn/control state transition table, control precedence, idempotency identity, paused-Run ownership rule, durable control replay rule, or lease-generation fence. TC-HM-11 S4-2/S4-3 requires pause followed by stop/cancel, rejection of a second foreground owner, and crash recovery on both sides of claim and terminal receipt.",
+              "id": "foreground-control-state-machine-not-closed",
+              "origin": "pre-existing",
+              "root_cause": "Schema nouns and happy-path ordering are specified without the transition and replay contract that determines whether a durable control is terminal, superseded, re-applied after restart, or permits the next FIFO turn.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-3",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-DATA-LOSS",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "plan.md:93-98 orders close ingress -> drain/park outboxes -> wal_checkpoint(FULL) -> manifest, but does not define how already-admitted store transactions are drained, how direct reusable-store writers observe the fence, or which generation is rechecked at commit. Baseline CanonicalTaskScopeStore methods independently open SQLite connections and begin their own IMMEDIATE transactions, so a facade precheck alone cannot prevent an in-flight append from committing during checkpoint/manifest computation.",
+              "id": "recovery-fence-lacks-write-quiescence-boundary",
+              "origin": "pre-existing",
+              "root_cause": "The recovery design fences new requests but lacks a transaction-level writer barrier and consistent snapshot boundary covering all canonical writers before WAL and integrity attestation.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-DATA-LOSS",
+                "FAIL-PROTOCOL-REPLAY"
+              ],
+              "evidence": "plan.md:12 and 108-112 freezes reuse to TC-HM-02/09/10/11/12. The current testcase candidate TC-HM-14-host-closure-recovery.md:1-14 is the only testcase directly bound to HM-S4-TO-INTEGRATION, HM-S4-TO-DATA and HM-S4-TO-REGRESSION, and lines 27-36 define the public-only fresh composition, four legacy CRUD fences, drain/park/WAL/export, raw-integrity and affected-API oracle. Omitting it leaves three of the seven required obligations without the named reusable required testcase that already exists in the validation track.",
+              "id": "required-host-recovery-oracle-omitted",
+              "origin": "pre-existing",
+              "root_cause": "The plan's testcase reuse inventory was frozen before the Host closure/recovery oracle produced by the parallel validation track was incorporated.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            },
+            {
+              "assurance_contract_ids": [
+                "FAIL-DATA-LOSS"
+              ],
+              "evidence": "plan.md:95-98 and 112 calls for raw row-count/content-hash manifests and pre/post comparison but never freezes the raw-versus-derived table inventory or distinguishes immutable old-row equality from legitimate append-only recovery/control receipts. TC-HM-14:30-35 explicitly expects new receipts to append while existing raw rows remain unchanged. A whole-table equality oracle would reject correct recovery; a monotonic-count-only oracle could miss mutation of existing rows.",
+              "id": "raw-integrity-manifest-comparison-ambiguous",
+              "origin": "pre-existing",
+              "root_cause": "The integrity test lacks a canonical table taxonomy and delta-aware comparison rule, so its claimed raw-data invariant is not deterministic.",
+              "scope_relation": "in-scope",
+              "severity": "P1",
+              "status": "open",
+              "violated_acceptance_ids": [
+                "HM-AC-1",
+                "HM-AC-7",
+                "HM-AC-8"
+              ]
+            }
+          ],
+          "conflicts": [
+            {
+              "canonical_finding_id": "projection-version-omits-event-checkpoint-change-identity",
+              "resolution": "Primary severity P0 is retained through closure because the old identity made the approved historical projection contract structurally non-executable; specialist P1 does not lower the canonical gate."
+            },
+            {
+              "canonical_finding_id": "foreground-control-state-machine-not-closed",
+              "resolution": "Merge primary HM-AC-7 receipt requirement with specialist HM-AC-3/HM-AC-8 transition detail; no contract scope change."
+            }
+          ],
+          "decisions": [
+            {
+              "action": "plan-change",
+              "canonical_finding_id": "value-smoke-requires-not-yet-built-fifo",
+              "rationale": "已批准的 value oracle 包含 queued turns/FIFO；将 durable FIFO 与 typed facade 设为 Task 4 smoke 的直接依赖。",
+              "source_finding_ids": [
+                "value-smoke-requires-not-yet-built-fifo"
+              ]
+            },
+            {
+              "action": "plan-change",
+              "canonical_finding_id": "projection-version-omits-event-checkpoint-change-identity",
+              "rationale": "canonical revision 不能表达 event/checkpoint/binding 变化；加入事务内 source-change ledger/outbox 与 composite source hash。",
+              "source_finding_ids": [
+                "projection-version-omits-event-checkpoint-change-identity"
+              ]
+            },
+            {
+              "action": "plan-change",
+              "canonical_finding_id": "evidence-page-cardinality-byte-bound-unproven",
+              "rationale": "500 条只能是 logical group；采用每个 physical manifest/index/leaf/chunk 不超过 32 KiB 的内容寻址结构。",
+              "source_finding_ids": [
+                "evidence-page-cardinality-byte-bound-unproven"
+              ]
+            },
+            {
+              "action": "plan-change",
+              "canonical_finding_id": "fresh-epoch-startup-dispatch-undefined",
+              "rationale": "在任何 writable opener 前冻结 FRESH/HUMAN_RESUME/LEGACY/INVALID/FUTURE 单一分派与 initializer owner。",
+              "source_finding_ids": [
+                "fresh-epoch-startup-dispatch-undefined"
+              ]
+            },
+            {
+              "action": "plan-change",
+              "canonical_finding_id": "public-facade-subject-authority-contract-undefined",
+              "rationale": "Host 派生 subject/allowed set，并冻结 primary/scope/evidence/run/binding/context 的逐操作 lineage matrix。",
+              "source_finding_ids": [
+                "public-facade-subject-authority-contract-undefined"
+              ]
+            },
+            {
+              "action": "plan-change",
+              "canonical_finding_id": "foreground-control-state-machine-not-closed",
+              "rationale": "冻结 queue/Run reducer、CANCEL>STOP>PAUSE、generation fencing、SDK one-to-one admission 与 background exclusion。",
+              "source_finding_ids": [
+                "foreground-control-state-machine-not-closed"
+              ]
+            },
+            {
+              "action": "plan-change",
+              "canonical_finding_id": "recovery-fence-lacks-write-quiescence-boundary",
+              "rationale": "以 BEGIN IMMEDIATE 内 fence check、durable generation/state、完整 writer registry/trigger 与 worker ack 建立线性化 quiescence。",
+              "source_finding_ids": [
+                "recovery-fence-lacks-write-quiescence-boundary"
+              ]
+            },
+            {
+              "action": "plan-change",
+              "canonical_finding_id": "required-host-recovery-oracle-omitted",
+              "rationale": "将 TC-HM-14 纳入 required testcase/inventory/spec，覆盖 integration/data/regression obligations。",
+              "source_finding_ids": [
+                "required-host-recovery-oracle-omitted"
+              ]
+            },
+            {
+              "action": "plan-change",
+              "canonical_finding_id": "raw-integrity-manifest-comparison-ambiguous",
+              "rationale": "冻结 A/B/C/D table taxonomy，逐 preexisting row leaf 验证并分开记录合法 recovery delta 与 derived rebuild。",
+              "source_finding_ids": [
+                "raw-integrity-manifest-comparison-ambiguous"
+              ]
+            }
+          ],
+          "open_finding_ids": [
+            "value-smoke-requires-not-yet-built-fifo",
+            "projection-version-omits-event-checkpoint-change-identity",
+            "evidence-page-cardinality-byte-bound-unproven",
+            "fresh-epoch-startup-dispatch-undefined",
+            "public-facade-subject-authority-contract-undefined",
+            "foreground-control-state-machine-not-closed",
+            "recovery-fence-lacks-write-quiescence-boundary",
+            "required-host-recovery-oracle-omitted",
+            "raw-integrity-manifest-comparison-ambiguous"
+          ],
+          "plan_actions": [
+            "Move the value milestone after FIFO and typed Host facade prerequisites.",
+            "Add TaskScopeProjectionSourceV1 and bounded logical-group/physical-block representation.",
+            "Freeze startup epoch dispatcher and Host-derived facade authority matrix.",
+            "Freeze foreground queue/Run/control/lease reducer and SDK execution boundary.",
+            "Freeze transaction-linearized recovery fence, A/B/C/D integrity manifest and emergency export allowlist.",
+            "Add TC-HM-14 to the required S4 oracle set."
+          ],
+          "required_spikes": [],
+          "resolved_finding_ids": [],
+          "scope_change_proposals": [],
+          "source_cluster_ids": [
+            "cluster-projection-versioning-and-bounds",
+            "cluster-entry-trust-composition",
+            "cluster-foreground-run-state-machine",
+            "cluster-recovery-integrity"
+          ]
+        },
+        "recorded_at": "2026-09-01T09:03:14+0800"
+      },
+      "target_file": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/plan.md"
+    }
+  ],
+  "challenger_engine": null,
+  "compiled_manifest": {
+    "case_sets": {
+      "full": [
+        "S4-AUTHORITY",
+        "S4-DATA-RECOVERY",
+        "S4-FIFO",
+        "S4-INTEGRATION",
+        "S4-REGRESSION",
+        "S4-VALUE-100K",
+        "S4-VIEWS"
+      ]
+    },
+    "input_hashes": {
+      "acceptance": "fd4957c85b3693b8f5a6e056bde7ec492849d57e2f8a44f70d130d419c3c3523",
+      "assurance_contract": "624bd31f159480b274d84ead7bb1fa0a5df522a7d10f4718d6826687d6863fd8",
+      "reuse_report": "e9f2f093aaa19a6a45701f71559a41ce0e782ebb46af8087c2248b3692ea1afe",
+      "testcase_inventory": "828e6550f10c50275bca88235803c0548dc70a6a774a2d3eb28f0421f6fd0c33",
+      "verification_spec": "860cefe63e004dce18440a785e389405d4f4c6616141755a1426a5eb331771e5"
+    },
+    "input_paths": {
+      "acceptance": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/acceptance.md",
+      "assurance_contract": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/assurance-contract.json",
+      "reuse_report": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/testcase-reuse-report.json",
+      "testcase_inventory": "/Users/denny/projects/simple_harness-memory-plan/testcase/index.json",
+      "verification_spec": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification-spec.json"
+    },
+    "seal_sha256": "de88d1b3b430cca92bff701ac39197b4d6c619d0690be801644246b0f6d22756",
+    "selected_testcase_ids": [
+      "TC-HM-02",
+      "TC-HM-09",
+      "TC-HM-11",
+      "TC-HM-12",
+      "TC-HM-14"
+    ],
+    "tool_version": "1.5.0"
+  },
+  "created_at": "2026-09-01T08:57:23+0800",
+  "declared_statuses": [],
+  "delivery": {},
+  "doc_only_globs": null,
+  "events": [
+    {
+      "action": "start",
+      "at": "2026-09-01T01:25:49Z",
+      "note": "Phase 2 收敛于第 2 轮，plan hash: cf089e02",
+      "phase": "phase-3",
+      "type": "phase"
+    }
+  ],
+  "evidence": [],
+  "exclusion_scope": [
+    ".plan-test/active-run.json",
+    "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/gate-run"
+  ],
+  "executor_engine": "codex",
+  "external_run_dir": false,
+  "fixture_only": false,
+  "flow_tier": {
+    "decided_by": "user",
+    "rationale": "S4 新增 Host 公开入口、fresh 持久化状态、permission-first search、单 foreground Run/FIFO 和故障恢复门",
+    "value": "FULL"
+  },
+  "integrity": {
+    "chain": "4d80e218baf9974e6cceff2f737163abc5bcbb07e9abcd93004b0f4bef5b4ec8",
+    "genesis": "a7ff3e12ba521e40f907e8d57d3bef8286e32607615e02f136d3fa22e98be140",
+    "log": [
+      {
+        "at": "2026-09-01T08:57:23+0800",
+        "chain": "f64c816d21265ab25ab4549d5efecc20f5eb378c422f06ae860e93c790f9f138",
+        "facts_digest": "ff731ebb71fd7bd4abe006c11d67530c24e619efeba095bbe9ffcd8a9ed75f53",
+        "op": "init",
+        "seq": 1
+      },
+      {
+        "at": "2026-09-01T08:57:32+0800",
+        "chain": "b3ebf6f01a026e5d7cd75d02cfc7cfaeb8fe2ea7c79166e39ff48b3c5ab9868f",
+        "facts_digest": "4abbb3ca64b676ba4de9e5b90ff809c633835b8b47ca07d8052137724d2334f2",
+        "op": "start_challenge_loop",
+        "seq": 2
+      },
+      {
+        "at": "2026-09-01T08:57:32+0800",
+        "chain": "afca9bc2b5ce0911b319f6fe7c9d3ca974ae8acea9f6339159083bd00ec01e05",
+        "facts_digest": "5f1cb2d6ad850f1bfeda63c01f06a447cd8126f7e5ac622dd43a4de516291594",
+        "op": "record_challenge_round",
+        "seq": 3
+      },
+      {
+        "at": "2026-09-01T08:57:32+0800",
+        "chain": "167d51fb34ae5c2415e2a1d551fad7dc68865d93bf531e773c4d7e038130d363",
+        "facts_digest": "c67289194b24a4d0a5f8400a3e47587d02c59e5ebe3e77261772d206f02d6427",
+        "op": "record_challenge_clusters",
+        "seq": 4
+      },
+      {
+        "at": "2026-09-01T08:57:42+0800",
+        "chain": "ae7481b749329cc8ba9266804a8fb8d1e6131b749de676223e9a08a58481cfb1",
+        "facts_digest": "94136c8f10310d7b38ce0e3faadb7554fd9b817f94e9e7ce39aa22b4ba0a62ae",
+        "op": "record_specialist_challenge",
+        "seq": 5
+      },
+      {
+        "at": "2026-09-01T08:57:43+0800",
+        "chain": "5c94963575e6a03b2fef2de033f15749e57f63cb600ecf591efcc6c9536a7810",
+        "facts_digest": "53e67b1db8386d3127989d833c99de174f163662a05ade1df7f17ec513e0f2b2",
+        "op": "record_specialist_challenge",
+        "seq": 6
+      },
+      {
+        "at": "2026-09-01T08:57:50+0800",
+        "chain": "c279b1946b121c40ce74d60b582af9b0d550467cb00152ec9777d0c59f1cbc94",
+        "facts_digest": "d7d48281a83048d22a88e15b5b9a879b75d44ef88c278a78cb8814685050d567",
+        "op": "record_specialist_challenge",
+        "seq": 7
+      },
+      {
+        "at": "2026-09-01T09:03:14+0800",
+        "chain": "f895e8262b75f8b1f7b01cf48a9c8b1f09c6645a1551a0b9a4214309281ccbab",
+        "facts_digest": "1b3b278149f7004f8c6b9d08986f95af747ec2a88b9af4d29cf0981e65d13890",
+        "op": "record_specialist_challenge",
+        "seq": 8
+      },
+      {
+        "at": "2026-09-01T09:03:14+0800",
+        "chain": "4b2cfa9cbd7bae09d204c13b97436168d5ece36e246aa1e1d9ae31abd9af4940",
+        "facts_digest": "14df68bce88b9eda68e8db2394ae5c897d0f592c15d7f225cf22b5ae79d02dd3",
+        "op": "record_challenge_synthesis",
+        "seq": 9
+      },
+      {
+        "at": "2026-09-01T09:08:54+0800",
+        "chain": "e5ff2a37ab987a83bdf8a570a43ae42e1ae7195ab3faf0aaed7bdc3fa477f2e1",
+        "facts_digest": "98ae7fdad2187aca23da7a05ccb61212d7494f7ec57dfe0168577e49869e4149",
+        "op": "record_challenge_round",
+        "seq": 10
+      },
+      {
+        "at": "2026-09-01T09:25:49+0800",
+        "chain": "9d684df4aa566dbb24566861ba738b791a10b716c4865ddd2e33803d3523b92f",
+        "facts_digest": "775fb4cc7fc09395b9b56909f01495f342f6d814027796fc0e1a3528a9468836",
+        "op": "phase-start",
+        "seq": 11
+      },
+      {
+        "at": "2026-09-01T11:06:56+0800",
+        "chain": "b7d462d95c8d46c52780bb0f7792b38ad2cdfe4331831d7420896ff79af5828a",
+        "facts_digest": "0a98cd6d4be84b64a1d116f90294692a25419618f62d36ca8435d838993fee07",
+        "op": "record_plan_defect",
+        "seq": 12
+      },
+      {
+        "at": "2026-09-01T11:38:22+0800",
+        "chain": "a4b714c19e0410127153323a871cd696ed4fc151c4fe7b44cc21bfa480a15da2",
+        "facts_digest": "a54c04c8f26a9cb86745748989ba7ad1f3ee6369443f6f75ee073fadd7848b87",
+        "op": "record_challenge_control",
+        "seq": 13
+      },
+      {
+        "at": "2026-09-01T12:03:37+0800",
+        "chain": "4d80e218baf9974e6cceff2f737163abc5bcbb07e9abcd93004b0f4bef5b4ec8",
+        "facts_digest": "e389e1cdcb143d12802587231acbf21b8720db0c4d887bb2fd1299858fce7cdf",
+        "op": "record_challenge_control",
+        "seq": 14
+      }
+    ]
+  },
+  "plan_defects": [
+    {
+      "affected_tasks": [
+        "Task-4",
+        "Task-6"
+      ],
+      "defect_type": "owner-missing",
+      "description": "Production FIFO-to-Runtime 0.7 scheduler authority is absent: current production chat start is legacy Session/WebSocket-bound, while direct SDK ingress requires S5 ContextLineage, provider/tool authority, and a frozen start request not owned by S4. Fixture claim_next can mark a Run claimed without execution and is forbidden. Correct closure requires an approved scope expansion or revised acceptance.",
+      "event_id": "a2-001",
+      "occurred_at": "2026-09-01T11:06:56.633349+08:00",
+      "resolution": null,
+      "resolved_at": null
+    }
+  ],
+  "related_run_dirs": [],
+  "release_unit": {
+    "concurrent_layer_kinds": 3,
+    "high_risk_subsystems": 3,
+    "must_ac_count": 6,
+    "parent_program": "human-memory-digital-twin",
+    "plan_lines": 128,
+    "scope_hash": "fd4957c85b3693b8f5a6e056bde7ec492849d57e2f8a44f70d130d419c3c3523",
+    "slice_id": "S4-HOST-TASKSCOPE-CLOSURE",
+    "task_count": 7
+  },
+  "repo_root": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan",
+  "revision": 14,
+  "run_id": "run-20260901-085723",
+  "runs": [],
+  "runtime_attestation": {
+    "content_digest": "f579f4bfb118a917dc53bbbfef9a23d2525b8be6ac2b81c047e5ef43e4d6e892",
+    "content_entries": [
+      [
+        ".github/workflows/ci.yml",
+        "-:67d63459c4222ca522b3ccb711eb07f019a4d9029d84a3dc8d00561957137d74"
+      ],
+      [
+        ".github/workflows/release.yml",
+        "-:fc12be1f48cc0422e231622869777e97d1d5d704dff204aea15964d54177ab0e"
+      ],
+      [
+        ".gitignore",
+        "-:748e612b2b9431203c85c401754521f51b9633e5f0f3f06070ceb11e944aa0d9"
+      ],
+      [
+        "ARCHITECTURE/ARCHITECTURE.md",
+        "-:e82ce7c24886817f301bcd30d6a62e1022d0ce33fcd21eb0558bb0a0bc996f1e"
+      ],
+      [
+        "ARCHITECTURE/PROJECT_STATUS.md",
+        "-:660455eeb9796a8d0fcb825a4613e26ee3a082b34e441ad19831e195fcaddca4"
+      ],
+      [
+        "ARCHITECTURE/index.md",
+        "-:a8ed3b0dcbf95d7857dc9e769c9b9b93ef8bc908366986331fc0575aded67f5a"
+      ],
+      [
+        "CHANGELOG.md",
+        "-:d94cf469f409076a75fc28d4609e2c4e7a2892de2815356dca35c79f59103ed0"
+      ],
+      [
+        "LICENSES/BUSL-1.1.txt",
+        "-:d90560217049db1d6020ec7cf482da4198bfa372dffd22270ba08fd8088cd93b"
+      ],
+      [
+        "README.md",
+        "-:854ecb468b2f31f738a64aad9cb8b73d09d535341169f7c5f361d489d2b3c9ac"
+      ],
+      [
+        "REUSE.toml",
+        "-:488b15c3aa7fee94ce93800bc9914d2ef3e2c5b609c87956472d2b7c3e858ab2"
+      ],
+      [
+        "acceptance.md",
+        "-:8a6c63c446202587c172cbb1718108f0fbbc95b75600f3e45a80a607fbac6359"
+      ],
+      [
+        "assurance-contract.json",
+        "-:7ad44b0740e18e45df44afa40d5ff4f18fde6348038227d89b85c24cb19531ff"
+      ],
+      [
+        "docs/agent-memory-v1.md",
+        "-:87fa01a3142b50ca2ad489a3398f1663a045a1899267c09065c39da5acc1f61b"
+      ],
+      [
+        "docs/architecture.md",
+        "-:2b925a4ccb229d9cce7412950cf8eccd36c258e220f04644e484277f6ee6e08c"
+      ],
+      [
+        "docs/build-and-release.md",
+        "-:d968c90e271db9924e311f45e83a8d3509bda85d0c35465db5bd5738d7dc73c8"
+      ],
+      [
+        "docs/harness-compatibility-candidate-0.5.1-ac2e2add.json",
+        "-:3cf6227997a98fa50012a25da546d0d75e9ae05aec4aa257d44da34cab7fb22c"
+      ],
+      [
+        "docs/harness-compatibility-candidate-0.5.1.json",
+        "-:97d6bfe50c6b6ee0a87a592067f25b9a9c206904011f353076191c24be7e739b"
+      ],
+      [
+        "docs/harness-compatibility-release-0.5.1.json",
+        "-:70d0a052d727c5dded0b4e8223a23ffe58863676e05a8e557f4c80c0f7c62cf2"
+      ],
+      [
+        "docs/human-memory-v1-schema.md",
+        "-:b48a5f23f5161dcd9285464a69b8064b1243270ef5eb18f2c6115084050daea7"
+      ],
+      [
+        "docs/integration-status.md",
+        "-:32501838d6260e40ba8dafc788fca814ec1722d2bba89cb1f577985041e4b114"
+      ],
+      [
+        "docs/migration-v4.md",
+        "-:9bf553cc692e6f69a581ac9a84553e13c1420f98f992041acc981aaed62fd23a"
+      ],
+      [
+        "plans/2026-08-20-memory-m1-recall-privacy/acceptance.md",
+        "-:de0512efed495ea99727572ca5b263d9f59a87f7c9c33cbffde14d17d327e63c"
+      ],
+      [
+        "plans/2026-08-20-memory-m1-recall-privacy/assurance-contract.json",
+        "-:d57053626179fae88995b112046de6508ee4813a12531eae4907762ec9e1219a"
+      ],
+      [
+        "plans/2026-08-20-memory-m1-recall-privacy/manifest.json",
+        "-:1f2113f9565a03eedc1b81266bd289df73c07b2030cffaebc9fb87f0966eb125"
+      ],
+      [
+        "plans/2026-08-20-memory-m1-recall-privacy/plan.md",
+        "-:4e86f9f14a3d17f46d3493d8ea13fcf513fadd2798cb42f79cb0b929f2546582"
+      ],
+      [
+        "plans/2026-08-20-memory-m2-persistence/acceptance.md",
+        "-:50c06681ab814b5d6a0e329d66044ecdd79dd8b306b79e95f2cf35239a0651cb"
+      ],
+      [
+        "plans/2026-08-20-memory-m2-persistence/assurance-contract.json",
+        "-:f0b5758754e060fa1cbee78b0a57e63e422e62c25cf6edfb8b72601bc16079da"
+      ],
+      [
+        "plans/2026-08-20-memory-m2-persistence/manifest.json",
+        "-:1f90c02425870afe6b1c24248937a62670c63315026ed323680758ef36c4b5b6"
+      ],
+      [
+        "plans/2026-08-20-memory-m2-persistence/plan.md",
+        "-:0ee2cf5d9efe234c4c19eaf02adcc19ac0e7e12d6325d1435be29c4c770a3708"
+      ],
+      [
+        "plans/2026-08-20-memory-m3-delete-lineage-limits/acceptance.md",
+        "-:4d1957241fba7f85232355ade2475d53b749bb5ae313a0241fcbb3297a0253ef"
+      ],
+      [
+        "plans/2026-08-20-memory-m3-delete-lineage-limits/assurance-contract.json",
+        "-:4339d446aadc1ba6e6f045deb0f9ee4fb22ebe3d5eb2dfce9eea9079dbfaa713"
+      ],
+      [
+        "plans/2026-08-20-memory-m3-delete-lineage-limits/manifest.json",
+        "-:d96e2a0ac2fc719b4b561172e1d251bb6233ab48e953219712ec801a479d6a0d"
+      ],
+      [
+        "plans/2026-08-20-memory-m3-delete-lineage-limits/plan.md",
+        "-:53a45ab5be6d78f10207429044bb03b83fa1e03cf1e8fb23c5ba673e4696e234"
+      ],
+      [
+        "plans/2026-08-20-memory-m4-cloud-embedder/acceptance.md",
+        "-:96327109c6f698513fe5308e16c35bdc3a92f61a0c2d92e1658d3b9c2b2b015d"
+      ],
+      [
+        "plans/2026-08-20-memory-m4-cloud-embedder/assurance-contract.json",
+        "-:5a61361ccdcc45f7e1696668635fce64084792f78214a2b638511b27c02c39e2"
+      ],
+      [
+        "plans/2026-08-20-memory-m4-cloud-embedder/manifest.json",
+        "-:41c45d54ff45d5c99af26f0461c3a12bac2982f2eded5540ba3b1af1d38ba961"
+      ],
+      [
+        "plans/2026-08-20-memory-m4-cloud-embedder/plan.md",
+        "-:01e8f97ef501b4552b3d054efada576c4698f548fd173f8da635decf18debbc5"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/README.md",
+        "-:458ac5cb1ad74aefc98c9a2cb55eafdd3b2633f1fd4298466ee70c26f960ba7c"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/acceptance.md",
+        "-:d0d78dfbd7f6d3743f047f9e2d2bd11fdbf60a1770cc13d20a7e8b432a26b2b8"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/architecture-baseline.md",
+        "-:c8cf207fb9cd8e49382ff7cbcf0de852d338aab37dc2e130d766f0ac9705112e"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/assurance-contract.json",
+        "-:49b13eabedd7af8b3d67ed84db52e128efe126ab3fc2a0d764e1d0db97e9be21"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline.md",
+        "-:960f14c79cb712bf159683b840b695fdd3d48f813ff5cbb01b943e9d4ec03e68"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/BASELINE-INTERPRETATION.md",
+        "-:23787b86ea4559483e47c17e6e3abebbc0e987d092158b05d58d59d302706036"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/BASELINE-MANIFEST.md",
+        "-:e56c24730a6686f822b5df43856a69cfe23e77b3450f1f74b53b3bf0d15e3841"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/host-baseline-state-v2.json",
+        "-:61ea0f1d0ceb843fb8a537de3e81fa36149852cd7d7cdd97566bc870a4a0531f"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/host-baseline-state.json",
+        "-:ce05279277ca9232dac39e5e9be0a3303060ea080aba968a824740406bcae2c9"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/host-worktree-shards.json",
+        "-:79157acf1bcf5f89adf8ab343218568b44a911a9625b85cdc87accc10f2fa3fe"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/original-2026-08-17/01-memory-sdk-cognitive-architecture.md",
+        "-:b68a33296f92b493c19f414aeae34335995d55b11dec03c0cb05c0774ea539c0"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/original-2026-08-17/02-memory-sdk-deep-dive.md",
+        "-:3aa737326810f49f756665caccede3896f2e8f3660eaa4454b82f0fb701d2d93"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/original-2026-08-17/03-memory-sdk-design.md",
+        "-:36533fd89a4c8990046fb65f5fd28b342fa8be4140b1ccb49c86c1b9ecc08f07"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/original-2026-08-17/04-world-model-architecture.md",
+        "-:85479ecf54a206531778926a50e5cb300f3f18d4cb4ac99a4bda4d9e669933d6"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/original-2026-08-17/05-refactor-plan.md",
+        "-:4891f4aef427a8e72cc57f0712c590024f0d99b9f017d9870d65b1808557b30f"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/baseline/original-2026-08-17/06-memory-sdk-architecture.md",
+        "-:322e498d03fa3b9084955917b874ba2576af75e28520d15d9e23a6a72a90f353"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/best-practices.md",
+        "-:ea11560dd4f3159a4331fa7ec78f7baf00a052354953611ffcbd9a505e7da404"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/evidence/phase-0-architecture-challenge.md",
+        "-:fc31f54ac2e52d403c7267e8742ca838941eaed51d01b3986e1681627f2543f1"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/evidence/phase-2-spike-index.md",
+        "-:819a1936cd15d094bdec514a7079d0ffb69a0a91791016bd5e45f42b621fae18"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-receipt-hmac-no-keychain/acceptance.md",
+        "-:cf565a4d2773f76e6fe624e40fc3fe77b9c7a9a1921a6ee37fad6e09b95f9644"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-receipt-hmac-no-keychain/assurance-contract.json",
+        "-:e4e51933f3c5e1405c0d6a1452e538e777e3c868714060288a0becf563e1f754"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-receipt-hmac-no-keychain/plan.md",
+        "-:e1627d3aab49fc94a31ade7073e823997fbf7f0309aece2f2b7f7ee28a801cb2"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/acceptance.md",
+        "-:fd4957c85b3693b8f5a6e056bde7ec492849d57e2f8a44f70d130d419c3c3523"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/assurance-contract.json",
+        "-:624bd31f159480b274d84ead7bb1fa0a5df522a7d10f4718d6826687d6863fd8"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/baseline.md",
+        "-:608e913e0370a1053590ffc2ffe095e705ff55a6d6f6adb94320e326f3d4a51d"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/challenge/challenge-synthesis.json",
+        "-:5bd1535079db6c141f800c53333989bc7561f28972b3c5b115d51bca4d08d323"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/challenge/plan-after-synthesis-draft.md",
+        "-:83d53054f5b64cd184152d1ff19cc9c83141438ab57aa9ced4b49977f1ec4fd5"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/challenge/plan-before-round-1.md",
+        "-:00a59caa1fe3b2311226709a89591949a3ab29cd24440c314a07f24371196fec"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/challenge/primary-clusters.json",
+        "-:4a030fc5f5674c4a0b1ec9935c6a625ff81ae4f6c326e21ce931993b9fcaf971"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/challenge/primary-findings.json",
+        "-:47b61c9843c06a1d446b3e559409298eff5130348d63cfa821f37ac613339ac3"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/challenge/primary-round-1.json",
+        "-:b18e35adadf1525f0bb7cbbf03845a5476e65d3a9ba090c6d6881b3b7d8fca7e"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/challenge/specialist-entry-trust.json",
+        "-:aac9366bf25c94f23d8434eb7aca3c9a08bbd31bf40524756234d39d3032b847"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/challenge/specialist-foreground-run.json",
+        "-:7a2f3aee6bb3be8cd2e63632c71f59caca904788beadfd244c19025f98780a1e"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/challenge/specialist-projection-bounds.json",
+        "-:9cec21480e468d6633f2b6396a16571e147cd49b3b71e1861f573bf54400bb42"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/challenge/specialist-recovery-integrity.json",
+        "-:dc0c7807d22ed6b26b5876c42628c7a5a3a47cf2e894d130aab46d5315b6c499"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/manifest.json",
+        "-:cd9b3dfd520314ec8b8b80bd40ad430e98019695fd4fe92a1d654e646114298e"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/plan.md",
+        "-:00a59caa1fe3b2311226709a89591949a3ab29cd24440c314a07f24371196fec"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/testcase-reuse-report.json",
+        "-:e9f2f093aaa19a6a45701f71559a41ce0e782ebb46af8087c2248b3692ea1afe"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification-spec.json",
+        "-:860cefe63e004dce18440a785e389405d4f4c6616141755a1426a5eb331771e5"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/fixtures/s4-host-closure-v1.json",
+        "-:ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/iterator/iteration-1.md",
+        "-:5a4c45f190500eb8cdb921c2aaf16bb34f8a136a9caf6ad10c624cab2cfc6743"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/iterator/iteration-2.md",
+        "-:bb37c66b415603fb80e1c36690cfbe9f3e2fe43cfee47fb10c5a91abd8d16bf1"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/runners/run_s4_critical_affected_api_smoke.py",
+        "-:c82688c94fbcba7e5d86787e2aeac1e6ffbd86046a8423e58d08c156c6567e54"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/runners/run_s4_value_smoke.py",
+        "-:77bcfc39d4f02cc758e45cf909210935548e59827669211b126f967718a69051"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/runners/s4_runner_common.py",
+        "-:b5d1ac909d2092851d6876d47bb457923499f4bfd528169f4cf039610caff4da"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/acceptance.md",
+        "-:c482949678ca1faf6e6116d84bb8aba40254f241e0b55f5b62486261cfce2e46"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/assurance-contract.json",
+        "-:7e47e55b3b2dfd9a397f3d2e9b9703af2e7c892a169f13fd24e4470e9e9ea9ad"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/baseline.md",
+        "-:c32be68bc40a70651329e89a7df37f747da2e647d35f172557325486914c4991"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/minimality-plan-pass.json",
+        "-:a16ebab2a54f22a78e754400f8e27cb66789fb066fa89e719a7f20a318451e50"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/plan.md",
+        "-:cce4ad26468adcf0df9ac3127d4f6e98251acb640350cb5ce418f2a32e5d263e"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/spikes/run_relation_spikes.py",
+        "-:8201bf2692bb35d68ed914fd2418fe27187d5d4d9848ce3e38eb58a0d76d3468"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/testcase-reuse-report.json",
+        "-:4d1baebdf087e775eb051dc56562fa810cd60559ab36cc897149648a4931bdb8"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification-spec.json",
+        "-:42230016f3356d73e321f8fa97ac495fb1b015bb68ac58523105af176ac4c85e"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/exec-REL-INTEGRITY-0002.log",
+        "-:070f3327eb3820ae235353feca5962768536ece3390b9f6fa8533f4ddd36c965"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/exec-REL-INTEGRITY-0005.log",
+        "-:54aac6373b5c0da5ee5ed6bb83d0fa768e6a23a5ae88bc9b809cb2e510337781"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/exec-REL-INTEGRITY-0008.log",
+        "-:82c16942f42cfff2c2b096c9e43a0cc86f27f5595ab4c97c1bb71b1406c70acd"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/exec-REL-REGRESSION-0003.log",
+        "-:440c89587d4e11cd3164c6c5ab57f0e3732b763a94bceffab52fa2fe9eea007d"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/exec-REL-REGRESSION-0006.log",
+        "-:aec91b72910988f9039b362e62e4eb23cd98fae8dd6290d460a741eca368afcf"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/exec-REL-REGRESSION-0009.log",
+        "-:a31a8b9c3524b2d81d1095494e4890b81fe2ecdea7f1ea096cdcb53b450643a1"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/exec-REL-VALUE-0001.log",
+        "-:625c3bef9876cec4fe9880e1a6cf28c552adf195b71ecb4e49011f4a60a283d0"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/exec-REL-VALUE-0004.log",
+        "-:034c571a22cc1825ee9ff3cd0182f696ff07c3a4aeb0ec8511351e977f781ea7"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/exec-REL-VALUE-0007.log",
+        "-:d2341a18b8ddf3d456f3d917aeb63179be13f6d38aed9c23b68113f095045972"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/rel-integrity-fault-recovery-retest.log",
+        "-:54aac6373b5c0da5ee5ed6bb83d0fa768e6a23a5ae88bc9b809cb2e510337781"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/rel-integrity-fault-recovery.log",
+        "-:070f3327eb3820ae235353feca5962768536ece3390b9f6fa8533f4ddd36c965"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/rel-regression-result-retest.log",
+        "-:aec91b72910988f9039b362e62e4eb23cd98fae8dd6290d460a741eca368afcf"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/rel-regression-result.log",
+        "-:440c89587d4e11cd3164c6c5ab57f0e3732b763a94bceffab52fa2fe9eea007d"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/rel-value-business-result-retest.log",
+        "-:034c571a22cc1825ee9ff3cd0182f696ff07c3a4aeb0ec8511351e977f781ea7"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/artifacts/rel-value-business-result.log",
+        "-:625c3bef9876cec4fe9880e1a6cf28c552adf195b71ecb4e49011f4a60a283d0"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/auditor-input-final.json",
+        "-:50996c40d1eab341c320b28ed8be9dc9a87d8c404ba63a5c8568f8466329c8ba"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/auditor-input.json",
+        "-:0efdf83f53f2dfaa9431fc21f02f98b45764900b4e7c4aeb3d7900f26df2886d"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/auditor-output-final.json",
+        "-:c980ae85bafc3e20380f427a3d96585ab41ad35b7c84a97fa9ba7098780dc6fd"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/auditor-output.json",
+        "-:880c4c9bda34a2bd5aec88208a2bdf00e3a3d3aad1bd5e5e75f58d5e2915dfc8"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/gate-receipt.json",
+        "-:13a20a0d58aeaabf316825af3a744281428a33b929bae826b51a5d6549f9846a"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/plan-test-run.json",
+        "-:c9c647a73ae3e029c099f279cd1176c5781cef72e261b7ed5f05dfabdbe8314d"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/rel-integrity-metadata.json",
+        "-:70ecb97d54a3885bded43a2f94e96ce24a67de1eec1d1ec8ec029ae1d3961362"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/rel-integrity-retest-metadata.json",
+        "-:d607812236b3d82fc05b2920c50bd16bc4c475e536adbdf99a9b47c5c7510347"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/rel-regression-metadata.json",
+        "-:fce7aaea5a1ebd76eec9e54491f78df542ef3b1f9d1dc140ea60fc981ec61726"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/rel-regression-retest-metadata.json",
+        "-:8b74022da76ad8f087d39fe0e85eca75f5370f0983c59be7a11492c0e60b6a4a"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/rel-value-metadata.json",
+        "-:0f1f28a4fbb01ee24f30348fd82763e20041f1b4c955f36ae6f791fe718a4043"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/rel-value-retest-metadata.json",
+        "-:04f120023cb899ef4dcb0029bcb9b71a3ce5622d9ec30611bcb1ea543f182663"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/gate-run-20260901-03/report.md",
+        "-:b4a1cd021eb69488db9daa3f7092bed98c90e6c0f3afc298ced4d09503de9f6b"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/manifest.json",
+        "-:385cc45b227a19d2adcc67579681e1631c9515efc510b037925ab590bb414b3d"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/challenge-synthesis.json",
+        "-:e654b2c534bcd874b14ebf5dc611c8a3863aed4a956c2d16adafef518205ff5c"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/closure-round-2.json",
+        "-:e95806035fc74eafd18808afccab510149418acd145efe34fcfa346e4ecbf465"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/closure-round-3.json",
+        "-:03f19f2203e421c758fa47bec2c3dacd26952d01dfdede0e6e6a710fc05f0860"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/plan-test-run.json",
+        "-:4800b3d45a4e30f33cc3d8c9386aae0c3d3cf108c51d3d02e09dd930f5831122"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/primary-clusters.json",
+        "-:fe61fb44e136061bb1c28817d99e8df5447c80508d772ba327fc1e5816985885"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/primary-round.json",
+        "-:7bd6eb157dbb4af34c89903ea4d50a259f0b591b94a158a793703fac1788360b"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/specialist-cluster-immutable-evidence-rollback.json",
+        "-:6021a05e0f070b230f095fb4610fb9db5fce59cbb6b036a05bb856b7eb7283ac"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/specialist-cluster-parser-to-backend-audit-chain.json",
+        "-:5e09dbc9e0db84285170f21aae7317ca749d1919ba2516987f774ce825a0927f"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/specialist-cluster-relation-lineage-compatibility.json",
+        "-:bc761debdd5ee35b8a715827c1d3673919a73d11862af921fad8443990f230cb"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/plan-challenge/specialist-cluster-value-and-oracle-sequencing.json",
+        "-:44923fa8c7f0f71bb5532d4840d4c63de44803b1c5e32c8b51dff9ec5b740128"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/testcase-iteration-03.md",
+        "-:4db62fe59e3d13275cbc8c5c79e1baa6fa206e1c5bca8046cbd5b3cb7886cfac"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/testcase-iteration-04.md",
+        "-:1276c2f4f773e3dea040fdbfe384f8134abba98f170080748a70a5139f9d9711"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/testcase-iteration-05.md",
+        "-:bdb049e9b6a6cebca59bd4269a84f08efb30461362db62832541cdae859ba1a4"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/testcase-iteration-06.md",
+        "-:57ca43e73e3416ef663a1436577c3ed891d5e9b332404b5ba596d73779597f60"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/testcase-iteration-07.md",
+        "-:735cd4c641a7e0fb1e422feac8cb765d4accb9efaac21588f2424f78e12b9a99"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/testcase-iteration-08.md",
+        "-:9dd020bc27fc464d2b113baf3f84dae9940e4021c9c764970ad08dec5a6051dd"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/testcase-iteration-09.md",
+        "-:293df4c13f247ebf4e14de0fa3fa2fcaebaaf615ce43fd5096815cd02139fbcd"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-semantic-relations/verification/testcase-iteration-10.md",
+        "-:72723b0ff15669249e4fe0922d1d80aa215dc3b75e9c3590568725c5dfa8a304"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/plan.md",
+        "-:6327e6c36af648f021bb8b4eebcd8b730c56f647b3badf33eeeb727022774d8b"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/README.md",
+        "-:67dbe31a1924ec13110805b94feddf29c5c52112c9ccac13b989cca84101bbe1"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/generate_corpus.py",
+        "-:c5720e94331d2e2c2b0b356ca08a902336837267582d4b5c656caa966a3369cc"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/manifest.json",
+        "-:c8ec4bcbd667dc5445538c0958f1d1dbc2637db6899ac0299403bd63536dde13"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/recall-candidates.jsonl",
+        "-:e3d39fdf68ded5c4af94b7c7ca04587b724b46643d1ea6fd2ccecb0003e039d5"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/validate_corpus.py",
+        "-:e6036f731220964b5677ad1c776d074318f9d3c558d2278fe9d49be863464122"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/01-human-memory-cognitive-architecture-2026.md",
+        "-:e5923e42ad4be4730cae16bed14d438fabac83c020056dead74083f49c6207ef"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/02-memory-retrieval-routing-2026.md",
+        "-:dab25d91739a5b54aae25da1baff0fd4d012d8f3ef23a4ef60c05a92f8680f0f"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/03-recall-router-method-audit.md",
+        "-:a8570c67c075ae9112a08629345f6ceb304b3044edd35d7f1831fba08ec4c422"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/04-memory-write-evolution-audit-architecture.md",
+        "-:5cc8a2e7b7081ae859b8b2046e4cda1fc6aed6f81b98c350b08a623502b220b6"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/05-single-stream-dynamic-context-architecture.md",
+        "-:4f7527d78234b1dff8eb1c8938609f7e7d36a5e335c6c91b1eeb61ba003cc0a7"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/06-task-scope-code-execution-architecture.md",
+        "-:3eb568683dbe58927480430333a7f7a96cfa5ffada873a1ea5372a10d7ea75b8"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/07-durable-task-scope-archive-and-retrieval.md",
+        "-:8edc4f38ea11cb5a529dbee6f68f11584ef028adbacb51baf7622bb46fc95f23"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/08-task-scope-creation-and-folder-binding.md",
+        "-:8eb2e447f5dc3f6c41aebd9cd0822125a9ca5bea74659e639aeb114596c7910a"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/09-multi-root-task-scope-options.md",
+        "-:7d70302fec56ed420aeec7d99a4adb45bf77a13961f7756d80b553a297f219ef"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/10-task-scope-information-carriers.md",
+        "-:6425f0afcabc8c0209298ebb76e74a08057b37424aad5c9fc3b2a9069a484ac3"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/11-permanent-audit-privacy-and-logical-forgetting.md",
+        "-:c22783f3147d1d4f2b9803c3ed2a084ef35a7212defbd36dfd32d83592ddd458"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/12-task-scope-event-and-semantic-update-pipeline.md",
+        "-:d88e45d7ae4682133915acabc79ab1b42c9d46d6b54e21aa92774db7362fbb17"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/13-task-scope-routing-outcomes.md",
+        "-:bcd090668ded01d9ea42a97e2069902d5c56002616c16009b03db658549a97e8"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/14-initial-version-core-settings.md",
+        "-:32cedf0a1a58df1dc836a0e416e23e0df9f4b1a9d2b15a29d3e748471b56a73c"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/research/15-single-react-run-and-future-concurrency-boundary.md",
+        "-:c3b84973d1910b69a9b49ad3c15320fe322197c144c044f030e6471165b6274a"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/S1-protocol-and-react-barrier.md",
+        "-:0acd4026bed005e133f9e823855c3fffb8ee1f845a1db256c83487d1a6ce6369"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/S2-memory-evidence-audit-suppression.md",
+        "-:70fbeafb66659ac196ecebad994e0695ff7203633e175b802141a5a174e5797c"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/S3-cognitive-systems-recall.md",
+        "-:1996b8bcac3a64e984415d10aec0cb6ac671ea7c1f6a5eca2b71a8bdb1c8353e"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/S4-host-primary-taskscope.md",
+        "-:79f9772add15af1d0690c3b21c74f9f89b488a0764b7dc5fbb99db72225f0f0c"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/S5-host-context-integration.md",
+        "-:8be7828b889816bafea3385e397e9c2d5c9bcfd7a26028640cd34c20ccf45ff6"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/S6-ui-and-program-verification.md",
+        "-:fa537bd77b84aabc8f78cdddfa8081c1fcaa0cf70b69ca3ed1a5f086ea7dfa67"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/slices/V0-verification-and-spikes.md",
+        "-:8d16d048abc14ad4a9437ad57333edfb252086bad6324755a165b832f7177070"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/spikes/README.md",
+        "-:ddf7c03d331571636b0b28a8b606001451056e8e0c70ed105543eb7d52d6ff50"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/spikes/manifests/spike-manifest.json",
+        "-:13a2f2b5a1f4d74993a573bac31ffdddd228dd782a78c31411eea04caaf3c326"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/spikes/results/capacity-results.json",
+        "-:8fe7cfd072393c341ecfe0c8fa7fdd5f8d94ed86fed55132695de5281919f296"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/spikes/results/protocol-results.json",
+        "-:cae43f696e195311d88619455ec77661365dade255d0aa1334065b1215815a01"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/spikes/run_capacity_spikes.py",
+        "-:b19896217ac7b28a8af423d4fb0410e86e46bbf74f793de4a236a01270048dd5"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/spikes/run_protocol_spikes.py",
+        "-:e2e04d787947b33f0f6a9c45def4046b4ef5e62ee503aeae3e39458c9c2d3884"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/verification/manifest.json",
+        "-:3a1f79a45b8c0250ecc13c02c0f1b376fd40b72f19ecce6bd6960b764634f4c1"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/verification/testcase-reuse-report.json",
+        "-:10e07fd2c0463276687e26200cd0286d161320c38733eef6d9d920b5068d25d0"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/verification/v0-closure.md",
+        "-:1482f961d03922d2a909797bf6af61fdce923b31493832cb741499af8897c430"
+      ],
+      [
+        "plans/2026-08-29-human-memory-digital-twin/verification/verification-spec.json",
+        "-:b70965a31b63742c23bc27d2607e6552d12a13c782ddda8ae8c2fa22bcdfb178"
+      ],
+      [
+        "plans/phase1-local-core/gate-manifest.json",
+        "-:b7a5e28a648c62fafec25982e46005f8aa8abd84a723ba71f752f6927834d3af"
+      ],
+      [
+        "plans/phase1-local-core/plan.md",
+        "-:c9c11685c99a464181f21e80039b3b470717b3acce37c784cf93d2e53064e913"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/auditor-input.json",
+        "-:3c8f4706cd4b2586079eb348490d254c128354531164d2990b92b954da66f393"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/auditor-output.json",
+        "-:d1b3efb9f5ed65f8cd357d9eee096cc22ba68ee3a6d8738c5f455f1c9903f9af"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/gate-receipt.json",
+        "-:3799930bb101345d046d2e3ed105bb1db02dd33e7afbb34a970a4b02e552ae27"
+      ],
+      [
+        "plans/phase1-local-core/verification/run-1/plan-test-run.json",
+        "-:3f182d278006eb80c154cc958406ff8d82e84218d3aa9b573e484689f87b3e2b"
+      ],
+      [
+        "plans/phase2-embeddings/gate-manifest.json",
+        "-:4e60719678d5fb8642c475dd4d626a86eee8dc038e431d7d29bd2b5f402b3c49"
+      ],
+      [
+        "plans/phase2-embeddings/plan.md",
+        "-:94217ead11e300de26ace12504dba11a172ed6b58d01375f678eb869906b1422"
+      ],
+      [
+        "plans/phase2-embeddings/verification/run-1/auditor-input.json",
+        "-:b01b4f2c832e89da0f1d1cd9a7af494bb6166f62b3bfd055fce1c2689b217d49"
+      ],
+      [
+        "plans/phase2-embeddings/verification/run-1/auditor-output.json",
+        "-:c4422152fda941ef010fe9a23b708feb75f9982ec66cab6fa47ef27210d07798"
+      ],
+      [
+        "plans/phase2-embeddings/verification/run-1/gate-receipt.json",
+        "-:950949cc79348bcfef9c299bd0b8a628ca8c1c60781df27b6245a5fe4257d0be"
+      ],
+      [
+        "plans/phase2-embeddings/verification/run-1/plan-test-run.json",
+        "-:d7057bb3908a13d4972bf963565d7ccc711daa558ad4ff738ce9c79edbb82eda"
+      ],
+      [
+        "pyproject.toml",
+        "-:2e0708ace407788f9f6566337b3c2437a9c64973a47a1879f3a9874f2610e02d"
+      ],
+      [
+        "scripts/harness_compatibility_consumer.py",
+        "-:47c733a538345e96e94f1ed9f592905788650d47216c06dbebd66114d375a622"
+      ],
+      [
+        "scripts/verify_harness_compatibility.py",
+        "-:87bb05fd4932248958c75fad00d51d1317a1a3059e711db7312cc92387324ab3"
+      ],
+      [
+        "scripts/verify_quickstart.sh",
+        "x:e8ddc0fcc7b7fb077f0ccc55e7847f5b2b56d5de7ce3cbe476dd8dced2dfb230"
+      ],
+      [
+        "scripts/write_candidate_metadata.py",
+        "-:7797fa9cbbb753c182a7ff769910167b2fa8b830e2aff9690ff99f7cc3e31623"
+      ],
+      [
+        "src/simple_harness_memory/__init__.py",
+        "-:38f7017ddaa33cdda0629937d38d7b9d69de5f95af4fb13d2c19776f278ec970"
+      ],
+      [
+        "src/simple_harness_memory/backends/__init__.py",
+        "-:a3a54e31caa7cad22ea8a51a4a552e57a3656ae3308534f58408a404334cf551"
+      ],
+      [
+        "src/simple_harness_memory/backends/base.py",
+        "-:555e3ecf10298da4b673969446e06f16d0577cdd6aa3161f4973c6b00292a25b"
+      ],
+      [
+        "src/simple_harness_memory/backends/mock.py",
+        "-:c16ae63240796deb2406b2947635046b1ffda0dd16f3ea94cae1a16944507877"
+      ],
+      [
+        "src/simple_harness_memory/backends/schema_v5.py",
+        "-:e5d15358ce5fdadfbcecb17375dbf94e0b265e6f327a7769866f94760ddd0b4d"
+      ],
+      [
+        "src/simple_harness_memory/backends/sqlite.py",
+        "-:29118efc7545207426c95c1771863ed08a2f7e125303d4043e4d1bf355b1147c"
+      ],
+      [
+        "src/simple_harness_memory/backends/sqlite_v5.py",
+        "-:dcc3697cf56ddbce85cfa72d7b302b020d03317f5a8a0ecbb03e8c822e064796"
+      ],
+      [
+        "src/simple_harness_memory/backends/storage.py",
+        "-:74446fcb41239ae5e9ead85b9d9d41eaddf82427431a016f1a3d6f7909cd8cc3"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/__init__.py",
+        "-:67c31f354d34b748dfd9432b02a8721862c9b2f9704ad2f95797c62b08d7927f"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/decay.py",
+        "-:98b8a2125fbd40188bbd6dd15491816d3d571a686d5fcdcbbaa52652d9cfa5d1"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/salience.py",
+        "-:2d96ea6377558f6cb57ed7e97a553931e3f6f299d50550937851a1697b473902"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/session_affinity.py",
+        "-:e6fcfc18202b19c878ecea49be9e97eaba314f55d923e584bf22dcb4cb46b80a"
+      ],
+      [
+        "src/simple_harness_memory/cognitive/twin_builder.py",
+        "-:b344ffe5788c011b1ae41b90069600f4a1bd3ac0adaa9b47a7a4d0ea24ebcc15"
+      ],
+      [
+        "src/simple_harness_memory/config.py",
+        "-:ee17c152efcc537ed2cc2531c53d9a20f59484d5f8845c65a2a6bebe2721d924"
+      ],
+      [
+        "src/simple_harness_memory/core/__init__.py",
+        "-:7207c5dd7395b7ee57ccda3f25f0297c65fc57147ef87d30a2dfaf00752f078a"
+      ],
+      [
+        "src/simple_harness_memory/core/audit.py",
+        "-:76d771502fe40e948306d6b4cc739c025620f0357ee90ec0da5678e40c7d7f46"
+      ],
+      [
+        "src/simple_harness_memory/core/cognitive.py",
+        "-:63766c51f85219afb5c994124b7a2ddfb2e3905c5575620bfb360f34cbf05205"
+      ],
+      [
+        "src/simple_harness_memory/core/conversation.py",
+        "-:6ff87f184c98529e4ca6ae033b2fcfdb141bcc56251a5feb32c4cb229e546d79"
+      ],
+      [
+        "src/simple_harness_memory/core/embedding.py",
+        "-:bf51b994fe76d1dcfd7adc13d44c8b83efad6b64e570ca8940c4fcfeb8f2a6db"
+      ],
+      [
+        "src/simple_harness_memory/core/errors.py",
+        "-:f33701b5da3440c19a3d347731391b169d62af4fbf4aeae5047e69905287921e"
+      ],
+      [
+        "src/simple_harness_memory/core/evidence.py",
+        "-:e0b549a6059ccde1f2148fb4f42409fa2bfd701e9ce27b89fbb2c81922141570"
+      ],
+      [
+        "src/simple_harness_memory/core/identity.py",
+        "-:943ef0e1d97e38979e3f1471793131342c44db99f91050023034f9c2bea4dbe1"
+      ],
+      [
+        "src/simple_harness_memory/core/jobs.py",
+        "-:792315f207d20ee438ffc38fea8b2b51f6d81ca32cd332ca25c089e9e80df2d1"
+      ],
+      [
+        "src/simple_harness_memory/core/lifecycle_results.py",
+        "-:4744dc2ddc0386fa7cf091d5041d116001cf3d702f75a8caa228f8105c7cf842"
+      ],
+      [
+        "src/simple_harness_memory/core/manager.py",
+        "-:fb46640388dd672868c65106b5b3d1ae4c20f8634c577928c0f42d60104f415b"
+      ],
+      [
+        "src/simple_harness_memory/core/models.py",
+        "-:e2f7e0b8b38627714342b156467f9cf68b975b54811d3309aa6f40aa44fd4dab"
+      ],
+      [
+        "src/simple_harness_memory/core/mutation_receipts.py",
+        "-:76e538170e15c89994e4dee11fcaf98003cc01f63f9c722163c80f189436a987"
+      ],
+      [
+        "src/simple_harness_memory/core/mutations.py",
+        "-:effbbfa429859d8cb46ecf1266e43559299d5456185b9e0ce0cb06eb5d8fef39"
+      ],
+      [
+        "src/simple_harness_memory/core/observability.py",
+        "-:2733de92f0b8188dc430f005685cd558d5e7381b8651dd87d3c77011b463b254"
+      ],
+      [
+        "src/simple_harness_memory/core/port.py",
+        "-:79fbc684e9f1279df9728e55b3dcbd3b18c67bbf2b29cf72227724a46f3cbe79"
+      ],
+      [
+        "src/simple_harness_memory/core/prospective.py",
+        "-:1fff05456db666399f0ebcc94f3cefe69966f847f40a26c16081ce8a81122838"
+      ],
+      [
+        "src/simple_harness_memory/core/recall.py",
+        "-:37dae90c3329810ee6b90f89d564249c01271444a4aedae13af3ee0cbcb48c7f"
+      ],
+      [
+        "src/simple_harness_memory/core/short_horizon.py",
+        "-:6d57deb453ea117af1a493ab14e745cb50c8adbda7e4c1cb87be9d8c35f1dfbe"
+      ],
+      [
+        "src/simple_harness_memory/core/suppression.py",
+        "-:8964ebb1a5caf9e8af4844e4edf6d2dd9db58497f99a685b62889ad075b2af6f"
+      ],
+      [
+        "src/simple_harness_memory/core/twin.py",
+        "-:059b3b4912afe84df18e436bbb7cd3ceee0be17812d9d5cf033e00cc33493be2"
+      ],
+      [
+        "src/simple_harness_memory/embedders/__init__.py",
+        "-:3ad0863ec2c06d0ab76d529cbcf100e14e2c405b36392604b579c1f36789c13b"
+      ],
+      [
+        "src/simple_harness_memory/embedders/base.py",
+        "-:9259c3e5ecf3d37f6aba643cabc33870b90e6217c4170ca3eb2d268eaa2c3ffd"
+      ],
+      [
+        "src/simple_harness_memory/embedders/bge.py",
+        "-:d8544e1933330256036c08c85277c5bd69bd260c1cd17401502d03c31403af9e"
+      ],
+      [
+        "src/simple_harness_memory/embedders/cloud.py",
+        "-:4484bae2a578b33fc1435fd7cb441a304257b0e051bf34ecf91688061e1912b2"
+      ],
+      [
+        "src/simple_harness_memory/embedders/factory.py",
+        "-:0ef44e07f8e2ef79759180893d7fc7b0bde0c9a1b55c6f1e26ca30d8a57971af"
+      ],
+      [
+        "src/simple_harness_memory/embedders/mock.py",
+        "-:30900d01f1eeeea25f6b4a12b69fba687b994571a0e1b10c5ed366554e5cb348"
+      ],
+      [
+        "src/simple_harness_memory/embedders/openai_compatible.py",
+        "-:bef29a39d2364bdb1e5561242d728e8a94ee565bd4e4fb30439f5426883873b3"
+      ],
+      [
+        "src/simple_harness_memory/features/__init__.py",
+        "-:6806195e95a58a039fed60ab0ec0d393f73ae569fcac27ef5b59d9da20ab1d24"
+      ],
+      [
+        "src/simple_harness_memory/features/lexical.py",
+        "-:0236a2c91e0d455aeb74826b94f0587d9f5a8840fcfd22d574ab7c39aea1690b"
+      ],
+      [
+        "src/simple_harness_memory/features/reranker.py",
+        "-:939e26bdada527a2a88dc9dab01e3707bcc9f68a114c3f06fed412c0bf88b6d2"
+      ],
+      [
+        "src/simple_harness_memory/features/retriever.py",
+        "-:96a4ac30fd10a15317591353bd460741c4d3570163ea3fbfe6233a9397abd20d"
+      ],
+      [
+        "src/simple_harness_memory/features/rrf.py",
+        "-:21a95fc7802d8a2daefe3bbc602647e73760c13fc9e1128dc316ff5c27800feb"
+      ],
+      [
+        "src/simple_harness_memory/features/summarizer.py",
+        "-:10c71b4e8c3400b7a43a4f04b576583f61b48b64b4ffa687550ea9a5d32db51f"
+      ],
+      [
+        "src/simple_harness_memory/migrations/__init__.py",
+        "-:3e3fac9e755d913f8ba499aff3ce1a4830293ce4582685cb2f31edc092408b62"
+      ],
+      [
+        "src/simple_harness_memory/migrations/contracts.py",
+        "-:ddd1efbf081b0ddfdd0385c6ccafcf1a0a92821ea56afff420e8ef48b2dd7d7b"
+      ],
+      [
+        "src/simple_harness_memory/migrations/runtime.py",
+        "-:9acddf2867000b0c85f23ac011890bd3e8d9187aebd1d7d316e95b66a87df45d"
+      ],
+      [
+        "src/simple_harness_memory/migrations/v3_to_v4.py",
+        "-:c020f950b8343e4495bf49b2e4d0dd6e843ecfc3cb6b2b687e413cdc68497b9d"
+      ],
+      [
+        "src/simple_harness_memory/py.typed",
+        "-:01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+      ],
+      [
+        "src/simple_harness_memory/world/__init__.py",
+        "-:02ce6af950b38f653871f14e12736aa5335d8113694c01f51983d2ba99d0c00f"
+      ],
+      [
+        "src/simple_harness_memory/world/events.py",
+        "-:65631e08add963bb115a2c94d0bbb9276e6a2165c022d8855a9d0481dc889aca"
+      ],
+      [
+        "src/simple_harness_memory/world/geography.py",
+        "-:82015e9375d4976817aee52966f3f471cf5acab4a3c73c6c2a9698655f4c98f7"
+      ],
+      [
+        "src/simple_harness_memory/world/knowledge.py",
+        "-:0b10f5c30a7ea1eee01b62eda341160b6ff37366cc29b7c2d1e5d7f4c903ac73"
+      ],
+      [
+        "src/simple_harness_memory/world/model.py",
+        "-:48fd449aa32c6c5ee40f6c6b695be28ff40f4f5d7c4ee316b7526ab18401efbf"
+      ],
+      [
+        "src/simple_harness_memory/world/port.py",
+        "-:e790b246a8e457759800e3577af7ada7cf00c57196cad9b8edb8eb1e752f9f65"
+      ],
+      [
+        "src/simple_harness_memory/world/temporal.py",
+        "-:0808c2159f1c0e795d5f3b301eea797f3709d4bdbe381ba907562eecff71f323"
+      ],
+      [
+        "tests/__init__.py",
+        "-:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      [
+        "tests/artifact/conftest.py",
+        "-:4aa96852d23fa2ded800871da2dc039eafb25fca27b4cc05d54fbeec60be3696"
+      ],
+      [
+        "tests/artifact/public-api-0.4.0.json",
+        "-:7f18a5d26235b3713455876774c35e5ced2f69f466ff46225f0f5ca10668d52e"
+      ],
+      [
+        "tests/artifact/public-api-0.5.0.json",
+        "-:79d4be9a34ec6f45d4d1892aa80afe9f9647d81663cff833d84074a6cc1cbb62"
+      ],
+      [
+        "tests/artifact/public-api-0.5.1.json",
+        "-:4cbbb289c1f23353fe0e2836b60ee49d4a1e157d9baaa9d0347b81ebb5fbb7e4"
+      ],
+      [
+        "tests/artifact/public-api-0.5.2.json",
+        "-:11cc765df5634e315163b73a5dbb9a0d2fc54d3ad4683350cde1982990c7eb89"
+      ],
+      [
+        "tests/artifact/public-api-0.6.0.json",
+        "-:76e8faf1c85cd697944c6f6a7c7a69f4b90f5b55deeba37d85e2e363fc7091f9"
+      ],
+      [
+        "tests/artifact/test_exact_wheel_consumer.py",
+        "-:d44ac669741a64342538ed8c38ceb6794e52500e9573451ef70a25c2f756a1c1"
+      ],
+      [
+        "tests/artifact/test_harness_compatibility_receipt.py",
+        "-:33b8cade08dcdfdd463fd9c60c061b4ba436e057f53e030f45f192cddf8c2123"
+      ],
+      [
+        "tests/artifact/test_harness_extra_resolution.py",
+        "-:a7ac65ea8468b062a022d716212a7f2e1919793c1c1f6b6970286926cb451568"
+      ],
+      [
+        "tests/artifact/test_legacy_public_paths_removed.py",
+        "-:898467b63d70c2d997063f821bfc857ef5a80d7d578cb4e879e56db7d16b615a"
+      ],
+      [
+        "tests/artifact/test_public_api_snapshot.py",
+        "-:cdd9084af539de1f6e146bd4f09e00e986dbb62310a254d80295bd1421912e3c"
+      ],
+      [
+        "tests/artifact/test_release_candidate_contract.py",
+        "-:f5eeae1719658d94b16cce02d76b6a49f5ad0d43853b58f3ef42687f4dbcaaee"
+      ],
+      [
+        "tests/artifact/test_twin_graph_isolation.py",
+        "-:33b4fc9f12eb9ae04c9558dbd81acd83bf261d017529c4f290e4a08b21ddd1e7"
+      ],
+      [
+        "tests/fixtures/__init__.py",
+        "-:2d44d8c90aeb3fa6a02fab2b90a678adee9454849742041113f6c6d0cbbf2571"
+      ],
+      [
+        "tests/fixtures/legacy_fact_jobs.py",
+        "-:c64b67295d2033516a99eb90a8c1cb915de0a71ef4e2782fa0041e992c073005"
+      ],
+      [
+        "tests/fixtures/legacy_facts.py",
+        "-:4e1927b58fae726d97e02594db971291ad1064c713626fd8cff9fd400449cef1"
+      ],
+      [
+        "tests/integration/__init__.py",
+        "-:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      [
+        "tests/integration/test_agent_memory_v4.py",
+        "-:09541784e51a54425fcd317bda85a9496bb27399d7f0029305fc271cb5f8170f"
+      ],
+      [
+        "tests/integration/test_audit_access_v6.py",
+        "-:70a1bbce84505715eec197719870c1eb68e648eca4130e28df31c005b0c91d38"
+      ],
+      [
+        "tests/integration/test_audit_ledger_v5.py",
+        "-:be178e2ece58f6a287717c0deabd943778a023228849b7a8ef2e62dd947940f4"
+      ],
+      [
+        "tests/integration/test_bounded_recall.py",
+        "-:24b7befa75c259398216ff1871b18e9fad19ff0387819b10edfad99cb7bbc2ac"
+      ],
+      [
+        "tests/integration/test_cognitive_mutation_repository_v5.py",
+        "-:caaed86f2db76f7849b3dfe0ea7b2b1263f036f9d3da3f16585de73357f670df"
+      ],
+      [
+        "tests/integration/test_cognitive_schema_foundation.py",
+        "-:5b5d31c13d9d392824e7d10476cf81a3f6b4326fe55337ceee9b607917aefdd0"
+      ],
+      [
+        "tests/integration/test_durable_memory_jobs_v5.py",
+        "-:7bac63c667123c57e36873892827711b2936919a147ac2b3ebfed0fa43e8103d"
+      ],
+      [
+        "tests/integration/test_evidence_ingestion_v5.py",
+        "-:8b26fd00caaeca07cda44d83a75f11b1c43b509cdd5e8b03433be40b23f1bd08"
+      ],
+      [
+        "tests/integration/test_manager.py",
+        "-:f47fd51a0409545d75e4ece7e1e344a64dfe8ea45c36ac948fc7ad40ce80efef"
+      ],
+      [
+        "tests/integration/test_observability.py",
+        "-:37fc8e583416c6386627acf7da1548485785ce3a7dc37f19ae4ae4d39eeae271"
+      ],
+      [
+        "tests/integration/test_procedure_observation_repository_v5.py",
+        "-:7ab48f5a4164eb80e3b835571c61ae8a1b00b81a732d9bf292b38ded6dc17ced"
+      ],
+      [
+        "tests/integration/test_prospective_signal_repository_v5.py",
+        "-:01d42bf69134bbc38515b3604ca74d7ce5a4ac1194a566483f0e740c0a9d8101"
+      ],
+      [
+        "tests/integration/test_recall_result_idempotency.py",
+        "-:a4cc236b69dff99360da4af6ff870b38c4a652ace3b99f8dbaf3c8ac1eb32e0e"
+      ],
+      [
+        "tests/integration/test_recall_retention_horizon.py",
+        "-:956296459017c967fc5692e84cc220992e4868abbd33258e34d643300f761622"
+      ],
+      [
+        "tests/integration/test_schema_v3.py",
+        "-:eb0d901a944d4cb8fc42062b025ce2f7cc1eb00e8cef10f794c5dbf3fee2e775"
+      ],
+      [
+        "tests/integration/test_schema_v5_initialization.py",
+        "-:a115721a91d31db7dcc4ea0985d88e0eb0575da867cc3813479e957a6ec3bfc1"
+      ],
+      [
+        "tests/integration/test_short_horizon_repository_v5.py",
+        "-:d23d298465e5b6f301a013d70036bc8b855c7aa2be49260a0e25235e7add6aee"
+      ],
+      [
+        "tests/integration/test_source_event_idempotency.py",
+        "-:a03e30adfb53e2bc1ce4fe53defed7688653b64494418d7c77e6b6382fab025c"
+      ],
+      [
+        "tests/integration/test_sqlite_backend.py",
+        "-:ffa4c3d43615e7ece6a086b82dc09d0a8b06f2f40624b11077ceac37c5f27c9e"
+      ],
+      [
+        "tests/integration/test_sqlite_concurrency_deadlines.py",
+        "-:e4969d674eeeeef75518c4a89280ade0811996eb16f2d8f31615c2f537f2e469"
+      ],
+      [
+        "tests/integration/test_sqlite_s4_operations.py",
+        "-:e5093269e550253e772ff72f776f0cc4d19f16f6bae93495f971d125fc7ae7f9"
+      ],
+      [
+        "tests/integration/test_storage_permissions.py",
+        "-:64ce566af617391d19cb119547b0617a2bcb77448b261560538c7aead82899ff"
+      ],
+      [
+        "tests/integration/test_suppression_v5.py",
+        "-:c73dc0ccee61d3019ab3de9936249c4b1185aeb91cb7e47eef8f52050a229940"
+      ],
+      [
+        "tests/integration/test_twin_graph_view_v6.py",
+        "-:359f937d74a3e3da7b9c112eaf76da9bb32d2a3e05ac2d1e63a307b739f62232"
+      ],
+      [
+        "tests/integration/test_typed_recall_v6.py",
+        "-:d1fa1ec437ab1561a93c06d32ddef0da58554813e4d08dbe85f65eeb707a389f"
+      ],
+      [
+        "tests/integration/test_user_scoped_maintenance.py",
+        "-:bc22faa13fd32837e82ee66e30ac8962b63786c5b037118737881cd9e5588382"
+      ],
+      [
+        "tests/integration/test_user_session_scope.py",
+        "-:000a4ec838e89c9d4223ba961089add345579202a9ae9b0e762bf7f6c66b0909"
+      ],
+      [
+        "tests/integration/test_v3_to_v4_migration.py",
+        "-:f1b5ab2cc5f152fd68156a523665c056d52c5dd2239c10c70b116324abc6d4c8"
+      ],
+      [
+        "tests/unit/__init__.py",
+        "-:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      [
+        "tests/unit/test_cloud_embedder.py",
+        "-:25aa2977abd15c5a23a032a13aab07966dbce2f697446803186acce46a274ec4"
+      ],
+      [
+        "tests/unit/test_cognitive.py",
+        "-:bc2d045c6e07b022c523fe17e71a83033d83c038d35316b20b08abecc644ffc7"
+      ],
+      [
+        "tests/unit/test_cognitive_kernel_v5.py",
+        "-:f3c1cc486cb2da5e900e0f3b2d9db8d3d13a4feaf83a6fea7b715dde7b4b6f34"
+      ],
+      [
+        "tests/unit/test_embedders.py",
+        "-:954d6032a33d63e03040d193b976cf9b7eda6217101772ef6a52eb68322a7ff8"
+      ],
+      [
+        "tests/unit/test_embedding_lineage.py",
+        "-:d2258a265a01b5857fa41fcce6841bea0528ec7cda3be9a7833173124e60d624"
+      ],
+      [
+        "tests/unit/test_facts.py",
+        "-:92770550858a72d0b2299f3848a846b0e135814e1cbb47c2b6cbe6aafb9d03c3"
+      ],
+      [
+        "tests/unit/test_logging_observability.py",
+        "-:c245035206b97311eacc5e353186f23bd0ddd3e394b4a4e3f486ef5a5c794525"
+      ],
+      [
+        "tests/unit/test_manager_recall_contract.py",
+        "-:ba36862eadea1866fd6bb062b784cb53964e61809070ac5b905349b710dd6e2e"
+      ],
+      [
+        "tests/unit/test_memory_mutations_v5.py",
+        "-:0b0bd968f9581f897f8446fac721392ee9cd9dd81fe9c7c0eefd1d9a05747bb3"
+      ],
+      [
+        "tests/unit/test_mock_backend.py",
+        "-:3aba3f55522058f71d8c42af77a6b0d516e31e32ed52cd23a2c15d48a4fa3284"
+      ],
+      [
+        "tests/unit/test_prospective_kernel_v5.py",
+        "-:f1f87e364b22c83d1f7c3a9f7354b6c5cd3d83434f0757c6c2005dccd1f6a1a3"
+      ],
+      [
+        "tests/unit/test_rrf.py",
+        "-:c17b4058db34862e64c1ec9ccf9d2acefd9cf2afecde3aae71338712765bc0eb"
+      ],
+      [
+        "tests/unit/test_short_horizon_v5.py",
+        "-:a5c58d2553f362763dc8bab254c315ed68b67f3ca2e7dc1b9217e93b5a65b17e"
+      ],
+      [
+        "tests/unit/test_twin_builder.py",
+        "-:32219c8bad82526424bb46cd593e30e868187642cb60d2bf2afa492b38e5bf7d"
+      ],
+      [
+        "tests/unit/test_twin_graph_builder.py",
+        "-:0e5021b559282ff3cc70978826a655f15c06b91e6cef54f5a5fa69875c0ddb0b"
+      ],
+      [
+        "tests/unit/test_typed_recall_eligibility_policy.py",
+        "-:4e70c2a4ee82501f3132faa7e64a71dad39676b1c0a850ce8d10d21f05efe56c"
+      ],
+      [
+        "tests/unit/test_typed_recall_selection.py",
+        "-:e88cbd60454b3d4a6a05853a03851d1eed4293da1f4d6b4c4e4b450fc3fcf073"
+      ],
+      [
+        "tests/unit/test_world.py",
+        "-:0dff02a49b0b382d0bfc6ad94e50d877213560645a44c6ef325334fa01ca7d31"
+      ],
+      [
+        "tests/unit/test_writer_lock_platform.py",
+        "-:96b249367f10203cd3212fb6df69bb26bd507d9d8230d61fa582976c401c5fb7"
+      ],
+      [
+        "uv.lock",
+        "-:893441f3b8f3facbe61fd4a9598f3de0cdd885f3b446cf7e7c87edf56f7d8de2"
+      ]
+    ],
+    "dirty_patch_sha256": "2d3edaa8426669da644bc7ac26124836ecaa3bce4953197438db4fd88a3d49a9",
+    "exclusion_count": 1,
+    "exclusion_scope": [
+      ".plan-test/active-run.json",
+      "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/gate-run"
+    ],
+    "exclusions": [
+      [
+        ".plan-test/active-run.json",
+        "declared-scope:.plan-test/active-run.json"
+      ]
+    ],
+    "head": "7a57ee1bf5658bab8e3d68e3698c7f0518c3a63a",
+    "recorded_at": "2026-09-01T08:57:23+0800"
+  },
+  "scenarios": [
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "business-result",
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "fresh_data_dir",
+          "event_count_100000",
+          "exact_scope_opened",
+          "resume_package_bounded",
+          "wrong_task_canary_zero",
+          "fifo_preserved_after_restart"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/task_scope/**",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/execution/foreground_queue.py",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/human_memory_service.py"
+      ],
+      "input_class": "deterministic-typed-100k-cold-resume",
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "fixture_revision": 1,
+        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34",
+        "runner_common_sha256": "b5d1ac909d2092851d6876d47bb457923499f4bfd528169f4cf039610caff4da",
+        "value_runner_sha256": "77bcfc39d4f02cc758e45cf909210935548e59827669211b126f967718a69051"
+      },
+      "required": true,
+      "scenario_id": "S4-VALUE-100K",
+      "testcase_ids": [
+        "TC-HM-02",
+        "TC-HM-11"
+      ],
+      "testcase_revisions": {
+        "TC-HM-02": 3,
+        "TC-HM-11": 4
+      },
+      "ui": false
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "recovered_state",
+          "six_views_within_limits",
+          "evidence_pages_cover_all_events",
+          "stable_page_refs",
+          "rebuild_byte_identical",
+          "checkpoint_drift_reported"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": false,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/task_scope/projections.py",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/memory/migrations/031_task_scope_projections_v39.sql"
+      ],
+      "input_class": "deterministic-bounded-view-rebuild",
+      "lanes": [
+        "temporal-fault"
+      ],
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "fixture_revision": 1,
+        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34"
+      },
+      "required": true,
+      "scenario_id": "S4-VIEWS",
+      "testcase_ids": [
+        "TC-HM-12"
+      ],
+      "testcase_revisions": {
+        "TC-HM-12": 4
+      },
+      "ui": false
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "recovered_state",
+          "single_foreground_run",
+          "fifo_sequence_preserved",
+          "control_overtook_queue",
+          "duplicate_delivery_deduplicated",
+          "restart_no_double_start"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/execution/foreground_queue.py",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/memory/migrations/033_foreground_queue_v41.sql"
+      ],
+      "input_class": "durable-fifo-control-duplicate-restart",
+      "lanes": [
+        "temporal-fault"
+      ],
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "fixture_revision": 1,
+        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34"
+      },
+      "required": true,
+      "scenario_id": "S4-FIFO",
+      "testcase_ids": [
+        "TC-HM-11"
+      ],
+      "testcase_revisions": {
+        "TC-HM-11": 4
+      },
+      "ui": false
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "fresh_human_memory_v1_enabled",
+          "single_writable_primary",
+          "legacy_epoch_rejected",
+          "future_epoch_rejected",
+          "legacy_crud_primary_rejected",
+          "emergency_export_available"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": false,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/human_memory_service.py",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/main.py",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/memory/migrator.py",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/memory/schema.py"
+      ],
+      "input_class": "fresh-host-primary-epoch-api",
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "api_runner_sha256": "c82688c94fbcba7e5d86787e2aeac1e6ffbd86046a8423e58d08c156c6567e54",
+        "fixture_revision": 1,
+        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34",
+        "runner_common_sha256": "b5d1ac909d2092851d6876d47bb457923499f4bfd528169f4cf039610caff4da"
+      },
+      "required": true,
+      "scenario_id": "S4-INTEGRATION",
+      "testcase_ids": [
+        "TC-HM-14"
+      ],
+      "testcase_revisions": {
+        "TC-HM-14": 2
+      },
+      "ui": false
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "recovered_state",
+          "raw_row_count_preserved",
+          "raw_content_hash_preserved",
+          "ingress_fenced",
+          "outbox_drained_or_parked",
+          "wal_checkpoint_receipted",
+          "emergency_export_byte_identical"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": false,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/execution/recovery_fence.py",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/memory/migrations/034_human_memory_recovery_v42.sql"
+      ],
+      "input_class": "raw-integrity-fence-drain-wal-export",
+      "lanes": [
+        "temporal-fault"
+      ],
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "fixture_revision": 1,
+        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34"
+      },
+      "required": true,
+      "scenario_id": "S4-DATA-RECOVERY",
+      "testcase_ids": [
+        "TC-HM-14"
+      ],
+      "testcase_revisions": {
+        "TC-HM-14": 2
+      },
+      "ui": false
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "wrong_principal_denied",
+          "candidate_search_authority_unchanged",
+          "search_poison_not_authority",
+          "second_foreground_run_rejected",
+          "durable_auto_snapshot_authoritative"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/task_scope/search.py",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/execution/foreground_queue.py",
+        "/Users/denny/projects/simple_harness-memory-plan/backend/deskpet/human_memory_service.py"
+      ],
+      "input_class": "wrong-principal-search-poison-concurrency",
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "fixture_revision": 1,
+        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34"
+      },
+      "required": true,
+      "scenario_id": "S4-AUTHORITY",
+      "testcase_ids": [
+        "TC-HM-02",
+        "TC-HM-09"
+      ],
+      "testcase_revisions": {
+        "TC-HM-02": 3,
+        "TC-HM-09": 4
+      },
+      "ui": false
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "gate-exec",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "critical_affected_api_smoke",
+          "host_full_pytest",
+          "changed_surface_mypy",
+          "changed_surface_ruff"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "negative-safety",
+      "impact_paths": [],
+      "input_class": "host-critical-affected-full-regression",
+      "manual_required": false,
+      "min_root_runs": 1,
+      "oracle_pins": {
+        "api_runner_sha256": "c82688c94fbcba7e5d86787e2aeac1e6ffbd86046a8423e58d08c156c6567e54",
+        "fixture_revision": 1,
+        "fixture_sha256": "ca9da5887abe4ef11fbb0afb04b067973a559096d5078d33cc557d9583403d34",
+        "runner_common_sha256": "b5d1ac909d2092851d6876d47bb457923499f4bfd528169f4cf039610caff4da"
+      },
+      "required": true,
+      "scenario_id": "S4-REGRESSION",
+      "testcase_ids": [
+        "TC-HM-14"
+      ],
+      "testcase_revisions": {
+        "TC-HM-14": 2
+      },
+      "ui": false
+    }
+  ],
+  "schema_version": "1.5.0",
+  "source_request": {
+    "inline": true,
+    "sha256": "00400f071b2f6129777b6e457f48fef5204475265e447cde691fe099c4c728bf"
+  },
+  "structured_audit_required": true,
+  "testcase_lock": {
+    "files": [
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-02-task-resume.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-02-task-resume.md",
+        "sha256": "1f3f0a192aa1a47065c8c3de93af6ae9166df2020e39930b19aeb45020e77dec"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-09-taskscope-bindings.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-09-taskscope-bindings.md",
+        "sha256": "6e3bb28bc280af1ff17a887ea185b3b13c4069b1ef051ad30ccbedfbe6c050c2"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-11-single-run-context.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-11-single-run-context.md",
+        "sha256": "9796b6164dd7d4a1b361ff7b41e768e90693f82a2b190771b157910e917a9dfb"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-12-digital-twin-views.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-12-digital-twin-views.md",
+        "sha256": "8704b1a4c1b821c7b897f57e262429cc1f0ca0c6552994800f0b29b4f4c718ab"
+      },
+      {
+        "abs_path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-14-host-closure-recovery.md",
+        "path": "/Users/denny/projects/simple_harness-memory-plan/testcase/human-memory-program/TC-HM-14-host-closure-recovery.md",
+        "sha256": "9a44ffdb779b5870e6948d794d2a2edd3a220fb98d17cfeb21205c8e2367e74c"
+      }
+    ],
+    "locked_at": "2026-09-01T08:57:23+0800"
+  },
+  "thresholds": {},
+  "toolchain": {
+    "gate_path": "/Users/denny/.codex/skills/plan-test/scripts/plan_test_gate.py",
+    "gate_sha256": "4d1ad47e37e1cfe4a2a3819e268ab59c847dbd5d3704f1ab47e0d8a0317d38f3",
+    "gate_version": "1.5.0",
+    "host": "Mac",
+    "platform": "Darwin-25.4.0-arm64",
+    "plugin_version": "",
+    "python_version": "3.9.6",
+    "recorded_at": "2026-09-01T08:57:23+0800"
+  }
+}

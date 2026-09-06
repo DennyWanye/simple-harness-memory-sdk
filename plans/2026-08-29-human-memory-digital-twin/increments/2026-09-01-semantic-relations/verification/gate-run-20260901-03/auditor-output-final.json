@@ -1,0 +1,22 @@
+{
+  "verdict": "PASS",
+  "mode": "full-audit",
+  "auditor_engine": "independent-codex-agent",
+  "reviewed_ac_ids": ["HM-AC-2", "HM-AC-6", "HM-AC-7", "HM-AC-8"],
+  "reviewed_obligation_ids": ["HM-TO-A2", "HM-TO-A6", "HM-TO-A7", "HM-TO-A8", "HM-TO-R9"],
+  "reviewed_scenario_ids": ["REL-VALUE", "REL-INTEGRITY", "REL-REGRESSION"],
+  "findings": [],
+  "blocked_followups": [
+    {
+      "id": "HOST-PREADMISSION-AUDIT-S5",
+      "status": "NOT_RUN/BLOCKED_UNTIL_S5",
+      "detail": "Harness parser failure 的 Host durable pre-admission audit 仍明确属于后续 S5；新增 delivery 和 phase-end 事件没有将其改写为 PASS，也没有用 Memory post-admission audit 冒充。"
+    },
+    {
+      "id": "REAL-LLM-QUALITY",
+      "status": "NOT_RUN/BLOCKED",
+      "detail": "真实主模型语义关系提取质量仍未执行，并继续被正确排除在本 SDK 增量完成门之外。"
+    }
+  ],
+  "summary": "最终冻结态复审通过。auditor-input-final.json 精确绑定当前 ledger revision 35 和 SHA-256 fda90dfb7f5ccbb49fb9784f79f296583c2d9461dc219b51e29c11653d426c7d；delivery PASS 精确继承已验证的独立 PASS，phase-end 仅记录流程完成，没有新增、扩大或伪造产品能力结论。三个仓库 HEAD、acceptance、assurance、verification-spec、testcase、fixture、runner、adapter hash 均未变化，候选 source commit 之后两个 SDK 的 src/pyproject 无漂移。三个最新 root log 均为 exit 0、completed、completed+valid：REL-VALUE 证明 exact-wheel package-root 公共链路的原子 2 nodes + 1 directed applies_to edge、relation node 0、suppression/reopen edge 0；REL-INTEGRITY 证明 verifier-owned 40-case 完整性矩阵，40/40 raw evidence before/after hash 相同且 physical_delete_count 全为 0；REL-REGRESSION 证明 Harness 1728 passed/2 skipped、ruff 和 changed-surface mypy 通过，Memory 1066 passed/8 skipped、ruff 和全包 mypy 通过，两个冻结 oracle self-check 通过。Harness whole-package mypy 的既存 171 errors/21 modules 红基线仍明确披露且未导入 PASS。HM-AC-2/6/7/8、HM-TO-A2/A6/A7/A8/R9 与三个 required scenario 均闭合；Host durable audit 和真实 LLM quality 保持诚实 BLOCKED。未发现 stale evidence、forged PASS、状态矛盾、新 tag/push/publish/merge 或其他 P0/P1。"
+}
