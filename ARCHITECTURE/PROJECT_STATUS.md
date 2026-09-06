@@ -1,3 +1,5 @@
+最后更新：2026-09-07。0.6.19 clean源e27003c一次离线制品和Host H079/M619/S0313安装组合1PASS0.86s通过，版本元数据3控通过，旧106导出全保留+12；生产安装origin经实际vendor安装纠正后验证通过。全部资源组清空，原生/240质量仍未验。[候选与制品](../plans/2026-09-07-procedure-current-input/CANDIDATE.md)。
+
 最后更新：2026-09-07。共同Procedure/current-input组合已在Host80764c13/Memorya15c7be通过1个新增真实公共控制并独审接受，source overlay非installed；0.6.19版本与118项公共导出快照准备，旧M618 106项全保留，版本检查/制品待验。[候选边界](../plans/2026-09-07-procedure-current-input/CANDIDATE.md)。
 
 最后更新：2026-09-07。Procedure discovery源f03dab0的新6项有效控制已获独审限定接受（首批有效4+实际遗忘负控2；旧误绿撤回）。文档后继d142d3a并入共同候选，current-input源码a28a857与Draft混合批量检查新控制仍待验；无新wheel/安装/原生完成声明。
