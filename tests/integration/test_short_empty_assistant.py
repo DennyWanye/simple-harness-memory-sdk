@@ -153,6 +153,15 @@ async def test_original_blank_nul_and_utf8_byte_limits_remain(tmp_path, role, te
         conversation_evidence_authority=authority)
     try:
         reg, ref = pairs[0]
+        if len(text.encode("utf-8")) > 1_048_576:
+            # The public ingest path has an earlier inline-evidence limit.
+            # Verify both gates without bypassing admission to seed the DB.
+            from simple_harness_memory.core.errors import MemoryLimitError
+            with pytest.raises(ShortHorizonIndexError, match="non-blank, bounded, and contain no NUL"):
+                resolve_authorized_public_text(reg.envelope.sanitized_payload, reg.metadata)
+            with pytest.raises(MemoryLimitError, match="evidence_payload_requires_controlled_blob_ref"):
+                await manager.ingest_committed_evidence(reg.envelope, reg.admission_receipt)
+            return
         await manager.ingest_committed_evidence(reg.envelope, reg.admission_receipt)
         with pytest.raises(ShortHorizonIndexError, match="non-blank, bounded, and contain no NUL"):
             await manager.register_conversation_evidence(ref)

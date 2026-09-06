@@ -1,5 +1,7 @@
 # 空 assistant 短期消息组：最小源码契约
 
+2026-09-06后继：已按主恢复测试指示完成原红、9专项分批、9邻居及1项Host真实执行载体；仅超限测试预期修正，业务17aebde不变。独审、版本分配及installed后继仍待，以下初始交接原文保留。[实际结果与边界](RESULTS.md)。
+
 最后更新：2026-09-06。自有Memory树 `/Users/denny/projects/simple-harness-memory-sdk-typed-short-sources`，分支 `feat/short-empty-assistant`，clean起点 `6361edca06c3c962986a7600410a0d6a0b427a13`。当前仅源码候选；按主指定 source→Dirac→145同锁红绿的顺序，待源码独审，尚未测试。版本仍0.6.14（WIP614），不分配615、不build/install/发布，不改Host WIP或任何installed文件。测试槽未占用。
 
 ## 确定的接口不一致
