@@ -1,5 +1,9 @@
 <!-- last-calibrated: 6ba269537e45d443629aee56e9cfabec9de2e833 -->
 
+## 2026-09-06 当前输入用途与观察源码片
+
+最后更新：2026-09-06。基M618的a8c8c38新增独立current input公共API，可信Host事实/完整owner/逐item验证与同snapshot原suppression；旧history/typed/short门不放宽。实际Host sidecar捕获与physical最终request/token/claim验证，本轮9新unique分批通过，原8复用，Dirac最终源码限定ACCEPT。Host/Memory源码overlay，未版本化/build/install/合主，不称240或全审计/最终正文授权。原失败保留，PG11195清空，槽交主native。[接口、证据及边界](CURRENT_INPUT.md)。
+
 ## 2026-09-06 完整 analysis 重试输入恢复
 
 最后更新：2026-09-06。后继源码d46bf1f保留普通失败批次完整request语义及原成员顺序，只替换attempt身份；新job独立使用新配置，篡改请求／成员拒绝。SDK三控及H077/M617依赖上的Host源码覆盖五控通过，含原v3普通异常→v4配置零新增Provider；旧24绿未跑。PG1149/exit0/3.834s/峰191648KiB/remaining=[]，共享槽释放。M617冻结不变，0.6.18.dev0未构建；待最终源码独审与实际installed，不称完整Procedure功能通过。[必要控制、原红边界与证据](../plans/2026-09-06-analysis-retry-protocol/RESULTS.md)。
