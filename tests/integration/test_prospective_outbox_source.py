@@ -44,7 +44,7 @@ async def world(tmp_path):
         assert result.receipt_ref is not None
         view = await manager.get_memory_mutation_receipt_view(principal=PRINCIPAL, receipt_ref=result.receipt_ref)
         entries = await manager.read_outbox(principal=PRINCIPAL)
-        entry = next(e for e in entries if e.topic == 'memory.prospective.registration.requested')
+        entry = next(e for e in entries.entries if e.topic == 'memory.prospective.registration.requested')
         yield dict(manager=manager, path=path, kwargs=kwargs, clock=clock, authority=authority,
             envelope=envelope, span=span, plan=plan, ref=result.receipt_ref,
             memory_id=view.operations[0].memory_id, entry=entry)
@@ -59,18 +59,20 @@ async def read(w, entry=None, **changes):
     return await w['manager'].read_prospective_outbox_source(**args)
 
 
-async def revise(w):
+async def revise(w, target_revision=1):
     op = replace(_operation(w['span']), operation_id='reschedule-op', kind=MemoryMutationKind.REVISE,
-        target=ExistingMemoryTarget(w['memory_id'], 1),
+        target=ExistingMemoryTarget(w['memory_id'], target_revision),
         payload=ProspectiveMemoryPayload('send report later', ProspectiveTimeTrigger(40.0, 'Asia/Shanghai')),
         lifecycle_state=State.RESCHEDULED)
-    plan = replace(_plan(w['envelope'], op, base_revision=2, plan_id='reschedule-plan',
-        idempotency_key='reschedule-key'), run_id='run-2', turn_id='turn-2')
-    plan = _with_action_authorities(plan, w['authority'].evidence)
+    plan = _plan(w['envelope'], op, base_revision=2, plan_id='reschedule-plan',
+        idempotency_key='reschedule-key')
+    plan = replace(plan, run_id='run-2', turn_id='turn-2',
+        disclosure_context=replace(plan.disclosure_context, run_id='run-2'))
+    plan = _with_action_authorities(plan, w['authority'].evidence, expires_at=60.0)
     result = await w['manager'].apply_memory_mutation_plan(principal=PRINCIPAL, scope=SCOPE, plan=plan)
     assert result.receipt_ref is not None
     entries = await w['manager'].read_outbox(principal=PRINCIPAL)
-    return next(e for e in entries if e.topic == 'memory.prospective.invalidation.requested'), plan
+    return next(e for e in entries.entries if e.topic == 'memory.prospective.invalidation.requested'), plan
 
 
 async def test_public_exact_source_reopen_read_only(world):
@@ -116,7 +118,7 @@ async def test_historical_invalidation_preserves_old_run_state_and_requires_regi
     assert old.target_run_id == original.target_run_id != new_plan.run_id
     assert old.target_operation_id == original.target_operation_id
     assert old.target_mutation_receipt_ref == original.target_mutation_receipt_ref
-    registrations = [e for e in await w['manager'].read_outbox(principal=PRINCIPAL)
+    registrations = [e for e in (await w['manager'].read_outbox(principal=PRINCIPAL)).entries
         if e.topic == 'memory.prospective.registration.requested' and e.outbox_id != w['entry'].outbox_id]
     new = await read(w, registrations[0])
     assert new.target_lifecycle_state == State.RESCHEDULED and new.target_run_id == 'run-2'
@@ -151,9 +153,9 @@ async def test_exact_args_no_fallback(world, changes):
 
 
 @pytest.mark.parametrize('sql', [
-    "UPDATE outbox SET idempotency_key='other' WHERE topic='memory.prospective.registration.requested'",
-    "UPDATE outbox SET created_at=1e999 WHERE topic='memory.prospective.registration.requested'",
-    "UPDATE outbox SET topic='memory.prospective.invalidation.requested' WHERE topic='memory.prospective.registration.requested'",
+    "DROP TRIGGER outbox_identity_immutable_update; UPDATE outbox SET idempotency_key='other' WHERE topic='memory.prospective.registration.requested'",
+    "DROP TRIGGER outbox_identity_immutable_update; UPDATE outbox SET created_at=1e999 WHERE topic='memory.prospective.registration.requested'",
+    "DROP TRIGGER outbox_identity_immutable_update; UPDATE outbox SET topic='memory.prospective.invalidation.requested' WHERE topic='memory.prospective.registration.requested'",
     "DROP TRIGGER cognitive_memory_revisions_immutable_update; UPDATE cognitive_memory_revisions SET content_hash='bad'",
     "DROP TRIGGER memory_mutation_receipts_immutable_update; UPDATE memory_mutation_receipts SET run_id='other-run'",
     "DROP TRIGGER memory_mutation_decisions_immutable_update; UPDATE memory_mutation_decisions SET decision_hash='bad'",
@@ -205,11 +207,16 @@ async def test_signal_derived_target_has_no_invented_mutation_source(world):
         transition_from=State.PENDING, transition_to=State.TRIGGERED, observed_at=30.0)
     result = await w['manager'].apply_prospective_signal(principal=PRINCIPAL, scope=SCOPE, reference=due)
     assert result.committed_revision == 2
-    expired = _grant(w['authority'], memory_id=w['memory_id'], revision=2, kind=Signal.EXPIRED,
-        transition_from=State.TRIGGERED, transition_to=State.EXPIRED, observed_at=30.0)
-    await w['manager'].apply_prospective_signal(principal=PRINCIPAL, scope=SCOPE, reference=expired)
+    await revise(w, target_revision=2)
     entries = await w['manager'].read_outbox(principal=PRINCIPAL)
-    invalidation = next(e for e in entries if e.topic == 'memory.prospective.invalidation.requested'
+    invalidation = next(e for e in entries.entries if e.topic == 'memory.prospective.invalidation.requested'
         and e.payload['prospective_revision'] == 2)
     with pytest.raises(MemoryValidationError, match='prospective_target_mutation_source_unavailable'):
         await read(w, invalidation)
+
+
+@pytest.mark.parametrize('timestamp', [True, -1.0, float('inf'), float('nan')])
+async def test_source_dto_rejects_invalid_emission_time(world, timestamp):
+    source = await read(world)
+    with pytest.raises(ValueError, match='prospective_outbox_created_at_invalid'):
+        replace(source, outbox_created_at=timestamp)
