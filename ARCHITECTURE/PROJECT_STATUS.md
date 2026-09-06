@@ -2,6 +2,16 @@
 
 2026-09-06主复核：源规格编译固定b72dbff限定ACCEPT并FF main；SDK源码仍0.6.3，15项源契约分批闭合，240正式执行仍0。详见[主复核](../scripts/corpus_runtime_input/主代理复核.md)；Host隔离组合18ec7194的M0613安装/模型short/资源验证与此源编译独立，见[续接记录](../plans/2026-08-29-human-memory-digital-twin/RESUME-2026-09-05.md)。
 
+## 2026-09-06 21例可信字段source adapter验收
+
+最后更新：2026-09-06。独立后继分支 `feat/corpus-trusted-bindings` 基于main `2641c90`，新增固定caseID、源行/UTF-8片段/hash映射，将C12全20例及C05-07的fixture配置需求与当前用户句显式分开；运行时不按自然语言分号推断角色、不从gold/setup决定权限。原r4及第一层源码/测试/中文文档未改，本后继分支尚未合入main。
+
+8项标准库契约验收全部通过，覆盖21输入完整保留、源变更拒绝、隐藏gold/setup变异不影响绑定及无凭据/伪造凭据不可dispatch。经145资源入口默认共享锁、512MiB/90秒执行，进程组29035无残留，已通知主释放测试槽。没有运行SDK、Provider、模型或native。
+
+模块边界仍为**源绑定已验收，Host公共setup及authority验证未实现**。21例全部ready/dispatchable/executed=false；第一层21 BLOCKED及240 ready=0历史结论保持。C05-07受众/用途/真实task ID与scope缺口明示；源policy hash不是权限receipt，不把此验收换算为模型质量或401矩阵通过。
+
+[21项逐例映射](../scripts/corpus_trusted_bindings/逐例绑定.md)；[接口及剩余接线](../scripts/corpus_trusted_bindings/接口与状态.md)；[验收命令、源码及ignored证据SHA-256](../scripts/corpus_trusted_bindings/验收结果.md)。
+
 ## 2026-09-06 r4源编译与隔离契约验收
 
 最后更新：2026-09-06。独立分支 `feat/corpus-runtime-input` 基于main `1a53e58`，新增标准库MD编译器，生产链路为只读r4源指纹校验 → 显式字段解析 → input/setup/scheduler/oracle/audit分区输出。原240条MD、旧集及阈值不变；不导入SDK、不执行Provider。此分支尚未合入main。
