@@ -166,6 +166,11 @@ def inspect_root(connection: sqlite3.Connection, *, allow_legacy: bool = False) 
     if actual not in CATALOGS.values():
         raise MemoryLegacySchemaUnsupported()
     meta = {str(r[0]): str(r[1]) for r in connection.execute("SELECT key,value FROM schema_meta")}
+    return _inspect_identity(connection, actual, meta, allow_legacy=allow_legacy)
+
+
+def _inspect_identity(connection, actual, meta, *, allow_legacy=False):
+    """Validate immutable 7.2 identity against a caller-verified exact base catalog."""
     expected_keys = {
         "schema_version",
         "schema_epoch",

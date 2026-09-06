@@ -1950,7 +1950,8 @@ class InitializationReceipt:
             raise ValueError("initialization receipt schema version differs")
         if self.schema_epoch != SCHEMA_EPOCH:
             raise ValueError("initialization receipt schema epoch differs")
-        if self.schema_checksum not in {SCHEMA_CHECKSUM, SCHEMA_CHECKSUM_V7_0, SCHEMA_CHECKSUM_V7_1}:
+        from simple_harness_memory.backends.schema_v7_3 import SCHEMA_CHECKSUM as checksum_v7_3
+        if self.schema_checksum not in {SCHEMA_CHECKSUM, SCHEMA_CHECKSUM_V7_0, SCHEMA_CHECKSUM_V7_1, checksum_v7_3}:
             raise ValueError("initialization receipt schema checksum differs")
         if (
             not isinstance(self.audit_cursor_authority_hash, str)

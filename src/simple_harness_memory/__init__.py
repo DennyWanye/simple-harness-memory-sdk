@@ -81,6 +81,11 @@ from simple_harness_memory.core.models import (
     MemoryApplyResult,
     Message,
 )
+from simple_harness_memory.core.prospective_settlement import RegistrationRequiredView, ProspectiveInvalidationNotRequiredReceipt
+from simple_harness_memory.core.prospective_settlement_observation import ProspectiveInvalidationSettlementObservationV1
+from simple_harness_memory.migrations.settlement_upgrade import (
+    ProspectiveSettlementSchemaUpgradeReceipt, migrate_human_memory_v7_2_to_v7_3,
+)
 from simple_harness_memory.core.prospective_sources_v2 import (
     MutationTargetSource, ProspectiveSignalTargetSource, ProspectiveOutboxSourceViewV2,
 )
@@ -242,6 +247,11 @@ __all__ = [
     "ProspectiveOutboxSourceViewV2",
     "MutationTargetSource",
     "ProspectiveSignalTargetSource",
+    "RegistrationRequiredView",
+    "ProspectiveInvalidationNotRequiredReceipt",
+    "ProspectiveInvalidationSettlementObservationV1",
+    "ProspectiveSettlementSchemaUpgradeReceipt",
+    "migrate_human_memory_v7_2_to_v7_3",
     "ProspectiveSourceReadObservationV2",
     "ProspectiveSourceReadObservationV1",
     "BoundedRecallResult",
@@ -265,4 +275,4 @@ __all__ = [
     "ShortHorizonRecallResult",
 ]
 
-__version__ = "0.6.16"
+__version__ = "0.6.17"

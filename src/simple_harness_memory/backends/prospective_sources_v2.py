@@ -55,6 +55,15 @@ async def _signal(backend, db, principal, outbox_id, payload_hash):
     # V1 already checked ownership, exact outbox, target content and trigger in this snapshot.
     outbox = await v1._one(db, 'SELECT payload,created_at FROM outbox WHERE outbox_id=?', (outbox_id,))
     payload = v1._json(outbox['payload'])
+    target, trigger, trigger_hash, origin = await signal_target(backend, db, principal, payload)
+    return ProspectiveOutboxSourceViewV2(principal.actor_id, outbox_id, payload_hash, outbox['created_at'],
+        payload['command'], payload['memory_id'], payload['prospective_revision'], payload['registration_revision'],
+        MemoryScope(target['scope_kind'], target['scope_owner']), target['task_scope_id'],
+        target['lifecycle_state'], trigger, trigger_hash, origin)
+
+
+async def signal_target(backend, db, principal, payload):
+    from simple_harness_memory.backends.sqlite_v5 import _stable_id
     memory_id, revision = payload['memory_id'], payload['prospective_revision']
     async with db.execute('SELECT d.consumption_id FROM prospective_signal_decisions d '
         'JOIN prospective_signal_authority_consumptions c ON c.consumption_id=d.consumption_id '
@@ -126,6 +135,12 @@ async def _signal(backend, db, principal, outbox_id, payload_hash):
         _bad()
     fields = ('principal_id,deployment_id,household_id,scope_kind,scope_owner,task_scope_id,'
         'content_json,content_hash,plan_id,plan_hash,operation_id,lifecycle_state,created_at')
+    size = await v1._one(db, 'SELECT length(CAST(content_json AS BLOB)) FROM cognitive_memory_revisions '
+        'WHERE memory_id=? AND revision=?', (memory_id, revision))
+    if size is None:
+        _bad()
+    if size[0] > MAX_WIRE_BYTES:
+        raise MemoryLimitError('prospective_signal_source_wire_limit')
     target = await v1._one(db, f'SELECT {fields} FROM cognitive_memory_revisions WHERE memory_id=? AND revision=?',
         (memory_id, revision))
     # Bound base content before fetching. Only the immediate factual copy edge is required.
@@ -155,10 +170,7 @@ async def _signal(backend, db, principal, outbox_id, payload_hash):
         authority.authority_id, authority.authority_hash, reference.ref_hash, cid, c['consumption_hash'],
         d['decision_id'], d['decision_hash'], intent.signal_receipt_id, intent.signal_receipt_hash,
         intent.run_id, intent.operation_id)
-    return ProspectiveOutboxSourceViewV2(principal.actor_id, outbox_id, payload_hash, outbox['created_at'],
-        payload['command'], memory_id, revision, payload['registration_revision'],
-        MemoryScope(target['scope_kind'], target['scope_owner']), target['task_scope_id'],
-        target['lifecycle_state'], trigger, trigger_hash, origin)
+    return target, trigger, trigger_hash, origin
 
 
 async def _read(backend, db, principal, outbox_id, payload_hash):

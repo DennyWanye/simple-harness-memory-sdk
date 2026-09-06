@@ -32,7 +32,7 @@ from simple_harness_memory.backends.history_source_guard import (
     prepare_history_source_context,
 )
 from simple_harness_memory.backends.disclosure_audience import ordinary_audience_matches
-from simple_harness_memory.backends.schema_v5 import (
+from simple_harness_memory.backends.schema_v7_3 import (
     REQUIRED_TABLES,
     SCHEMA_CHECKSUM,
     SCHEMA_CHECKSUM_V7_0,
@@ -485,7 +485,7 @@ class SQLiteHumanMemoryBackend:
         async with self._initialize_lock:
             if self._db is not None and self._receipt is not None:
                 return self._receipt
-            from simple_harness_memory.migrations.schema_upgrade import probe_existing_root
+            from simple_harness_memory.migrations.settlement_upgrade import probe_existing_root
 
             classification, probed_receipt = await probe_existing_root(self._db_path)
             if classification == "unsupported":
@@ -1010,6 +1010,11 @@ class SQLiteHumanMemoryBackend:
                 if begun and not committed:
                     with suppress(Exception):
                         await self._db.execute("ROLLBACK")
+
+    async def settle_prospective_invalidation(self, *, principal, outbox_id, payload_hash, expected_source_hash):
+        from simple_harness_memory.backends.prospective_settlement import settle_prospective_invalidation
+        return await settle_prospective_invalidation(self, principal=principal, outbox_id=outbox_id,
+            payload_hash=payload_hash, expected_source_hash=expected_source_hash)
 
     async def read_prospective_outbox_source_v2(
         self, *, principal: MemoryPrincipal, outbox_id: str, payload_hash: str,
@@ -9610,11 +9615,15 @@ class SQLiteHumanMemoryBackend:
             ProspectiveLifecycleState.RESCHEDULED.value,
         }
         if previous_revision is not None and previous_lifecycle_state in live_states:
-            await append("invalidation", previous_revision)
+            from simple_harness_memory.backends.prospective_settlement import skip_no_object_invalidation
+            if not await skip_no_object_invalidation(self, principal_id, memory_id, previous_revision):
+                await append("invalidation", previous_revision)
         if lifecycle_state in {
             ProspectiveLifecycleState.PENDING.value,
             ProspectiveLifecycleState.RESCHEDULED.value,
         }:
+            from simple_harness_memory.backends.prospective_settlement import guard_registration
+            await guard_registration(db, memory_id, revision)
             await append("registration", revision)
 
     async def _read_procedure_result_unlocked(
@@ -9965,6 +9974,8 @@ class SQLiteHumanMemoryBackend:
             row = await cursor.fetchone()
         if row is None:
             raise MemoryValidationError("prospective_signal_outbox_not_found")
+        from simple_harness_memory.backends.prospective_settlement import guard_registration
+        await guard_registration(self._db, getattr(intent, "target_memory_id"), getattr(intent, "target_revision"))
         kind = getattr(intent, "signal_kind")
         command = (
             "registration"
@@ -13620,6 +13631,8 @@ class SQLiteHumanMemoryBackend:
                 "ON r.request_id=t.request_id WHERE r.principal_id=? ORDER BY t.request_id",
             ),
         )
+        specs += (("results", "prospective_invalidation_terminal_receipts",
+            "SELECT t.* FROM prospective_invalidation_terminal_receipts t WHERE t.principal_id=? ORDER BY t.receipt_id"),)
         roots: list[CanonicalStateTableRootV1] = []
         for category, table_name, sql in specs:
             async with self._db.execute(sql, (principal_id,)) as cursor:
@@ -14949,7 +14962,7 @@ class SQLiteHumanMemoryBackend:
             return None
         if tables != REQUIRED_TABLES:
             raise MemoryLegacySchemaUnsupported()
-        from simple_harness_memory.migrations.schema_upgrade import inspect_root
+        from simple_harness_memory.migrations.settlement_upgrade import inspect_root
 
         # Run the same finite catalog/marker verifier on this fenced connection.
         root = await self._db._execute(inspect_root, self._db._conn)
@@ -15509,6 +15522,8 @@ class SQLiteHumanMemoryBackend:
         await self._validate_lifecycle_integrity_unlocked()
         await self._validate_audit_access_integrity_unlocked()
         await self._validate_typed_recall_integrity_unlocked()
+        from simple_harness_memory.backends.prospective_settlement import validate_integrity
+        await validate_integrity(self)
 
     async def _validate_audit_access_integrity_unlocked(self) -> None:
         assert self._db is not None

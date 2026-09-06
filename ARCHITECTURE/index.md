@@ -1,5 +1,9 @@
 # ARCHITECTURE 索引
 
+## 2026-09-06 prospective终局与schema7.3源码候选
+
+最后更新：2026-09-06。按2553已接受边界新增公开settle_prospective_invalidation严格联合、独立持久not_required receipt/observation、同事务无登记请求证明和后续登记门；新7.3显式升级保留原7.2 DDL/初始化receipt/业务列，fresh用7.3。版本预留0.6.17，未构建/安装/独审，Host52由主实施。新增12项风险控尚未运行（145共享锁三次BUSY75，无child），不能称验收完成；旧V2八项不重跑。[实际接口与待验收边界](../plans/2026-09-06-prospective-signal-source/SDK终局实现.md)。
+
 ## 2026-09-06 prospective signal source V2 源码
 
 最后更新：2026-09-06。新增公开read_prospective_outbox_source_v2及显式mutation/signal联合，按既存consumption/decision/result与历史revision核验signal来源，返回真实apply result，不伪造mutation receipt或Run。v2 operation/request/observation域明确，owner域沿v1；616旧方法/wire/hash不改。8个限定用例分批通过（首批5处篡改库teardown拒绝已显式断言），PGID54768已清空、槽释放；未构建/独审/Host组合。已证实同ref公开apply可恢复已提交的过期lostACK；无registration请求的派生revision之invalidation仍需主决定有记录终局，不能称scheduler闭合。[固定DTO/metadata接缝、精确方案及结果](../plans/2026-09-06-prospective-signal-source/最小契约.md)。

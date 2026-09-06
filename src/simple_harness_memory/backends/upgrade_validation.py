@@ -15,6 +15,7 @@ from simple_harness_memory.core.errors import MemoryCorruptionError
 
 async def validate_snapshot(source: sqlite3.Connection, root: Any) -> None:
     from simple_harness_memory.backends.schema_v5 import SCHEMA_CHECKSUM
+    from simple_harness_memory.backends.schema_v7_3 import SCHEMA_CHECKSUM as checksum_v7_3
     from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
     from simple_harness_memory.migrations.schema_upgrade import _columns, _ddl, _old_root
 
@@ -23,7 +24,7 @@ async def validate_snapshot(source: sqlite3.Connection, root: Any) -> None:
         columns = _columns(source)
         before = _old_root(source, columns)
         source.backup(clone)
-        if root.marker is None and root.initialization.schema_checksum != SCHEMA_CHECKSUM:
+        if root.marker is None and root.initialization.schema_checksum not in {SCHEMA_CHECKSUM, checksum_v7_3}:
             for statement in _ddl(root.catalog_id):
                 clone.execute(statement)
         if _old_root(clone, columns) != before:

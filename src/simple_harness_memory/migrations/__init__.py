@@ -50,3 +50,8 @@ __all__ = (
     "import_execution_manifest",
     "migrate_v3_to_v4",
 )
+
+from simple_harness_memory.migrations.settlement_upgrade import (
+    ProspectiveSettlementSchemaUpgradeReceipt, migrate_human_memory_v7_2_to_v7_3,
+)
+__all__ += ("ProspectiveSettlementSchemaUpgradeReceipt", "migrate_human_memory_v7_2_to_v7_3")

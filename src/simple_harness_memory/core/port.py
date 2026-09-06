@@ -65,6 +65,7 @@ from simple_harness_memory.core.models import (
     MemoryApplyResult,
     Message,
 )
+from simple_harness_memory.core.prospective_settlement import RegistrationRequiredView, ProspectiveInvalidationNotRequiredReceipt
 from simple_harness_memory.core.prospective_sources_v2 import ProspectiveOutboxSourceViewV2
 from simple_harness_memory.core.prospective_sources import ProspectiveOutboxSourceView
 from simple_harness_memory.core.mutation_receipts import MemoryMutationReceiptView
@@ -351,6 +352,10 @@ class CognitiveMemoryBackend(Protocol):
         scope: MemoryScope,
         plan: MemoryMutationPlan,
     ) -> MemoryMutationApplyResult: ...
+
+    async def settle_prospective_invalidation(self, *, principal: MemoryPrincipal, outbox_id: str,
+        payload_hash: str, expected_source_hash: str) -> RegistrationRequiredView | ProspectiveInvalidationNotRequiredReceipt:
+        ...
 
     async def read_prospective_outbox_source_v2(
         self, *, principal: MemoryPrincipal, outbox_id: str, payload_hash: str,
