@@ -1,5 +1,7 @@
 <!-- last-calibrated: 6ba269537e45d443629aee56e9cfabec9de2e833 -->
 
+最后更新：2026-09-06。Procedure后继公开prepare/read target/record的实际operation observation六项新控通过；f82c2b8仅Procedure复用source-only S1完整持久校验，Host三真实Scope路由/文件effects/完整group→公共观察由原红转绿，累计成功1/2/3与重放已验证。新四项跨源边界控未跑，完整TC-HM04、独审、installed/native未闭合。主整合Hegel e500556后统一版本，不独立build，不改M618制品；F01延期。[源码与证据边界](../plans/2026-09-06-procedure-observation-prepare/CONTRACT.md)。
+
 ## 2026-09-06 M618 实际安装恢复控制
 
 最后更新：2026-09-06。主转Dirac限定接受d46bf1f/cf7c8d5及Host6b53f27c/e37c42bb，版本d8d80d5固定0.6.18。一次offline wheel SHA010b4281…，两变动包成员fixedGit/source/wheel/独有target一致；H077依赖、无Memory源码覆盖的完整cohort及Host原普通异常升级两控通过（0.11s/0.73s）。PG1723/exit0/2.408s/峰189120KiB/remaining=[]，锁释放。M617/主环境不动；制品独审与主H078组合另验，Procedure观察/适用性仍待接线。[准确制品、hash及证据](../plans/2026-09-06-analysis-retry-protocol/CANDIDATE-0.6.18.md)。

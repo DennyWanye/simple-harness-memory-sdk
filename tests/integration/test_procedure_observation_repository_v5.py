@@ -141,7 +141,7 @@ def _procedure_operation(
     )
 
 
-async def _setup(path: Path, clock: list[float], count: int = 7):
+async def _setup(path: Path, clock: list[float], count: int = 7, *, source_only_indices=()):
     evidence: list[
         tuple[SanitizedEvidenceEnvelope, SanitizedEvidenceReceipt, EvidenceSpanRef]
     ] = []
@@ -173,7 +173,10 @@ async def _setup(path: Path, clock: list[float], count: int = 7):
     )
     await backend.initialize()
     for index, (envelope, receipt, _span_ref) in enumerate(evidence, start=1):
-        await backend.ingest_committed_evidence(envelope, receipt)
+        if index in source_only_indices:
+            await backend.admit_evidence_source(principal=_principal(), envelope=envelope, receipt=receipt)
+        else:
+            await backend.ingest_committed_evidence(envelope, receipt)
         link = ConversationToolCausalLink(
             f"tool-call-{index}",
             "publish",
