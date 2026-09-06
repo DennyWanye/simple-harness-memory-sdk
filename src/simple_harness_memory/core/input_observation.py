@@ -22,6 +22,7 @@ class CurrentInputObservationV1:
     observed_at: float
     operation: str = "check_current_input_visibility"
     persistence_status: str = "host_persistence_unverified"
+    schema_version: int = 1
     observation_hash: str = field(init=False)
 
     def __post_init__(self):
@@ -29,7 +30,8 @@ class CurrentInputObservationV1:
         for value in (self.request_hash, self.snapshot_hash):
             if value is not None:
                 _digest(value)
-        if (self.outcome not in {"input_usable", "input_denied", "rejected", "failed", "cancelled"}
+        if (type(self.schema_version) is not int or self.schema_version != 1
+                or self.outcome not in {"input_usable", "input_denied", "rejected", "failed", "cancelled"}
                 or self.operation != "check_current_input_visibility"
                 or self.persistence_status != "host_persistence_unverified"
                 or type(self.observed_at) not in (float, int) or not math.isfinite(self.observed_at)
