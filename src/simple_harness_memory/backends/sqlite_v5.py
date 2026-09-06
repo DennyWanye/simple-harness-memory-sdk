@@ -9297,15 +9297,24 @@ class SQLiteHumanMemoryBackend:
                 raise MemoryValidationError("mutation_evidence_ref_hash_mismatch")
 
     async def _verify_mutation_span_unlocked(
-        self, *, subject: str, span: Any
+        self, *, subject: str, span: Any, allow_source_only: bool = False
     ) -> tuple[tuple[str, str, str], ...]:
         assert self._db is not None
+        receipt_table = "ingestion_receipts"
+        if allow_source_only:
+            # Procedure terminal observations may use source-only S1 admission.
+            # Reconstruct and validate the real receipt, item and full envelope;
+            # never create an analysis job or relax ordinary mutation admission.
+            record = await self._read_ingested_record(getattr(span, "evidence_id"))
+            if record is None:
+                raise MemoryValidationError("mutation_evidence_span_not_admitted")
+            receipt_table = "(SELECT * FROM ingestion_receipts UNION ALL SELECT * FROM source_admission_receipts)"
         async with self._db.execute(
             "SELECT e.principal_id,e.subject,e.source_kind,e.source_hash,e.sanitized_hash,"
             "e.envelope_hash,i.content_hash,r.admission_receipt_id,"
             "r.admission_receipt_hash FROM evidence_envelopes e "
             "JOIN evidence_items i ON i.evidence_id=e.evidence_id AND i.ordinal=? "
-            "JOIN ingestion_receipts r ON r.evidence_id=e.evidence_id "
+            f"JOIN {receipt_table} r ON r.evidence_id=e.evidence_id "
             "WHERE e.evidence_id=?",
             (getattr(span, "item_ordinal"), getattr(span, "evidence_id")),
         ) as cursor:
@@ -9888,7 +9897,7 @@ class SQLiteHumanMemoryBackend:
     async def _verify_procedure_evidence_unlocked(self, intent: object) -> None:
         span = getattr(intent, "evidence_span")
         origins = await self._verify_mutation_span_unlocked(
-            subject=str(getattr(intent, "subject")), span=span
+            subject=str(getattr(intent, "subject")), span=span, allow_source_only=True
         )
         exact_origin = tuple(
             origin for origin in origins if origin[0] == getattr(intent, "task_scope_id")
