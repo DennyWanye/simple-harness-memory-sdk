@@ -1,3 +1,5 @@
+最后更新：2026-09-07。共同Procedure/current-input组合已在Host80764c13/Memorya15c7be通过1个新增真实公共控制并独审接受，source overlay非installed；0.6.19版本与118项公共导出快照准备，旧M618 106项全保留，版本检查/制品待验。[候选边界](../plans/2026-09-07-procedure-current-input/CANDIDATE.md)。
+
 最后更新：2026-09-07。Procedure discovery源f03dab0的新6项有效控制已获独审限定接受（首批有效4+实际遗忘负控2；旧误绿撤回）。文档后继d142d3a并入共同候选，current-input源码a28a857与Draft混合批量检查新控制仍待验；无新wheel/安装/原生完成声明。
 
 最后更新：2026-09-06。主候选源码组合：Procedure f03dab0（含已审恢复）与current-input e500556合入独立后继分支，保留两组公共入口和HistoryProcedureDraftBinding检查。当前只是组合源码，未构建新wheel、未切Host pin；Procedure discovery新控/组合审查仍待完成，旧M618身份不改。[本轮输入接口](CURRENT_INPUT.md)。

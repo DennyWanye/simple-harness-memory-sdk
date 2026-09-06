@@ -10,7 +10,7 @@ import simple_harness_memory.migrations as migrations
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_public_api_0_6_12_preserves_0_6_11_public_contract() -> None:
+def test_historical_public_api_0_6_12_preserves_0_6_11_public_contract() -> None:
     snapshots = {
         version: json.loads(Path(__file__).with_name(f"public-api-{version}.json").read_text())
         for version in (
@@ -37,8 +37,6 @@ def test_public_api_0_6_12_preserves_0_6_11_public_contract() -> None:
     assert {k: v for k, v in current.items() if k != "version"} == {
         k: v for k, v in snapshots["0.6.11"].items() if k != "version"
     }
-    assert simple_harness_memory.__version__ == "0.6.12"
-    assert current["root"] == sorted(simple_harness_memory.__all__)
     assert current["root"] == sorted(
         [
             *snapshots["0.6.10"]["root"],
@@ -80,7 +78,6 @@ def test_public_api_0_6_12_preserves_0_6_11_public_contract() -> None:
     assert snapshots["0.6.7"]["root"] == sorted(
         [*snapshots["0.6.6"]["root"], "HistoryShortHorizonBinding"]
     )
-    assert current["migrations"] == sorted(migrations.__all__)
     history_exports = {
         "HistoryBinding",
         "HistoryEvidenceBinding",
@@ -222,7 +219,7 @@ def test_root_exports_construct_public_facade_contracts() -> None:
     assert receipt.to_json()["operations"] == [operation.to_json()]
 
 
-def test_0_6_8_candidate_sources_and_docs_are_consistent() -> None:
+def test_current_candidate_sources_and_docs_are_consistent() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert pyproject["project"]["dynamic"] == ["version"]
     assert pyproject["tool"]["hatch"]["version"]["path"] == (
@@ -234,7 +231,7 @@ def test_0_6_8_candidate_sources_and_docs_are_consistent() -> None:
     assert "simple-harness-sdk>=0.7,<0.8" in pyproject["project"]["dependencies"]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "当前 source candidate：**0.6.12**" in readme
+    assert "当前 source candidate：**0.6.19**" in readme
     assert "已发布 fallback 为 0.5.1" in readme
     assert "## [0.6.6] - 2026-09-05" in changelog
     assert "## [0.6.5] - 2026-09-05" in changelog
@@ -245,3 +242,17 @@ def test_0_6_8_candidate_sources_and_docs_are_consistent() -> None:
     assert "## [0.5.0] - 2026-08-23" in changelog
     assert "## [0.4.0] - 2026-08-22" in changelog
     assert "version=0.5.1" in (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+
+
+def test_public_api_0_6_19_matches_combined_surface() -> None:
+    snapshot = json.loads(Path(__file__).with_name("public-api-0.6.19.json").read_text())
+    assert simple_harness_memory.__version__ == snapshot["version"] == "0.6.19"
+    assert snapshot["root"] == sorted(simple_harness_memory.__all__)
+    assert len(snapshot["root"]) == len(set(snapshot["root"]))
+    assert snapshot["migrations"] == sorted(migrations.__all__)
+    assert all(hasattr(simple_harness_memory, name) for name in snapshot["root"])
+    for method in ("check_current_input_visibility", "discover_procedure_drafts",
+                   "read_procedure_use_target", "prepare_procedure_observation",
+                   "record_procedure_observation"):
+        assert callable(getattr(simple_harness_memory.MemoryManager, method))
+    assert simple_harness_memory.PROCEDURE_OBSERVATION_RECOVERY_VERSION == 1

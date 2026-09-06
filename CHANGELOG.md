@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.19] - 2026-09-07（Procedure 与本轮输入共同候选）
+
+- 基于实际0.6.18源码d8d80d5c，整合已审Procedure目标/观察prepare恢复、DRAFT发现及精确历史binding；新增操作观察供Host独立审计。
+- 本轮完整USER输入公开检查保留完整principal、真实Host来源与用途；当前项例外不传播到其它历史或Procedure草稿。混合批次请求hash接受exact草稿binding，原域与旧项hash不变。
+- 保留0.6.18全部106根导出，新增12个公共导出；Memory无新DDL。旧0.6.18制品不改写，安装及原生验收独立记录。仅本地候选，未发布。
+
 ## [0.6.13] - 2026-09-06（独立 typed-short 来源候选）
 
 - 新增 public resolve_typed_short_horizon_sources，以 durable selected typed item 四元组
