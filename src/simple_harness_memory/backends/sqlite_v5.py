@@ -31,6 +31,7 @@ from simple_harness_memory.backends.history_source_guard import (
     history_source_operation,
     prepare_history_source_context,
 )
+from simple_harness_memory.backends.disclosure_audience import ordinary_audience_matches
 from simple_harness_memory.backends.schema_v5 import (
     REQUIRED_TABLES,
     SCHEMA_CHECKSUM,
@@ -5072,7 +5073,7 @@ class SQLiteHumanMemoryBackend:
     @staticmethod
     def _ordinary_recall_disclosure_allowed(disclosure: DisclosureContext) -> bool:
         return (
-            disclosure.recipient.value in {"user_self", "household", "task_collaborator"}
+            ordinary_audience_matches(disclosure)
             and disclosure.purpose.value
             in {"task_execution", "personalization", "task_resume", "user_review"}
             and disclosure.trust.value == "trusted_authority"
@@ -5083,6 +5084,8 @@ class SQLiteHumanMemoryBackend:
     def _candidate_disclosure_allowed(
         disclosure: DisclosureContext, privacy: str, attributes: tuple[str, ...]
     ) -> bool:
+        if not ordinary_audience_matches(disclosure):
+            return False
         recipient = disclosure.recipient.value
         purpose = disclosure.purpose.value
         if recipient == "user_self":

@@ -426,7 +426,6 @@ async def check_history_visibility(
                     reason = "history_subject_mismatch"
                 elif (
                     not backend._ordinary_recall_disclosure_allowed(context)
-                    or context.intended_audience.value != context.recipient.value
                     or (
                         context.recipient.value == "user_self"
                         and context.recipient_id != principal.actor_id
