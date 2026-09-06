@@ -10622,6 +10622,18 @@ class SQLiteHumanMemoryBackend:
                     job_rows = await cursor.fetchall()
                 if not job_rows:
                     raise MemoryCorruptionError("eligible analysis batch has no jobs")
+                retry_request = None
+                if int(job_rows[0]["attempt_count"]) > 0:
+                    # A failed attempt owns a complete, already-sent input.
+                    # Retry its cohort independently of a changed batch_size or
+                    # newly queued jobs; never change its semantic reuse key.
+                    job_rows, retry_request = await self._analysis_retry_cohort_unlocked(job_rows[0], now)
+                    if not job_rows:
+                        await self._db.execute("COMMIT")
+                        committed = True
+                        return None  # Whole original cohort must be due.
+                else:
+                    job_rows = [row for row in job_rows if int(row["attempt_count"]) == 0]
                 evidence_refs: list[EvidenceRef] = []
                 run_id: str | None = None
                 disclosure: DisclosureContext | None = None
@@ -10689,9 +10701,10 @@ class SQLiteHumanMemoryBackend:
                     raise MemoryValidationError("analysis_batch_lineage_differs")
                 lineage_value = next(iter(distinct_lineages))
                 if lineage_value is None:
-                    provider_id = config.provider_id
-                    model_id = config.model_id
-                    model_config_hash = config.model_config_hash
+                    input_owner = retry_request if retry_request is not None else config
+                    provider_id = input_owner.provider_id
+                    model_id = input_owner.model_id
+                    model_config_hash = input_owner.model_config_hash
                 else:
                     lineage = AnalysisLineage.from_json(json.loads(lineage_value))
                     provider_id = lineage.provider_id
@@ -10721,6 +10734,19 @@ class SQLiteHumanMemoryBackend:
                     disclosure,
                     batch_id,
                 )
+                if retry_request is not None:
+                    # Revalidate admitted members/lineage against the saved
+                    # input, then retain EVERY semantic field, including future
+                    # protocol fields. Only attempt-local identities may change.
+                    if any(getattr(request, field) != getattr(retry_request, field) for field in (
+                        "run_id", "subject", "ordered_evidence_refs", "disclosure_context",
+                        "provider_id", "model_id", "model_config_hash",
+                    )):
+                        raise MemoryCorruptionError("analysis retry admitted input differs")
+                    from dataclasses import replace
+
+                    request = replace(retry_request, job_id=batch_id, attempt=batch_attempt,
+                                      idempotency_key=batch_id)
                 await self._db.execute(
                     "INSERT INTO analysis_batches(batch_id,principal_id,batch_key,"
                     "evidence_watermark,attempt,"
@@ -10793,6 +10819,62 @@ class SQLiteHumanMemoryBackend:
                 if not committed:
                     with suppress(Exception):
                         await self._db.execute("ROLLBACK")
+
+    async def _analysis_retry_cohort_unlocked(self, first_job, now):
+        """Read exact failed-attempt membership, without rewriting prior facts."""
+        from simple_harness.runtime import MemoryAnalysisRequest
+
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT b.*,a.state AS prior_attempt_state,a.request_hash AS prior_request_hash "
+            "FROM job_attempts a JOIN analysis_batches b ON b.batch_id=a.batch_id "
+            "WHERE a.job_id=? AND a.attempt=?",
+            (first_job["job_id"], first_job["attempt_count"]),
+        ) as cursor:
+            batches = tuple(await cursor.fetchall())
+        if len(batches) != 1:
+            raise MemoryCorruptionError("analysis retry prior attempt missing")
+        batch = batches[0]
+        try:
+            request = MemoryAnalysisRequest.from_json(json.loads(str(batch["request_json"])))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise MemoryCorruptionError("analysis retry request malformed") from exc
+        if (batch["state"] != "failed" or batch["prior_attempt_state"] != "failed"
+                or request.request_hash != batch["request_hash"]
+                or request.request_hash != batch["prior_request_hash"]
+                or request.job_id != batch["batch_id"] or request.idempotency_key != batch["batch_id"]
+                or request.attempt != batch["attempt"] or request.subject != batch["principal_id"]
+                or request.ordered_evidence_refs[-1].evidence_id != batch["evidence_watermark"]
+                or batch["principal_id"] != first_job["principal_id"] or batch["batch_key"] != first_job["batch_key"]):
+            raise MemoryCorruptionError("analysis retry request binding differs")
+        async with self._db.execute(
+            "SELECT j.*,m.ordinal AS member_ordinal,m.job_attempt AS member_attempt,"
+            "m.evidence_id AS member_evidence_id,m.content_hash AS member_content_hash,"
+            "a.state AS member_attempt_state,a.request_hash AS member_request_hash "
+            "FROM analysis_batch_members m LEFT JOIN jobs j ON j.job_id=m.job_id "
+            "LEFT JOIN job_attempts a ON a.job_id=m.job_id AND a.attempt=m.job_attempt AND a.batch_id=m.batch_id "
+            "WHERE m.batch_id=? ORDER BY m.ordinal",
+            (batch["batch_id"],),
+        ) as cursor:
+            members = tuple(await cursor.fetchall())
+        if len(members) != len(request.ordered_evidence_refs):
+            raise MemoryCorruptionError("analysis retry membership differs")
+        for ordinal, (member, ref) in enumerate(zip(members, request.ordered_evidence_refs, strict=True), start=1):
+            if (member["job_id"] is None or member["member_ordinal"] != ordinal
+                    or member["member_evidence_id"] != ref.evidence_id or member["member_content_hash"] != ref.content_hash
+                    or member["member_request_hash"] != request.request_hash or member["member_attempt_state"] != "failed"
+                    or member["attempt_count"] != member["member_attempt"]
+                    or member["principal_id"] != batch["principal_id"] or member["batch_key"] != batch["batch_key"]):
+                raise MemoryCorruptionError("analysis retry member binding differs")
+            if member["state"] != "pending":
+                # Do not resurrect terminal members or pass a subset off as the
+                # original request. Such a legacy split needs explicit resolution.
+                raise MemoryValidationError("analysis_retry_cohort_not_pending")
+        if not any(member["job_id"] == first_job["job_id"] for member in members):
+            raise MemoryCorruptionError("analysis retry first member missing")
+        if any(float(member["next_attempt_at"]) > now for member in members):
+            return (), request
+        return members, request
 
     async def _read_analysis_claim_unlocked(
         self,
