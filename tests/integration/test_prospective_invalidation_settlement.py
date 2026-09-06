@@ -120,7 +120,8 @@ async def test_future_emit_keeps_original_cancel_without_new_empty_object(world)
     await w['manager'].apply_prospective_signal(principal=PRINCIPAL,scope=SCOPE,reference=due)
     await revise(w,target_revision=2)
     entries=(await w['manager'].read_outbox(principal=PRINCIPAL)).entries
-    assert sorted((e.payload['command'],e.payload['prospective_revision']) for e in entries)==[
+    assert sorted((e.payload['command'],e.payload['prospective_revision']) for e in entries
+        if e.topic.startswith('memory.prospective.'))==[
         ('invalidation',1),('registration',1),('registration',3)]
 
 

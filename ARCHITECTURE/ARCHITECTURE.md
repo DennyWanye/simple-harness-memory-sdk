@@ -2,7 +2,7 @@
 
 ## 2026-09-06 prospective终局与schema7.3源码候选
 
-最后更新：2026-09-06。按2553已接受边界新增公开settle_prospective_invalidation严格联合、独立持久not_required receipt/observation、同事务无登记请求证明和后续登记门；新7.3显式升级保留原7.2 DDL/初始化receipt/业务列，fresh用7.3。版本预留0.6.17，未构建/安装/独审，Host52由主实施。新增12项风险控尚未运行（145共享锁三次BUSY75，无child），不能称验收完成；旧V2八项不重跑。[实际接口与待验收边界](../plans/2026-09-06-prospective-signal-source/SDK终局实现.md)。
+最后更新：2026-09-06。按2553已接受边界新增公开settle_prospective_invalidation严格联合、独立持久not_required receipt/observation、同事务无登记请求证明和后续登记门；新7.3显式升级保留原7.2 DDL/初始化receipt/业务列，fresh用7.3。版本预留0.6.17，未构建/安装/独审，Host52由主实施。业务源码5ee3c6b；新增12项风险控分批通过：r4为11PASS/1测试断言FAIL，topic范围修正后r5定向1PASS，不重复其余绿。PGID67413/exit0/峰115936KiB/0.657秒、无残留，槽释放；旧V2八项未重跑，尚无独审/installed/Host52组合结论。[实际接口与待验收边界](../plans/2026-09-06-prospective-signal-source/SDK终局实现.md)。
 
 ## 2026-09-06 prospective signal source V2 源码
 

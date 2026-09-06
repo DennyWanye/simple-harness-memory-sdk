@@ -1,6 +1,6 @@
 # SDK 7.3 invalidation终局实现：源码交接
 
-2026-09-06。按[已接受的执行边界](未注册invalidation-patch边界.md)实施SDK部分，原边界文件保留。本叶不使用plan-test流程。基线2553bd6；版本字符串预留0.6.17，仅源码候选，未构建、未安装、未独审。原M616制品/native候选不改，Host52由主实施。
+2026-09-06。按[已接受的执行边界](未注册invalidation-patch边界.md)实施SDK部分，原边界文件保留。本叶不使用plan-test流程。基线2553bd6；版本字符串预留0.6.17，仅源码候选，未构建、未安装、未独审。原M616制品/native候选不改，Host52由主实施。业务源码固定5ee3c6bf5a18e710ba328c876423f1173c36797c；新增12项已分批通过，测试只修正future emit断言对topic的范围。
 
 ## 公开调用和类型
 
@@ -56,10 +56,48 @@ upgrade = await migrate_human_memory_v7_2_to_v7_3(
 - 新marker键prospective_settlement_upgrade_v1，协议memory.schema.prospective-settlement-upgrade.v1；升级receipt绑定原init ID/hash、source/target checksum与catalog、追加DDL hash、所有旧列根、backup SHA和提交时间。原schema_meta已有键、原初始化receipt、旧升级marker与所有旧业务列保留，只有新增marker。
 - 升级前只读完整验证，获取原writer lease与BEGIN IMMEDIATE，保持旧读快照；备份不得覆盖不同内容，备份校验/fsync后才执行DDL。提交前核旧列根和新marker，提交后lost response可重放。目录校验由冻结旧DDL和追加DDL导出，未知catalog拒绝；不是按表存在猜可升级。
 
-## 新增必要控与当前状态
+## 新增必要控与实际结果
 
 `tests/integration/test_prospective_invalidation_settlement.py`共12个参数展开用例：旧7.2真实public mutation/signal遗留命令→显式升级→终局/reopen；pending依赖并实际ACK/取消；未来emit保留r1/不产生r2空取消；owner/source/payload拒绝；写入后回滚/提交后丢响应两例；两连接写锁与终局后登记/ACK反控；篡改receipt的replay/close/reopen拒绝；升级afterDDL/beforeCommit/afterCommit三例；未知库/冲突备份拒绝。
 
 旧7.2夹具使用原DDL/checksum/初始化路径，实际调用public builder/mutation/signal；不称installed616或Host验收。没有重跑旧V2八项。
 
-r1/r2/r3均是145默认共享锁BUSY、exit75，未启动child、无测试结论；未改lockfile。本次只做源码/文档静态diff检查。以上12项待资源槽可用后执行，**实现尚未经测试，不可称功能验收完成或发布ready**。证据批次根 `.local-test-evidence/2026-09-06/prospective-settlement/`，raw保持ignored。
+r1/r2/r3均是145默认共享锁BUSY、exit75，未启动child，不算测试结果。主释放后：
+
+- r4：**11 passed, 1 failed / 3.39秒**；PGID67244、exit1、resource elapsed3.641秒、峰125200KiB、remaining_group_members=[]。失败是新测试把分析outbox当作提醒命令读取，KeyError: command；业务源码没有因此改动。
+- r5-emit-topic：测试仅过滤memory.prospective. topic后，**1 passed, 11 deselected**；PGID67413、exit0、resource elapsed0.657秒、峰115936KiB、remaining_group_members=[]。其余11项不重跑，最终12个唯一用例分批通过；后续ps核两个PGID均为空，槽释放。
+- 使用原M614解释器作为source carrier，PYTHONPATH明确本树src/根，pytest_asyncio、禁用cache，145默认共享锁2GiB/180秒。没有修改installed，未运行模型/native/Provider，未构建制品。
+
+证据根 `.local-test-evidence/2026-09-06/prospective-settlement/`，仅r4和r5-emit-topic的command.log/resource.json是执行证据；BUSY批次不是执行。下方只索引4个必要raw，不扫旧包/旧V2证据。
+
+| 相对树根的raw路径 | SHA-256 |
+| --- | --- |
+| `.local-test-evidence/2026-09-06/prospective-settlement/r4/command.log` | `99d3c19bb4c7061cdbce4843250235b4d00eb1c00f6abd5556b2573f03093683` |
+| `.local-test-evidence/2026-09-06/prospective-settlement/r4/resource.json` | `b163898c4b91b4305f13a578825c992a101c17cffdd017292ddfb21f2927aee2` |
+| `.local-test-evidence/2026-09-06/prospective-settlement/r5-emit-topic/command.log` | `2b8d39a94bcf6d4dcf01bfc40f39cec3a4d1ba43b476c62b31031d557b3e768b` |
+| `.local-test-evidence/2026-09-06/prospective-settlement/r5-emit-topic/resource.json` | `f932eb6244e76689ae72f87350c13fbdaca6c014dcfafcbfd825b25c8d1e15af` |
+
+
+## 给主和Dirac的固定审查范围
+
+当前工具没有可直接联系的Dirac子代理入口，请主转交此源码及4份新raw。独审尚未完成。重点审同事务absence+terminal后登记门、old7.2保真/新marker及回滚、receipt replay与canonical manifest、v2 helper抽取仍保留原wire、Host必须按类型分支而非伪ACK。后继Host52/source/audit消费与installed组合未测，本叶不宣称scheduler全链完成。
+
+下表是2553bd6之后的源码/测试文件SHA-256（测试为topic断言修正后的当前文件）。按路径排序，将 `hash + 两个空格 + 路径 + LF` 拼接后SHA-256，集合指纹：`823aa8eab7651ab5bdfaaf29c23dc9a2d3fd1732d36b89fa9472788ce97c4ab3`。该指纹不是运行时DTO.source_hash。
+
+| 新delta文件 | SHA-256 |
+| --- | --- |
+| `src/simple_harness_memory/__init__.py` | `5b23a78ba54ebd973e338d25a14a4e8e200db0d8e8effdbc4ad9c99ab10b05f3` |
+| `src/simple_harness_memory/backends/prospective_settlement.py` | `6e8b9bc21a934b1378d6656d3cf12597c2b4c01a89eb071a11e4f0e13addd7fb` |
+| `src/simple_harness_memory/backends/prospective_sources_v2.py` | `2999a4afe4a0fa95ecefa01d86e0f46c1f2e1589e31bb4444293ee8d663107e2` |
+| `src/simple_harness_memory/backends/schema_v5.py` | `7c914397e096b08932f993a6884340dd88830cc6a12e6637c042874471746cae` |
+| `src/simple_harness_memory/backends/schema_v7_3.py` | `8b4076809a8db135edab0b0868f60eff5fff0f23988aeef61e2320a6333dc75a` |
+| `src/simple_harness_memory/backends/sqlite_v5.py` | `34acfbeff330a3fc010f3cf9ed7567e6e4e3076f0906d021ed68c7d83233b9e5` |
+| `src/simple_harness_memory/backends/upgrade_validation.py` | `47bfc7167576ba91556df92ff7b315e4713d214e73ed4f5c2407f39fffd5bc2c` |
+| `src/simple_harness_memory/core/manager.py` | `d3d6ecbd54457becfdd4a51f181ace113b340bd611f3c6e5835a0171fee3b84c` |
+| `src/simple_harness_memory/core/port.py` | `43e22055837e62f08144571d8a1c49dbeb730b8a69bf951b85a29a7489cd4f34` |
+| `src/simple_harness_memory/core/prospective_settlement.py` | `5f4dd075213103054fdbbf3748c7cfbf4b53675a2f2b3589c0fe953c967398bb` |
+| `src/simple_harness_memory/core/prospective_settlement_observation.py` | `6a542bd9e618c877a4a4b9804d29e2bab4f9f666e149269e944b4bd3cab48c6b` |
+| `src/simple_harness_memory/migrations/__init__.py` | `bf6580ef9c4d77f282a20bf0029adb9ae50340c3d05f82b870b409b6281c9ea4` |
+| `src/simple_harness_memory/migrations/schema_upgrade.py` | `3589b5b287f01f37a312f39439fb5713a12e2f56b136298a35f976fbdb206baf` |
+| `src/simple_harness_memory/migrations/settlement_upgrade.py` | `bceac9733997d1bcac1965c0d1712970eadd5627e09074c7945643df84029169` |
+| `tests/integration/test_prospective_invalidation_settlement.py` | `36503c3935247bd272c7c7739f69d52c83f98c40212e44469f522a6901734a00` |
