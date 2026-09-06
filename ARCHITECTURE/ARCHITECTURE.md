@@ -1,5 +1,10 @@
 <!-- last-calibrated: 6ba269537e45d443629aee56e9cfabec9de2e833 -->
 
+## 2026-09-06 最终受众约束0.6.14候选
+
+最后更新：2026-09-06。业务d7cb3ca已独审限定ACCEPT，ordinary/candidate联合检查当前接收者与最终受众，修正协作者枚举不同拼写的history误拒；未放开external/public、非self原始history或classification/来源/遗忘门。原4反例红→必要源码13绿；27dceff后继0.6.14两次wheel一致、独立Memory安装target4个公开API检查通过。76个Memory和借用H073的169个安装成员匹配；非新完整venv，未更新Host pin或SDK main，未发布。资源串行/有界/无残留；[行为、边界和精确身份](../plans/2026-09-06-disclosure-audience/RESULTS.md)。
+
+
 2026-09-06 final：Memory0613固定source/双wheel/exact installed已获Dirac只读
 限定ACCEPT，无新增P0/P1；未改已核wheel或业务源。Host正式installed组合另验，
 测试槽已释放。[独审闭合](../plans/2026-09-06-typed-short-sources/REVIEW.md)。
