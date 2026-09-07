@@ -63,9 +63,11 @@ def registered(sequence, *, shared=False):
 
 
 @pytest.mark.asyncio
-async def test_standalone_and_typed_short_actual_duplicates_denied_after_memory_only_forget(
+async def test_standalone_and_typed_short_duplicates_stay_visible_after_memory_only_forget(
     tmp_path,
 ):
+    """2026-09-07 决定：仅遗忘记忆不隐藏短期对话重复来源；EVIDENCE 范围压制才隐藏且不波及精确重复。"""
+    from simple_harness_memory.core.suppression import OrdinaryMemoryPurpose, SuppressionCandidate
     from tests.integration.test_typed_recall_v6 import _context, _recall_plan
 
     pairs = [registered(i) for i in range(1, 13)]
@@ -155,14 +157,20 @@ async def test_standalone_and_typed_short_actual_duplicates_denied_after_memory_
         await manager.suppress(principal=PRINCIPAL, request=m.SuppressionRequest(
             "short-forget", "actor-1", m.SuppressionScopeKind.MEMORY, mid, "user_forget", NOW,
         ))
+        # The forgotten memory itself is denied; its short-horizon sources are not.
+        forgotten = await manager.backend.resolve_suppression(
+            SuppressionCandidate("actor-1", memory_id=mid), OrdinaryMemoryPurpose.RECALL,
+            principal=PRINCIPAL,
+        )
+        assert forgotten.denied
         current = await manager.check_history_visibility(
             principal=PRINCIPAL, disclosure_context=_disclosure(), bindings=bindings,
         )
-        assert all(not item.visible for item in current.items)
+        assert all(item.visible for item in current.items)
         resolved = await manager.resolve_short_horizon_sources(
             principal=PRINCIPAL, disclosure_context=_disclosure(), bindings=bindings,
         )
-        assert all(not item.visible for item in resolved.items)
+        assert all(item.visible and item.complete for item in resolved.items)
         typed_bindings = tuple(m.HistoryRecallBinding(
             typed_before.result.result_id, typed_before.result.result_hash,
             item.selected_item.item_id, item.result_item_hash,
@@ -170,26 +178,58 @@ async def test_standalone_and_typed_short_actual_duplicates_denied_after_memory_
         typed_current = await manager.check_history_visibility(
             principal=PRINCIPAL, disclosure_context=_disclosure(), bindings=typed_bindings,
         )
-        assert all(not item.visible for item in typed_current.items)
+        assert all(item.visible for item in typed_current.items)
+        # Any new directive advances the recall authority epoch, so a fresh attempt on the
+        # old result is stale even though its sources remain visible; the exact receipt
+        # replay is historical acknowledgement, not current-use authorization.
         with pytest.raises(m.MemoryValidationError, match="RECALL_AUTHORITY_STALE"):
             await manager.authorize_recall_context_use(
                 principal=PRINCIPAL,
                 request=replace(old_use_request, provider_attempt_id="short-use-after"),
             )
-        # Exact receipt replay is historical acknowledgement, not current-use authorization.
         assert old_use_receipt == await manager.authorize_recall_context_use(
             principal=PRINCIPAL, request=old_use_request,
         )
         after = await manager.recall_short_horizon(
             principal=PRINCIPAL, query="Project alpha", disclosure_context=_disclosure(),
         )
-        assert after.hits == ()
+        assert {x.chunk_ref for x in after.hits} == {x.chunk_ref for x in before.hits}
         typed = await manager.execute_typed_recall(
             principal=PRINCIPAL, context=context,
             plan=_recall_plan(context, idempotency_key="short-duplicate", requested_memory_types=(),
                               selector_domains=(h.RecallSelectorDomain.SHORT_HORIZON,)), now=NOW,
         )
-        assert not typed.result.items
+        assert {x.selected_item.source_ref for x in typed.result.items} == {
+            x.selected_item.source_ref for x in typed_before.result.items
+        }
+
+        # EVIDENCE-scope control: hides exactly the seed's own chunk, not its exact duplicate.
+        by_evidence = {
+            item.source_refs[0].evidence_id: binding
+            for binding, item in zip(bindings, sources_before.items, strict=True)
+        }
+        await manager.suppress(principal=PRINCIPAL, request=m.SuppressionRequest(
+            "short-forget-evidence", "actor-1", m.SuppressionScopeKind.EVIDENCE,
+            "evidence-2", "user_forget", NOW,
+        ))
+        controlled = await manager.check_history_visibility(
+            principal=PRINCIPAL, disclosure_context=_disclosure(),
+            bindings=(by_evidence["evidence-1"], by_evidence["evidence-2"]),
+        )
+        assert [item.visible for item in controlled.items] == [True, False]
+        assert controlled.items[1].reason == "history_suppressed"
+        controlled_hits = await manager.recall_short_horizon(
+            principal=PRINCIPAL, query="Project alpha", disclosure_context=_disclosure(),
+        )
+        assert [x.chunk_ref for x in controlled_hits.hits] == [by_evidence["evidence-1"].chunk_ref]
+        controlled_typed = await manager.execute_typed_recall(
+            principal=PRINCIPAL, context=context,
+            plan=_recall_plan(context, idempotency_key="short-evidence", requested_memory_types=(),
+                              selector_domains=(h.RecallSelectorDomain.SHORT_HORIZON,)), now=NOW,
+        )
+        assert {x.selected_item.source_ref for x in controlled_typed.result.items} == {
+            by_evidence["evidence-1"].chunk_ref,
+        }
 
         # New independent atomic source13 has the same complete /text. Ten later
         # complete groups move it outside the existing recent10 exclusion window.
@@ -216,7 +256,8 @@ async def test_standalone_and_typed_short_actual_duplicates_denied_after_memory_
         )
         assert any(item.visible and {r.evidence_id for r in item.source_refs} == {"evidence-13"}
                    for item in fresh_sources.items)
-        assert all(r.evidence_id not in {"evidence-1", "evidence-2"}
+        # Only the EVIDENCE-scope target stays hidden; its exact duplicate evidence-1 may surface.
+        assert all(r.evidence_id != "evidence-2"
                    for item in fresh_sources.items for r in item.source_refs)
         fresh_context = replace(context, query="shared original")
         fresh_typed = await manager.execute_typed_recall(
@@ -232,8 +273,9 @@ async def test_standalone_and_typed_short_actual_duplicates_denied_after_memory_
             principal=PRINCIPAL, request=use_request(fresh_typed, fresh_context, "short-fresh-use"),
         )
         old_current = await manager.check_history_visibility(
-            principal=PRINCIPAL, disclosure_context=_disclosure(), bindings=bindings,
+            principal=PRINCIPAL, disclosure_context=_disclosure(),
+            bindings=(by_evidence["evidence-1"], by_evidence["evidence-2"]),
         )
-        assert all(not item.visible for item in old_current.items)
+        assert [item.visible for item in old_current.items] == [True, False]
     finally:
         await manager.close()

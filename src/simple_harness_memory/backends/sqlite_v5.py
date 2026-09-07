@@ -1728,7 +1728,10 @@ class SQLiteHumanMemoryBackend:
                     matched.add(str(row[0]))
                     if len(matched) > 4096:
                         raise MemoryLimitError("history_suppression_match_limit")
-        if not matched:
+        if not matched and candidate.evidence_id is None:
+            # Duplicate-source aliases come from MEMORY-scope directives. By the
+            # 2026-09-07 decision they may deny re-learned memories, never the
+            # source conversation evidence itself.
             matched.update(await duplicate_source_matches(self, candidate, purpose))
         directive_ids = tuple(sorted(matched))
         return SuppressionResolution(

@@ -12,6 +12,7 @@ from tests.integration.test_memory_061_core import (
     _build_pipeline,
     _evidence,
     _HostEvidenceAuthority,
+    _disclosure,
     _HostExecutor,
     _ingest,
     _placeholder_principal,
@@ -47,10 +48,13 @@ It does not use a subject-only Memory read as a grant for a newly asserted sourc
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("proof,expected_heads", [("atomic", 2), ("legacy_before_only", 1)])
-async def test_real_background_apply_distinguishes_cognitive_write_from_applied(
-    tmp_path, proof, expected_heads,
+@pytest.mark.parametrize("proof,denied", [("atomic", False), ("legacy_before_only", True)])
+async def test_real_background_apply_writes_duplicate_and_origin_gate_decides_recall(
+    tmp_path, proof, denied,
 ):
+    """2026-09-07 决定：重复来源证据可被后台分析写成记忆；来源证明只决定该重学记忆是否被拒。"""
+    from simple_harness_memory.core.suppression import OrdinaryMemoryPurpose, SuppressionCandidate
+
     authority, origins = _HostEvidenceAuthority(), Origins()
     executor = Executor(authority)
     manager, runner = await _build_pipeline(
@@ -83,14 +87,27 @@ async def test_real_background_apply_distinguishes_cognitive_write_from_applied(
         assert await runner.run_once() is m.WorkerRunOutcome.APPLIED
         # Applied is a workflow state; independently assert actual cognitive effect.
         heads = await _rows(manager, "SELECT memory_id FROM cognitive_memory_heads")
-        assert len(heads) == expected_heads
+        assert len(heads) == 2
         new_support = await _rows(manager, "SELECT memory_id FROM cognitive_evidence_spans "
                                  "WHERE evidence_id='evidence-2'")
-        assert len(new_support) == expected_heads - 1
-        if new_support:
-            assert new_support[0][0] != mid
+        assert len(new_support) == 1
+        new_mid = new_support[0][0]
+        assert new_mid != mid
         assert await _rows(manager, "SELECT state FROM analysis_batches ORDER BY rowid") == [
             ("applied",), ("applied",),
         ]
+        # The written duplicate memory is recallable only with an atomic post-cut proof.
+        for memory_id, expected in ((mid, True), (new_mid, denied)):
+            resolution = await manager.backend.resolve_suppression(
+                SuppressionCandidate("actor-1", memory_id=memory_id),
+                OrdinaryMemoryPurpose.RECALL, principal=_placeholder_principal(),
+            )
+            assert resolution.denied is expected
+        # The source evidence itself stays visible either way.
+        snapshot = await manager.check_history_visibility(
+            principal=_placeholder_principal(), disclosure_context=_disclosure(),
+            bindings=(m.HistoryEvidenceBinding(*first), m.HistoryEvidenceBinding(*second)),
+        )
+        assert all(item.visible for item in snapshot.items)
     finally:
         await manager.close()

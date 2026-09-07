@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.22] - 2026-09-07（遗忘只针对记忆：补齐 duplicate-source 路径）
+
+- 基于 0.6.21。`_resolve_suppression_snapshot_unlocked` 仅对记忆候选调用 `duplicate_source_matches`：MEMORY 范围指令的重复来源别名仍可拒绝重学的记忆，但不再拒绝来源对话证据（原生 r6 发现 0.6.21 仍经此路径隐藏会话）。cut/proof 机制不变。
+- duplicate-source 三个测试文件按新口径改写（19+ 项），全量 63 failed / 1510 passed 与基线一致。仅本地候选，未发布。
+
 ## [0.6.21] - 2026-09-07（遗忘只针对记忆候选）
 
 - 基于 0.6.20。用户 09-07 产品决定：忘记一条认知记忆只抑制该记忆（typed recall、图谱、工作记忆、记忆读取），**不再**隐藏其来源对话证据。`_resolve_suppression_snapshot_unlocked` 对 evidence 候选不再纳入反向 MEMORY 目标；EVIDENCE/SUBJECT/ENTITY 指令行为不变，撤销与原始字节保留不变（源码与测试改写随 `4bd11cc` 提交）。
