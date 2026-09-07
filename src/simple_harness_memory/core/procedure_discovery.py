@@ -6,6 +6,12 @@ from simple_harness_memory.core.history import history_hash
 from simple_harness_memory.core.lifecycle_results import _identifier, _revision, UNBOUND_PROCEDURE_APPLICABILITY
 
 
+# Discovery sees every state a Procedure may still be used from (mirrors
+# read_procedure_use_target). It is a candidate preview, never applicable
+# recall: revised/inapplicable/superseded/forgotten stay invisible.
+DISCOVERABLE_LIFECYCLE_STATES = ("draft", "eligible_for_activation", "active", "reinforced")
+
+
 def _digest(value):
     if type(value) is not str or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
         raise ValueError("procedure_draft_digest_invalid")
@@ -31,7 +37,7 @@ class ProcedureDraftCandidate:
         _digest(self.content_hash)
         if self.applicability_fingerprint != UNBOUND_PROCEDURE_APPLICABILITY:
             _digest(self.applicability_fingerprint)
-        if self.lifecycle_state not in ("draft", "eligible_for_activation"):
+        if self.lifecycle_state not in DISCOVERABLE_LIFECYCLE_STATES:
             raise ValueError("procedure_draft_candidate_state")
         if (type(self.steps) is not tuple or not self.steps
                 or type(self.applicability) is not tuple):

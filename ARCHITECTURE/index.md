@@ -8,6 +8,14 @@
 
 > 2026-09-07 转主干开发：main 已并入 `feat/human-memory-procedure-current-input-successor`（0.6.19 源）。下方 09-06 两路状态段为合并时的并集，各自描述当时状态，不互相覆盖。
 
+## 2026-09-07 0.6.25 Procedure 发现面对已采用流程可见、中文词项匹配
+
+最后更新：2026-09-07。基于 0.6.24，仅本地候选、未发布、未构建制品、Host 未 pin。裁决见 `simple_harness/plans/2026-09-07-native-main-journey/DECISION-PROCEDURE-USE-CHAIN.md`。
+
+- **缺陷**（原生 r8/r9、r24/r25）：用户明确采用的流程落库为 ACTIVE + UNBOUND 指纹，`discover_procedure_drafts` 只看 draft/eligible，typed recall 又要求指纹已绑定且等于当前 Run 指纹，模型没有任何入口拿到 memory_id/revision 去 `procedure_use`；另外发现面只做整串子串匹配，中文查询必须逐字出现在 name/steps。
+- **修复**：两个查询面分工——**发现面 = 任何仍可使用状态的候选 + 词项匹配；召回面 = 已绑定且当前适用**。`core/procedure_discovery.DISCOVERABLE_LIFECYCLE_STATES` 扩到 draft/eligible/active/reinforced（与 `read_procedure_use_target` 一致），其余资格门与自证披露门不变；`backends/procedure_discovery.match_score` 用 `typed_recall_query_terms` 对 name + applicability + steps 计数命中（整串子串 +1），单页内按命中数降序、扫描序稳定排序，`next_after` 仍是扫描序 memory_id。
+- **不改**：向量世代/manifest、typed recall 指纹门（UNBOUND 仍 NO_RECALL）、`procedure_use`/观察/恢复语义、候选 DTO 与 hash 域。无 DDL 变化、根导出零增减；快照 `public-api-0.6.25.json`；新增 4 项回归测试。
+
 ## 2026-09-07 0.6.24 认知向量世代跳过 relation 记忆、构建失败落库
 
 最后更新：2026-09-07。基于 0.6.23，仅本地候选、未发布、未构建制品、Host 未 pin。

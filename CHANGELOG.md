@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.25] - 2026-09-07（Procedure 发现面对已采用流程可见；中文词项匹配）
+
+- 基于 0.6.24。按 `simple_harness/plans/2026-09-07-native-main-journey/DECISION-PROCEDURE-USE-CHAIN.md` §3.1 的最小方案。原生 r8/r9 实证：用户以"以后就按这两步做"采用的流程被编译为 ACTIVE + `unbound:procedure-applicability:v2`，`discover_procedure_drafts` 只看 draft/eligible，typed recall 又要求指纹已绑定且等于当前 Run 指纹，于是模型没有任何入口拿到 memory_id/revision 去 `procedure_use`。r24/r25 另一层原因（`procedure_discover` 只做整串子串，中文查询必须逐字出现在 name/steps）在此一并消除。
+- **发现面白名单**：`core/procedure_discovery.py` 新增 `DISCOVERABLE_LIFECYCLE_STATES = ("draft", "eligible_for_activation", "active", "reinforced")`，`ProcedureDraftCandidate.__post_init__` 与 `backends/procedure_discovery.read_candidate` 同用（与 `read_procedure_use_target` 四态一致）；revised/inapplicable/superseded/forgotten 仍不可见。资格门（uncontested、非 restricted、有效期、disclosure、抑制、血缘 history_visible、规范 payload 校验）与自证披露门不变；被遗忘的已采用流程同样从发现面消失。
+- **词项匹配**：`backends/procedure_discovery.match_score` 用 `features.lexical.typed_recall_query_terms(query)`（与 typed recall/0.6.20 CJK 修复同源：`\w` 词 + CJK 二字组合）对 name + applicability + steps 的公开文本计数命中，整串子串命中额外 +1；命中数 0 不返回。单页内按命中数降序、再按扫描序（memory_id 升序）稳定排序；`next_after` 仍是扫描序的 memory_id，分页不重不漏；页预算/`omitted_oversize`/`limit≤8`/空查询拒绝（`procedure_draft_bounds_invalid`）不变。
+- **不改**：向量世代与 manifest（草稿仍不入向量）、typed recall 的 applicability 指纹门（UNBOUND 仍 NO_RECALL，写成回归断言）、`procedure_use`/观察/恢复语义、候选 DTO 字段与 `memory.procedure.draft-candidate.v1` hash 域（Host `HistoryProcedureDraftBinding` 零改动）。无 DDL 变化（7.4 checksum 不变）、根导出零增减；快照 `public-api-0.6.25.json`。
+- 测试：`tests/integration/test_procedure_discovery.py` 新增 4 项（ACTIVE-unbound 可发现且 DRAFT 仍可发现、遗忘后不可见；中文词项对 name/applicability/steps 命中、零命中、双向按命中数排序；limit=1 游标分页不重不漏；同库 typed recall 对 UNBOUND 流程仍 NO_RECALL）。Host 需同步改 `procedure_discover` 工具描述（不再写 draft/eligible + substring）与 PERSONA 一句"先 discover 再 procedure_use"。仅本地候选，未发布。
+
 ## [0.6.24] - 2026-09-07（认知向量世代跳过 relation 记忆；构建失败落 failed 行）
 
 - 基于 0.6.23。原生真实运行（r8）复现：分析任务落库一个含 semantic relation（`applies_to`）的 v6 提案后，Host 短索引 worker 每 tick 记录 `memory_short_index_unavailable type=MemoryCorruptionError`，`cognitive_vector_generations` 始终为空。根因：relation 记忆本身是 `cognitive_memory_heads` 里 `memory_type=semantic` 的 head，但它是图谱的边（HM-AC-6），没有 `semantic_claims` 行；`_cognitive_vector_head_rows_unlocked` 未排除它，`_cognitive_public_payload_unlocked` 对它抛 `typed recall payload missing`，且抛出发生在任何世代行写入之前。短时域 projection/generation 不受影响。

@@ -8,7 +8,9 @@ from simple_harness.runtime import ProcedureMemoryPayload
 from simple_harness_memory.core.errors import MemoryCorruptionError, MemoryLimitError, MemoryValidationError
 from simple_harness_memory.core.history import HistoryEvidenceBinding
 from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
-from simple_harness_memory.core.procedure_discovery import ProcedureDraftCandidate, ProcedureDraftPage
+from simple_harness_memory.core.procedure_discovery import (
+    DISCOVERABLE_LIFECYCLE_STATES, ProcedureDraftCandidate, ProcedureDraftPage)
+from simple_harness_memory.features.lexical import typed_recall_query_terms
 from simple_harness_memory.backends.history_source_guard import history_source_operation, prepare_history_source_context
 
 
@@ -39,7 +41,7 @@ async def read_candidate(backend, principal, context, memory_id, revision, now, 
     if tuple(row[key] for key in ("principal_id", "deployment_id", "household_id", "scope_kind", "scope_owner")) != (
             principal.actor_id, principal.deployment_id, principal.household_id, "personal", principal.actor_id):
         raise MemoryCorruptionError("procedure_draft_revision_owner_differs")
-    if row["lifecycle_state"] not in ("draft", "eligible_for_activation"):
+    if row["lifecycle_state"] not in DISCOVERABLE_LIFECYCLE_STATES:
         return None, None
     if (row["conflict_status"] != "uncontested" or row["effective_privacy_class"] == "restricted"
         or (row["valid_from"] is not None and now < row["valid_from"])
@@ -77,6 +79,20 @@ async def read_candidate(backend, principal, context, memory_id, revision, now, 
     return value, row["valid_to"]
 
 
+def match_score(query, terms, candidate):
+    """Term hits over the public text (name, applicability, steps); 0 means no match.
+
+    Terms come from ``typed_recall_query_terms`` (the same ``\\w`` words plus CJK
+    bigrams typed recall uses), so a Chinese query no longer has to appear
+    verbatim. A whole-query substring hit keeps working and ranks above a
+    partial term overlap of the same width.
+    """
+    text = (candidate.name + "\n" + "\n".join(candidate.applicability)
+            + "\n" + "\n".join(candidate.steps)).casefold()
+    hits = sum(1 for term in terms if term in text)
+    return hits + (1 if query.casefold() in text else 0)
+
+
 @history_source_operation
 async def discover(backend, *, principal, scope, disclosure_context, query, after="", limit=8, max_bytes=32768):
     if type(principal) is not MemoryPrincipal or type(scope) is not MemoryScope:
@@ -104,12 +120,14 @@ async def discover(backend, *, principal, scope, disclosure_context, query, afte
                 "AND memory_type='procedure' AND memory_id>? ORDER BY memory_id LIMIT 129", (
                     principal.actor_id,principal.deployment_id,principal.household_id,principal.actor_id,after)) as cursor:
                 rows=await cursor.fetchall()
-            candidates=[]; scanned=0; oversized=0; last=after
+            terms=typed_recall_query_terms(query)
+            candidates=[]; scores=[]; scanned=0; oversized=0; last=after
             for memory_id,revision in rows[:128]:
                 if len(memory_id.encode()) > 1024:
                     raise MemoryLimitError("procedure_draft_cursor_limit")
                 value,_=await read_candidate(backend,principal,disclosure_context,memory_id,revision,now,work)
-                if value is not None and query.casefold() in (value.name+'\n'+'\n'.join(value.steps)).casefold():
+                score = 0 if value is None else match_score(query, terms, value)
+                if score > 0:
                     # Reserve the exact next-page cursor even at the final row;
                     # no partial step text is returned to fit a page.
                     single = ProcedureDraftPage((value,), memory_id, 1).to_json()
@@ -119,10 +137,15 @@ async def discover(backend, *, principal, scope, disclosure_context, query, afte
                     elif len(canonical_json(proposed).encode()) > max_bytes:
                         break
                     else:
-                        candidates.append(value)
+                        candidates.append(value); scores.append(score)
                 last=memory_id; scanned+=1
                 if len(candidates)==limit: break
-            result=ProcedureDraftPage(tuple(candidates),last if scanned<len(rows) else None,scanned,oversized)
+            # Rank within the page only: most term hits first, then scan order.
+            # The cursor stays the scan-order memory_id, so paging never
+            # repeats or skips a row whatever the ranking.
+            ranked=[value for _,_,value in sorted(zip(scores,range(len(candidates)),candidates),
+                key=lambda item:(-item[0],item[1]))]
+            result=ProcedureDraftPage(tuple(ranked),last if scanned<len(rows) else None,scanned,oversized)
             # Filtered/oversized rows can still enlarge the cursor. Never return
             # an over-budget page or drop continuation and imply exhaustion.
             if len(canonical_json(result.to_json()).encode()) > max_bytes:
