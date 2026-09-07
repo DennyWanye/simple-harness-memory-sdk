@@ -93,7 +93,13 @@ def _operation(span: EvidenceSpanRef) -> MemoryMutationOperation:
     )
 
 
-async def _setup(path: Path, clock: list[float]):
+async def _setup(
+    path: Path,
+    clock: list[float],
+    *,
+    payload: ProspectiveMemoryPayload | None = None,
+    embedder=None,
+):
     initial, envelope, receipt, span, evidence_authority = await _prepared(
         path.with_suffix(".seed"), now=lambda: clock[0]
     )
@@ -106,13 +112,19 @@ async def _setup(path: Path, clock: list[float]):
         prospective_signal_authority=authority,
         memory_action_authority=authority,
         classification_policy=initial._classification_policy,
+        short_horizon_embedder=embedder,
     )
     await backend.initialize()
     await backend.ingest_committed_evidence(envelope, receipt)
     await backend.apply_memory_mutation_plan(
         principal=_principal(),
         scope=MemoryScope.personal("actor-1"),
-        plan=_plan(envelope, _operation(span)),
+        plan=_plan(
+            envelope,
+            _operation(span)
+            if payload is None
+            else replace(_operation(span), payload=payload),
+        ),
     )
     async with backend.connection.execute(
         "SELECT h.memory_id,h.current_revision,o.outbox_id,o.payload_hash "
@@ -138,6 +150,7 @@ def _grant(
     signal_id: str | None = None,
     receipt_id: str | None = None,
     scheduler_ref: str = "scheduler-registration-1",
+    trigger: ProspectiveTimeTrigger | None = None,
 ) -> ProspectiveSignalAuthorityRef:
     identity = signal_id or f"signal-{kind.value}-{revision}"
     receipt_id = receipt_id or f"receipt-{kind.value}-{revision}"
@@ -148,7 +161,7 @@ def _grant(
         target_memory_id=memory_id,
         target_revision=revision,
         signal_kind=kind,
-        trigger=ProspectiveTimeTrigger(30.0, "Asia/Shanghai"),
+        trigger=trigger or ProspectiveTimeTrigger(30.0, "Asia/Shanghai"),
         scheduler_registration_ref=scheduler_ref,
         registration_revision=1,
         signal_receipt_id=receipt_id,

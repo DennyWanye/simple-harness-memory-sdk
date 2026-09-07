@@ -46,6 +46,7 @@ from simple_harness_memory.backends.schema_v7_4 import (
 )
 from simple_harness_memory.backends.storage import secure_sqlite_path, verify_sqlite_path
 from simple_harness_memory.features.cognitive_vector import (
+    COGNITIVE_TEXT_FORMAT_VERSION,
     COGNITIVE_VECTOR_BUILD_EMBEDDING_FAILED,
     COGNITIVE_VECTOR_BUILD_HEAD_INVALID,
     COGNITIVE_VECTOR_BUILD_WRITE_FAILED,
@@ -55,6 +56,7 @@ from simple_harness_memory.features.cognitive_vector import (
     COGNITIVE_VECTOR_STALE,
     COGNITIVE_VECTOR_UNAVAILABLE,
     CognitiveVectorGenerationBuildResult,
+    cognitive_text_supplement,
     cognitive_vector_ref,
     cognitive_vector_text,
 )
@@ -2531,7 +2533,8 @@ class SQLiteHumanMemoryBackend:
         镜像 ``rebuild_short_horizon_generation``：取全部可召回 head（复用
         ``_cognitive_recall_state_allowed``，含 contested 以服务 confirmation 门；relation 类
         SEMANTIC head 是边不是节点，0.6.24 起排除）→ manifest hash(memory_id, revision,
-        content_hash) → 同 lineage 同 manifest 已 active 则 replay → 否则 ``embed_batch``
+        content_hash; 0.6.26 起并入 ``COGNITIVE_TEXT_FORMAT_VERSION``)
+        → 同 lineage 同 manifest 已 active 则 replay → 否则 ``embed_batch``
         公开 payload 文本 → 写 ``cognitive_vectors`` → 原子激活、旧世代 retire → 审计。
         嵌入永远不在 mutation 写锁内发生。
 
@@ -2827,16 +2830,21 @@ class SQLiteHumanMemoryBackend:
 
     @staticmethod
     def _cognitive_vector_manifest_hash(rows: tuple[aiosqlite.Row, ...]) -> str:
+        # 0.6.26：manifest 除 head 清单外还绑定嵌入文本的渲染格式版本，渲染函数一变旧世代即
+        # stale（``_prepare_cognitive_vector_lane`` 退化 + 下次构建整代重建），不会继续用旧向量。
         return hashlib.sha256(
             canonical_json(
-                [
-                    {
-                        "memory_id": str(row["memory_id"]),
-                        "revision": int(row["revision"]),
-                        "content_hash": str(row["content_hash"]),
-                    }
-                    for row in rows
-                ]
+                {
+                    "text_format_version": COGNITIVE_TEXT_FORMAT_VERSION,
+                    "heads": [
+                        {
+                            "memory_id": str(row["memory_id"]),
+                            "revision": int(row["revision"]),
+                            "content_hash": str(row["content_hash"]),
+                        }
+                        for row in rows
+                    ],
+                }
             ).encode()
         ).hexdigest()
 
@@ -4847,7 +4855,11 @@ class SQLiteHumanMemoryBackend:
                     else:
                         time_start = time_end = source_time
                     attrs = tuple(json.loads(str(row["information_attributes_json"])))
-                    payload_text = canonical_json(payload).casefold()
+                    # 0.6.26：词面门与向量通道共用同一段确定性渲染（prospective 触发条件）。
+                    supplement = cognitive_text_supplement(str(row["memory_type"]), payload)
+                    payload_text = "\n".join(
+                        part for part in (canonical_json(payload), supplement) if part
+                    ).casefold()
                     query_terms = typed_recall_query_terms(plan.query)
                     lexical_score = sum(payload_text.count(term) for term in query_terms)
                     query_match = lexical_score > 0
@@ -5265,7 +5277,11 @@ class SQLiteHumanMemoryBackend:
                 else:
                     time_start = time_end = source_time
                 attrs = tuple(json.loads(str(row["information_attributes_json"])))
-                payload_text = canonical_json(payload).casefold()
+                # 0.6.26：词面门与向量通道共用同一段确定性渲染（prospective 触发条件）。
+                supplement = cognitive_text_supplement(str(row["memory_type"]), payload)
+                payload_text = "\n".join(
+                    part for part in (canonical_json(payload), supplement) if part
+                ).casefold()
                 entity_match = self._cognitive_typed_entity_match(
                     str(row["memory_type"]), payload, plan.entity_constraints
                 )

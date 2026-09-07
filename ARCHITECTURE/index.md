@@ -8,6 +8,15 @@
 
 > 2026-09-07 转主干开发：main 已并入 `feat/human-memory-procedure-current-input-successor`（0.6.19 源）。下方 09-06 两路状态段为合并时的并集，各自描述当时状态，不互相覆盖。
 
+## 2026-09-08 0.6.26 Prospective 触发条件的自然语言渲染（词面 + 向量同源）
+
+最后更新：2026-09-08。基于 0.6.25，仅本地候选、未发布、未构建制品、Host 未 pin。语料 run-01f C04 实证。
+
+- **缺陷**（C04-01）：跑道修好 `prospective_scheduler_registrations.state='accepted'`（trigger_hash 一致）之后，「我还留了什么周一要做的提醒？」仍然零召回。prospective 公开 payload 只有 `action` 与 `trigger`，而 trigger 是 epoch 数字（`1788742800.0`）、时区名与 `time` 枚举：词面门（`canonical_json(payload)` 计数 `typed_recall_query_terms`）命中 0，向量文本（`cognitive_vector_text`）与「周一要做的提醒」余弦 ≈0 远低于 `COGNITIVE_VECTOR_MIN_SCORE=0.45`，entity/task_scope/temporal 三条 lane 未被请求，候选在 `_collect_typed_recall_candidates` 的 `if not lane_values: continue` 处被整条丢弃。
+- **修复**：`features/cognitive_vector.py` 新增确定性渲染 `prospective_trigger_text()`——按公开 trigger 的 timezone 把 `trigger_at` 渲染为「YYYY-MM-DD 周X HH:MM」（中文星期）+ trigger_kind 中文（time→定时、event→事件）+ 固定词「提醒 待办」；未知 kind / 不可渲染时刻 / 非 Mapping 一律退回空串或只保留 kind 词，未知时区退回 UTC。`cognitive_text_supplement()` 把它同时喂给两处：`cognitive_vector_text('prospective', …)`（action 仍在最前，渲染紧随其后，原始 trigger 字段照旧在末尾）与 typed recall 的词面门文本（`canonical_json(payload)` + 渲染）。
+- **世代重建**：`_cognitive_vector_manifest_hash` 除 head 清单外并入 `COGNITIVE_TEXT_FORMAT_VERSION`（=2）。渲染函数一变，旧 active 世代的 `content_hash` 不再等于当前 manifest，`_prepare_cognitive_vector_lane` 判 `cognitive_vector_stale` 并退化，下一次 `rebuild_cognitive_vector_generation()` 整代重建，不会继续使用按旧文本嵌入的向量。
+- **不改**：公开 payload 形状（渲染只进入检索文本，`action`/`trigger` 原样返回 Host）、资格门（lifecycle/epistemic、注册与信号权威、抑制、disclosure、时间窗、指纹门）、余弦阈值、lane 排序与预算、其余四类记忆的向量文本逐字不变。无 DDL 变化（7.4 checksum 不变）、根导出零增减；快照 `public-api-0.6.26.json`；新增 7 项回归测试。
+
 ## 2026-09-07 0.6.25 Procedure 发现面对已采用流程可见、中文词项匹配
 
 最后更新：2026-09-07。基于 0.6.24，仅本地候选、未发布、未构建制品、Host 未 pin。裁决见 `simple_harness/plans/2026-09-07-native-main-journey/DECISION-PROCEDURE-USE-CHAIN.md`。

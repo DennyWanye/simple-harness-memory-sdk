@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.26] - 2026-09-08（Prospective 触发条件的自然语言渲染；词面与向量同源）
+
+- 基于 0.6.25。语料 run-01f C04 实证：跑道修好 `prospective_scheduler_registrations.state='accepted'`（trigger_hash 一致）之后，「周五验样结果如何？我还留了什么周一要做的提醒？」对种子提醒（`action_text='索取修正版'`、`trigger_json={"timezone":"Asia/Shanghai","trigger_at":1788742800.0,"trigger_kind":"time"}`、lifecycle `pending`、已有向量）仍然零召回。根因：prospective 的公开 payload 只有 `action` 与 `trigger`，trigger 里是 epoch 数字、时区名与 `time` 枚举，中文查询与之既无词面重叠也无向量邻近，`full_text`/`vector`/`entity`/`task_scope`/`temporal` 五条 lane 全空，候选在 `_collect_typed_recall_candidates` 的 `if not lane_values: continue` 处被丢弃（不是资格门拒绝，terminal 记 `no_eligible_memory`）。
+- **触发渲染**：`features/cognitive_vector.py` 新增 `prospective_trigger_text()`——只用公开字段，按 trigger 的 timezone 把 `trigger_at` 渲染为「YYYY-MM-DD 周X HH:MM」（中文星期）+ trigger_kind 中文（time→定时、event→事件）+ 固定词「提醒 待办」。未知 kind、非 Mapping、缺字段返回空串；`trigger_at` 非有限数或超范围时只保留 kind 词；未知时区名退回 UTC。纯函数、不读库、无本地时区依赖，跨进程逐字确定。
+- **两条 lane 同源**：`cognitive_text_supplement()` 同时供给 `cognitive_vector_text('prospective', …)`（`action` 仍在最前，渲染紧随其后，原始 `trigger` 字段照旧在末尾）与 typed recall / confirmation 的词面门文本（`canonical_json(payload)` + 渲染）。公开 payload 形状不变——渲染只进入检索文本，返回给 Host 的仍是原样 `{action, trigger}`，`memory.typed-recall` 的 hash 域零变化。
+- **世代与 manifest**：`_cognitive_vector_manifest_hash` 由 head 清单改为 `{text_format_version, heads}`，并入 `COGNITIVE_TEXT_FORMAT_VERSION = 2`。渲染格式一变，旧 active 世代的 `content_hash` 立刻不等于当前 manifest：`_prepare_cognitive_vector_lane` 判 `cognitive_vector_stale` 并退化（词面照常），下一次 `rebuild_cognitive_vector_generation()` 整代重建、旧世代 retire，绝不会继续使用按旧文本嵌入的向量。升级到 0.6.26 的库第一次重建即整代刷新。
+- **不改**：资格门（lifecycle/epistemic、prospective 注册与信号权威、抑制、disclosure、时间窗、procedure 指纹门）、`COGNITIVE_VECTOR_MIN_SCORE=0.45`、lane 排序/预算/RRF、其余四类记忆的向量文本逐字不变。无 DDL 变化（7.4 checksum 不变）、根导出零增减；快照 `public-api-0.6.26.json`。
+- 测试：新增 `tests/integration/test_typed_recall_prospective_trigger.py` 7 项（渲染确定性与三时区/七天中文星期；event 类与畸形 trigger 的负控；向量文本字段顺序与其余类型零变化；C04-01 复现——修前词面 0、修后 `full_text` 命中且无关查询仍 NO_RECALL；只开 vector 模式经渲染进入 `vector` lane 且修前余弦低于阈值；格式版本令旧世代 stale 并整代重建；渲染不落公开 payload/typed 行）。仅本地候选，未发布。
+
 ## [0.6.25] - 2026-09-07（Procedure 发现面对已采用流程可见；中文词项匹配）
 
 - 基于 0.6.24。按 `simple_harness/plans/2026-09-07-native-main-journey/DECISION-PROCEDURE-USE-CHAIN.md` §3.1 的最小方案。原生 r8/r9 实证：用户以"以后就按这两步做"采用的流程被编译为 ACTIVE + `unbound:procedure-applicability:v2`，`discover_procedure_drafts` 只看 draft/eligible，typed recall 又要求指纹已绑定且等于当前 Run 指纹，于是模型没有任何入口拿到 memory_id/revision 去 `procedure_use`。r24/r25 另一层原因（`procedure_discover` 只做整串子串，中文查询必须逐字出现在 name/steps）在此一并消除。
