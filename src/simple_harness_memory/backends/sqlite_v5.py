@@ -44,6 +44,7 @@ from simple_harness_memory.backends.schema_v7_3 import (
     ddl_statements,
 )
 from simple_harness_memory.backends.storage import secure_sqlite_path, verify_sqlite_path
+from simple_harness_memory.features.lexical import typed_recall_query_terms
 from simple_harness_memory.core.errors import (
     MemoryCorruptionError,
     MemoryErrorBase,
@@ -4264,13 +4265,7 @@ class SQLiteHumanMemoryBackend:
                         time_start = time_end = source_time
                     attrs = tuple(json.loads(str(row["information_attributes_json"])))
                     payload_text = canonical_json(payload).casefold()
-                    query_terms = tuple(
-                        term
-                        for term in re.findall(
-                            r"[\w\u3400-\u9fff]+", plan.query.casefold()
-                        )
-                        if term
-                    )
+                    query_terms = typed_recall_query_terms(plan.query)
                     lexical_score = sum(payload_text.count(term) for term in query_terms)
                     query_match = lexical_score > 0
                     entity_match = bool(plan.entity_constraints) and (
@@ -4694,11 +4689,7 @@ class SQLiteHumanMemoryBackend:
                 ):
                     continue
                 lane_values: list[tuple[str, float]] = []
-                query_terms = tuple(
-                    term
-                    for term in re.findall(r"[\w\u3400-\u9fff]+", plan.query.casefold())
-                    if term
-                )
+                query_terms = typed_recall_query_terms(plan.query)
                 lexical_score = sum(payload_text.count(term) for term in query_terms)
                 if (
                     any(mode.value == "full_text" for mode in plan.retrieval_modes)

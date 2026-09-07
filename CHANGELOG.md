@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.20] - 2026-09-07（typed recall 中文词法门修复候选）
+
+- 基于 0.6.19 源 e27003c6。typed recall 候选门与 confirmation 门的查询切词改用 `features.lexical.typed_recall_query_terms`：保留原 `\w` 词项，新增 CJK 二字组合。此前 `\w` 已匹配汉字，中文查询只按标点断成整句并要求在 payload 中逐字出现，导致中文长期记忆在无 entity/scope/时间约束时全部被 `recall_no_eligible_memory` 丢弃（Host 语料 C01-10 真实运行复现，spike 验证修复后召回命中）。
+- 无 DDL、无公共 DTO/hash 域变化；向量通道 `cognitive_vector_unavailable` 与短期 `[\w]+` 切词未改。新增 3 项中文正/负控测试。仅本地候选，未发布。
+
 ## [0.6.19] - 2026-09-07（Procedure 与本轮输入共同候选）
 
 - 基于实际0.6.18源码d8d80d5c，整合已审Procedure目标/观察prepare恢复、DRAFT发现及精确历史binding；新增操作观察供Host独立审计。

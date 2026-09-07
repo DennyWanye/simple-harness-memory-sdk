@@ -38,3 +38,27 @@ def lexical_similarity(query: str, candidate: str) -> float:
     if not query_units or not candidate_units:
         return 0.0
     return (2.0 * len(query_units & candidate_units)) / (len(query_units) + len(candidate_units))
+
+
+_TYPED_RECALL_WORD = re.compile(r"[\w\u3400-\u9fff]+")
+
+
+def typed_recall_query_terms(query: str) -> tuple[str, ...]:
+    """Query terms for the typed-recall lexical gate.
+
+    Keeps the historical ``\\w`` word terms (ASCII words, digits, underscores and
+    non-CJK letters) and adds CJK bigrams. ``\\w`` already matches CJK
+    ideographs, so a Chinese query used to collapse into whole punctuation-
+    delimited clauses that never occur verbatim inside a memory payload; the
+    bigram units make Chinese queries match the same way ``lexical_units`` does
+    for the legacy lexical lanes.
+    """
+
+    normalized = query.casefold()
+    terms: list[str] = [token for token in _TYPED_RECALL_WORD.findall(normalized) if token]
+    for chunk in _CJK_CHUNK.findall(normalized):
+        if len(chunk) == 1:
+            terms.append(chunk)
+        else:
+            terms.extend(chunk[index : index + 2] for index in range(len(chunk) - 1))
+    return tuple(dict.fromkeys(terms))
