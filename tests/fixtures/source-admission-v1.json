@@ -1,0 +1,60 @@
+[
+  {
+    "name": "ascii",
+    "id_input": {
+      "domain": "memory.evidence.source-admission.id.v1",
+      "payload": {
+        "subject": "actor-1",
+        "source_ref": "turn-1/assistant",
+        "envelope_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "admission_receipt_id": "host-admission-1",
+        "admission_receipt_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    },
+    "id_canonical": "{\"domain\":\"memory.evidence.source-admission.id.v1\",\"payload\":{\"admission_receipt_hash\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"admission_receipt_id\":\"host-admission-1\",\"envelope_hash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"source_ref\":\"turn-1/assistant\",\"subject\":\"actor-1\"}}",
+    "payload": {
+      "schema_version": 1,
+      "receipt_id": "source-admission:fc75097a66f9e9ca5ac700391809939b104d5925bea7df1d75d71be2511fdbd0",
+      "evidence_id": "evidence-1",
+      "source_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sanitized_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "accepted_at": 20.0,
+      "subject": "actor-1",
+      "source_ref": "turn-1/assistant",
+      "envelope_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "admission_receipt_id": "host-admission-1",
+      "admission_receipt_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "hash_canonical": "{\"domain\":\"memory.evidence.source-admission.receipt.v1\",\"payload\":{\"accepted_at\":20.0,\"admission_receipt_hash\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"admission_receipt_id\":\"host-admission-1\",\"envelope_hash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"evidence_id\":\"evidence-1\",\"receipt_id\":\"source-admission:fc75097a66f9e9ca5ac700391809939b104d5925bea7df1d75d71be2511fdbd0\",\"sanitized_hash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema_version\":1,\"source_hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"source_ref\":\"turn-1/assistant\",\"subject\":\"actor-1\"}}",
+    "receipt_hash": "4fb0f33748a8bec6a5d581d6a128a9f4c9b48024969a15e7a18f6d752186777c"
+  },
+  {
+    "name": "unicode",
+    "id_input": {
+      "domain": "memory.evidence.source-admission.id.v1",
+      "payload": {
+        "subject": "用户一",
+        "source_ref": "对话/助手",
+        "envelope_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "admission_receipt_id": "host-admission-1",
+        "admission_receipt_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    },
+    "id_canonical": "{\"domain\":\"memory.evidence.source-admission.id.v1\",\"payload\":{\"admission_receipt_hash\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"admission_receipt_id\":\"host-admission-1\",\"envelope_hash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"source_ref\":\"对话/助手\",\"subject\":\"用户一\"}}",
+    "payload": {
+      "schema_version": 1,
+      "receipt_id": "source-admission:c957437630487dcf486534a16c8f75d50253a0126150dbc7aea842f48fb2745a",
+      "evidence_id": "evidence-1",
+      "source_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sanitized_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "accepted_at": 0.0,
+      "subject": "用户一",
+      "source_ref": "对话/助手",
+      "envelope_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "admission_receipt_id": "host-admission-1",
+      "admission_receipt_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "hash_canonical": "{\"domain\":\"memory.evidence.source-admission.receipt.v1\",\"payload\":{\"accepted_at\":0.0,\"admission_receipt_hash\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"admission_receipt_id\":\"host-admission-1\",\"envelope_hash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"evidence_id\":\"evidence-1\",\"receipt_id\":\"source-admission:c957437630487dcf486534a16c8f75d50253a0126150dbc7aea842f48fb2745a\",\"sanitized_hash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema_version\":1,\"source_hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"source_ref\":\"对话/助手\",\"subject\":\"用户一\"}}",
+    "receipt_hash": "05b6c0e16e3f42439d9ffee230927cc2ee2ac0478c51aeaca119d909dea85e72"
+  }
+]

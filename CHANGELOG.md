@@ -1,5 +1,56 @@
 # Changelog
 
+## [0.6.19] - 2026-09-07（Procedure 与本轮输入共同候选）
+
+- 基于实际0.6.18源码d8d80d5c，整合已审Procedure目标/观察prepare恢复、DRAFT发现及精确历史binding；新增操作观察供Host独立审计。
+- 本轮完整USER输入公开检查保留完整principal、真实Host来源与用途；当前项例外不传播到其它历史或Procedure草稿。混合批次请求hash接受exact草稿binding，原域与旧项hash不变。
+- 保留0.6.18全部106根导出，新增12个公共导出；Memory无新DDL。旧0.6.18制品不改写，安装及原生验收独立记录。仅本地候选，未发布。
+
+## [0.6.13] - 2026-09-06（独立 typed-short 来源候选）
+
+- 新增 public resolve_typed_short_horizon_sources，以 durable selected typed item 四元组
+  在同一当前可见性事务中返回完整短期来源 refs；认知/非 selected 不给 refs。
+- 保留旧 standalone source port、DTO wire、hash、DDL 和冻结0612；新 request/binding hash 域分离。
+- 精确校验当前 owner，复用 suppression/disclosure/expiry/registration lineage；不代替 Host 最终出站校验。
+- cd1ea1a source 已独立限定 ACCEPT；仅本地后继候选，不 push/tag/release。
+
+## [0.6.12] - 2026-09-05（独立凭据误报窄修候选）
+
+- 保留已审0.6.11 privacy/OA1/retry能力，仅修正五个已确证公开完整词元被凭据前缀扫描误报。
+- 原有凭据格式、无分隔符拒绝、阈值、其它扫描及S1/subject/suppression门保持；不改公共API/DDL/旧receipt或archive。
+- 160项限定source及真实旧native三库副本Host factory page红绿已通过，固定ce1a85b独立scoped ACCEPT；本候选installed/native另验，不push/tag/release。
+
+## [0.6.10] - 2026-09-05（独立 duplicate-source privacy 候选）
+
+- 保留冻结069能力，新增已独立审的 Host source origin/cut 公共契约与跨 history/ordinary/typed/short/mutation/background 共享当前 suppression 检查。
+- memory-only forget 覆盖同 subject 的完整 USER /text 精确重复及真实来源血缘；新 atomic source 依原 cut 判定，旧 v1 无 cut/legacy 晚入队明确不可验证。
+- 不改 schema、旧快照、既有 hash 或冻结069轮子；仅隔离候选，不 push/tag/native。Host late-enqueue 收尾及原生闭环独立验证。
+
+## [0.6.7] - 2026-09-05（独立 short 候选）
+
+- 保留0.6.6 history/clock/rejection，新增已独立审查的 exact standalone short history carrier。
+- 同一 public history batch 核验实际 audit 选中、当前来源/subject/disclosure/expiry 及反向 suppression。
+- 原0.6.6及旧快照/wheel保持冻结；本版本仅候选，未push/tag/release，Host接线另验。
+
+## [0.6.6] - 2026-09-05（独立组合候选）
+
+- 合并0.6.3基线的 history visibility 完整修复、0.6.4公开可信clock及0.6.5限定拒绝见证；普通历史可见性以当前SDK反向suppression和source状态为准。
+- 新增五项history根导出与0.6.6 API快照；保留所有旧快照、schema v7.1、typed v4 hash和原数值阈值。
+- 不替换冻结0.6.3/0.6.5 artifact，不合main/tag/push；本候选的源码、wheel与最小installed验证另见history increment候选记录。
+
+## [0.6.5] - 2026-09-05（S3 候选访问前拒绝见证）
+
+- `execute_typed_recall` 的类型、ownership、narrowing 和精确幂等冲突保留原异常，附加不可变 `TypedRecallRejectionV1`，绑定本次 invocation 与可合法计算的 request/context/plan hash。逻辑零表示未进入候选访问，不是 SQL 条数，也不声称没有 admission 写入。
+- 数据库故障、损坏、取消、timeout 和候选访问后的异常不获得此见证；没有新增账本、授权 token 或全局 last-error 槽。
+- Manager/backend 增加严格 `harness_protocol=4` 入口，未知版本在 backend 操作前拒绝；默认调用保留旧 backend 参数集合、原 v4 hash 和 schema v7.1。
+- 新增 30 条专项回归，全量 1157 passed / 9 skipped，独立 source review ACCEPT；本分支仍为 S3 隔离候选，不替换 Host S5b 的 0.6.3。401-cell 与 program verdict 按实际验收独立记录。
+
+## [0.6.4] - 2026-09-05（S3 公开时间依赖）
+
+- `build_human_memory_v7` 增加可选可信构造依赖 `clock`，复用既有 backend 时钟，让 recall、page-in 和 current-use 使用同一时间源；默认仍为系统时间。请求不能通过回填时间绕过分页过期。
+- 真实 SQLite 回归覆盖固定时间、关闭重开、过期拒绝、默认时钟及非法构造输入；独立 review ACCEPT。schema v7.1、根导出及旧候选快照保持。
+- 本分支为 S3 隔离候选；不替换 Host S5b 已安装的 0.6.3，不代表 401-cell 或 program gate 已通过。
+
 ## [0.6.3] - 2026-09-05（S5b 恢复正确性）
 
 - 同 principal 的后续 analysis 等待已领取批次完成物化，保留固定 plan/base_revision/evidence/hash，避免故障恢复丢失旧批次事实。

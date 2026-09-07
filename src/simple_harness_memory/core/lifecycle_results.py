@@ -57,6 +57,7 @@ class ProcedureObservationApplyResult:
     independent_successes: int
     reason_code: str
     decided_at: float
+    operation_observation: object | None = field(default=None, repr=False, compare=False)
     result_hash: str = field(init=False)
 
     def __post_init__(self) -> None:

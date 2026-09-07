@@ -54,9 +54,16 @@ _FORBIDDEN_KEYS = frozenset(
         "thoughtsignature",
     }
 )
+_TOKEN_VALUE_PATTERN = re.compile(r"\b(?:sk|key|tsk)-?[a-zA-Z0-9_-]{8,}")
+# Proven public runtime vocabulary, not a caller-controlled credential bypass.
+# Only the prefix-pattern false positive is exempt; other patterns still scan.
+_PUBLIC_RUNTIME_IDENTIFIERS = frozenset({
+    "skill_resource", "skill-catalog", "skill-catalog-v1",
+    "product-skill-catalog", "product-skill-catalog-v1",
+})
 _FORBIDDEN_VALUE_PATTERNS = (
     re.compile(r"(?i)\bbearer\s+[a-z0-9._~+/=-]{8,}"),
-    re.compile(r"\b(?:sk|key|tsk)-?[a-zA-Z0-9_-]{8,}"),
+    _TOKEN_VALUE_PATTERN,
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
 )
@@ -192,10 +199,74 @@ class EvidenceIngestionReceipt:
 
 
 @dataclass(frozen=True, slots=True)
+class EvidenceSourceAdmissionReceipt:
+    receipt_id: str
+    evidence_id: str
+    subject: str
+    source_ref: str
+    source_hash: str
+    sanitized_hash: str
+    envelope_hash: str
+    admission_receipt_id: str
+    admission_receipt_hash: str
+    accepted_at: float
+    schema_version: int = 1
+    receipt_hash: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if isinstance(self.schema_version, bool) or not isinstance(self.schema_version, int):
+            raise TypeError("evidence source admission schema_version must be an integer")
+        if self.schema_version != 1:
+            raise MemoryValidationError("evidence_source_admission_schema_unsupported")
+        for value, name in (
+            (self.receipt_id, "receipt_id"),
+            (self.evidence_id, "evidence_id"),
+            (self.subject, "subject"),
+            (self.source_ref, "source_ref"),
+            (self.admission_receipt_id, "admission_receipt_id"),
+        ):
+            _identifier(value, name)
+        for value, name in (
+            (self.source_hash, "source_hash"),
+            (self.sanitized_hash, "sanitized_hash"),
+            (self.envelope_hash, "envelope_hash"),
+            (self.admission_receipt_hash, "admission_receipt_hash"),
+        ):
+            _digest(value, name)
+        if (
+            isinstance(self.accepted_at, bool)
+            or not isinstance(self.accepted_at, (int, float))
+            or not math.isfinite(float(self.accepted_at))
+            or float(self.accepted_at) < 0
+        ):
+            raise MemoryValidationError("evidence_accepted_at_invalid")
+        object.__setattr__(self, "accepted_at", float(self.accepted_at))
+        object.__setattr__(self, "receipt_hash", _sha256_json({
+            "domain": "memory.evidence.source-admission.receipt.v1",
+            "payload": self.to_json(),
+        }))
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "schema_version": self.schema_version,
+            "receipt_id": self.receipt_id,
+            "evidence_id": self.evidence_id,
+            "subject": self.subject,
+            "source_ref": self.source_ref,
+            "source_hash": self.source_hash,
+            "sanitized_hash": self.sanitized_hash,
+            "envelope_hash": self.envelope_hash,
+            "admission_receipt_id": self.admission_receipt_id,
+            "admission_receipt_hash": self.admission_receipt_hash,
+            "accepted_at": self.accepted_at,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class IngestedEvidenceRecord:
     envelope: SanitizedEvidenceEnvelope
     admission_receipt: SanitizedEvidenceReceipt
-    ingestion_receipt: EvidenceIngestionReceipt
+    ingestion_receipt: EvidenceIngestionReceipt | EvidenceSourceAdmissionReceipt
     spans: tuple[EvidenceSpan, ...]
 
 
@@ -260,6 +331,17 @@ def _controlled_blob_ref(value: JsonValue) -> tuple[str, str] | None:
     return blob_ref, normalized_content_hash
 
 
+def _public_runtime_identifier(value: str, match: re.Match[str]) -> bool:
+    # A regex hit may start inside product-skill-catalog. Compare its complete
+    # lexeme so prefixed/suffixed credential material never inherits an exemption.
+    start, end = match.span()
+    while start and (value[start - 1].isalnum() or value[start - 1] in "_-"):
+        start -= 1
+    while end < len(value) and (value[end].isalnum() or value[end] in "_-"):
+        end += 1
+    return value[start:end] in _PUBLIC_RUNTIME_IDENTIFIERS
+
+
 def _scan_public_structure(value: JsonValue) -> None:
     nodes = 0
 
@@ -284,8 +366,11 @@ def _scan_public_structure(value: JsonValue) -> None:
         if isinstance(item, str):
             if len(item.encode("utf-8")) > MAX_PUBLIC_STRING_BYTES:
                 raise MemoryLimitError("evidence_public_string_limit_exceeded")
-            if any(pattern.search(item) for pattern in _FORBIDDEN_VALUE_PATTERNS):
-                raise MemoryValidationError("evidence_credential_boundary_rejected")
+            for pattern in _FORBIDDEN_VALUE_PATTERNS:
+                for match in pattern.finditer(item):
+                    if pattern is _TOKEN_VALUE_PATTERN and _public_runtime_identifier(item, match):
+                        continue
+                    raise MemoryValidationError("evidence_credential_boundary_rejected")
 
     visit(value, 0)
 

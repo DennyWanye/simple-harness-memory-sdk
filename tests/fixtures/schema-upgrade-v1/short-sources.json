@@ -1,0 +1,75 @@
+{
+  "binding": {
+    "kind": "short_horizon",
+    "audit_id": "audit-早组",
+    "chunk_ref": "short:abc",
+    "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "source": {
+    "evidence_id": "真实-1",
+    "envelope_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "source_ref": "turn-1/user",
+    "source_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "sanitized_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "admission_receipt_id": "admission-1",
+    "admission_receipt_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "registration_id": "registration-1",
+    "registration_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "item_ordinal": 1,
+    "role": "user"
+  },
+  "item": {
+    "binding_hash": "f50dc305dfd8f45a46442f4ab73c2f493dc67e744d5b36c6edd59d66d8b79727",
+    "visible": true,
+    "reason": "history_visible",
+    "complete": true,
+    "source_refs": [
+      {
+        "evidence_id": "真实-1",
+        "envelope_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "source_ref": "turn-1/user",
+        "source_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "sanitized_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "admission_receipt_id": "admission-1",
+        "admission_receipt_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "registration_id": "registration-1",
+        "registration_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "item_ordinal": 1,
+        "role": "user"
+      }
+    ]
+  },
+  "snapshot": {
+    "schema_version": 1,
+    "subject": "actor-1",
+    "request_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+    "evaluated_at": 20.0,
+    "authority_epoch": 3,
+    "policy_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+    "valid_until": 25.0,
+    "items": [
+      {
+        "binding_hash": "f50dc305dfd8f45a46442f4ab73c2f493dc67e744d5b36c6edd59d66d8b79727",
+        "visible": true,
+        "reason": "history_visible",
+        "complete": true,
+        "source_refs": [
+          {
+            "evidence_id": "真实-1",
+            "envelope_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "source_ref": "turn-1/user",
+            "source_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "sanitized_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "admission_receipt_id": "admission-1",
+            "admission_receipt_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "registration_id": "registration-1",
+            "registration_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "item_ordinal": 1,
+            "role": "user"
+          }
+        ]
+      }
+    ]
+  },
+  "snapshot_hash": "61c5012b9bf8adc8846bad41c6fdfa6f09369577f0c85f548246a5423e06a389"
+}

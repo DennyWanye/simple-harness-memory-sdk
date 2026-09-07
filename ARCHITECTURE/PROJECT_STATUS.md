@@ -1,4 +1,85 @@
+最后更新：2026-09-07。0.6.19 clean源e27003c一次离线制品和Host H079/M619/S0313安装组合1PASS0.86s通过，版本元数据3控通过，旧106导出全保留+12；生产安装origin经实际vendor安装纠正后验证通过。全部资源组清空，原生/240质量仍未验。[候选与制品](../plans/2026-09-07-procedure-current-input/CANDIDATE.md)。
+
+最后更新：2026-09-07。共同Procedure/current-input组合已在Host80764c13/Memorya15c7be通过1个新增真实公共控制并独审接受，source overlay非installed；0.6.19版本与118项公共导出快照准备，旧M618 106项全保留，版本检查/制品待验。[候选边界](../plans/2026-09-07-procedure-current-input/CANDIDATE.md)。
+
+最后更新：2026-09-07。Procedure discovery源f03dab0的新6项有效控制已获独审限定接受（首批有效4+实际遗忘负控2；旧误绿撤回）。文档后继d142d3a并入共同候选，current-input源码a28a857与Draft混合批量检查新控制仍待验；无新wheel/安装/原生完成声明。
+
+最后更新：2026-09-06。主候选源码组合：Procedure f03dab0（含已审恢复）与current-input e500556合入独立后继分支，保留两组公共入口和HistoryProcedureDraftBinding检查。当前只是组合源码，未构建新wheel、未切Host pin；Procedure discovery新控/组合审查仍待完成，旧M618身份不改。[本轮输入接口](CURRENT_INPUT.md)。
+
+最后更新：2026-09-06。Procedure恢复源码Host ea63ddc6/c76da29c、Memory978ae99：新增12唯一控制分批通过（SDK3，Host9），原四夹具失败保留且只重试四红；明确54增量attempt journal、过期重开/lostACK、同epoch旧revision、同Scope拒绝、真实drift物理0、高risk及timer兼容。全部资源组清空，临时vendor恢复；待新叶独审和统一制品，未合主/非native。首次草稿发现、失败归因、TC-HM04仍未完成。[结果与边界](../plans/2026-09-06-procedure-observation-prepare/RECOVERY.md)。
+
 # PROJECT STATUS — simple-harness-memory-sdk
+
+> 2026-09-07 转主干开发：main 已并入 `feat/human-memory-procedure-current-input-successor`（0.6.19 源）。下方 09-06 两路状态段为合并时的并集，各自描述当时状态，不互相覆盖。
+
+最后更新：2026-09-06。Procedure后继公开prepare/read target/record的实际operation observation六项新控通过；f82c2b8仅Procedure复用source-only S1完整持久校验，Host三真实Scope路由/文件effects/完整group→公共观察由原红转绿，累计成功1/2/3与重放已验证。新四项跨源边界控未跑，完整TC-HM04、独审、installed/native未闭合。主整合Hegel e500556后统一版本，不独立build，不改M618制品；F01延期。[源码与证据边界](../plans/2026-09-06-procedure-observation-prepare/CONTRACT.md)。
+
+## 2026-09-06 M618 实际安装恢复控制
+
+最后更新：2026-09-06。主转Dirac限定接受d46bf1f/cf7c8d5及Host6b53f27c/e37c42bb，版本d8d80d5固定0.6.18。一次offline wheel SHA010b4281…，两变动包成员fixedGit/source/wheel/独有target一致；H077依赖、无Memory源码覆盖的完整cohort及Host原普通异常升级两控通过（0.11s/0.73s）。PG1723/exit0/2.408s/峰189120KiB/remaining=[]，锁释放。M617/主环境不动；制品独审与主H078组合另验，Procedure观察/适用性仍待接线。[准确制品、hash及证据](../plans/2026-09-06-analysis-retry-protocol/CANDIDATE-0.6.18.md)。
+
+## 2026-09-06 完整 analysis 重试输入恢复
+
+最后更新：2026-09-06。后继源码d46bf1f保留普通失败批次完整request语义及原成员顺序，只替换attempt身份；新job独立使用新配置，篡改请求／成员拒绝。SDK三控及H077/M617依赖上的Host源码覆盖五控通过，含原v3普通异常→v4配置零新增Provider；旧24绿未跑。PG1149/exit0/3.834s/峰191648KiB/remaining=[]，共享槽释放。M617冻结不变，0.6.18.dev0未构建；待最终源码独审与实际installed，不称完整Procedure功能通过。[必要控制、原红边界与证据](../plans/2026-09-06-analysis-retry-protocol/RESULTS.md)。
+
+## 2026-09-06 prospective终局与schema7.3源码候选
+
+最后更新：2026-09-06。按2553已接受边界新增公开settle_prospective_invalidation严格联合、独立持久not_required receipt/observation、同事务无登记请求证明和后续登记门；新7.3显式升级保留原7.2 DDL/初始化receipt/业务列，fresh用7.3。主已转Dirac源码限定ACCEPT；0.6.17单次offline wheel e119cdcc…已构建，16个变动成员=source/wheel/own target，独有安装3PASS/0.68秒，无Memory源码覆盖；PGID70661/exit0/峰147104KiB/1.522秒、无残留，槽释放。Host52由主实施。业务源码5ee3c6b；新增12项风险控分批通过：r4为11PASS/1测试断言FAIL，topic范围修正后r5定向1PASS，不重复其余绿。PGID67413/exit0/峰115936KiB/0.657秒、无残留，槽释放；旧V2八项未重跑，尚无Host52实际组合结论。[实际接口与待验收边界](../plans/2026-09-06-prospective-signal-source/SDK终局实现.md)。
+
+## 2026-09-06 prospective signal source V2 源码
+
+最后更新：2026-09-06。新增公开read_prospective_outbox_source_v2及显式mutation/signal联合，按既存consumption/decision/result与历史revision核验signal来源，返回真实apply result，不伪造mutation receipt或Run。v2 operation/request/observation域明确，owner域沿v1；616旧方法/wire/hash不改。8个限定用例分批通过（首批5处篡改库teardown拒绝已显式断言），PGID54768已清空、槽释放；未构建/独审/Host组合。已证实同ref公开apply可恢复已提交的过期lostACK；无registration请求的派生revision之invalidation仍需主决定有记录终局，不能称scheduler闭合。[固定DTO/metadata接缝、精确方案及结果](../plans/2026-09-06-prospective-signal-source/最小契约.md)。
+
+## 2026-09-06 M616 prospective source 候选
+
+最后更新：2026-09-06。新增 public exact outbox reader，校验 owner、payload/hash、idempotency、持久 emit 时间、历史 target scope/lifecycle 与真实 mutation run/operation/receipt；invalidation 不用当前 head 改写来源，也不将 target lineage 冒充 outbox cause。signal 派生目标缺 mutation receipt 明确拒绝。源26项分批通过、必要邻居2项；metadata 经真实 H073 sink 原红后修白名单投影，定向通过。成功/拒绝/取消均交付独立 invocation observation，稳定 source hash 不受影响；Host 落盘与 OA1 全覆盖仍未证明。源码931b8c7固定0.6.16候选；offline wheel SHA00937eb5…，独有installed source3项通过/0.55秒，PGID47559已清空。未独审或Host组合，不影响冻结615；未改SDK schema/模型/Provider/native。[唯一接口及证据说明](../plans/2026-09-06-prospective-outbox-source/CONTRACT.md)。
+
+
+## 2026-09-06 M0.6.15空assistant制品交付
+
+最后更新：2026-09-06。源17aebde/测试9bbf42b已获主转Dirac限定ACCEPT；分配M615后固定7f9983d，双offline wheel SHA69544677…一致，351751bytes。73包成员=fixedGit、76非RECORD成员=独有安装target，借用H073的169成员一致；-I installed9项通过/1.06秒，无源码overlay，旧614全部73包文件不变。PGID43803/峰139856KiB/elapsed2.38秒已清空、槽释放；制品15MiB，无新完整venv或下载。未改Host pin/SDK main/发布，主H074组合与制品独审另验；prospective源事实API及非SELF不含于615。
+[准确wheel路径、SHA、安装身份与原始证据索引](../plans/2026-09-06-short-empty-assistant/CANDIDATE-0.6.15.md)。
+
+
+## 2026-09-06 空assistant完整组局部验收
+
+最后更新：2026-09-06。业务17aebde保持不变，WIP0.6.14。原installed614的空组注册两红/非空正控绿；源码9专项分批通过、9投影/来源邻居通过，唯一测试修正是超限先被S1公开入场门拒绝。主d8a985c2原空assistant真实11turn工具组载体在Memory源码overlay下通过4.49秒，全部ordinal/parent与空字节保留，short/reopen/forget闭合；不算installed后继验收。四组已清空、测试槽释放，raw35MiB，剩余约3.8GiB。未build/install/分配615/合主，Dirac独审仍待，非SELF/输入permit及完整原程序未完成。
+[原红、全部批次、精确路径/hash和限制](../plans/2026-09-06-short-empty-assistant/RESULTS.md)。
+
+
+## 2026-09-06 空assistant短期完整组源码候选
+
+最后更新：2026-09-06。自有feat/short-empty-assistant/base6361edca，版本保持WIP0.6.14；仅允许合法ASSISTANT空字符串并保留完整ordinal/工具parent来源，两条投影路径排除全空角色标签伪命中。USER空/空白、NUL、UTF-8字节、identifier/hash及完整组门保持。9项公开API契约已写，待Dirac源码复核后145同锁原红/绿及必要邻居，未测试、未build/install/分配615/合主。Host真实SDK11turn工具组由主后继接线验证，不冒称Memory fixture为Host E2E。
+[最小接口、源位置、测试边界与指纹](../plans/2026-09-06-short-empty-assistant/CONTRACT.md)。
+
+
+## 2026-09-06 最终受众约束0.6.14候选
+
+最后更新：2026-09-06。业务d7cb3ca已独审限定ACCEPT，ordinary/candidate联合检查当前接收者与最终受众，修正协作者枚举不同拼写的history误拒；未放开external/public、非self原始history或classification/来源/遗忘门。原4反例红→必要源码13绿；27dceff后继0.6.14两次wheel一致、独立Memory安装target4个公开API检查通过。76个Memory和借用H073的169个安装成员匹配；非新完整venv，未更新Host pin或SDK main，未发布。资源串行/有界/无残留；[行为、边界和精确身份](../plans/2026-09-06-disclosure-audience/RESULTS.md)。
+
+
+2026-09-06 final：Memory0613固定source/双wheel/exact installed已获Dirac只读
+限定ACCEPT，无新增P0/P1；未改已核wheel或业务源。Host正式installed组合另验，
+测试槽已释放。[独审闭合](../plans/2026-09-06-typed-short-sources/REVIEW.md)。
+
+2026-09-06：typed-short source cd1ea1a已Dirac scoped ACCEPT，后继0.6.13固定
+f2a6a706；两独立offlinewheel SHA33fcc494…相同，72包文件等于fixedGit。
+owninstalled H073/M0613 public consumer8PASS2.09s，installed成员75/169字节一致；
+Host只消费此wheel不overlay，完整group/final出站仍主线验证。无模型/native/DDL/发布，
+旧0612冻结未动，整体扫描成本仍未闭合。制品只读独审待结果，测试槽已释放。
+[固定artifact/边界](../plans/2026-09-06-typed-short-sources/CANDIDATE-0.6.13.md)。
+
+
+## 2026-09-06 typed-short selected sources isolated source leaf
+
+最后更新：2026-09-06。新public MemoryManager.resolve_typed_short_horizon_sources仅
+接受durable typed selected-short四元组；返回现有ShortHorizonSourceSnapshot/Item/Ref，
+新request/binding hash域，同current visibility事务验证owner/selection/current来源
+与完整registration lineage。认知或未选中item不给refs，不伪造旧audit_id；旧short
+接口/wire/DDL/hash不变。source阶段最终唯一31项绿，真实principal占位绕过原红保留
+且newport专用exact校验修复。尚未改版本/build/install；Host只后继installed消费。
+[契约](../plans/2026-09-06-typed-short-sources/CONTRACT.md) /
+[命令与结果](../plans/2026-09-06-typed-short-sources/RESULTS.md)。
 
 ## 2026-09-06 可信输入绑定已复核并纳入 main
 
@@ -33,6 +114,71 @@
 [审查结论、全部MD与剩余接线](../plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/review-zh/后继240条主代理复核.md)。401矩阵、两轮模型质量、性能与Context预算仍未完成；以下旧记录按历史保留。
 
 > 最后更新：2026-09-05
+
+
+
+## 2026-09-05 duplicate-source forget 共享源码候选（源码独立 scoped ACCEPT）
+
+在独立069后继树实现真实 Host origin/cut 两阶段准备、当前 canonical MEMORY 全 revision
+来源拒绝与共享 suppression resolver。实际 builder支持 history_source_authority，公开能力
+MemoryManager.history_source_enforcement_version=1；不以此替代 exact后继artifact身份。
+本机206项限定源码测试通过（15.14s），含22项新数据库控制、配置新authority后的23项原
+攻击/zeroSQL控制、capability及相邻回归；ruff/mypy4源通过。原56c6bf7 no-/text误拒P1已
+由2b2fa47修复；Dirac已对固定53099e7完整enforcement源码 scoped ACCEPT，未见剩余当前P0/P1。
+Dirac要求的short补充控制已扩展原有用例并单跑1PASS/0.45s：不同实际来源、旧typed
+新attempt拒绝/原receipt重放，以及cut后同文atomic来源越过recent10后重新可用；不累加为207项。
+旧v1action无cut仍持续拒绝同内容新重申，不称支持旧库fresh reassert；Hostlate-enqueue
+隐私拒绝正确，但CLAIMED/无SDKrun的settle闭环由主修复，未标产品PASS。/text等值SQL
+无匹配索引，4096工作上限不证明P99。未分配版本/安装wheel/改main/native/冻结069，
+不标S3/program完成。[当前源码、命令与边界](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-duplicate-source-forget/ENFORCEMENT.md)。
+
+
+## 2026-09-05 duplicate-source forget 公共协议叶（未接 enforcement）
+
+独立分支从冻结069新增 HistorySourceNamespace / HistorySourceOriginReceipt /
+HistoryForgetCutReceipt / HistorySourceAuthorityPort 四项公共契约，固定 atomic 与
+legacy_before_only 队列顺序证明、原始 v2 action cut 与 canonical hash 向量。
+仅协议/根 API 源码38项通过、ruff/mypy通过；builder、当前 suppression 执行及真实数据库
+red→green 尚未实现，不标 P1/S3/program/native 完成。旧 v1 action 无 cut 仍明确
+UNVERIFIABLE；不回填、改旧hash或声称原 native forget PASS。未分配版本/build候选/合main，
+冻结069字节不变。[协议交付与命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-duplicate-source-forget/PROTOCOL-DELIVERY.md)。
+
+
+## 2026-09-05 Memory0.6.7 独立候选冻结准备
+
+主统一分配0.6.7给已审short e19161ba；仅版本、根快照与公开消费者增量，产品行为无修改。
+根快照4项与新增short真实public source consumer11阶段通过；新wheel/isolated installed
+消费与完整字节核验正在执行。封存0.6.6 wheel不覆盖，未合main/Host/native或发布。
+[本轮候选记录](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-short-history-visibility/CANDIDATE-0.6.7.md)。
+
+## 2026-09-05 独立 standalone short 历史可见性源码修复
+
+在封存0.6.6之后的独立分支新增 `HistoryShortHorizonBinding(audit_id,chunk_ref,content_hash)`，
+复用当前批量history快照，验证真实owned recall成功audit的exact选中、canonical来源、expiry、
+disclosure与evidence/entity/反向MEMORY suppression。28项专项+93项相邻源码测试通过，
+独立review ACCEPT；无需Host私查SQL或伪typed binding。nextProvider每次出站仍须当前完整来源复查，
+SDK检查不是网络发送锁或Host依赖完整性证明。尚未分配新版本/build/pin/合main/接Host；
+已封存0.6.6 wheel完全未变，该新能力不属于旧wheel。不标S3/S6/program完成。
+[契约、验证与接线边界](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-short-history-visibility/RESULTS.md)。
+
+## 2026-09-05 Memory0.6.6 隔离组合源码候选
+
+用户授权独立组合history a96a5008、clock16dc707与rejection30743bb；不修改冻结0.6.3/0.6.5
+wheel及main/Host环境。新0.6.6根快照保留所有旧导出并包含五项history DTO，schema/hash/阈值不变。
+130项限定源码测试已通过；clean source9ec5943对应wheel381d8543已在新venv通过public
+consumer、Memory63/Harness151源/轮子/安装字节一致性及pipcheck。尚无Host/UI完成结论。独立short-horizon hit仍缺历史复查binding，明确保留后继接口缺口。
+详见[组合候选契约和命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-history-visibility/CANDIDATE-0.6.6.md)。
+
+## 2026-09-05 隔离 history visibility 源码候选
+
+从 main8675352 / Memory0.6.3 独立分支 `feature/human-memory-history-visibility` 完成 AC1/AC7
+历史来源检查的限定 SDK 修复：memory_id suppression 反向覆盖原 USER、派生 evidence 及全部支持修订；
+新增公开批量 `check_history_visibility`，接受 Host 验证的 S1 envelope/receipt（允许尚未分析/摄入）
+或已持久化 recall result/item 绑定，同一读快照检查当前来源状态、suppression 和 disclosure。
+不造 UI execution Run、不新增 authority；epoch 不是完整历史版本，Host 每次出站须 fresh-check。
+本机 source 验证共94项通过（24项新 history +47项既有聚焦 +23项 mutation），限定独立 review 接受。
+版本/冻结快照JSON/schema/wheel/pin未变，未合 main、未接 Host；无 provider/UI/installed-candidate
+验收或 p95 性能结论，不标 S3/S6/program 完成。详见[契约、命令及本机证据索引](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-history-visibility/RESULTS.md)。
 
 ## 2026-09-05 最新 Host 及 S3 隔离候选验证
 
@@ -189,3 +335,68 @@ SDK 源码修复已提交 `2b8428465cbd41032ba024a0b7199183161f5ecd`（candidate
 - 普通 metrics/trace 先执行 suppression policy；sealed read 共用 durable `max_reads` 预算并记录 hash-only access event。
 - manifest coverage registry 覆盖全部 required v6 table；当前 access event 在 snapshot 后写入，历史 ledger 在后续 snapshot 可验证。
 - manifest 是可比较的完整性快照，不替代外部保存的可信历史 hash，也不声称抵抗 DB owner 同步改写。
+
+2026-09-05：独立0.6.8 source-only admission源码完成36专项、721含专项相邻、4 schema检查；
+公开独立receipt/零analysis job、双模式冲突、registration/history union与fresh7.2边界已实现。
+Dirac已审oracle，源码复审/wheel/Host11组组合待验，不合main，不标S3/program或selected-only完成。
+[本轮事实与命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-source-only-admission/RESULTS.md)。
+
+2026-09-05：独立0.6.9 A+B源码候选实现官方非空7.0/7.1保留式升级和actual-selected短来源批量读口；
+WAL-only/升级COMMIT前后真进程退出、备份重试、旧任务续跑和history过滤已有限定源码证据。
+固定2542736源码已独立scoped ACCEPT；BUSY窄修16项通过，installed wheel待验，不改冻结068、不合main，不标S3/program或Host native完成。
+[069验证与剩余边界](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-069-existing-data-selected-sources/RESULTS.md)。
+
+2026-09-05：授权分配独立0.6.10 privacy successor，root snapshot4项通过；双offline build与
+installed public/native-copy gates正在执行，冻结069不变，不标Hostlate-enqueue/native完成。
+
+2026-09-05：独立retry-current-attempt后继修复真实firstfail→secondclaim→expiry错误回收旧batch
+P1；限定107PASS/1项冻结0610已有schema-probe拒绝测试失败单列保留，含8项新current/multi-member/
+concurrent-owner/真实COMMIT前后进程退出控制。原069反例DB保留，publicgraph相邻源码绿。
+待独立源码review，不改版本/DDL/冻结0610制品、不合main；随后才组合已审OA1统一候选。
+[当前源码事实与命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-retry-current-attempt/RESULTS.md)。
+
+2026-09-05：retry-current-attempt0947c011限定源码已Dirac scoped ACCEPT；原红/DB与继承
+测试错误均保留。OA1 af49另树也已源码ACCEPT，后续统一组合候选与installed验证，当前无新wheel。
+2026-09-05：独立operation-audit后继树开始OA1；同步typed rejection carrier真实公共调用/
+独立Hoststore reopen/进程退出/外部cancel共12项限定源码检查通过，既有拒绝回归保留。
+ledger分页读口尚未实现、源审待验，不标OA1或全operation审计完成；未分配新版本，
+此源码树不能冒充冻结069 wheel，不改Host/native。
+[当前范围与命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-operation-audit/RESULTS.md)。
+
+2026-09-05：privacy0.6.10独立产物冻结后恢复OA1树；read_operation_audit WIP真实job effect
+误报已由canonical plan重建/同cut receipt校验修复，11项限定source控制PASS（1.03s），
+含no_mutation与written独立业务断言、旧cursor/预算/过期/删除检测。整体reader仍未审结，
+混合typed/short与missing-event/完整boundedwork验证待完成，不标OA1/full审计完成，未分配候选。
+[当前进展](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-operation-audit/RESULTS.md)。
+
+2026-09-05：OA1 bounded reader完整源码已实现并提交独立审查：真实mixed九family、缺event/
+crosslink、retry/reclaim、stable cursor/reopen和四种scan exhaustion；限定117PASS/2项明确
+排除的冻结069既有schema-probe测试失败，mypy3source/ruff通过。两项原失败和独立retry
+producer旧batch误回收P1反例均保留，不标全套绿。preDB Host持久化/未覆盖调用仍缺，
+all_operations_recorded=false；未分配版本/build/合main，privacy0.6.10冻结不变。
+[源码事实与原红证据](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-operation-audit/RESULTS.md)。
+
+2026-09-05：Dirac完整OA1审查发现唯一新增P1（sole handoff缺失但独立attempt仍在）已按
+独立attempt prefix/cut修复，31项受影响reader控制PASS/3.30s；其余完整审查无第二新增P0/P1，
+最终复核待验。原红保留，未出候选/合main，all_operations_recorded仍false。
+
+2026-09-05：OA1 af49f2a1完整bounded源码已独立scoped ACCEPT，包含sole-handoff原probe修后
+真实复验。源码gate完成；候选组合/installed/Host持久化与全operation覆盖另验，未合main。
+
+2026-09-05：独立0.6.11组合固定privacy02f4020+已审OA1af49f2a+retry0947c01；
+source d520765 / wheeld290cbfc，双offline构建一致，owner新隔离installed公共7阶段PASS，
+Memory72+Harness151 source/wheel/install字节及213origins/16deps/pipcheck/15旧json通过。
+限定组合116源码测试PASS，原继承失败保留；Dirac installed复核待验，不合main/不改Host。
+Hostcarrier持久化仍缺，all_operations_recorded=false，不标全program/native完成。
+[候选身份、命令与边界](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-operation-audit/CANDIDATE-0.6.11.md)。
+
+2026-09-05：Memory0.6.11 d520765/wheeld290cbfc的组合交集及artifact/exactinstalled/
+publicconsumer证据已Dirac独立限定ACCEPT，无新增P0/P1。SDK候选gate完成；Hostcarrier、
+全operation/native及独立Harness successor门仍待主线，不作替代，不push/tag/release。
+
+2026-09-05：独立credential-public-identifiers后继修复仅将五个已证明公开完整词元
+从凭据prefix-pattern误报中排除；保留所有其它legacy delimiter/无delimiter、秘密字段、
+Bearer/AKIA/privatekey与S1验证。160项限定源测试通过，真实旧native三库副本的
+Host factory history page由0610红变源码绿且reopen通过，原archive及10文件hash保持。
+源码review/0.6.12 installed尚待，不改0610/0611或主树，不标native UI/program完成。
+[事实及命令](../plans/2026-08-29-human-memory-digital-twin/increments/2026-09-05-credential-public-identifiers/RESULTS.md)。

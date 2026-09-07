@@ -141,7 +141,7 @@ def _procedure_operation(
     )
 
 
-async def _setup(path: Path, clock: list[float], count: int = 7):
+async def _setup(path: Path, clock: list[float], count: int = 7, *, source_only_indices=()):
     evidence: list[
         tuple[SanitizedEvidenceEnvelope, SanitizedEvidenceReceipt, EvidenceSpanRef]
     ] = []
@@ -172,84 +172,98 @@ async def _setup(path: Path, clock: list[float], count: int = 7):
         classification_policy=_classification_policy(),
     )
     await backend.initialize()
-    for index, (envelope, receipt, _span_ref) in enumerate(evidence, start=1):
-        await backend.ingest_committed_evidence(envelope, receipt)
-        link = ConversationToolCausalLink(
-            f"tool-call-{index}",
-            "publish",
-            1,
-            f"terminal-{_TERMINAL_BY_INDEX.get(index, index)}",
-            _sha(f"terminal-{_TERMINAL_BY_INDEX.get(index, index)}"),
-        )
-        metadata = ConversationEvidenceMetadata(
-            metadata_id=f"procedure-metadata-{index}",
-            authority_issuer_id="host-conversation-registry",
-            evidence_id=envelope.evidence_id,
-            envelope_hash=envelope.envelope_hash,
-            admission_receipt_id=receipt.receipt_id,
-            admission_receipt_hash=receipt.receipt_hash,
-            run_id=envelope.run_id,
-            subject=envelope.subject,
-            source_hash=envelope.source_hash,
-            sanitized_hash=envelope.sanitized_hash,
-            conversation_id="primary-conversation",
-            primary_conversation_id="primary-conversation",
-            causal_group_id=f"procedure-group-{index}",
-            causal_group_sequence=index,
-            item_ordinal=2,
-            group_item_count=2,
-            ordered_group_manifest_hash=_sha(f"manifest-{index}"),
-            role=ConversationEvidenceRole.TOOL,
-            occurred_at=10.0,
-            task_scope_id=_TASK_BY_INDEX.get(index, f"task-{index}"),
-            tool_causal_link=link,
-            entities=(),
-        )
-        metadata_receipt = ConversationEvidenceMetadataReceipt(
-            receipt_id=f"procedure-metadata-receipt-{index}",
-            metadata_id=metadata.metadata_id,
-            authority_issuer_id=metadata.authority_issuer_id,
-            evidence_id=metadata.evidence_id,
-            envelope_hash=metadata.envelope_hash,
-            admission_receipt_id=metadata.admission_receipt_id,
-            admission_receipt_hash=metadata.admission_receipt_hash,
-            run_id=metadata.run_id,
-            subject=metadata.subject,
-            source_hash=metadata.source_hash,
-            sanitized_hash=metadata.sanitized_hash,
-            metadata_hash=metadata.metadata_hash,
-            issuer_ref=metadata.authority_issuer_id,
-            accepted=True,
-        )
-        registration = ConversationEvidenceRegistration(
-            f"procedure-registration-{index}",
-            envelope,
-            receipt,
-            metadata,
-            metadata_receipt,
-        )
-        authority.registrations[registration.registration_id] = registration
-        await backend.register_conversation_evidence(
-            ConversationEvidenceRegistrationRef(
-                registration.registration_id,
-                registration.registration_hash,
-                envelope.evidence_id,
-                envelope.envelope_hash,
+    try:
+        result = None
+        for index, (envelope, receipt, _span_ref) in enumerate(evidence, start=1):
+            if index in source_only_indices and result is None:
+                first_envelope, _first_receipt, first_span = evidence[0]
+                result = await backend.apply_memory_mutation_plan(principal=_principal(),
+                    scope=MemoryScope.personal("actor-1"),
+                    plan=_plan(first_envelope, _procedure_operation(first_span)))
+            if index in source_only_indices:
+                await backend.admit_evidence_source(principal=_principal(), envelope=envelope, receipt=receipt)
+            else:
+                await backend.ingest_committed_evidence(envelope, receipt)
+            link = ConversationToolCausalLink(
+                f"tool-call-{index}",
+                "publish",
+                1,
+                f"terminal-{_TERMINAL_BY_INDEX.get(index, index)}",
+                _sha(f"terminal-{_TERMINAL_BY_INDEX.get(index, index)}"),
             )
-        )
-    first_envelope, _first_receipt, first_span = evidence[0]
-    result = await backend.apply_memory_mutation_plan(
-        principal=_principal(),
-        scope=MemoryScope.personal("actor-1"),
-        plan=_plan(first_envelope, _procedure_operation(first_span)),
-    )
-    assert result.receipt_ref is not None
-    async with backend.connection.execute(
-        "SELECT memory_id,current_revision FROM cognitive_memory_heads"
-    ) as cursor:
-        row = await cursor.fetchone()
-    assert row is not None
-    return backend, authority, evidence, str(row[0]), int(row[1])
+            metadata = ConversationEvidenceMetadata(
+                metadata_id=f"procedure-metadata-{index}",
+                authority_issuer_id="host-conversation-registry",
+                evidence_id=envelope.evidence_id,
+                envelope_hash=envelope.envelope_hash,
+                admission_receipt_id=receipt.receipt_id,
+                admission_receipt_hash=receipt.receipt_hash,
+                run_id=envelope.run_id,
+                subject=envelope.subject,
+                source_hash=envelope.source_hash,
+                sanitized_hash=envelope.sanitized_hash,
+                conversation_id="primary-conversation",
+                primary_conversation_id="primary-conversation",
+                causal_group_id=f"procedure-group-{index}",
+                causal_group_sequence=index,
+                item_ordinal=2,
+                group_item_count=2,
+                ordered_group_manifest_hash=_sha(f"manifest-{index}"),
+                role=ConversationEvidenceRole.TOOL,
+                occurred_at=10.0,
+                task_scope_id=_TASK_BY_INDEX.get(index, f"task-{index}"),
+                tool_causal_link=link,
+                entities=(),
+            )
+            metadata_receipt = ConversationEvidenceMetadataReceipt(
+                receipt_id=f"procedure-metadata-receipt-{index}",
+                metadata_id=metadata.metadata_id,
+                authority_issuer_id=metadata.authority_issuer_id,
+                evidence_id=metadata.evidence_id,
+                envelope_hash=metadata.envelope_hash,
+                admission_receipt_id=metadata.admission_receipt_id,
+                admission_receipt_hash=metadata.admission_receipt_hash,
+                run_id=metadata.run_id,
+                subject=metadata.subject,
+                source_hash=metadata.source_hash,
+                sanitized_hash=metadata.sanitized_hash,
+                metadata_hash=metadata.metadata_hash,
+                issuer_ref=metadata.authority_issuer_id,
+                accepted=True,
+            )
+            registration = ConversationEvidenceRegistration(
+                f"procedure-registration-{index}",
+                envelope,
+                receipt,
+                metadata,
+                metadata_receipt,
+            )
+            authority.registrations[registration.registration_id] = registration
+            await backend.register_conversation_evidence(
+                ConversationEvidenceRegistrationRef(
+                    registration.registration_id,
+                    registration.registration_hash,
+                    envelope.evidence_id,
+                    envelope.envelope_hash,
+                )
+            )
+        if result is None:
+            first_envelope, _first_receipt, first_span = evidence[0]
+            result = await backend.apply_memory_mutation_plan(
+                principal=_principal(),
+                scope=MemoryScope.personal("actor-1"),
+                plan=_plan(first_envelope, _procedure_operation(first_span)),
+            )
+        assert result.receipt_ref is not None
+        async with backend.connection.execute(
+            "SELECT memory_id,current_revision FROM cognitive_memory_heads"
+        ) as cursor:
+            row = await cursor.fetchone()
+        assert row is not None
+        return backend, authority, evidence, str(row[0]), int(row[1])
+    except BaseException:
+        await backend.close()
+        raise
 
 
 def _grant(

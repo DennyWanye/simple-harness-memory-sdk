@@ -28,6 +28,7 @@ from simple_harness.runtime import (
     ConversationEvidenceMetadata,
     ConversationEvidenceRegistration,
     ConversationEvidenceRegistrationRef,
+    ConversationEvidenceRole,
     InformationAttribute,
     PrivacyClass,
     verify_conversation_evidence_registration,
@@ -115,7 +116,13 @@ def resolve_authorized_public_text(
         raise ShortHorizonIndexError("authorized public text pointer must resolve to a string")
     if normalization != EVIDENCE_NORMALIZATION_IDENTITY_UTF8_V1:
         raise ShortHorizonIndexError("authorized public text normalization is unsupported")
-    rendered = _bounded_non_blank(current, "authorized public text", max_bytes=1_048_576)
+    # A tool-calling assistant may carry no text. Keep its exact authorized
+    # bytes and ordinal; USER and every other non-blank contract stay strict.
+    rendered = (
+        current
+        if current == "" and metadata.role is ConversationEvidenceRole.ASSISTANT
+        else _bounded_non_blank(current, "authorized public text", max_bytes=1_048_576)
+    )
     if hashlib.sha256(rendered.encode("utf-8")).hexdigest() != expected_hash:
         raise ShortHorizonIndexError("authorized public text hash differs")
     return rendered
@@ -301,6 +308,9 @@ async def build_short_horizon_chunks(
     chunks: list[ShortHorizonChunk] = []
     for key, items in complete.items():
         if key in recent or any(item.suppressed for item in items):
+            continue
+        if not any(item.public_text.strip() for item in items):
+            # Role labels alone are not searchable conversation content.
             continue
         metadata = items[0].metadata
         occurred_at = max(item.metadata.occurred_at for item in items)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -26,7 +27,18 @@ from simple_harness_memory.core.errors import (
     MemoryOwnershipConflict,
     MemoryProductionConfigurationError,
 )
-from simple_harness_memory.core.evidence import EvidenceIngestionReceipt, IngestedEvidenceRecord
+from simple_harness_memory.core.evidence import (
+    EvidenceIngestionReceipt,
+    EvidenceSourceAdmissionReceipt,
+    IngestedEvidenceRecord,
+)
+from simple_harness_memory.core.history import (
+    HistoryBinding,
+    HistoryRecallBinding,
+    HistoryShortHorizonBinding,
+    HistoryVisibilitySnapshot,
+)
+from simple_harness_memory.core.history_sources import HistorySourceAuthorityPort
 from simple_harness_memory.core.identity import (
     ExportPage,
     MemoryPrincipal,
@@ -36,10 +48,21 @@ from simple_harness_memory.core.identity import (
     ScopeKind,
 )
 from simple_harness_memory.core.models import Fact
+from simple_harness_memory.core.prospective_settlement import RegistrationRequiredView, ProspectiveInvalidationNotRequiredReceipt
+from simple_harness_memory.core.prospective_sources_v2 import ProspectiveOutboxSourceViewV2
+from simple_harness_memory.core.prospective_sources import ProspectiveOutboxSourceView
 from simple_harness_memory.core.mutation_receipts import MemoryMutationReceiptView
 from simple_harness_memory.core.mutations import InformationClassificationPolicy
 from simple_harness_memory.core.observability import CorrelationInput, MemoryObservability
+from simple_harness_memory.core.operation_audit import (
+    MemoryOperationObservationContext,
+    OperationAuditCursor,
+    OperationAuditExpectation,
+    OperationAuditPage,
+    _observe_rejection,
+)
 from simple_harness_memory.core.port import CognitiveMemoryBackend, MemoryBackend
+from simple_harness_memory.core.short_sources import ShortHorizonSourceSnapshot
 from simple_harness_memory.core.suppression import (
     SealedAuditAccessReceipt,
     SuppressionDecision,
@@ -101,6 +124,10 @@ class _NullWorldModel(WorldModelPort):
 
 
 class MemoryManager:
+    # Public source capability, independent of the separately assigned wheel version.
+    # A Host must still verify its exact reviewed candidate identity before startup.
+    history_source_enforcement_version = 1
+
     def __init__(
         self,
         backend: MemoryBackend | CognitiveMemoryBackend,
@@ -127,6 +154,15 @@ class MemoryManager:
     def backend(self) -> MemoryBackend | CognitiveMemoryBackend:
         return self._backend
 
+    async def admit_evidence_source(
+        self, *, principal: MemoryPrincipal,
+        envelope: SanitizedEvidenceEnvelope, receipt: SanitizedEvidenceReceipt,
+    ) -> EvidenceSourceAdmissionReceipt:
+        """Persist a validated source without scheduling analysis or granting use."""
+        return await self._backend.admit_evidence_source(
+            principal=principal, envelope=envelope, receipt=receipt
+        )
+
     async def ingest_committed_evidence(
         self,
         envelope: SanitizedEvidenceEnvelope,
@@ -140,8 +176,43 @@ class MemoryManager:
             envelope, receipt, analysis_lineage=analysis_lineage
         )
 
+    async def check_current_input_visibility(self, *, principal: MemoryPrincipal,
+        disclosure_context: DisclosureContext, binding, bindings=None):
+        """Observe exact current request input, never grant ordinary/output disclosure."""
+        from simple_harness_memory.core.input_observation import observed_check
+        return await observed_check(self, principal=principal,
+            disclosure_context=disclosure_context, binding=binding, bindings=bindings)
+
+    async def check_history_visibility(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        disclosure_context: DisclosureContext,
+        bindings: tuple[HistoryBinding, ...],
+    ) -> HistoryVisibilitySnapshot:
+        """Observe current source visibility for a Host history page/context batch."""
+        return await self._backend.check_history_visibility(
+            principal=principal, disclosure_context=disclosure_context, bindings=bindings
+        )
+
     async def register_conversation_evidence(self, reference: object) -> object:
         return await self._backend.register_conversation_evidence(reference)
+
+    async def resolve_typed_short_horizon_sources(
+        self, *, principal: MemoryPrincipal, disclosure_context: DisclosureContext,
+        bindings: tuple[HistoryRecallBinding, ...],
+    ) -> ShortHorizonSourceSnapshot:
+        """Observe sources of owned durable selected typed-short items, never cognitive items."""
+        return await self._backend.resolve_typed_short_horizon_sources(
+            principal=principal, disclosure_context=disclosure_context, bindings=bindings)
+
+    async def resolve_short_horizon_sources(
+        self, *, principal: MemoryPrincipal, disclosure_context: DisclosureContext,
+        bindings: tuple[HistoryShortHorizonBinding, ...],
+    ) -> ShortHorizonSourceSnapshot:
+        """Observe exact selected sources in one current visibility snapshot."""
+        return await self._backend.resolve_short_horizon_sources(
+            principal=principal, disclosure_context=disclosure_context, bindings=bindings)
 
     async def apply_memory_mutation_plan(
         self,
@@ -186,6 +257,16 @@ class MemoryManager:
         return await self._backend.authorize_audit_access(
             principal=principal, authority_ref=authority_ref
         )
+
+    async def read_operation_audit(
+        self, *, requester: MemoryPrincipal, target_principal: MemoryPrincipal,
+        access_receipt: SealedAuditAccessReceipt, limit: int = 100,
+        cursor: OperationAuditCursor | None = None,
+        expected: tuple[OperationAuditExpectation, ...] = (),
+    ) -> OperationAuditPage:
+        return await self._backend.read_operation_audit(
+            requester=requester, target_principal=target_principal,
+            access_receipt=access_receipt, limit=limit, cursor=cursor, expected=expected)
 
     async def export_audit_trace(
         self,
@@ -276,9 +357,27 @@ class MemoryManager:
         context: RecallContext,
         plan: RecallPlan,
         now: float | None = None,
+        harness_protocol: int = 4,
+        observation_context: MemoryOperationObservationContext | None = None,
     ) -> TypedRecallExecution:
-        operation = getattr(self._backend, "execute_typed_recall")
-        return await operation(principal=principal, context=context, plan=plan, now=now)
+        from simple_harness_memory.core.recall import _validate_recall_protocol
+
+        if observation_context is not None and type(observation_context) is not MemoryOperationObservationContext:
+            raise TypeError("observation_context must use MemoryOperationObservationContext")
+        try:
+            _validate_recall_protocol(harness_protocol, context=context, plan=plan)
+            operation = getattr(self._backend, "execute_typed_recall")
+            # Manager-only observation context never changes legacy backend kwargs.
+            return await operation(principal=principal, context=context, plan=plan, now=now)
+        except Exception as error:
+            if observation_context is not None:
+                try:
+                    _observe_rejection(error, observation_context, time.time())
+                except (TypeError, ValueError, AttributeError):
+                    # An invalid optional witness is a coverage gap, never a new
+                    # product failure replacing the original rejection.
+                    setattr(error, "operation_observation_status", "witness_unverifiable")
+            raise
 
     async def read_occurrence_inbox(
         self,
@@ -302,6 +401,29 @@ class MemoryManager:
             raise RuntimeError("backend does not support principal owner registration")
         result: PrincipalRegistrationReceipt = await operation(principal, scope)
         return result
+
+    async def settle_prospective_invalidation(self, *, principal: MemoryPrincipal, outbox_id: str,
+        payload_hash: str, expected_source_hash: str) -> RegistrationRequiredView | ProspectiveInvalidationNotRequiredReceipt:
+        from simple_harness_memory.core.prospective_settlement_observation import observed_settle
+        return await observed_settle(self, principal=principal, outbox_id=outbox_id,
+            payload_hash=payload_hash, expected_source_hash=expected_source_hash)
+
+    async def read_prospective_outbox_source_v2(
+        self, *, principal: MemoryPrincipal, outbox_id: str, payload_hash: str,
+    ) -> ProspectiveOutboxSourceViewV2:
+        from simple_harness_memory.core.prospective_source_observation_v2 import observed_read
+
+        return await observed_read(self, principal=principal, outbox_id=outbox_id, payload_hash=payload_hash)
+
+    async def read_prospective_outbox_source(
+        self, *, principal: MemoryPrincipal, outbox_id: str, payload_hash: str,
+    ) -> ProspectiveOutboxSourceView:
+        """Read verified historical target lineage; this does not issue a grant."""
+        from simple_harness_memory.core.prospective_source_observation import observed_read
+
+        return await observed_read(
+            self, principal=principal, outbox_id=outbox_id, payload_hash=payload_hash
+        )
 
     async def read_outbox(
         self,
@@ -427,6 +549,8 @@ class MemoryManager:
         analysis_delivery_authority: object | None = None,
         evidence_authority: object | None = None,
         conversation_evidence_authority: object | None = None,
+        history_source_authority: HistorySourceAuthorityPort | None = None,
+        current_input_authority: object | None = None,
         classification_policy: InformationClassificationPolicy | None = None,
         memory_action_authority: object | None = None,
         procedure_observation_authority: object | None = None,
@@ -436,13 +560,19 @@ class MemoryManager:
         world: WorldModelPort | None = None,
         allow_development_embedder: bool = False,
         supported_filter_policies: frozenset[str] | None = None,
+        clock: Callable[[], float] | None = None,
     ) -> MemoryManager:
         """Build the fresh-only schema-v7 backend behind the complete public facade.
 
         ``supported_filter_policies`` 透传 backend；``None`` 保持默认（仅
         ``credential-filter/v1``）。Host 组合传入自己的 sanitizer 策略集合。
+        ``clock`` is a trusted construction dependency shared by recall,
+        paging and authorization. Omission retains the production wall clock;
+        untrusted request timestamps never replace the backend clock.
         """
 
+        if clock is not None and not callable(clock):
+            raise TypeError("clock must be callable or None")
         if (
             not allow_development_embedder
             and getattr(short_horizon_embedder, "kind", None) in {"hash", "mock"}
@@ -455,6 +585,8 @@ class MemoryManager:
         from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
 
         backend_kwargs: dict[str, Any] = {}
+        if clock is not None:
+            backend_kwargs["now"] = clock
         if supported_filter_policies is not None:
             backend_kwargs["supported_filter_policies"] = frozenset(supported_filter_policies)
         backend = SQLiteHumanMemoryBackend(
@@ -462,6 +594,8 @@ class MemoryManager:
             analysis_delivery_authority=analysis_delivery_authority,
             evidence_authority=evidence_authority,
             conversation_evidence_authority=conversation_evidence_authority,
+            history_source_authority=history_source_authority,
+            current_input_authority=current_input_authority,
             classification_policy=classification_policy,
             memory_action_authority=memory_action_authority,
             procedure_observation_authority=procedure_observation_authority,
@@ -1178,11 +1312,30 @@ class MemoryManager:
             SQLiteMemoryBackend.restore_backup_sync, backup, self._backend._db_path
         )
 
+    async def discover_procedure_drafts(self, *, principal, scope, disclosure_context,
+                                       query, after="", limit=8, max_bytes=32768):
+        """Bounded SELF draft previews, separately revalidated before model use."""
+        from simple_harness_memory.core.procedure_operation_observation import observed_procedure_call
+        return await observed_procedure_call(self, "discover_procedure_drafts",
+            principal=principal, scope=scope, disclosure_context=disclosure_context,
+            query=query, after=after, limit=limit, max_bytes=max_bytes)
+
+    async def read_procedure_use_target(self, *, principal, scope, memory_id, revision, **recovery):
+        """Exact owner-scoped metadata and safe per-call observation; no grant."""
+        from simple_harness_memory.core.procedure_operation_observation import observed_procedure_call
+        return await observed_procedure_call(self, "read_procedure_use_target", principal=principal,
+            scope=scope, memory_id=memory_id, revision=revision, **recovery)
+
+    async def prepare_procedure_observation(self, *, principal, scope, **observation):
+        """Return PreparedProcedureObservation with an authority-free intent."""
+        from simple_harness_memory.core.procedure_operation_observation import observed_procedure_call
+        return await observed_procedure_call(self, "prepare_procedure_observation", principal=principal,
+                                            scope=scope, **observation)
+
     async def record_procedure_observation(self, *, principal, scope, reference):
-        operation = getattr(self._backend, "record_procedure_observation", None)
-        if operation is None:
-            raise RuntimeError("backend does not support Procedure observations")
-        return await operation(principal=principal, scope=scope, reference=reference)
+        from simple_harness_memory.core.procedure_operation_observation import observed_procedure_call
+        return await observed_procedure_call(self, "record_procedure_observation", principal=principal,
+                                            scope=scope, reference=reference)
 
     async def apply_prospective_signal(self, *, principal, scope, reference):
         operation = getattr(self._backend, "apply_prospective_signal", None)

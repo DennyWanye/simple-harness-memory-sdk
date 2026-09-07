@@ -26,7 +26,13 @@ import aiosqlite
 import structlog
 from simple_harness.contracts import FrozenJsonValue, JsonValue, canonical_json, thaw_json
 
-from simple_harness_memory.backends.schema_v5 import (
+from simple_harness_memory.backends.history_source_guard import (
+    duplicate_source_matches,
+    history_source_operation,
+    prepare_history_source_context,
+)
+from simple_harness_memory.backends.disclosure_audience import ordinary_audience_matches
+from simple_harness_memory.backends.schema_v7_3 import (
     REQUIRED_TABLES,
     SCHEMA_CHECKSUM,
     SCHEMA_CHECKSUM_V7_0,
@@ -104,8 +110,11 @@ if TYPE_CHECKING:
     )
     from simple_harness_memory.core.evidence import (
         EvidenceIngestionReceipt,
+        EvidenceSourceAdmissionReceipt,
         IngestedEvidenceRecord,
     )
+    from simple_harness_memory.core.history import HistoryBinding, HistoryVisibilitySnapshot
+    from simple_harness_memory.core.history_sources import HistorySourceAuthorityPort
     from simple_harness_memory.core.identity import (
         MemoryPrincipal,
         MemoryScope,
@@ -350,6 +359,8 @@ class SQLiteHumanMemoryBackend:
         analysis_delivery_authority: MemoryAnalysisDeliveryAuthorityPort | None = None,
         evidence_authority: EvidenceAuthorityVerifierPort | None = None,
         conversation_evidence_authority: ConversationEvidenceAuthorityVerifierPort | None = None,
+        history_source_authority: HistorySourceAuthorityPort | None = None,
+        current_input_authority: object | None = None,
         classification_policy: InformationClassificationPolicy | None = None,
         memory_action_authority: MemoryActionAuthorityPort | None = None,
         procedure_observation_authority: ProcedureObservationAuthorityPort | None = None,
@@ -385,6 +396,15 @@ class SQLiteHumanMemoryBackend:
         self._analysis_delivery_authority = analysis_delivery_authority
         self._evidence_authority = evidence_authority
         self._conversation_evidence_authority = conversation_evidence_authority
+        self._current_input_authority = current_input_authority
+        if current_input_authority is not None and not callable(getattr(current_input_authority, "resolve_current_input", None)):
+            raise TypeError("current_input_authority must implement CurrentInputAuthorityPort")
+        self._history_source_authority = history_source_authority
+        if history_source_authority is not None and any(
+            not callable(getattr(history_source_authority, name, None))
+            for name in ("resolve_history_source", "resolve_history_forget_cut")
+        ):
+            raise TypeError("history_source_authority must implement HistorySourceAuthorityPort")
         self._classification_policy = classification_policy
         self._memory_action_authority = memory_action_authority
         self._procedure_observation_authority = procedure_observation_authority
@@ -469,7 +489,9 @@ class SQLiteHumanMemoryBackend:
         async with self._initialize_lock:
             if self._db is not None and self._receipt is not None:
                 return self._receipt
-            classification, probed_receipt = _probe_existing_read_only(self._db_path)
+            from simple_harness_memory.migrations.settlement_upgrade import probe_existing_root
+
+            classification, probed_receipt = await probe_existing_root(self._db_path)
             if classification == "unsupported":
                 raise MemoryLegacySchemaUnsupported()
             try:
@@ -532,6 +554,14 @@ class SQLiteHumanMemoryBackend:
                 async with self._admission_lock:
                     self._delivery_admissions.clear()
                 self._release_writer_lease()
+
+    async def admit_evidence_source(
+        self, *, principal: MemoryPrincipal, envelope: SanitizedEvidenceEnvelope,
+        receipt: SanitizedEvidenceReceipt,
+    ) -> EvidenceSourceAdmissionReceipt:
+        from simple_harness_memory.backends.source_admission import admit
+
+        return await admit(self, principal=principal, envelope=envelope, receipt=receipt)
 
     async def ingest_committed_evidence(
         self,
@@ -612,6 +642,9 @@ class SQLiteHumanMemoryBackend:
         outbox_payload_hash = hashlib.sha256(outbox_payload_json.encode("utf-8")).hexdigest()
 
         async with self._write_lock:
+            from simple_harness_memory.backends.source_admission import check_other_mode
+
+            await check_other_mode(self, envelope, receipt, source=False)
             existing = await self._read_ingestion_by_source(principal_id, envelope.source_ref)
             if existing is not None:
                 if lineage_json is not None:
@@ -635,6 +668,7 @@ class SQLiteHumanMemoryBackend:
                 self._fault("ingestion.before_begin")
                 await self._db.execute("BEGIN IMMEDIATE")
                 begun = True
+                await check_other_mode(self, envelope, receipt, source=False)
                 self._fault("ingestion.after_begin")
                 await self._db.execute(
                     "INSERT INTO principals(principal_id,deployment_id,household_id,actor_id,"
@@ -981,6 +1015,28 @@ class SQLiteHumanMemoryBackend:
                     with suppress(Exception):
                         await self._db.execute("ROLLBACK")
 
+    async def settle_prospective_invalidation(self, *, principal, outbox_id, payload_hash, expected_source_hash):
+        from simple_harness_memory.backends.prospective_settlement import settle_prospective_invalidation
+        return await settle_prospective_invalidation(self, principal=principal, outbox_id=outbox_id,
+            payload_hash=payload_hash, expected_source_hash=expected_source_hash)
+
+    async def read_prospective_outbox_source_v2(
+        self, *, principal: MemoryPrincipal, outbox_id: str, payload_hash: str,
+    ):
+        from simple_harness_memory.backends.prospective_sources_v2 import read_prospective_outbox_source_v2
+
+        return await read_prospective_outbox_source_v2(
+            self, principal=principal, outbox_id=outbox_id, payload_hash=payload_hash)
+
+    async def read_prospective_outbox_source(
+        self, *, principal: MemoryPrincipal, outbox_id: str, payload_hash: str,
+    ):
+        from simple_harness_memory.backends.prospective_sources import read_prospective_outbox_source
+
+        return await read_prospective_outbox_source(
+            self, principal=principal, outbox_id=outbox_id, payload_hash=payload_hash
+        )
+
     async def read_outbox(
         self,
         *,
@@ -1004,7 +1060,7 @@ class SQLiteHumanMemoryBackend:
             raise MemoryValidationError("outbox_limit_invalid")
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
-        clauses = "principal_id=? AND state IN (%s)" % ",".join("?" * len(wanted))
+        clauses = "principal_id=? AND state IN ({})".format(",".join("?" * len(wanted)))
         params: list[object] = [principal.actor_id, *wanted]
         if after is not None:
             created_at, outbox_id = after
@@ -1049,6 +1105,7 @@ class SQLiteHumanMemoryBackend:
             next_after = (tail.created_at, tail.outbox_id)
         return OutboxPageV1(entries=tuple(entries), next_after=next_after)
 
+    @history_source_operation
     async def get_twin_graph_view(self, *, principal: MemoryPrincipal) -> TwinGraphView:
         """Return a suppression-first, display-only graph over canonical memory rows."""
 
@@ -1062,6 +1119,7 @@ class SQLiteHumanMemoryBackend:
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
         generated_at = _timestamp(self._now())
+        await prepare_history_source_context(self, principal)
         async with self._write_lock:
             await self._authorize_short_horizon_principal_unlocked(principal)
             async with self._db.execute(
@@ -1376,6 +1434,7 @@ class SQLiteHumanMemoryBackend:
             redact_content,
         )
 
+    @history_source_operation
     async def _ordinary_evidence_record(
         self, evidence_id: str, purpose: OrdinaryMemoryPurpose
     ) -> IngestedEvidenceRecord:
@@ -1402,6 +1461,7 @@ class SQLiteHumanMemoryBackend:
             raise KeyError("evidence_not_found")
         return record
 
+    @history_source_operation
     async def _visible_evidence_ids(
         self, subject: str, purpose: OrdinaryMemoryPurpose
     ) -> tuple[str, ...]:
@@ -1520,10 +1580,51 @@ class SQLiteHumanMemoryBackend:
             )
             return await self._append_suppression_decision_unlocked(decision)
 
+    async def check_current_input_visibility(self, *, principal, disclosure_context, binding, bindings=None):
+        from simple_harness_memory.backends.input_visibility import check_current_input_visibility
+        return await check_current_input_visibility(self, principal=principal,
+            disclosure_context=disclosure_context, binding=binding, bindings=bindings)
+
+    async def check_history_visibility(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        disclosure_context: DisclosureContext,
+        bindings: tuple[HistoryBinding, ...],
+    ) -> HistoryVisibilitySnapshot:
+        from simple_harness_memory.backends.history_visibility import check_history_visibility
+
+        return await check_history_visibility(
+            self, principal=principal, disclosure_context=disclosure_context, bindings=bindings
+        )
+
+    async def resolve_typed_short_horizon_sources(
+        self, *, principal: MemoryPrincipal, disclosure_context: DisclosureContext,
+        bindings: tuple[Any, ...],
+    ) -> Any:
+        from simple_harness_memory.backends.history_visibility import (
+            resolve_typed_short_horizon_sources,
+        )
+
+        return await resolve_typed_short_horizon_sources(
+            self, principal=principal, disclosure_context=disclosure_context, bindings=bindings)
+
+    async def resolve_short_horizon_sources(
+        self, *, principal: MemoryPrincipal, disclosure_context: DisclosureContext,
+        bindings: tuple[Any, ...],
+    ) -> Any:
+        from simple_harness_memory.backends.history_visibility import resolve_short_horizon_sources
+
+        return await resolve_short_horizon_sources(
+            self, principal=principal, disclosure_context=disclosure_context, bindings=bindings)
+
+    @history_source_operation
     async def resolve_suppression(
         self,
         candidate: SuppressionCandidate,
         purpose: OrdinaryMemoryPurpose,
+        *,
+        principal: MemoryPrincipal | None = None,
     ) -> SuppressionResolution:
         from simple_harness_memory.core.suppression import (
             OrdinaryMemoryPurpose,
@@ -1536,6 +1637,14 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("purpose must use OrdinaryMemoryPurpose")
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
+        if principal is not None:
+            from simple_harness_memory.core.identity import MemoryPrincipal
+
+            if type(principal) is not MemoryPrincipal:
+                raise TypeError("principal must use MemoryPrincipal")
+            if principal.actor_id != candidate.subject:
+                raise MemoryOwnershipConflict("history_source_subject_not_owned")
+            await prepare_history_source_context(self, principal)
         async with self._write_lock:
             return await self._resolve_suppression_unlocked(candidate, purpose)
 
@@ -1543,6 +1652,33 @@ class SQLiteHumanMemoryBackend:
         self,
         candidate: SuppressionCandidate,
         purpose: OrdinaryMemoryPurpose,
+        *,
+        evaluated_at: float | None = None,
+    ) -> SuppressionResolution:
+        # Caller always owns the backend lock, but ordinary readers do not all
+        # own a SQLite TX. Pin their entire direct+alias decision to one snapshot.
+        assert self._db is not None
+        if self._db.in_transaction:
+            return await self._resolve_suppression_snapshot_unlocked(
+                candidate, purpose, evaluated_at=evaluated_at,
+            )
+        await self._db.execute("BEGIN")
+        try:
+            result = await self._resolve_suppression_snapshot_unlocked(
+                candidate, purpose, evaluated_at=evaluated_at,
+            )
+            await self._db.execute("COMMIT")
+            return result
+        except BaseException:
+            await self._db.execute("ROLLBACK")
+            raise
+
+    async def _resolve_suppression_snapshot_unlocked(
+        self,
+        candidate: SuppressionCandidate,
+        purpose: OrdinaryMemoryPurpose,
+        *,
+        evaluated_at: float | None = None,
     ) -> SuppressionResolution:
         from simple_harness_memory.core.suppression import (
             SuppressionResolution,
@@ -1556,23 +1692,40 @@ class SQLiteHumanMemoryBackend:
         if candidate.memory_id is not None:
             targets.append((SuppressionScopeKind.MEMORY.value, candidate.memory_id))
         targets.extend((SuppressionScopeKind.ENTITY.value, item) for item in candidate.entity_ids)
-        predicates = " OR ".join("(t.target_kind=? AND t.target_ref=?)" for _ in targets)
-        parameters: list[object] = [candidate.subject, purpose.value]
-        for target_kind, target_ref in targets:
-            parameters.extend((target_kind, target_ref))
-        async with self._db.execute(
-            "SELECT DISTINCT d.directive_id FROM suppression_directives d "
-            "JOIN suppression_targets t ON t.directive_id=d.directive_id "
-            "WHERE d.principal_id=? AND d.event_kind='directive' "
-            "AND (d.purpose IS NULL OR d.purpose=?) AND ("
-            + predicates
-            + ") AND NOT EXISTS(SELECT 1 FROM suppression_directives r "
-            "WHERE r.event_kind='revoke' AND r.supersedes_directive_id=d.directive_id) "
-            "ORDER BY d.directive_id",
-            tuple(parameters),
-        ) as cursor:
-            directive_ids = tuple(str(row[0]) for row in await cursor.fetchall())
-        return SuppressionResolution(bool(directive_ids), directive_ids, _timestamp(self._now()))
+        if candidate.evidence_id is not None:
+            from simple_harness_memory.backends.history_visibility import evidence_targets
+
+            targets.extend(await evidence_targets(self, candidate.subject, candidate.evidence_id))
+        target_list = sorted(set(targets))
+        matched: set[str] = set()
+        # Keep the original SQL target filtering; large lineage does not require
+        # reading every active directive owned by the subject.
+        for offset in range(0, len(target_list), 250):
+            chunk = target_list[offset:offset + 250]
+            predicates = " OR ".join("(t.target_kind=? AND t.target_ref=?)" for _ in chunk)
+            parameters: list[object] = [candidate.subject, purpose.value]
+            for target_kind, target_ref in chunk:
+                parameters.extend((target_kind, target_ref))
+            async with self._db.execute(
+                "SELECT DISTINCT d.directive_id FROM suppression_directives d "
+                "JOIN suppression_targets t ON t.directive_id=d.directive_id "
+                "WHERE d.principal_id=? AND d.event_kind='directive' "
+                "AND (d.purpose IS NULL OR d.purpose=?) AND (" + predicates + ") "
+                "AND NOT EXISTS(SELECT 1 FROM suppression_directives r "
+                "WHERE r.event_kind='revoke' AND r.supersedes_directive_id=d.directive_id)",
+                tuple(parameters),
+            ) as cursor:
+                async for row in cursor:
+                    matched.add(str(row[0]))
+                    if len(matched) > 4096:
+                        raise MemoryLimitError("history_suppression_match_limit")
+        if not matched:
+            matched.update(await duplicate_source_matches(self, candidate, purpose))
+        directive_ids = tuple(sorted(matched))
+        return SuppressionResolution(
+            bool(directive_ids), directive_ids,
+            _timestamp(self._now() if evaluated_at is None else evaluated_at),
+        )
 
     async def _append_suppression_decision(
         self,
@@ -1750,25 +1903,9 @@ class SQLiteHumanMemoryBackend:
             await self._db.execute("BEGIN IMMEDIATE")
             committed = False
             try:
-                async with self._db.execute(
-                    "SELECT e.envelope_hash,e.run_id,e.subject,e.source_hash,"
-                    "e.sanitized_hash,i.admission_receipt_id,i.admission_receipt_hash "
-                    "FROM evidence_envelopes e JOIN ingestion_receipts i "
-                    "ON i.evidence_id=e.evidence_id WHERE e.evidence_id=?",
-                    (envelope.evidence_id,),
-                ) as cursor:
-                    row = await cursor.fetchone()
-                expected = (
-                    envelope.envelope_hash,
-                    envelope.run_id,
-                    envelope.subject,
-                    envelope.source_hash,
-                    envelope.sanitized_hash,
-                    admission.receipt_id,
-                    admission.receipt_hash,
-                )
-                actual = None if row is None else tuple(str(row[index]) for index in range(7))
-                if actual != expected:
+                record = await self._read_ingested_record(envelope.evidence_id)
+                if (record is None or record.envelope != envelope
+                        or record.admission_receipt != admission):
                     raise MemoryValidationError("conversation_registration_evidence_differs")
                 async with self._db.execute(
                     "SELECT registration_hash FROM conversation_evidence_registrations "
@@ -1875,6 +2012,7 @@ class SQLiteHumanMemoryBackend:
                     with suppress(Exception):
                         await self._db.execute("ROLLBACK")
 
+    @history_source_operation
     async def rebuild_short_horizon_projection(
         self, *, principal: MemoryPrincipal, now: float | None = None
     ) -> ShortHorizonProjectionBuildResult:
@@ -1898,6 +2036,7 @@ class SQLiteHumanMemoryBackend:
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
         effective_now = _timestamp(self._now() if now is None else now)
+        await prepare_history_source_context(self, principal)
         async with self._write_lock:
             await self._authorize_short_horizon_principal_unlocked(principal)
             async with self._db.execute(
@@ -1960,6 +2099,10 @@ class SQLiteHumanMemoryBackend:
             privacy_rank = {"public": 0, "personal": 1, "sensitive": 2, "restricted": 3}
             for key, items in complete_groups.items():
                 if key in recent:
+                    continue
+                if not any(str(item["public_text"]).strip() for item in items):
+                    # Retain registrations, but never index an all-empty group
+                    # as a synthetic hit on the rendered role labels.
                     continue
                 first = items[0]
                 occurred_at = max(float(item["occurred_at"]) for item in items)
@@ -2544,6 +2687,7 @@ class SQLiteHumanMemoryBackend:
                 ShortHorizonDegradationCode.DEADLINE_EXCEEDED,
             )
 
+    @history_source_operation
     async def _recall_short_horizon_after_start(
         self,
         *,
@@ -2610,6 +2754,7 @@ class SQLiteHumanMemoryBackend:
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
         effective_now = _timestamp(self._now() if now is None else now)
+        await prepare_history_source_context(self, principal)
         async with self._write_lock:
             await self._authorize_short_horizon_principal_unlocked(principal)
             if not disclosure_allowed:
@@ -2990,6 +3135,7 @@ class SQLiteHumanMemoryBackend:
                     with suppress(Exception):
                         await self._db.execute("ROLLBACK")
 
+    @history_source_operation
     async def execute_typed_recall(
         self,
         *,
@@ -2997,6 +3143,7 @@ class SQLiteHumanMemoryBackend:
         context: RecallContext,
         plan: RecallPlan,
         now: float | None = None,
+        harness_protocol: int = 4,
     ) -> TypedRecallExecution:
         """Execute strict RecallPlan v4 with durable replay before candidate access."""
 
@@ -3005,6 +3152,8 @@ class SQLiteHumanMemoryBackend:
         from simple_harness_memory.core.identity import MemoryPrincipal
         from simple_harness_memory.core.recall import (
             TypedRecallExecution,
+            _attach_pre_candidate_rejection,
+            _validate_recall_protocol,
             apply_budget,
             apply_confirmation_budget,
             build_host_execution,
@@ -3013,28 +3162,60 @@ class SQLiteHumanMemoryBackend:
             request_hash,
         )
 
-        if type(principal) is not MemoryPrincipal:
-            raise TypeError("principal must use MemoryPrincipal")
-        if type(context) is not RecallContext:
-            raise TypeError("context must use RecallContext")
-        if type(plan) is not RecallPlan:
-            raise TypeError("plan must use RecallPlan")
+        _validate_recall_protocol(harness_protocol, context=context, plan=plan)
+        invocation_id = str(uuid4())
+        for value, expected_type, label in (
+            (principal, MemoryPrincipal, "principal must use MemoryPrincipal"),
+            (context, RecallContext, "context must use RecallContext"),
+            (plan, RecallPlan, "plan must use RecallPlan"),
+        ):
+            if type(value) is not expected_type:
+                type_error = TypeError(label)
+                _attach_pre_candidate_rejection(
+                    type_error, invocation_id=invocation_id, stage="protocol",
+                )
+                raise type_error
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
         started_monotonic = time.monotonic()
         deadline_monotonic = started_monotonic + plan.budget.deadline_ms / 1_000
         effective_now = _timestamp(self._now() if now is None else now)
-        if context.subject != principal.actor_id or plan.subject != principal.actor_id:
-            raise MemoryOwnershipConflict("typed_recall_subject_not_owned")
-        plan.validate_narrowing(context, current_time=effective_now)
+        # Compute request bindings before a rejection, keeping error handlers
+        # free of canonicalization that could obscure the original failure.
+        context_digest, plan_digest = context.context_hash, plan.plan_hash
         digest = request_hash(principal_id=principal.actor_id, context=context, plan=plan)
-        replay, request_id, attempt_id = await self._admit_typed_recall_request(
-            principal=principal,
-            context=context,
-            plan=plan,
-            request_digest=digest,
-            now=effective_now,
-        )
+        if context.subject != principal.actor_id or plan.subject != principal.actor_id:
+            ownership_error = MemoryOwnershipConflict("typed_recall_subject_not_owned")
+            _attach_pre_candidate_rejection(
+                ownership_error, invocation_id=invocation_id, stage="ownership",
+                request_digest=digest, context_digest=context_digest, plan_digest=plan_digest,
+            )
+            raise ownership_error
+        try:
+            plan.validate_narrowing(context, current_time=effective_now)
+        except ValueError as narrowing_error:
+            _attach_pre_candidate_rejection(
+                narrowing_error, invocation_id=invocation_id, stage="narrowing",
+                request_digest=digest, context_digest=context_digest, plan_digest=plan_digest,
+            )
+            raise
+        try:
+            replay, request_id, attempt_id = await self._admit_typed_recall_request(
+                principal=principal,
+                context=context,
+                plan=plan,
+                request_digest=digest,
+                now=effective_now,
+            )
+        except MemoryIdempotencyConflict as conflict_error:
+            # _admit can also commit a timeout or report corruption/storage
+            # failures. Only this exact pre-candidate conflict earns a witness.
+            if str(conflict_error) == "IDEMPOTENCY_CONFLICT":
+                _attach_pre_candidate_rejection(
+                    conflict_error, invocation_id=invocation_id, stage="idempotency",
+                    request_digest=digest, context_digest=context_digest, plan_digest=plan_digest,
+                )
+            raise
         if replay is not None:
             return replay
         if time.monotonic() >= deadline_monotonic:
@@ -3082,6 +3263,16 @@ class SQLiteHumanMemoryBackend:
                 )
             return execution
 
+        try:
+            await asyncio.wait_for(
+                prepare_history_source_context(self, principal),
+                timeout=max(0.0, deadline_monotonic - time.monotonic()),
+            )
+        except TimeoutError:
+            await self._persist_typed_recall_timeout(
+                request_id=request_id, attempt_id=attempt_id, now=effective_now,
+            )
+            raise TimeoutError("DEADLINE_EXCEEDED") from None
         async with self._write_lock:
             collected_epoch, collected_policy_hash = await self._recall_authority_unlocked(
                 principal.actor_id
@@ -3497,6 +3688,7 @@ class SQLiteHumanMemoryBackend:
 
         return rank_candidates(tuple(candidates))[:128], degradation
 
+    @history_source_operation
     async def page_typed_recall_result(
         self,
         *,
@@ -3525,6 +3717,7 @@ class SQLiteHumanMemoryBackend:
         typed_request = cast(RecallResultPageRequestV1, request)
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
+        await prepare_history_source_context(self, principal)
         async with self._write_lock:
             async with self._db.execute(
                 "SELECT r.result_json,r.result_hash,r.authority_expires_at "
@@ -3607,6 +3800,7 @@ class SQLiteHumanMemoryBackend:
             )
         return page
 
+    @history_source_operation
     async def authorize_recall_context_use(
         self,
         *,
@@ -3636,6 +3830,7 @@ class SQLiteHumanMemoryBackend:
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
         effective_now = _timestamp(self._now() if now is None else now)
+        await prepare_history_source_context(self, principal)
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
             committed = False
@@ -3822,6 +4017,7 @@ class SQLiteHumanMemoryBackend:
         supplied_item_ids: frozenset[str],
         procedure_applicability_fingerprints: frozenset[str],
         now: float,
+        suppression_purpose: OrdinaryMemoryPurpose | None = None,
     ) -> None:
         """Re-evaluate every bound durable source under the suppression transaction."""
 
@@ -3830,6 +4026,7 @@ class SQLiteHumanMemoryBackend:
             SuppressionCandidate,
         )
 
+        purpose = suppression_purpose or OrdinaryMemoryPurpose.RECALL
         assert self._db is not None
         bound: list[tuple[Any, Any, bool]] = [
             (item.selected_item, item, False)
@@ -3895,14 +4092,14 @@ class SQLiteHumanMemoryBackend:
                 suppressed = (
                     await self._resolve_suppression_unlocked(
                         SuppressionCandidate(principal_id, memory_id=source.source_ref),
-                        OrdinaryMemoryPurpose.RECALL,
+                        purpose, evaluated_at=now,
                     )
                 ).denied
                 for evidence_id in evidence_ids:
                     suppressed = suppressed or (
                         await self._resolve_suppression_unlocked(
                             SuppressionCandidate(principal_id, evidence_id=evidence_id),
-                            OrdinaryMemoryPurpose.RECALL,
+                            purpose, evaluated_at=now,
                         )
                     ).denied
                 if suppressed or not self._candidate_disclosure_allowed(
@@ -3944,7 +4141,7 @@ class SQLiteHumanMemoryBackend:
                 if (
                     await self._resolve_suppression_unlocked(
                         SuppressionCandidate(principal_id, evidence_id=evidence_id),
-                        OrdinaryMemoryPurpose.RECALL,
+                        purpose, evaluated_at=now,
                     )
                 ).denied:
                     raise MemoryValidationError("RECALL_AUTHORITY_STALE")
@@ -4911,7 +5108,7 @@ class SQLiteHumanMemoryBackend:
     @staticmethod
     def _ordinary_recall_disclosure_allowed(disclosure: DisclosureContext) -> bool:
         return (
-            disclosure.recipient.value in {"user_self", "household", "task_collaborator"}
+            ordinary_audience_matches(disclosure)
             and disclosure.purpose.value
             in {"task_execution", "personalization", "task_resume", "user_review"}
             and disclosure.trust.value == "trusted_authority"
@@ -4922,6 +5119,8 @@ class SQLiteHumanMemoryBackend:
     def _candidate_disclosure_allowed(
         disclosure: DisclosureContext, privacy: str, attributes: tuple[str, ...]
     ) -> bool:
+        if not ordinary_audience_matches(disclosure):
+            return False
         recipient = disclosure.recipient.value
         purpose = disclosure.purpose.value
         if recipient == "user_self":
@@ -5291,6 +5490,322 @@ class SQLiteHumanMemoryBackend:
             ),
         )
 
+    async def discover_procedure_drafts(self, *, principal, scope, disclosure_context,
+                                       query, after="", limit=8, max_bytes=32768):
+        from simple_harness_memory.backends.procedure_discovery import discover
+        return await discover(self, principal=principal, scope=scope,
+            disclosure_context=disclosure_context, query=query, after=after,
+            limit=limit, max_bytes=max_bytes)
+
+    @history_source_operation
+    async def read_procedure_use_target(self, *, principal, scope, memory_id, revision, allow_observation_rebase=False):
+        from simple_harness.runtime import ProcedureMemoryPayload
+        from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
+        from simple_harness_memory.core.procedure_use import ProcedureUseTarget
+        from simple_harness_memory.core.suppression import (
+            OrdinaryMemoryPurpose, SuppressionCandidate, SuppressionDenied,
+        )
+        if type(principal) is not MemoryPrincipal or type(scope) is not MemoryScope:
+            raise TypeError("principal and scope must use Memory identity types")
+        scope.authorize(principal)
+        if type(allow_observation_rebase) is not bool:
+            raise MemoryValidationError("procedure_observation_rebase_flag_invalid")
+        _audit_identifier(memory_id, "memory_id")
+        if type(revision) is not int or revision < 1:
+            raise MemoryValidationError("procedure_use_revision_invalid")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v7 backend is not initialized")
+        await prepare_history_source_context(self, principal)
+        async with self._write_lock:
+            await self._db.execute("BEGIN IMMEDIATE")
+            try:
+                now = _timestamp(self._now())
+                if allow_observation_rebase:
+                    from simple_harness_memory.backends.procedure_recovery import compatible_revision
+                    revision = await compatible_revision(self, principal=principal, scope=scope,
+                        memory_id=memory_id, revision=revision)
+                async with self._db.execute(
+                    "SELECT r.lifecycle_state,r.content_json,r.content_hash,p.* FROM cognitive_memory_heads h "
+                    "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
+                    "AND r.revision=h.current_revision JOIN procedure_records p "
+                    "ON p.memory_id=r.memory_id AND p.revision=r.revision "
+                    "WHERE h.memory_type='procedure' AND h.memory_id=? AND h.current_revision=? AND h.principal_id=? "
+                    "AND h.deployment_id=? AND h.household_id=? AND h.scope_kind=? AND h.scope_owner=? "
+                    "AND r.conflict_status='uncontested' AND (r.valid_from IS NULL OR r.valid_from<=?) "
+                    "AND (r.valid_to IS NULL OR ?<r.valid_to) AND r.effective_privacy_class<>'restricted'",
+                    (memory_id, revision, principal.actor_id, principal.deployment_id,
+                     principal.household_id, scope.kind.value, scope.owner_id, now, now),
+                ) as cursor:
+                    row = await cursor.fetchone()
+                if row is None or row["lifecycle_state"] not in (
+                    "draft", "eligible_for_activation", "active", "reinforced",
+                ):
+                    raise MemoryWriterConflict("procedure_use_target_unavailable_or_stale")
+                _, evidence_ids, _ = await self._cognitive_recall_lineage_unlocked(memory_id, revision)
+                for candidate in (SuppressionCandidate(principal.actor_id, memory_id=memory_id), *(
+                    SuppressionCandidate(principal.actor_id, evidence_id=eid) for eid in evidence_ids
+                )):
+                    if (await self._resolve_suppression_unlocked(candidate, OrdinaryMemoryPurpose.RECALL)).denied:
+                        raise SuppressionDenied()
+                try:
+                    content = json.loads(row["content_json"])
+                    payload = ProcedureMemoryPayload.from_json(content)
+                except (TypeError, ValueError, KeyError) as error:
+                    raise MemoryCorruptionError("procedure use content is invalid") from error
+                if (canonical_json(content) != row["content_json"]
+                        or hashlib.sha256(row["content_json"].encode()).hexdigest() != row["content_hash"]
+                        or row["steps_json"] != canonical_json(list(payload.steps))
+                        or row["name"] != payload.name
+                        or row["applicability_json"] != canonical_json(list(payload.applicability))
+                        or row["risk_level"] != payload.proposed_risk_level.value):
+                    raise MemoryCorruptionError("procedure use payload differs")
+                steps = list(payload.steps)
+                if not isinstance(steps, list) or not 1 <= len(steps) <= 16 or any(
+                    type(step) is not str or not step.strip() for step in steps
+                ):
+                    raise MemoryValidationError("procedure_use_steps_unrepresentable")
+                result = ProcedureUseTarget(memory_id, revision, row["lifecycle_state"], row["risk_level"],
+                    row["qualification_epoch"], row["applicability_fingerprint"], row["bound_hazard"],
+                    tuple(hashlib.sha256(step.encode()).hexdigest() for step in steps))
+                await self._db.execute("COMMIT")
+                return result
+            except BaseException:
+                with suppress(Exception):
+                    await self._db.execute("ROLLBACK")
+                raise
+
+    @history_source_operation
+    async def prepare_procedure_observation(
+        self, *, principal, scope, observation_id, target_memory_id, target_revision,
+        kind, applicability, hazard, task_scope_id, evidence_span,
+        terminal_receipt_id, terminal_receipt_hash, outcome, attributable,
+        observed_at, run_id, operation_id, allow_observation_rebase=False, previous_reference=None,
+    ):
+        """Read a current intent, never an observation grant or consumption.
+
+        The Host must verify actual use/terminal attribution before issuing its
+        authority. Consumption repeats this exact decision in its transaction.
+        """
+        from dataclasses import replace
+        from simple_harness.runtime import (
+            MemoryScopeRef, ProcedureHazard, ProcedureLifecycleState,
+            ProcedureObservationIntent, ProcedureObservationKind,
+            ProcedureObservationOutcome, ProcedureRiskLevel,
+        )
+        from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
+
+        if type(principal) is not MemoryPrincipal or type(scope) is not MemoryScope:
+            raise TypeError("principal and scope must use Memory identity types")
+        scope.authorize(principal)
+        if type(allow_observation_rebase) is not bool or (previous_reference is not None and not allow_observation_rebase):
+            raise MemoryValidationError("procedure_observation_recovery_options_invalid")
+        _audit_identifier(target_memory_id, "target_memory_id")
+        if type(target_revision) is not int or target_revision < 1:
+            raise MemoryValidationError("procedure_observation_revision_invalid")
+        if self._db is None or self._receipt is None:
+            raise RuntimeError("human-memory v7 backend is not initialized")
+        kind = ProcedureObservationKind(kind)
+        outcome = None if outcome is None else ProcedureObservationOutcome(outcome)
+        hazard = ProcedureHazard(hazard)
+        previous_authority = None
+        if previous_reference is not None:
+            from simple_harness_memory.backends.procedure_recovery import resolve_previous
+            previous_authority = await resolve_previous(self, previous_reference)
+        await prepare_history_source_context(self, principal)
+        async with self._write_lock:
+            await self._db.execute("BEGIN IMMEDIATE")
+            try:
+                if allow_observation_rebase:
+                    from simple_harness_memory.backends.procedure_recovery import compatible_revision
+                    target_revision = await compatible_revision(self, principal=principal, scope=scope,
+                        memory_id=target_memory_id, revision=target_revision)
+                async with self._db.execute(
+                    "SELECT r.lifecycle_state,p.risk_level FROM cognitive_memory_heads h "
+                    "JOIN cognitive_memory_revisions r ON r.memory_id=h.memory_id "
+                    "AND r.revision=h.current_revision JOIN procedure_records p "
+                    "ON p.memory_id=r.memory_id AND p.revision=r.revision "
+                    "WHERE h.memory_id=? AND h.current_revision=? AND h.principal_id=? "
+                    "AND h.deployment_id=? AND h.household_id=? AND h.scope_kind=? "
+                    "AND h.scope_owner=?",
+                    (target_memory_id, target_revision, principal.actor_id,
+                     principal.deployment_id, principal.household_id, scope.kind.value, scope.owner_id),
+                ) as cursor:
+                    row = await cursor.fetchone()
+                if row is None:
+                    raise MemoryWriterConflict("procedure_observation_target_unavailable_or_stale")
+                state = ProcedureLifecycleState(row[0])
+                # This local value is only structural validation; it is never
+                # issued or returned before the shared decision is computed.
+                candidate = ProcedureObservationIntent(
+                    observation_id=observation_id, subject=principal.actor_id,
+                    scope=MemoryScopeRef(scope.kind.value, scope.owner_id),
+                    target_memory_id=target_memory_id, target_revision=target_revision,
+                    kind=kind, applicability=applicability, risk_level=ProcedureRiskLevel(row[1]),
+                    hazard=hazard, task_scope_id=task_scope_id, evidence_span=evidence_span,
+                    terminal_receipt_id=terminal_receipt_id, terminal_receipt_hash=terminal_receipt_hash,
+                    outcome=outcome, attributable=attributable, observed_at=observed_at,
+                    transition_from=state,
+                    transition_to=(ProcedureLifecycleState.REVISED if
+                        outcome is ProcedureObservationOutcome.FAILURE and attributable else state),
+                    run_id=run_id, operation_id=operation_id,
+                )
+                decision = await self._procedure_observation_decision_unlocked(
+                    candidate, principal, scope, _timestamp(self._now()))
+                prepared = replace(candidate, transition_to=decision[7])
+                if previous_authority is not None:
+                    from simple_harness_memory.backends.procedure_recovery import check_previous_unlocked
+                    await check_previous_unlocked(self, principal=principal, scope=scope,
+                        reference=previous_reference, authority=previous_authority,
+                        candidate=prepared, now=_timestamp(self._now()))
+                if allow_observation_rebase:
+                    from simple_harness_memory.backends.procedure_recovery import reject_duplicate_unlocked
+                    await reject_duplicate_unlocked(self, prepared)
+                await self._db.execute("COMMIT")
+                return prepared
+            except BaseException:
+                with suppress(Exception):
+                    await self._db.execute("ROLLBACK")
+                raise
+
+    async def _procedure_observation_decision_unlocked(self, intent, principal, scope, consumed_at):
+        """Shared preparation/consumption decision; caller owns the transaction."""
+        from simple_harness.runtime import (
+            ProcedureHazard, ProcedureLifecycleState, ProcedureObservationKind,
+            ProcedureObservationOutcome, ProcedureRiskLevel,
+        )
+        from simple_harness_memory.core.lifecycle_results import UNBOUND_PROCEDURE_APPLICABILITY
+
+        async with self._db.execute(
+            "SELECT h.memory_type,h.current_revision,h.scope_kind,h.scope_owner,"
+            "r.lifecycle_state,p.risk_level,p.qualification_epoch,"
+            "p.applicability_fingerprint,p.bound_hazard "
+            "FROM cognitive_memory_heads h JOIN cognitive_memory_revisions r "
+            "ON r.memory_id=h.memory_id AND r.revision=h.current_revision "
+            "JOIN procedure_records p ON p.memory_id=r.memory_id "
+            "AND p.revision=r.revision WHERE h.principal_id=? "
+            "AND h.deployment_id=? AND h.household_id=? AND h.memory_id=?",
+            (
+                principal.actor_id,
+                principal.deployment_id,
+                principal.household_id,
+                intent.target_memory_id,
+            ),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            raise MemoryValidationError("procedure_observation_target_not_found")
+        if str(row[0]) != "procedure":
+            raise MemoryValidationError("procedure_observation_target_type_differs")
+        if (str(row[2]), str(row[3])) != (
+            scope.kind.value,
+            scope.owner_id,
+        ):
+            raise MemoryOwnershipConflict("procedure_observation_scope_differs")
+        base_revision = int(row[1])
+        if base_revision != intent.target_revision:
+            raise MemoryWriterConflict("procedure_observation_revision_stale")
+        current_state = ProcedureLifecycleState(str(row[4]))
+        if current_state is not intent.transition_from:
+            raise MemoryWriterConflict("procedure_observation_lifecycle_stale")
+        if str(row[5]) != intent.risk_level.value:
+            raise MemoryValidationError("procedure_observation_risk_differs")
+        qualification_epoch = str(row[6])
+        current_fingerprint = str(row[7])
+        current_hazard = None if row[8] is None else str(row[8])
+        await self._verify_procedure_evidence_unlocked(intent)
+        # Both prepare and final consumption recheck current source visibility.
+        # A Host grant issued before forget does not preserve visibility later.
+        from simple_harness_memory.core.suppression import OrdinaryMemoryPurpose, SuppressionCandidate, SuppressionDenied
+        _, target_evidence_ids, _ = await self._cognitive_recall_lineage_unlocked(intent.target_memory_id, base_revision)
+        for candidate in (SuppressionCandidate(principal.actor_id, memory_id=intent.target_memory_id), *(
+            SuppressionCandidate(principal.actor_id, evidence_id=eid)
+            for eid in set((*target_evidence_ids, intent.evidence_span.evidence_id))
+        )):
+            if (await self._resolve_suppression_unlocked(candidate, OrdinaryMemoryPurpose.RECALL)).denied:
+                raise SuppressionDenied()
+        if intent.observed_at > consumed_at:
+            raise MemoryValidationError("procedure_observation_occurred_at_future")
+        bound_fingerprint = current_fingerprint
+        bound_hazard = current_hazard
+        reason_code = "procedure_observation_recorded"
+        if current_fingerprint == UNBOUND_PROCEDURE_APPLICABILITY:
+            bound_fingerprint = intent.applicability.fingerprint
+            bound_hazard = intent.hazard.value
+            reason_code = "procedure_applicability_bound"
+        fingerprint_matches = bound_fingerprint == intent.applicability.fingerprint
+        hazard_matches = bound_hazard == intent.hazard.value
+        window_start = max(0.0, consumed_at - 90.0 * 24.0 * 60.0 * 60.0)
+        async with self._db.execute(
+            "SELECT COUNT(*),SUM(CASE WHEN outcome='failure' THEN 1 ELSE 0 END) "
+            "FROM procedure_observations WHERE memory_id=? "
+            "AND qualification_epoch=? AND applicability_fingerprint=? "
+            "AND occurred_at>=? AND occurred_at<=? AND ("
+            "(outcome='success' AND attributable=1) OR outcome='failure')",
+            (
+                intent.target_memory_id,
+                qualification_epoch,
+                bound_fingerprint,
+                window_start,
+                consumed_at,
+            ),
+        ) as cursor:
+            count_row = await cursor.fetchone()
+        if count_row is None:
+            raise MemoryCorruptionError("procedure evidence count is missing")
+        failure_count = int(count_row[1] or 0)
+        success_count = int(count_row[0]) - failure_count
+        counts_in_window = (
+            intent.observed_at >= window_start and intent.observed_at <= consumed_at
+        )
+        next_state = current_state
+        if not fingerprint_matches or not hazard_matches:
+            next_state = ProcedureLifecycleState.INAPPLICABLE
+            reason_code = "procedure_applicability_or_hazard_drift"
+        elif intent.kind is ProcedureObservationKind.TERMINAL_OUTCOME:
+            if intent.outcome is ProcedureObservationOutcome.FAILURE:
+                if counts_in_window:
+                    failure_count += 1
+                if intent.attributable:
+                    next_state = ProcedureLifecycleState.REVISED
+                    reason_code = "procedure_attributable_failure"
+                else:
+                    reason_code = "procedure_non_attributable_failure"
+            elif intent.outcome is ProcedureObservationOutcome.SUCCESS:
+                if intent.attributable and counts_in_window:
+                    success_count += 1
+                if (
+                    intent.attributable
+                    and intent.risk_level is ProcedureRiskLevel.LOW
+                    and intent.hazard is ProcedureHazard.NONE
+                ):
+                    threshold_state = (
+                        ProcedureLifecycleState.DRAFT
+                        if success_count < 2
+                        else ProcedureLifecycleState.ELIGIBLE_FOR_ACTIVATION
+                        if success_count < 3
+                        else ProcedureLifecycleState.ACTIVE
+                    )
+                    ranks = {
+                        ProcedureLifecycleState.DRAFT: 0,
+                        ProcedureLifecycleState.ELIGIBLE_FOR_ACTIVATION: 1,
+                        ProcedureLifecycleState.ACTIVE: 2,
+                        ProcedureLifecycleState.REINFORCED: 3,
+                    }
+                    if current_state in ranks and (
+                        ranks[threshold_state] > ranks[current_state]
+                    ):
+                        next_state = threshold_state
+                    reason_code = "procedure_low_risk_success"
+                else:
+                    reason_code = (
+                        "procedure_non_attributable_success"
+                        if not intent.attributable
+                        else "procedure_unsafe_auto_activation_blocked"
+                    )
+        return (base_revision, current_state, qualification_epoch, bound_fingerprint,
+                bound_hazard, success_count, failure_count, next_state, reason_code)
+
+    @history_source_operation
     async def record_procedure_observation(
         self,
         *,
@@ -5365,6 +5880,7 @@ class SQLiteHumanMemoryBackend:
                 reason_code="procedure_observation_authority_rejected",
             )
             raise MemoryValidationError("procedure_observation_authority_rejected") from exc
+        await prepare_history_source_context(self, principal)
         intent = authority.intent
         try:
             if intent.subject != principal.actor_id:
@@ -5391,123 +5907,10 @@ class SQLiteHumanMemoryBackend:
                     consumed_at = _timestamp(self._now())
                     if consumed_at < authority.issued_at or consumed_at >= authority.expires_at:
                         raise MemoryValidationError("procedure_observation_authority_expired")
-                    async with self._db.execute(
-                        "SELECT h.memory_type,h.current_revision,h.scope_kind,h.scope_owner,"
-                        "r.lifecycle_state,p.risk_level,p.qualification_epoch,"
-                        "p.applicability_fingerprint,p.bound_hazard "
-                        "FROM cognitive_memory_heads h JOIN cognitive_memory_revisions r "
-                        "ON r.memory_id=h.memory_id AND r.revision=h.current_revision "
-                        "JOIN procedure_records p ON p.memory_id=r.memory_id "
-                        "AND p.revision=r.revision WHERE h.principal_id=? "
-                        "AND h.deployment_id=? AND h.household_id=? AND h.memory_id=?",
-                        (
-                            principal.actor_id,
-                            principal.deployment_id,
-                            principal.household_id,
-                            intent.target_memory_id,
-                        ),
-                    ) as cursor:
-                        row = await cursor.fetchone()
-                    if row is None:
-                        raise MemoryValidationError("procedure_observation_target_not_found")
-                    if str(row[0]) != "procedure":
-                        raise MemoryValidationError("procedure_observation_target_type_differs")
-                    if (str(row[2]), str(row[3])) != (
-                        scope.kind.value,
-                        scope.owner_id,
-                    ):
-                        raise MemoryOwnershipConflict("procedure_observation_scope_differs")
-                    base_revision = int(row[1])
-                    if base_revision != intent.target_revision:
-                        raise MemoryWriterConflict("procedure_observation_revision_stale")
-                    current_state = ProcedureLifecycleState(str(row[4]))
-                    if current_state is not intent.transition_from:
-                        raise MemoryWriterConflict("procedure_observation_lifecycle_stale")
-                    if str(row[5]) != intent.risk_level.value:
-                        raise MemoryValidationError("procedure_observation_risk_differs")
-                    qualification_epoch = str(row[6])
-                    current_fingerprint = str(row[7])
-                    current_hazard = None if row[8] is None else str(row[8])
-                    await self._verify_procedure_evidence_unlocked(intent)
-                    if intent.observed_at > consumed_at:
-                        raise MemoryValidationError("procedure_observation_occurred_at_future")
-                    bound_fingerprint = current_fingerprint
-                    bound_hazard = current_hazard
-                    reason_code = "procedure_observation_recorded"
-                    if current_fingerprint == UNBOUND_PROCEDURE_APPLICABILITY:
-                        bound_fingerprint = intent.applicability.fingerprint
-                        bound_hazard = intent.hazard.value
-                        reason_code = "procedure_applicability_bound"
-                    fingerprint_matches = bound_fingerprint == intent.applicability.fingerprint
-                    hazard_matches = bound_hazard == intent.hazard.value
-                    window_start = max(0.0, consumed_at - 90.0 * 24.0 * 60.0 * 60.0)
-                    async with self._db.execute(
-                        "SELECT COUNT(*),SUM(CASE WHEN outcome='failure' THEN 1 ELSE 0 END) "
-                        "FROM procedure_observations WHERE memory_id=? "
-                        "AND qualification_epoch=? AND applicability_fingerprint=? "
-                        "AND occurred_at>=? AND occurred_at<=? AND ("
-                        "(outcome='success' AND attributable=1) OR outcome='failure')",
-                        (
-                            intent.target_memory_id,
-                            qualification_epoch,
-                            bound_fingerprint,
-                            window_start,
-                            consumed_at,
-                        ),
-                    ) as cursor:
-                        count_row = await cursor.fetchone()
-                    if count_row is None:
-                        raise MemoryCorruptionError("procedure evidence count is missing")
-                    failure_count = int(count_row[1] or 0)
-                    success_count = int(count_row[0]) - failure_count
-                    counts_in_window = (
-                        intent.observed_at >= window_start and intent.observed_at <= consumed_at
-                    )
-                    next_state = current_state
-                    if not fingerprint_matches or not hazard_matches:
-                        next_state = ProcedureLifecycleState.INAPPLICABLE
-                        reason_code = "procedure_applicability_or_hazard_drift"
-                    elif intent.kind is ProcedureObservationKind.TERMINAL_OUTCOME:
-                        if intent.outcome is ProcedureObservationOutcome.FAILURE:
-                            if counts_in_window:
-                                failure_count += 1
-                            if intent.attributable:
-                                next_state = ProcedureLifecycleState.REVISED
-                                reason_code = "procedure_attributable_failure"
-                            else:
-                                reason_code = "procedure_non_attributable_failure"
-                        elif intent.outcome is ProcedureObservationOutcome.SUCCESS:
-                            if intent.attributable and counts_in_window:
-                                success_count += 1
-                            if (
-                                intent.attributable
-                                and intent.risk_level is ProcedureRiskLevel.LOW
-                                and intent.hazard is ProcedureHazard.NONE
-                            ):
-                                threshold_state = (
-                                    ProcedureLifecycleState.DRAFT
-                                    if success_count < 2
-                                    else ProcedureLifecycleState.ELIGIBLE_FOR_ACTIVATION
-                                    if success_count < 3
-                                    else ProcedureLifecycleState.ACTIVE
-                                )
-                                ranks = {
-                                    ProcedureLifecycleState.DRAFT: 0,
-                                    ProcedureLifecycleState.ELIGIBLE_FOR_ACTIVATION: 1,
-                                    ProcedureLifecycleState.ACTIVE: 2,
-                                    ProcedureLifecycleState.REINFORCED: 3,
-                                }
-                                if current_state in ranks and (
-                                    ranks[threshold_state] > ranks[current_state]
-                                ):
-                                    next_state = threshold_state
-                                reason_code = "procedure_low_risk_success"
-                            else:
-                                reason_code = (
-                                    "procedure_non_attributable_success"
-                                    if not intent.attributable
-                                    else "procedure_unsafe_auto_activation_blocked"
-                                )
+                    (base_revision, current_state, qualification_epoch, bound_fingerprint,
+                     bound_hazard, success_count, failure_count, next_state, reason_code) = (
+                        await self._procedure_observation_decision_unlocked(
+                            intent, principal, scope, consumed_at))
                     if next_state is not intent.transition_to:
                         raise MemoryValidationError(
                             "procedure_observation_expected_transition_differs"
@@ -5691,6 +6094,7 @@ class SQLiteHumanMemoryBackend:
                 raise
             raise MemoryValidationError(reason) from exc
 
+    @history_source_operation
     async def apply_prospective_signal(
         self,
         *,
@@ -5762,6 +6166,7 @@ class SQLiteHumanMemoryBackend:
                 reason_code="prospective_signal_authority_rejected",
             )
             raise MemoryValidationError("prospective_signal_authority_rejected") from exc
+        await prepare_history_source_context(self, principal)
         intent = authority.intent
         try:
             if intent.subject != principal.actor_id:
@@ -6042,6 +6447,7 @@ class SQLiteHumanMemoryBackend:
                 raise
             raise MemoryValidationError(reason) from exc
 
+    @history_source_operation
     async def apply_memory_mutation_plan(
         self,
         *,
@@ -6091,6 +6497,7 @@ class SQLiteHumanMemoryBackend:
         if type(self._classification_policy) is not InformationClassificationPolicy:
             raise MemoryValidationError("classification_policy_required")
 
+        await prepare_history_source_context(self, principal)
         async with self._write_lock:
             begun = False
             committed = False
@@ -8940,15 +9347,24 @@ class SQLiteHumanMemoryBackend:
                 raise MemoryValidationError("mutation_evidence_ref_hash_mismatch")
 
     async def _verify_mutation_span_unlocked(
-        self, *, subject: str, span: Any
+        self, *, subject: str, span: Any, allow_source_only: bool = False
     ) -> tuple[tuple[str, str, str], ...]:
         assert self._db is not None
+        receipt_table = "ingestion_receipts"
+        if allow_source_only:
+            # Procedure terminal observations may use source-only S1 admission.
+            # Reconstruct and validate the real receipt, item and full envelope;
+            # never create an analysis job or relax ordinary mutation admission.
+            record = await self._read_ingested_record(getattr(span, "evidence_id"))
+            if record is None:
+                raise MemoryValidationError("mutation_evidence_span_not_admitted")
+            receipt_table = "(SELECT * FROM ingestion_receipts UNION ALL SELECT * FROM source_admission_receipts)"
         async with self._db.execute(
             "SELECT e.principal_id,e.subject,e.source_kind,e.source_hash,e.sanitized_hash,"
             "e.envelope_hash,i.content_hash,r.admission_receipt_id,"
             "r.admission_receipt_hash FROM evidence_envelopes e "
             "JOIN evidence_items i ON i.evidence_id=e.evidence_id AND i.ordinal=? "
-            "JOIN ingestion_receipts r ON r.evidence_id=e.evidence_id "
+            f"JOIN {receipt_table} r ON r.evidence_id=e.evidence_id "
             "WHERE e.evidence_id=?",
             (getattr(span, "item_ordinal"), getattr(span, "evidence_id")),
         ) as cursor:
@@ -9419,11 +9835,15 @@ class SQLiteHumanMemoryBackend:
             ProspectiveLifecycleState.RESCHEDULED.value,
         }
         if previous_revision is not None and previous_lifecycle_state in live_states:
-            await append("invalidation", previous_revision)
+            from simple_harness_memory.backends.prospective_settlement import skip_no_object_invalidation
+            if not await skip_no_object_invalidation(self, principal_id, memory_id, previous_revision):
+                await append("invalidation", previous_revision)
         if lifecycle_state in {
             ProspectiveLifecycleState.PENDING.value,
             ProspectiveLifecycleState.RESCHEDULED.value,
         }:
+            from simple_harness_memory.backends.prospective_settlement import guard_registration
+            await guard_registration(db, memory_id, revision)
             await append("registration", revision)
 
     async def _read_procedure_result_unlocked(
@@ -9527,7 +9947,7 @@ class SQLiteHumanMemoryBackend:
     async def _verify_procedure_evidence_unlocked(self, intent: object) -> None:
         span = getattr(intent, "evidence_span")
         origins = await self._verify_mutation_span_unlocked(
-            subject=str(getattr(intent, "subject")), span=span
+            subject=str(getattr(intent, "subject")), span=span, allow_source_only=True
         )
         exact_origin = tuple(
             origin for origin in origins if origin[0] == getattr(intent, "task_scope_id")
@@ -9774,6 +10194,8 @@ class SQLiteHumanMemoryBackend:
             row = await cursor.fetchone()
         if row is None:
             raise MemoryValidationError("prospective_signal_outbox_not_found")
+        from simple_harness_memory.backends.prospective_settlement import guard_registration
+        await guard_registration(self._db, getattr(intent, "target_memory_id"), getattr(intent, "target_revision"))
         kind = getattr(intent, "signal_kind")
         command = (
             "registration"
@@ -10338,10 +10760,20 @@ class SQLiteHumanMemoryBackend:
                 lease_token = f"analysis-lease-{uuid4().hex}"
                 lease_expires_at = now + config.lease_seconds
                 async with self._db.execute(
-                    "SELECT DISTINCT b.batch_id FROM analysis_batches b "
-                    "JOIN analysis_batch_members m ON m.batch_id=b.batch_id "
-                    "JOIN jobs j ON j.job_id=m.job_id WHERE j.state='claimed' AND "
-                    "j.lease_expires_at<=? "
+                    # Historical members must not redirect a current job's lease.
+                    # Every member must still own THIS expired active attempt.
+                    "SELECT b.batch_id FROM analysis_batches b "
+                    "WHERE b.state IN ('handed_off','result_committed','audit_pending') "
+                    "AND EXISTS (SELECT 1 FROM analysis_batch_members m "
+                    "WHERE m.batch_id=b.batch_id) "
+                    "AND NOT EXISTS (SELECT 1 FROM analysis_batch_members m "
+                    "LEFT JOIN jobs j ON j.job_id=m.job_id "
+                    "LEFT JOIN job_attempts a ON a.job_id=m.job_id AND a.attempt=m.job_attempt "
+                    "AND a.batch_id=m.batch_id WHERE m.batch_id=b.batch_id AND NOT COALESCE("
+                    "j.state='claimed' AND j.principal_id=b.principal_id "
+                    "AND j.attempt_count=m.job_attempt AND j.lease_expires_at<=? "
+                    "AND j.lease_token=a.lease_token AND a.request_hash=b.request_hash "
+                    "AND a.state IN ('handed_off','result_committed','audit_pending'),0)) "
                     "ORDER BY b.created_at,b.batch_id LIMIT 1",
                     (now,),
                 ) as cursor:
@@ -10410,6 +10842,18 @@ class SQLiteHumanMemoryBackend:
                     job_rows = await cursor.fetchall()
                 if not job_rows:
                     raise MemoryCorruptionError("eligible analysis batch has no jobs")
+                retry_request = None
+                if int(job_rows[0]["attempt_count"]) > 0:
+                    # A failed attempt owns a complete, already-sent input.
+                    # Retry its cohort independently of a changed batch_size or
+                    # newly queued jobs; never change its semantic reuse key.
+                    job_rows, retry_request = await self._analysis_retry_cohort_unlocked(job_rows[0], now)
+                    if not job_rows:
+                        await self._db.execute("COMMIT")
+                        committed = True
+                        return None  # Whole original cohort must be due.
+                else:
+                    job_rows = [row for row in job_rows if int(row["attempt_count"]) == 0]
                 evidence_refs: list[EvidenceRef] = []
                 run_id: str | None = None
                 disclosure: DisclosureContext | None = None
@@ -10477,9 +10921,10 @@ class SQLiteHumanMemoryBackend:
                     raise MemoryValidationError("analysis_batch_lineage_differs")
                 lineage_value = next(iter(distinct_lineages))
                 if lineage_value is None:
-                    provider_id = config.provider_id
-                    model_id = config.model_id
-                    model_config_hash = config.model_config_hash
+                    input_owner = retry_request if retry_request is not None else config
+                    provider_id = input_owner.provider_id
+                    model_id = input_owner.model_id
+                    model_config_hash = input_owner.model_config_hash
                 else:
                     lineage = AnalysisLineage.from_json(json.loads(lineage_value))
                     provider_id = lineage.provider_id
@@ -10509,6 +10954,19 @@ class SQLiteHumanMemoryBackend:
                     disclosure,
                     batch_id,
                 )
+                if retry_request is not None:
+                    # Revalidate admitted members/lineage against the saved
+                    # input, then retain EVERY semantic field, including future
+                    # protocol fields. Only attempt-local identities may change.
+                    if any(getattr(request, field) != getattr(retry_request, field) for field in (
+                        "run_id", "subject", "ordered_evidence_refs", "disclosure_context",
+                        "provider_id", "model_id", "model_config_hash",
+                    )):
+                        raise MemoryCorruptionError("analysis retry admitted input differs")
+                    from dataclasses import replace
+
+                    request = replace(retry_request, job_id=batch_id, attempt=batch_attempt,
+                                      idempotency_key=batch_id)
                 await self._db.execute(
                     "INSERT INTO analysis_batches(batch_id,principal_id,batch_key,"
                     "evidence_watermark,attempt,"
@@ -10581,6 +11039,62 @@ class SQLiteHumanMemoryBackend:
                 if not committed:
                     with suppress(Exception):
                         await self._db.execute("ROLLBACK")
+
+    async def _analysis_retry_cohort_unlocked(self, first_job, now):
+        """Read exact failed-attempt membership, without rewriting prior facts."""
+        from simple_harness.runtime import MemoryAnalysisRequest
+
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT b.*,a.state AS prior_attempt_state,a.request_hash AS prior_request_hash "
+            "FROM job_attempts a JOIN analysis_batches b ON b.batch_id=a.batch_id "
+            "WHERE a.job_id=? AND a.attempt=?",
+            (first_job["job_id"], first_job["attempt_count"]),
+        ) as cursor:
+            batches = tuple(await cursor.fetchall())
+        if len(batches) != 1:
+            raise MemoryCorruptionError("analysis retry prior attempt missing")
+        batch = batches[0]
+        try:
+            request = MemoryAnalysisRequest.from_json(json.loads(str(batch["request_json"])))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise MemoryCorruptionError("analysis retry request malformed") from exc
+        if (batch["state"] != "failed" or batch["prior_attempt_state"] != "failed"
+                or request.request_hash != batch["request_hash"]
+                or request.request_hash != batch["prior_request_hash"]
+                or request.job_id != batch["batch_id"] or request.idempotency_key != batch["batch_id"]
+                or request.attempt != batch["attempt"] or request.subject != batch["principal_id"]
+                or request.ordered_evidence_refs[-1].evidence_id != batch["evidence_watermark"]
+                or batch["principal_id"] != first_job["principal_id"] or batch["batch_key"] != first_job["batch_key"]):
+            raise MemoryCorruptionError("analysis retry request binding differs")
+        async with self._db.execute(
+            "SELECT j.*,m.ordinal AS member_ordinal,m.job_attempt AS member_attempt,"
+            "m.evidence_id AS member_evidence_id,m.content_hash AS member_content_hash,"
+            "a.state AS member_attempt_state,a.request_hash AS member_request_hash "
+            "FROM analysis_batch_members m LEFT JOIN jobs j ON j.job_id=m.job_id "
+            "LEFT JOIN job_attempts a ON a.job_id=m.job_id AND a.attempt=m.job_attempt AND a.batch_id=m.batch_id "
+            "WHERE m.batch_id=? ORDER BY m.ordinal",
+            (batch["batch_id"],),
+        ) as cursor:
+            members = tuple(await cursor.fetchall())
+        if len(members) != len(request.ordered_evidence_refs):
+            raise MemoryCorruptionError("analysis retry membership differs")
+        for ordinal, (member, ref) in enumerate(zip(members, request.ordered_evidence_refs, strict=True), start=1):
+            if (member["job_id"] is None or member["member_ordinal"] != ordinal
+                    or member["member_evidence_id"] != ref.evidence_id or member["member_content_hash"] != ref.content_hash
+                    or member["member_request_hash"] != request.request_hash or member["member_attempt_state"] != "failed"
+                    or member["attempt_count"] != member["member_attempt"]
+                    or member["principal_id"] != batch["principal_id"] or member["batch_key"] != batch["batch_key"]):
+                raise MemoryCorruptionError("analysis retry member binding differs")
+            if member["state"] != "pending":
+                # Do not resurrect terminal members or pass a subset off as the
+                # original request. Such a legacy split needs explicit resolution.
+                raise MemoryValidationError("analysis_retry_cohort_not_pending")
+        if not any(member["job_id"] == first_job["job_id"] for member in members):
+            raise MemoryCorruptionError("analysis retry first member missing")
+        if any(float(member["next_attempt_at"]) > now for member in members):
+            return (), request
+        return members, request
 
     async def _read_analysis_claim_unlocked(
         self,
@@ -10743,6 +11257,7 @@ class SQLiteHumanMemoryBackend:
             "SELECT COUNT(*) AS member_count,"
             f"SUM(CASE WHEN j.job_id IN ({placeholders}) "
             "AND j.state='claimed' AND j.lease_token=? AND j.lease_expires_at>? "
+            "AND j.attempt_count=m.job_attempt AND a.request_hash=b.request_hash "
             "AND a.lease_token=? AND a.state IN "
             "('handed_off','result_committed','audit_pending') THEN 1 ELSE 0 END) "
             "AS current_count FROM analysis_batch_members m "
@@ -11523,6 +12038,7 @@ class SQLiteHumanMemoryBackend:
                     with suppress(Exception):
                         await self._db.execute("ROLLBACK")
 
+    @history_source_operation
     async def prepare_analysis_application(
         self,
         claim: AnalysisBatchClaim,
@@ -11542,6 +12058,28 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("claim must use AnalysisBatchClaim")
         _audit_identifier(validator_version, "validator_version")
         assert self._db is not None
+        # Resolve Host order only for a canonical pending application. The final
+        # transaction repeats existing lease/result/phase validation after await.
+        source_principal = None
+        async with self._write_lock:
+            if await self._analysis_claim_is_current_unlocked(claim, _timestamp(self._now())):
+                async with self._db.execute(
+                    "SELECT p.deployment_id,p.household_id,p.actor_id FROM analysis_batches b "
+                    "JOIN principals p ON p.principal_id=b.principal_id "
+                    "WHERE b.batch_id=? AND b.result_hash=? AND b.state='result_committed' "
+                    "AND b.application_receipt_json IS NULL",
+                    (claim.batch_id, result.result_hash),
+                ) as cursor:
+                    source_owner = await cursor.fetchone()
+                if source_owner is not None:
+                    from simple_harness_memory.core.identity import MemoryPrincipal
+
+                    source_principal = MemoryPrincipal(
+                        str(source_owner[0]), str(source_owner[1]), str(source_owner[2]),
+                        claim.request.run_id,
+                    )
+        if source_principal is not None:
+            await prepare_history_source_context(self, source_principal)
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
             committed = False
@@ -12650,6 +13188,11 @@ class SQLiteHumanMemoryBackend:
                     await self._db.execute("ROLLBACK")
             raise
 
+    async def read_operation_audit(self, **kwargs: Any) -> Any:
+        from simple_harness_memory.backends.operation_audit import read_operation_audit
+
+        return await read_operation_audit(self, **kwargs)
+
     async def export_audit_trace(
         self,
         query: AuditTraceQuery,
@@ -13062,6 +13605,12 @@ class SQLiteHumanMemoryBackend:
             ),
             (
                 "receipts",
+                "source_admission_receipts",
+                "SELECT t.* FROM source_admission_receipts t JOIN evidence_envelopes e "
+                "ON e.evidence_id=t.evidence_id WHERE e.principal_id=? ORDER BY t.receipt_id",
+            ),
+            (
+                "receipts",
                 "memory_mutation_receipts",
                 "SELECT t.* FROM memory_mutation_receipts t WHERE t.principal_id=? "
                 "ORDER BY t.receipt_id",
@@ -13384,6 +13933,8 @@ class SQLiteHumanMemoryBackend:
                 "ON r.request_id=t.request_id WHERE r.principal_id=? ORDER BY t.request_id",
             ),
         )
+        specs += (("results", "prospective_invalidation_terminal_receipts",
+            "SELECT t.* FROM prospective_invalidation_terminal_receipts t WHERE t.principal_id=? ORDER BY t.receipt_id"),)
         roots: list[CanonicalStateTableRootV1] = []
         for category, table_name, sql in specs:
             async with self._db.execute(sql, (principal_id,)) as cursor:
@@ -13458,6 +14009,7 @@ class SQLiteHumanMemoryBackend:
         )
         return event_hash
 
+    @history_source_operation
     async def _export_audit_trace(
         self,
         query: AuditTraceQuery,
@@ -14579,6 +15131,23 @@ class SQLiteHumanMemoryBackend:
             row = await cursor.fetchone()
         return None if row is None else _ingestion_receipt_from_row(row)
 
+    async def _read_source_admission_binding(
+        self, *, subject: str, source_ref: str, admission_receipt_id: str
+    ) -> tuple[IngestedEvidenceRecord, ...]:
+        async with self.connection.execute(
+            "SELECT e.evidence_id FROM evidence_envelopes e JOIN source_admission_receipts r "
+            "ON r.evidence_id=e.evidence_id WHERE (e.subject=? AND e.source_ref=?) "
+            "OR r.admission_receipt_id=?", (subject, source_ref, admission_receipt_id),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        records = []
+        for row in rows:
+            record = await self._read_ingested_record(str(row[0]))
+            if record is None:
+                raise MemoryCorruptionError("stored source admission missing")
+            records.append(record)
+        return tuple(records)
+
     async def _read_ingested_record(self, evidence_id: str) -> IngestedEvidenceRecord | None:
         from simple_harness.runtime import (
             COGNITIVE_MEMORY_SCHEMA_VERSION,
@@ -14595,12 +15164,19 @@ class SQLiteHumanMemoryBackend:
 
         assert self._db is not None
         async with self._db.execute(
-            "SELECT e.*,r.receipt_id,r.admission_receipt_id,r.admission_receipt_json,"
+            "SELECT e.*,r.source_hash AS receipt_source_hash,"
+            "r.envelope_hash AS receipt_envelope_hash,"
+            "r.mode,r.receipt_id,r.admission_receipt_id,r.admission_receipt_json,"
             "r.admission_receipt_hash,r.receipt_hash,r.accepted_at FROM evidence_envelopes e "
-            "JOIN ingestion_receipts r ON r.evidence_id=e.evidence_id WHERE e.evidence_id=?",
+            "JOIN (SELECT *, 'full' AS mode FROM ingestion_receipts UNION ALL "
+            "SELECT *, 'source' AS mode FROM source_admission_receipts) r "
+            "ON r.evidence_id=e.evidence_id WHERE e.evidence_id=?",
             (evidence_id,),
         ) as cursor:
-            row = await cursor.fetchone()
+            rows = list(await cursor.fetchall())
+        if len(rows) > 1:
+            raise MemoryCorruptionError("stored evidence has multiple admission modes")
+        row = rows[0] if rows else None
         if row is None:
             return None
         async with self._db.execute(
@@ -14645,6 +15221,11 @@ class SQLiteHumanMemoryBackend:
             raise MemoryCorruptionError("stored evidence admission receipt is invalid")
         admission_receipt = SanitizedEvidenceReceipt.from_json(admission_payload)
         admission_receipt.verify(envelope)
+        if (admission_receipt.receipt_id != str(row["admission_receipt_id"])
+                or envelope.subject != str(row["principal_id"])
+                or envelope.source_hash != str(row["receipt_source_hash"])
+                or envelope.envelope_hash != str(row["receipt_envelope_hash"])):
+            raise MemoryCorruptionError("stored evidence admission binding differs")
         if admission_receipt.receipt_hash != str(row["admission_receipt_hash"]):
             raise MemoryCorruptionError("stored evidence admission receipt hash differs")
         spans = tuple(
@@ -14668,7 +15249,12 @@ class SQLiteHumanMemoryBackend:
         )
         if spans != (expected_span,):
             raise MemoryCorruptionError("stored evidence span differs")
-        ingestion_receipt = _ingestion_receipt_from_row(row)
+        from simple_harness_memory.backends.source_admission import source_receipt_from_row
+
+        ingestion_receipt = (
+            source_receipt_from_row(row) if row["mode"] == "source"
+            else _ingestion_receipt_from_row(row)
+        )
         return IngestedEvidenceRecord(envelope, admission_receipt, ingestion_receipt, spans)
 
     async def _classify_open_connection(self) -> InitializationReceipt | None:
@@ -14678,8 +15264,11 @@ class SQLiteHumanMemoryBackend:
             return None
         if tables != REQUIRED_TABLES:
             raise MemoryLegacySchemaUnsupported()
-        meta = await _async_meta(self._db)
-        return await _async_receipt(self._db, meta)
+        from simple_harness_memory.migrations.settlement_upgrade import inspect_root
+
+        # Run the same finite catalog/marker verifier on this fenced connection.
+        root = await self._db._execute(inspect_root, self._db._conn)
+        return root.initialization
 
     async def _migrate_v7_0_to_v7_1(self) -> None:
         """0.6.0 写出的 v7.0 库前向迁移到 v7.1（一个事务；幂等）。
@@ -15235,6 +15824,8 @@ class SQLiteHumanMemoryBackend:
         await self._validate_lifecycle_integrity_unlocked()
         await self._validate_audit_access_integrity_unlocked()
         await self._validate_typed_recall_integrity_unlocked()
+        from simple_harness_memory.backends.prospective_settlement import validate_integrity
+        await validate_integrity(self)
 
     async def _validate_audit_access_integrity_unlocked(self) -> None:
         assert self._db is not None
@@ -15879,11 +16470,14 @@ class SQLiteHumanMemoryBackend:
         if contested_heads != active_group_keys:
             raise MemoryCorruptionError("active conflict group set differs")
 
-    async def _validate_short_horizon_integrity_unlocked(self) -> None:
+    async def _validate_short_horizon_integrity_unlocked(
+        self, *, selected_registrations: tuple[aiosqlite.Row, ...] | None = None,
+    ) -> None:
         from simple_harness.runtime import (
             EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION,
             ConversationEvidenceMetadata,
             ConversationEvidenceMetadataReceipt,
+            ConversationEvidenceRegistration,
             EvidenceActorRole,
             EvidenceItemAuthority,
             EvidenceProvenance,
@@ -15914,10 +16508,13 @@ class SQLiteHumanMemoryBackend:
                 raise MemoryCorruptionError(f"{name} JSON is not canonical")
             return cast(list[object], parsed)
 
-        async with self._db.execute(
-            "SELECT * FROM conversation_evidence_registrations ORDER BY registration_id"
-        ) as cursor:
-            registrations = tuple(await cursor.fetchall())
+        if selected_registrations is None:
+            async with self._db.execute(
+                "SELECT * FROM conversation_evidence_registrations ORDER BY registration_id"
+            ) as cursor:
+                registrations = tuple(await cursor.fetchall())
+        else:
+            registrations = selected_registrations
         for row in registrations:
             metadata_json = canonical_object(row["metadata_json"], "conversation metadata")
             receipt_json = canonical_object(
@@ -15953,6 +16550,7 @@ class SQLiteHumanMemoryBackend:
                 "recall_item_authority": None,
             }
             authority_json_value = row["evidence_item_authority_json"]
+            authority = None
             if authority_json_value is not None:
                 authority_json = canonical_object(
                     authority_json_value, "conversation item authority"
@@ -16027,6 +16625,21 @@ class SQLiteHumanMemoryBackend:
                 row["registration_hash"]
             ):
                 raise MemoryCorruptionError("conversation registration root differs")
+
+            record = await self._read_ingested_record(str(row["evidence_id"]))
+            if record is None:
+                raise MemoryCorruptionError("conversation admitted source missing")
+            try:
+                rebuilt = ConversationEvidenceRegistration(
+                    str(row["registration_id"]), record.envelope, record.admission_receipt,
+                    metadata, metadata_receipt, authority)
+            except (TypeError, ValueError) as exc:
+                raise MemoryCorruptionError("conversation admitted source binding differs") from exc
+            if rebuilt.registration_hash != str(row["registration_hash"]):
+                raise MemoryCorruptionError("conversation admitted source binding differs")
+
+        if selected_registrations is not None:
+            return
 
         registrations_by_group: dict[tuple[str, str, str], tuple[aiosqlite.Row, ...]] = {}
         raw_groups: dict[tuple[str, str, str], list[aiosqlite.Row]] = {}
@@ -17521,9 +18134,8 @@ def _probe_existing_read_only(
         if tables != REQUIRED_TABLES:
             return "unsupported", None
         meta = _sync_meta(connection)
-        if _is_v7_0_migratable(connection, meta):
-            # 0.6.0 写出的 v7.0 库：打开后先前向迁移，再按 v7.1 receipt 校验。
-            return "v7.0-migratable", None
+        if meta.get("schema_checksum") != SCHEMA_CHECKSUM:
+            return "unsupported", None
         return "v5", _sync_receipt(connection, meta)
     except (MemoryCorruptionError, sqlite3.Error, TypeError, ValueError) as exc:
         raise MemoryLegacySchemaUnsupported() from exc

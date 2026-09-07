@@ -1,4 +1,4 @@
-"""schema v7 → v7.1：0.6.0 已写 DB 打开时前向加列（0.6.1）。"""
+"""Historical7.0 fixture preserved; approved0.6.8 fresh7.2 rejects old roots unchanged."""
 
 from __future__ import annotations
 
@@ -24,7 +24,6 @@ from simple_harness_memory.backends.schema_v5 import (
 )
 from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
 from simple_harness_memory.core.errors import MemoryLegacySchemaUnsupported
-from tests.integration.test_memory_061_core import LINEAGE_A, _evidence
 
 
 def _legacy_receipt_hash(payload: dict[str, object]) -> str:
@@ -95,7 +94,7 @@ def _columns(path: Path, table: str) -> list[str]:
 
 
 def test_schema_v7_1_constants_and_v7_0_ddl_are_pinned() -> None:
-    assert (SCHEMA_VERSION, SCHEMA_MINOR_VERSION, SCHEMA_VERSION_LABEL) == (7, 1, "7.1")
+    assert (SCHEMA_VERSION, SCHEMA_MINOR_VERSION, SCHEMA_VERSION_LABEL) == (7, 2, "7.2")
     assert hashlib.sha256(DDL.encode("utf-8")).hexdigest() == SCHEMA_CHECKSUM
     assert hashlib.sha256(DDL_V7_0.encode("utf-8")).hexdigest() == SCHEMA_CHECKSUM_V7_0
     assert SCHEMA_CHECKSUM != SCHEMA_CHECKSUM_V7_0
@@ -104,63 +103,28 @@ def test_schema_v7_1_constants_and_v7_0_ddl_are_pinned() -> None:
 
 
 @pytest.mark.asyncio
-async def test_v7_0_database_is_forward_migrated_on_open(tmp_path: Path) -> None:
+async def test_v7_0_valid_database_is_rejected_without_old_automatic_migration(tmp_path: Path) -> None:
     path = tmp_path / "v7-0.db"
-    legacy = _write_v7_0_database(path)
-    assert "analysis_lineage_json" not in _columns(path, "evidence_envelopes")
-
+    _write_v7_0_database(path)
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
     backend = SQLiteHumanMemoryBackend(path, now=lambda: 20.0)
-    receipt = await backend.initialize()
-    try:
-        # 规则：迁移后按新 checksum 校验；receipt_id/created_at/cursor authority 不变，hash 重算。
-        assert receipt.schema_checksum == SCHEMA_CHECKSUM
-        assert receipt.schema_version == SCHEMA_VERSION
-        assert receipt.receipt_id == legacy["receipt_id"]
-        assert receipt.created_at == legacy["created_at"]
-        assert receipt.audit_cursor_authority_hash == legacy["audit_cursor_authority_hash"]
-        assert receipt.receipt_hash != legacy["receipt_hash"]
-        async with backend.connection.execute("SELECT key,value FROM schema_meta") as cursor:
-            meta = {str(row[0]): str(row[1]) for row in await cursor.fetchall()}
-        assert meta["schema_checksum"] == SCHEMA_CHECKSUM
-        assert meta["initialization_receipt_hash"] == receipt.receipt_hash
-        assert meta["schema_version"] == "7"
-        async with backend.connection.execute(
-            "SELECT schema_checksum,receipt_hash FROM initialization_receipts"
-        ) as cursor:
-            stored = await cursor.fetchone()
-        assert stored is not None and tuple(stored) == (SCHEMA_CHECKSUM, receipt.receipt_hash)
-        # 迁移后的库可按 0.6.1 口径 ingest（含 lineage）。
-        ingestion = await backend.ingest_committed_evidence(
-            *_evidence(1), analysis_lineage=LINEAGE_A
-        )
-        assert ingestion.evidence_id == "evidence-1"
-    finally:
-        await backend.close()
-    assert _columns(path, "evidence_envelopes")[-1] == "analysis_lineage_json"
-
-    # 第二次打开：已是 v7.1，不再迁移，receipt 稳定。
-    reopened = SQLiteHumanMemoryBackend(path, now=lambda: 30.0)
-    second = await reopened.initialize()
-    try:
-        assert second == receipt
-    finally:
-        await reopened.close()
+    with pytest.raises(MemoryLegacySchemaUnsupported):
+        await backend.initialize()
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+    assert "analysis_lineage_json" not in _columns(path, "evidence_envelopes")
 
 
 @pytest.mark.asyncio
-async def test_fresh_v7_1_and_migrated_v7_0_share_column_layout(tmp_path: Path) -> None:
-    fresh_path = tmp_path / "fresh.db"
-    fresh = SQLiteHumanMemoryBackend(fresh_path, now=lambda: 20.0)
-    await fresh.initialize()
-    await fresh.close()
-    migrated_path = tmp_path / "migrated.db"
-    _write_v7_0_database(migrated_path)
-    migrated = SQLiteHumanMemoryBackend(migrated_path, now=lambda: 20.0)
-    await migrated.initialize()
-    await migrated.close()
-    assert _columns(fresh_path, "evidence_envelopes") == _columns(
-        migrated_path, "evidence_envelopes"
-    )
+async def test_fresh_v7_2_has_lineage_and_source_receipts_old_fixture_unchanged(tmp_path: Path) -> None:
+    path = tmp_path / "fresh.db"
+    backend = SQLiteHumanMemoryBackend(path, now=lambda: 20.0)
+    first = await backend.initialize()
+    await backend.close()
+    assert "analysis_lineage_json" in _columns(path, "evidence_envelopes")
+    assert "admission_receipt_hash" in _columns(path, "source_admission_receipts")
+    reopened = SQLiteHumanMemoryBackend(path, now=lambda: 30.0)
+    assert await reopened.initialize() == first
+    await reopened.close()
 
 
 @pytest.mark.asyncio

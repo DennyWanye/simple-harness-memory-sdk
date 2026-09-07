@@ -33,7 +33,23 @@ from simple_harness_memory.core.errors import (
 )
 from simple_harness_memory.core.evidence import (
     EvidenceIngestionReceipt,
+    EvidenceSourceAdmissionReceipt,
     IngestedEvidenceRecord,
+)
+from simple_harness_memory.core.history import (
+    HistoryBinding,
+    HistoryEvidenceBinding,
+    HistoryRecallBinding,
+    HistoryShortHorizonBinding,
+    HistoryProcedureDraftBinding,
+    HistoryVisibilityItem,
+    HistoryVisibilitySnapshot,
+)
+from simple_harness_memory.core.history_sources import (
+    HistoryForgetCutReceipt,
+    HistorySourceAuthorityPort,
+    HistorySourceNamespace,
+    HistorySourceOriginReceipt,
 )
 from simple_harness_memory.core.identity import (
     ExportPage,
@@ -54,6 +70,10 @@ from simple_harness_memory.core.lifecycle_results import (
     ProcedureObservationApplyResult,
     ProspectiveSignalApplyResult,
 )
+from simple_harness_memory.core.procedure_use import ProcedureUseTarget, PROCEDURE_OBSERVATION_RECOVERY_VERSION
+from simple_harness_memory.core.procedure_operation_observation import (
+    ProcedureOperationObservationV1, PreparedProcedureObservation,
+)
 from simple_harness_memory.core.manager import (
     MemoryManager,
     build_human_memory_v6,
@@ -66,6 +86,17 @@ from simple_harness_memory.core.models import (
     MemoryApplyResult,
     Message,
 )
+from simple_harness_memory.core.prospective_settlement import RegistrationRequiredView, ProspectiveInvalidationNotRequiredReceipt
+from simple_harness_memory.core.prospective_settlement_observation import ProspectiveInvalidationSettlementObservationV1
+from simple_harness_memory.migrations.settlement_upgrade import (
+    ProspectiveSettlementSchemaUpgradeReceipt, migrate_human_memory_v7_2_to_v7_3,
+)
+from simple_harness_memory.core.prospective_sources_v2 import (
+    MutationTargetSource, ProspectiveSignalTargetSource, ProspectiveOutboxSourceViewV2,
+)
+from simple_harness_memory.core.prospective_source_observation_v2 import ProspectiveSourceReadObservationV2
+from simple_harness_memory.core.prospective_sources import ProspectiveOutboxSourceView
+from simple_harness_memory.core.prospective_source_observation import ProspectiveSourceReadObservationV1
 from simple_harness_memory.core.mutation_receipts import (
     MemoryMutationCommittedOperationView,
     MemoryMutationReceiptView,
@@ -80,14 +111,30 @@ from simple_harness_memory.core.occurrence import (
     OutboxEntryV1,
     OutboxPageV1,
 )
+from simple_harness_memory.core.operation_audit import (
+    MemoryOperationObservationContext,
+    MemoryOperationObservationV1,
+    OperationAuditItemV1,
+    OperationAuditExpectation,
+    OperationAuditCursor,
+    OperationAuditCoverage,
+    OperationAuditExpectationResult,
+    OperationAuditPage,
+    operation_audit_ref_hash,
+)
 from simple_harness_memory.core.port import CognitiveMemoryBackend, MemoryBackend
-from simple_harness_memory.core.recall import TypedRecallExecution
+from simple_harness_memory.core.recall import TypedRecallExecution, TypedRecallRejectionV1
 from simple_harness_memory.core.short_horizon import (
     ShortHorizonDegradationCode,
     ShortHorizonGenerationBuildResult,
     ShortHorizonProjectionBuildResult,
     ShortHorizonRecallHit,
     ShortHorizonRecallResult,
+)
+from simple_harness_memory.core.short_sources import (
+    ShortHorizonSourceItem,
+    ShortHorizonSourceRef,
+    ShortHorizonSourceSnapshot,
 )
 from simple_harness_memory.core.suppression import (
     OrdinaryMemoryPurpose,
@@ -125,6 +172,22 @@ def __getattr__(name: str) -> object:
     raise AttributeError(name)
 
 __all__ = [
+    "HistoryBinding",
+    "HistoryForgetCutReceipt",
+    "HistorySourceAuthorityPort",
+    "HistorySourceNamespace",
+    "HistorySourceOriginReceipt",
+    "HistoryEvidenceBinding",
+    "HistoryRecallBinding",
+    "HistoryShortHorizonBinding",
+    "HistoryProcedureDraftBinding",
+    "ProcedureDraftCandidate",
+    "ProcedureDraftPage",
+    "HistoryVisibilityItem",
+    "HistoryVisibilitySnapshot",
+    "ShortHorizonSourceItem",
+    "ShortHorizonSourceRef",
+    "ShortHorizonSourceSnapshot",
     "MemoryManager",
     "build_human_memory_v7",
     "build_human_memory_v6",
@@ -159,12 +222,23 @@ __all__ = [
     "SuppressionRevokeRequest",
     "SuppressionScopeKind",
     "EvidenceIngestionReceipt",
+    "EvidenceSourceAdmissionReceipt",
     "IngestedEvidenceRecord",
     "EffectiveInformationClassification",
     "InformationClassificationPolicy",
     "MemoryBackend",
     "CognitiveMemoryBackend",
     "TypedRecallExecution",
+    "TypedRecallRejectionV1",
+    "MemoryOperationObservationContext",
+    "MemoryOperationObservationV1",
+    "OperationAuditItemV1",
+    "OperationAuditExpectation",
+    "OperationAuditCursor",
+    "OperationAuditCoverage",
+    "OperationAuditExpectationResult",
+    "OperationAuditPage",
+    "operation_audit_ref_hash",
     "TwinGraphEdge",
     "TwinGraphNode",
     "TwinGraphSourceRef",
@@ -177,6 +251,17 @@ __all__ = [
     "MemoryApplyResult",
     "MemoryMutationCommittedOperationView",
     "MemoryMutationReceiptView",
+    "ProspectiveOutboxSourceView",
+    "ProspectiveOutboxSourceViewV2",
+    "MutationTargetSource",
+    "ProspectiveSignalTargetSource",
+    "RegistrationRequiredView",
+    "ProspectiveInvalidationNotRequiredReceipt",
+    "ProspectiveInvalidationSettlementObservationV1",
+    "ProspectiveSettlementSchemaUpgradeReceipt",
+    "migrate_human_memory_v7_2_to_v7_3",
+    "ProspectiveSourceReadObservationV2",
+    "ProspectiveSourceReadObservationV1",
     "BoundedRecallResult",
     "MemoryResourceBounds",
     "MemoryPrincipal",
@@ -190,6 +275,10 @@ __all__ = [
     "MemoryValidationError",
     "LifecycleApplyOutcome",
     "ProcedureObservationApplyResult",
+    "ProcedureUseTarget",
+    "PROCEDURE_OBSERVATION_RECOVERY_VERSION",
+    "ProcedureOperationObservationV1",
+    "PreparedProcedureObservation",
     "ProspectiveSignalApplyResult",
     "ShortHorizonDegradationCode",
     "ShortHorizonGenerationBuildResult",
@@ -198,4 +287,14 @@ __all__ = [
     "ShortHorizonRecallResult",
 ]
 
-__version__ = "0.6.3"
+__version__ = "0.6.19"
+
+from simple_harness_memory.core.procedure_discovery import ProcedureDraftCandidate, ProcedureDraftPage
+# Bounded current USER input use. Ordinary history/recall policy is unchanged.
+from simple_harness_memory.core.input_visibility import (
+    CurrentInputBindingV1, CurrentInputAuthorityV1, CurrentInputAuthorityPort,
+    CurrentInputVisibilityV1,
+)
+from simple_harness_memory.core.input_observation import CurrentInputObservationV1
+__all__ += ["CurrentInputBindingV1", "CurrentInputAuthorityV1", "CurrentInputAuthorityPort",
+    "CurrentInputVisibilityV1", "CurrentInputObservationV1"]

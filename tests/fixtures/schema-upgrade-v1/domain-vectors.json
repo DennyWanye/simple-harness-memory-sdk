@@ -1,0 +1,46 @@
+[
+  {
+    "domain": "memory.schema.source-admission-upgrade.ddl.v1",
+    "payload": [
+      "ALTER TABLE evidence_envelopes ADD COLUMN analysis_lineage_json BLOB",
+      "CREATE TABLE source_admission_receipts (\n    receipt_id TEXT PRIMARY KEY,\n    evidence_id TEXT NOT NULL UNIQUE REFERENCES evidence_envelopes(evidence_id),\n    source_hash TEXT NOT NULL,\n    envelope_hash TEXT NOT NULL,\n    admission_receipt_id TEXT NOT NULL,\n    admission_receipt_json BLOB NOT NULL,\n    admission_receipt_hash TEXT NOT NULL,\n    receipt_hash TEXT NOT NULL UNIQUE,\n    accepted_at REAL NOT NULL CHECK (accepted_at >= 0)\n);",
+      "CREATE UNIQUE INDEX source_admission_receipt_unique\n    ON source_admission_receipts(admission_receipt_id);",
+      "CREATE TRIGGER source_admission_receipts_immutable_update\nBEFORE UPDATE ON source_admission_receipts BEGIN SELECT RAISE(ABORT, 'immutable evidence'); END;",
+      "CREATE TRIGGER source_admission_receipts_immutable_delete\nBEFORE DELETE ON source_admission_receipts BEGIN SELECT RAISE(ABORT, 'immutable evidence'); END;"
+    ],
+    "hash": "a17c20316fb17baf375745ad225a994e521acdd2c809dc6390439aa58867f5db"
+  },
+  {
+    "domain": "memory.schema.source-admission-upgrade.ddl.v1",
+    "payload": [
+      "CREATE TABLE source_admission_receipts (\n    receipt_id TEXT PRIMARY KEY,\n    evidence_id TEXT NOT NULL UNIQUE REFERENCES evidence_envelopes(evidence_id),\n    source_hash TEXT NOT NULL,\n    envelope_hash TEXT NOT NULL,\n    admission_receipt_id TEXT NOT NULL,\n    admission_receipt_json BLOB NOT NULL,\n    admission_receipt_hash TEXT NOT NULL,\n    receipt_hash TEXT NOT NULL UNIQUE,\n    accepted_at REAL NOT NULL CHECK (accepted_at >= 0)\n);",
+      "CREATE UNIQUE INDEX source_admission_receipt_unique\n    ON source_admission_receipts(admission_receipt_id);",
+      "CREATE TRIGGER source_admission_receipts_immutable_update\nBEFORE UPDATE ON source_admission_receipts BEGIN SELECT RAISE(ABORT, 'immutable evidence'); END;",
+      "CREATE TRIGGER source_admission_receipts_immutable_delete\nBEFORE DELETE ON source_admission_receipts BEGIN SELECT RAISE(ABORT, 'immutable evidence'); END;"
+    ],
+    "hash": "e5b1240bce6306a2bde464328615fb905120f34727c32f488bcb1d7fc4298722"
+  },
+  {
+    "domain": "memory.short.sources.request.v1",
+    "payload": {
+      "principal": {
+        "deployment_id": "deployment-1",
+        "household_id": "household-1",
+        "actor_id": "actor-1",
+        "session_id": "session-1"
+      },
+      "disclosure": {
+        "host-facts": "测试独立canonical载荷"
+      },
+      "bindings": [
+        {
+          "kind": "short_horizon",
+          "audit_id": "audit-1",
+          "chunk_ref": "short:1",
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    },
+    "hash": "a24668b5edcb04f2ae16677f415224fd09c24d2e8e45f46882180ba31908701d"
+  }
+]

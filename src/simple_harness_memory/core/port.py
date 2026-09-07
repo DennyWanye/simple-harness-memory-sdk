@@ -13,6 +13,8 @@ from simple_harness.runtime import (
     ProspectiveSignalAuthorityRef,
     RecallContext,
     RecallPlan,
+    SanitizedEvidenceEnvelope,
+    SanitizedEvidenceReceipt,
 )
 
 if TYPE_CHECKING:
@@ -25,6 +27,7 @@ if TYPE_CHECKING:
     )
 
     from simple_harness_memory.core.jobs import AnalysisLineage
+    from simple_harness_memory.core.procedure_discovery import ProcedureDraftPage
 
 from simple_harness_memory.cognitive.twin_builder import TwinGraphView
 from simple_harness_memory.core.audit import (
@@ -35,7 +38,17 @@ from simple_harness_memory.core.audit import (
     AuditTraceQuery,
     CanonicalStateManifestAccessV1,
 )
-from simple_harness_memory.core.evidence import EvidenceIngestionReceipt, IngestedEvidenceRecord
+from simple_harness_memory.core.evidence import (
+    EvidenceIngestionReceipt,
+    EvidenceSourceAdmissionReceipt,
+    IngestedEvidenceRecord,
+)
+from simple_harness_memory.core.history import (
+    HistoryBinding,
+    HistoryRecallBinding,
+    HistoryShortHorizonBinding,
+    HistoryVisibilitySnapshot,
+)
 from simple_harness_memory.core.identity import (
     MemoryPrincipal,
     MemoryScope,
@@ -53,6 +66,9 @@ from simple_harness_memory.core.models import (
     MemoryApplyResult,
     Message,
 )
+from simple_harness_memory.core.prospective_settlement import RegistrationRequiredView, ProspectiveInvalidationNotRequiredReceipt
+from simple_harness_memory.core.prospective_sources_v2 import ProspectiveOutboxSourceViewV2
+from simple_harness_memory.core.prospective_sources import ProspectiveOutboxSourceView
 from simple_harness_memory.core.mutation_receipts import MemoryMutationReceiptView
 from simple_harness_memory.core.recall import TypedRecallExecution
 from simple_harness_memory.core.short_horizon import (
@@ -60,6 +76,12 @@ from simple_harness_memory.core.short_horizon import (
     ShortHorizonProjectionBuildResult,
     ShortHorizonRecallResult,
 )
+from simple_harness_memory.core.operation_audit import (
+    OperationAuditCursor,
+    OperationAuditExpectation,
+    OperationAuditPage,
+)
+from simple_harness_memory.core.short_sources import ShortHorizonSourceSnapshot
 from simple_harness_memory.core.suppression import (
     SealedAuditAccessReceipt,
     SuppressionDecision,
@@ -306,6 +328,29 @@ class CognitiveMemoryBackend(Protocol):
     authority substitute.
     """
 
+    async def check_current_input_visibility(self, *, principal: MemoryPrincipal,
+        disclosure_context: DisclosureContext, binding, bindings=None):
+        """Current explicit item input only; not an ordinary history grant."""
+        ...
+
+    async def check_history_visibility(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        disclosure_context: DisclosureContext,
+        bindings: tuple[HistoryBinding, ...],
+    ) -> HistoryVisibilitySnapshot: ...
+
+    async def resolve_typed_short_horizon_sources(
+        self, *, principal: MemoryPrincipal, disclosure_context: DisclosureContext,
+        bindings: tuple[HistoryRecallBinding, ...],
+    ) -> ShortHorizonSourceSnapshot: ...
+
+    async def resolve_short_horizon_sources(
+        self, *, principal: MemoryPrincipal, disclosure_context: DisclosureContext,
+        bindings: tuple[HistoryShortHorizonBinding, ...],
+    ) -> ShortHorizonSourceSnapshot: ...
+
     async def apply_memory_mutation_plan(
         self,
         *,
@@ -314,12 +359,29 @@ class CognitiveMemoryBackend(Protocol):
         plan: MemoryMutationPlan,
     ) -> MemoryMutationApplyResult: ...
 
+    async def settle_prospective_invalidation(self, *, principal: MemoryPrincipal, outbox_id: str,
+        payload_hash: str, expected_source_hash: str) -> RegistrationRequiredView | ProspectiveInvalidationNotRequiredReceipt:
+        ...
+
+    async def read_prospective_outbox_source_v2(
+        self, *, principal: MemoryPrincipal, outbox_id: str, payload_hash: str,
+    ) -> ProspectiveOutboxSourceViewV2: ...
+
+    async def read_prospective_outbox_source(
+        self, *, principal: MemoryPrincipal, outbox_id: str, payload_hash: str,
+    ) -> ProspectiveOutboxSourceView: ...
+
     async def get_memory_mutation_receipt_view(
         self,
         *,
         principal: MemoryPrincipal,
         receipt_ref: MemoryMutationApplyReceiptRef,
     ) -> MemoryMutationReceiptView: ...
+
+    async def admit_evidence_source(
+        self, *, principal: MemoryPrincipal,
+        envelope: SanitizedEvidenceEnvelope, receipt: SanitizedEvidenceReceipt,
+    ) -> EvidenceSourceAdmissionReceipt: ...
 
     async def ingest_committed_evidence(
         self,
@@ -348,6 +410,17 @@ class CognitiveMemoryBackend(Protocol):
         *,
         principal: MemoryPrincipal | None = None,
     ) -> SuppressionDecision: ...
+
+    async def discover_procedure_drafts(self, *, principal: MemoryPrincipal,
+        scope: MemoryScope, disclosure_context: DisclosureContext, query: str,
+        after: str = "", limit: int = 8, max_bytes: int = 32768) -> ProcedureDraftPage: ...
+
+    async def read_procedure_use_target(self, *, principal: MemoryPrincipal,
+        scope: MemoryScope, memory_id: str, revision: int, allow_observation_rebase: bool = False) -> object: ...
+
+    async def prepare_procedure_observation(
+        self, *, principal: MemoryPrincipal, scope: MemoryScope, **observation: object,
+    ) -> object: ...
 
     async def record_procedure_observation(
         self,
@@ -395,6 +468,7 @@ class CognitiveMemoryBackend(Protocol):
         context: RecallContext,
         plan: RecallPlan,
         now: float | None = None,
+        harness_protocol: int = 4,
     ) -> TypedRecallExecution: ...
 
     async def page_typed_recall_result(
@@ -422,6 +496,14 @@ class CognitiveMemoryBackend(Protocol):
         principal: MemoryPrincipal,
         authority_ref: AuditAccessAuthorityRefV1,
     ) -> SealedAuditAccessReceipt: ...
+
+    async def read_operation_audit(
+        self, *, requester: MemoryPrincipal, target_principal: MemoryPrincipal,
+        access_receipt: SealedAuditAccessReceipt, limit: int = 100,
+        cursor: OperationAuditCursor | None = None,
+        expected: tuple[OperationAuditExpectation, ...] = (),
+    ) -> OperationAuditPage:
+        ...
 
     async def export_audit_trace(
         self,

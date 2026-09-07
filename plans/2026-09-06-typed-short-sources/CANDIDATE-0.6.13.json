@@ -1,0 +1,179 @@
+{
+  "schema": "memory-local-candidate-v1",
+  "candidate_version": "0.6.13",
+  "source": "f2a6a706c5e3407e896ada3bd9e735cd9c0b77fd",
+  "reviewed_source": "cd1ea1adfda5c2d4714a8a695eb8795f879e7f86",
+  "source_review": "Dirac scoped ACCEPT",
+  "artifact_review": "pending",
+  "source_date_epoch": "1788651677",
+  "build_backend": "hatchling 1.32.0",
+  "builds": [
+    {
+      "command": [
+        "/Users/denny/projects/simple-harness-service-sdk/.venv/bin/python",
+        "-m",
+        "hatchling",
+        "build",
+        "-t",
+        "wheel",
+        "-d",
+        "/Users/denny/projects/simple-harness-memory-sdk-typed-short-sources/.local-test-evidence/2026-09-06/typed-short-sources/artifact/build1"
+      ],
+      "path": "/Users/denny/projects/simple-harness-memory-sdk-typed-short-sources/.local-test-evidence/2026-09-06/typed-short-sources/artifact/build1/simple_harness_memory_sdk-0.6.13-py3-none-any.whl",
+      "sha256": "33fcc494f0cb8c9f358e411b372d4dcdc423725563dda6f5b96684f5fa1ffd62",
+      "bytes": 350870
+    },
+    {
+      "command": [
+        "/Users/denny/projects/simple-harness-service-sdk/.venv/bin/python",
+        "-m",
+        "hatchling",
+        "build",
+        "-t",
+        "wheel",
+        "-d",
+        "/Users/denny/projects/simple-harness-memory-sdk-typed-short-sources/.local-test-evidence/2026-09-06/typed-short-sources/artifact/build2"
+      ],
+      "path": "/Users/denny/projects/simple-harness-memory-sdk-typed-short-sources/.local-test-evidence/2026-09-06/typed-short-sources/artifact/build2/simple_harness_memory_sdk-0.6.13-py3-none-any.whl",
+      "sha256": "33fcc494f0cb8c9f358e411b372d4dcdc423725563dda6f5b96684f5fa1ffd62",
+      "bytes": 350870
+    }
+  ],
+  "declared_dependencies": [
+    "aiosqlite>=0.19",
+    "numpy<2.5,>=1.24",
+    "pydantic>=2.0",
+    "simple-harness-sdk<0.8,>=0.7",
+    "structlog>=24.0",
+    "httpx>=0.27; extra == 'all'",
+    "python-dateutil>=2.9; extra == 'all'",
+    "sentence-transformers>=3.0; extra == 'all'",
+    "simple-harness-sdk<0.8,>=0.7; extra == 'all'",
+    "torch>=2.7.1; extra == 'all'",
+    "anyio>=4.0; extra == 'dev'",
+    "mypy==1.20.2; extra == 'dev'",
+    "pytest-asyncio>=0.23; extra == 'dev'",
+    "pytest>=8.0; extra == 'dev'",
+    "ruff==0.16.3; extra == 'dev'",
+    "simple-harness-sdk<0.8,>=0.7; extra == 'dev'",
+    "sentence-transformers>=3.0; extra == 'embeddings'",
+    "torch>=2.7.1; extra == 'embeddings'",
+    "simple-harness-sdk<0.8,>=0.7; extra == 'harness'",
+    "httpx>=0.27; extra == 'world'",
+    "python-dateutil>=2.9; extra == 'world'"
+  ],
+  "installation": {
+    "empty_own_venv": true,
+    "offline": true,
+    "sdk_wheels_no_deps": true,
+    "source_overlay": false,
+    "python": "3.12.13",
+    "package_bytes": [
+      {
+        "distribution": "simple-harness-sdk",
+        "version": "0.7.3",
+        "wheel": "/Users/denny/projects/simple-harness-sdk-operation-audit/.local-test-evidence/2026-09-06/run-operation-audit-073/build1/simple_harness_sdk-0.7.3-py3-none-any.whl",
+        "sha256": "1a9ed5c95e6cddd4e0ccd85124320a6001008740a53213712fc89f3467cb4cd7",
+        "wheel_members_compared": 169,
+        "record_rewritten_by_installer": true,
+        "direct_url_contains_archive_hash": false
+      },
+      {
+        "distribution": "simple-harness-memory-sdk",
+        "version": "0.6.13",
+        "wheel": "/Users/denny/projects/simple-harness-memory-sdk-typed-short-sources/.local-test-evidence/2026-09-06/typed-short-sources/artifact/build1/simple_harness_memory_sdk-0.6.13-py3-none-any.whl",
+        "sha256": "33fcc494f0cb8c9f358e411b372d4dcdc423725563dda6f5b96684f5fa1ffd62",
+        "wheel_members_compared": 75,
+        "record_rewritten_by_installer": true,
+        "direct_url_contains_archive_hash": false
+      }
+    ]
+  },
+  "consumer": {
+    "passed": 8,
+    "pytest_seconds": 2.09,
+    "command": [
+      "/Users/denny/projects/simple-harness-memory-sdk-typed-short-sources/.local-test-evidence/2026-09-06/typed-short-sources/artifact/venv/bin/python",
+      "-I",
+      "-m",
+      "pytest",
+      "-c",
+      "pytest.ini",
+      "test_installed_public.py",
+      "tests/integration/test_typed_short_sources.py::test_exact_duplicate_domain_clock_and_reopen",
+      "tests/integration/test_typed_short_sources.py::test_forged_four_tuple_keeps_valid_sibling",
+      "tests/integration/test_typed_short_sources.py::test_eligible_but_not_selected_and_cognitive_never_expand",
+      "tests/integration/test_typed_short_sources.py::test_current_gates_deny_refs[memory]",
+      "-v",
+      "-p",
+      "no:cacheprovider",
+      "-p",
+      "pytest_asyncio.plugin"
+    ],
+    "pid": 24097,
+    "exit_code": 0,
+    "peak_rss_kib": 118992,
+    "elapsed_seconds": 2.4,
+    "stop_reason": null
+  },
+  "source_bytes": {
+    "source": "f2a6a706c5e3407e896ada3bd9e735cd9c0b77fd",
+    "source_members_compared": 72,
+    "equal": true
+  },
+  "limitations": [
+    "Host full causal-group and final outgoing policy are separate",
+    "no model/native/weight validation",
+    "no claim of whole-call latency or scan bound",
+    "old0612 artifacts unchanged",
+    "noDDL_or_old_wire_hash_rewrite"
+  ],
+  "published": false,
+  "evidence": {
+    ".local-test-evidence/2026-09-06/typed-short-sources/artifact/build-record.json": {
+      "sha256": "3531af892cc5798122d90209dc9e2693c7f119afde2f8d0b3d553e2a1dbae0ec"
+    },
+    ".local-test-evidence/2026-09-06/typed-short-sources/artifact/build1.log": {
+      "sha256": "74b76929a75d37dad87813f1f3612b57ec0f09ed72f7d9141495d3de3ce039d9"
+    },
+    ".local-test-evidence/2026-09-06/typed-short-sources/artifact/build2.log": {
+      "sha256": "40f7ac81eb523077e9f1daf8234c1154306104809e850c245405895ddea4ac00"
+    },
+    ".local-test-evidence/2026-09-06/typed-short-sources/artifact/venv.log": {
+      "sha256": "b393289e0f73d37556d017c1f7912e2dda16e88831cf955c2af69d0ec4841621"
+    },
+    ".local-test-evidence/2026-09-06/typed-short-sources/artifact/install-sdk.log": {
+      "sha256": "ca8b0dec79ce734a41c2cc30f4ab817656fe5c0e3ed18854cd0063c8bc4d4d35"
+    },
+    ".local-test-evidence/2026-09-06/typed-short-sources/artifact/install-support.log": {
+      "sha256": "2796a750e6e02e7204d05e2017498fde2a1d5f1547f559f60241399b00f885e7"
+    },
+    ".local-test-evidence/2026-09-06/typed-short-sources/artifact/installed-consumer.log": {
+      "sha256": "0d4c5c5a0a5f10cc682bec2a1d8304cf8dbf252f1a8ad6c985f228a8bc40d625"
+    },
+    ".local-test-evidence/2026-09-06/typed-short-sources/artifact/installed-run.json": {
+      "sha256": "030f65d6d74b1366adcf3cecd0014c1de91f9a412453feec039502ee82cca828"
+    },
+    ".local-test-evidence/2026-09-06/typed-short-sources/artifact/installed-byte-comparison.json": {
+      "sha256": "b735c325e423e21a0d465d6f3fd4e94cf4d1d116da18871aca06dfda40e011c8"
+    },
+    ".local-test-evidence/2026-09-06/typed-short-sources/artifact/installed-byte-comparison.log": {
+      "sha256": "b735c325e423e21a0d465d6f3fd4e94cf4d1d116da18871aca06dfda40e011c8"
+    },
+    ".local-test-evidence/2026-09-06/typed-short-sources/artifact/fixed-source-bytes.json": {
+      "sha256": "1c830417c17fd5eb7a351bf2e62ffbe6e6acaf4ad637d7bc1f1ef268594b519f"
+    },
+    ".local-test-evidence/2026-09-06/typed-short-sources/artifact/consumer/installed-identity.json": {
+      "sha256": "0187dadb27967decfee7ab5ddeca62a625d55443bb5fade5e992f6f7c2a24893"
+    },
+    ".local-test-evidence/2026-09-06/typed-short-sources/artifact/consumer/test_installed_public.py": {
+      "sha256": "f3082d19c9a6037c87b32a963cdfaddf95d8304e0cea1120e911f771be9cfff4"
+    },
+    ".local-test-evidence/2026-09-06/typed-short-sources/artifact/run_installed.py": {
+      "sha256": "e35ad9d3180acb06a92709e41fb08a7f6179b0f4982e5e457d7e3f62e2afeeda"
+    },
+    ".local-test-evidence/2026-09-06/typed-short-sources/artifact/verify_installed_bytes.py": {
+      "sha256": "00b2544cb1f1166b98d1f357b762daae6424c39037b4913dcdadecd00be49e17"
+    }
+  }
+}

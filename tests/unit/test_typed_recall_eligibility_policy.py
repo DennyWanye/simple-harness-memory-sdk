@@ -150,6 +150,9 @@ def _disclosure(
 ) -> SimpleNamespace:
     return SimpleNamespace(
         recipient=SimpleNamespace(value=recipient),
+        intended_audience=SimpleNamespace(value={
+            "task_collaborator": "task_collaborators", "external_party": "external",
+        }.get(recipient, recipient)),
         purpose=SimpleNamespace(value=purpose),
         trust=SimpleNamespace(value=trust),
         generation=SimpleNamespace(value=generation),

@@ -1,0 +1,20 @@
+{
+  "schema": "memory-local-candidate-v1",
+  "candidate_version": "0.6.14",
+  "source": "27dceffe05247415ba9b48a55e865a0faba37629",
+  "reviewed_source": "d7cb3ca97189e6c5e47df25d1f21e92166447e69",
+  "source_review": "Dirac scoped ACCEPT; version/test-only successor",
+  "artifact_review": "pending",
+  "wheel_sha256": "f60e7696af830704399f1e964fbd312ea1fea6e41ee7b9123a8a3dfe303368eb",
+  "wheel_bytes": 351502,
+  "reproducible_builds": 2,
+  "source_date_epoch": "1788659834",
+  "wheel_path": "/Users/denny/projects/simple-harness-memory-sdk-typed-short-sources/.local-test-evidence/2026-09-06/audience-binding/artifact/build1/simple_harness_memory_sdk-0.6.14-py3-none-any.whl",
+  "installed_members": 76,
+  "harness_version": "0.7.3",
+  "harness_installed_members": 169,
+  "consumer_scope": "clean Memory target with borrowed exact H073/dependency interpreter; not a new full venv",
+  "schema_changed": false,
+  "host_pin_changed": false,
+  "evidence_manifest_sha256": "9d02732a606d5230989f87d14f330058c22c10a55363920e9aba95f9b2a75caa"
+}
