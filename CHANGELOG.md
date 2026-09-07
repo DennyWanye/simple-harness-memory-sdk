@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.24] - 2026-09-07（认知向量世代跳过 relation 记忆；构建失败落 failed 行）
+
+- 基于 0.6.23。原生真实运行（r8）复现：分析任务落库一个含 semantic relation（`applies_to`）的 v6 提案后，Host 短索引 worker 每 tick 记录 `memory_short_index_unavailable type=MemoryCorruptionError`，`cognitive_vector_generations` 始终为空。根因：relation 记忆本身是 `cognitive_memory_heads` 里 `memory_type=semantic` 的 head，但它是图谱的边（HM-AC-6），没有 `semantic_claims` 行；`_cognitive_vector_head_rows_unlocked` 未排除它，`_cognitive_public_payload_unlocked` 对它抛 `typed recall payload missing`，且抛出发生在任何世代行写入之前。短时域 projection/generation 不受影响。
+- 修复：`_cognitive_vector_head_rows_unlocked` 新增 `_cognitive_semantic_head_is_relation` 判定（与 typed recall 类型权限门同一口径，content 不可解析 fail closed），relation head 不进世代、不进 manifest（stale 判定同样排除）、`vector_count` 只计非 relation head；typed recall 的 vector lane 与 confirmation 门本就在类型权限门后才比对，relation 记忆永不被打分或作为 item/成员返回（新增回归钉死）。
+- 构建失败契约：`rebuild_cognitive_vector_generation()` 的任何失败先在独立事务落一行 `state='failed'` + `last_error_code`（`cognitive_vector_head_invalid` / `cognitive_vector_embedding_failed` / `cognitive_vector_generation_write_failed`，常量在 `features/cognitive_vector.py`），再抛 `core.errors.CognitiveVectorGenerationFailed`（`code` 为同一失败码、`generation_id` 为该 failed 行；RuntimeError 子类，Host 现有 `except RuntimeError` 不需改）。故障消失后下一 tick 正常构建，failed 行保留为历史。
+- 无 DDL 变化（7.4 checksum 不变）、根导出零增减。新增 4 项测试（`test_cognitive_vector_generation.py` 3 项：relation 跳过 + worker 顺序、重开、三阶段失败落 failed 行；`test_typed_recall_cognitive_vector.py` 1 项：relation 不进 vector lane/confirmation）。公共 API 快照 `public-api-0.6.24.json`。仅本地候选，未发布。
+
 ## [0.6.23] - 2026-09-07（长期认知记忆向量通道）
 
 - 基于 0.6.22。按 `plans/2026-08-29-human-memory-digital-twin/DECISION-2026-09-07-cognitive-vector-lane.md` 方案 A：typed recall 为长期认知记忆新增真正的 `vector` lane（RRF 权重沿用预留的 0.40）。写入侧为"世代重建"：新公共方法 `MemoryManager.rebuild_cognitive_vector_generation()` 复用 `short_horizon_embedder`（不加新 builder kwarg），对全部可召回 head 的**公开 payload** 文本（`features/cognitive_vector.py::cognitive_vector_text`）批量嵌入，manifest hash(memory_id, revision, content_hash) 相同则 replay，否则写新世代并原子激活、旧世代 retire、审计 `cognitive_vector_audit`、推进 recall authority；嵌入永不在 mutation 写锁内发生。

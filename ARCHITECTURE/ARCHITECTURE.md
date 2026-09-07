@@ -14,6 +14,14 @@
 
 最后更新：2026-09-06。Procedure后继公开prepare/read target/record的实际operation observation六项新控通过；f82c2b8仅Procedure复用source-only S1完整持久校验，Host三真实Scope路由/文件effects/完整group→公共观察由原红转绿，累计成功1/2/3与重放已验证。新四项跨源边界控未跑，完整TC-HM04、独审、installed/native未闭合。主整合Hegel e500556后统一版本，不独立build，不改M618制品；F01延期。[源码与证据边界](../plans/2026-09-06-procedure-observation-prepare/CONTRACT.md)。
 
+## 2026-09-07 0.6.24 认知向量世代跳过 relation 记忆、构建失败落库
+
+最后更新：2026-09-07。基于 0.6.23，仅本地候选、未发布、未构建制品、Host 未 pin。
+
+- **缺陷**（原生 r8）：含 semantic relation（`applies_to`）的提案落库后，Host 短索引 worker 每 tick 抛 `MemoryCorruptionError`（`typed recall payload missing`），`cognitive_vector_generations` 始终为空。relation 记忆是 `cognitive_memory_heads` 里 `memory_type=semantic` 的 head，但它是图谱的边（HM-AC-6）而非节点：没有 `semantic_claims` 行，从不参与召回排序。0.6.23 的 `_cognitive_vector_head_rows_unlocked` 把它当节点取公开 payload。短时域 projection/generation 不受影响。
+- **修复**：`_cognitive_semantic_head_is_relation`（与 typed recall 类型权限门同一判定，content 不可解析 fail closed）在 head 收集处排除 relation；manifest/stale 判定、缓存完整性校验与 `vector_count` 同步只计节点 head。typed recall 的 vector lane 与 confirmation 门本就在类型权限门之后比对，relation 永不被打分或返回（回归钉死）。
+- **构建失败契约**：`rebuild_cognitive_vector_generation()` 任何失败 → 先在独立事务落 `cognitive_vector_generations(state='failed', last_error_code)`（`cognitive_vector_head_invalid` / `cognitive_vector_embedding_failed` / `cognitive_vector_generation_write_failed`），再抛 `core.errors.CognitiveVectorGenerationFailed`（`code`、`generation_id`；RuntimeError 子类）。worker 不再每 tick 收到未落库的 `MemoryCorruptionError`；故障消失后下一 tick 正常构建。无 DDL 变化、根导出零增减；快照 `public-api-0.6.24.json`。
+
 ## 2026-09-07 0.6.23 长期认知记忆向量通道源码候选
 
 最后更新：2026-09-07。按 [裁决](../plans/2026-08-29-human-memory-digital-twin/DECISION-2026-09-07-cognitive-vector-lane.md) 方案 A 实现，仅本地候选、未发布、未构建制品、Host 未 pin。

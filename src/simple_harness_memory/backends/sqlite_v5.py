@@ -46,6 +46,9 @@ from simple_harness_memory.backends.schema_v7_4 import (
 )
 from simple_harness_memory.backends.storage import secure_sqlite_path, verify_sqlite_path
 from simple_harness_memory.features.cognitive_vector import (
+    COGNITIVE_VECTOR_BUILD_EMBEDDING_FAILED,
+    COGNITIVE_VECTOR_BUILD_HEAD_INVALID,
+    COGNITIVE_VECTOR_BUILD_WRITE_FAILED,
     COGNITIVE_VECTOR_DEADLINE,
     COGNITIVE_VECTOR_MIN_SCORE,
     COGNITIVE_VECTOR_NO_GENERATION,
@@ -57,6 +60,7 @@ from simple_harness_memory.features.cognitive_vector import (
 )
 from simple_harness_memory.features.lexical import typed_recall_query_terms
 from simple_harness_memory.core.errors import (
+    CognitiveVectorGenerationFailed,
     MemoryCorruptionError,
     MemoryErrorBase,
     MemoryIdempotencyConflict,
@@ -169,7 +173,7 @@ if TYPE_CHECKING:
         SuppressionResolution,
         SuppressionRevokeRequest,
     )
-    from simple_harness_memory.embedders.base import Embedder
+    from simple_harness_memory.embedders.base import Embedder, EmbeddingLineage
 
 FaultInjector = Callable[[str], None]
 _DDL = ddl_statements()
@@ -2525,13 +2529,16 @@ class SQLiteHumanMemoryBackend:
         """Build and atomically activate the cognitive-memory vector generation (0.6.23).
 
         镜像 ``rebuild_short_horizon_generation``：取全部可召回 head（复用
-        ``_cognitive_recall_state_allowed``，含 contested 以服务 confirmation 门）→
-        manifest hash(memory_id, revision, content_hash) → 同 lineage 同 manifest 已 active
-        则 replay → 否则 ``embed_batch`` 公开 payload 文本 → 写 ``cognitive_vectors`` →
-        原子激活、旧世代 retire → 审计。嵌入永远不在 mutation 写锁内发生。
-        """
+        ``_cognitive_recall_state_allowed``，含 contested 以服务 confirmation 门；relation 类
+        SEMANTIC head 是边不是节点，0.6.24 起排除）→ manifest hash(memory_id, revision,
+        content_hash) → 同 lineage 同 manifest 已 active 则 replay → 否则 ``embed_batch``
+        公开 payload 文本 → 写 ``cognitive_vectors`` → 原子激活、旧世代 retire → 审计。
+        嵌入永远不在 mutation 写锁内发生。
 
-        from simple_harness_memory.embedders.base import EMBEDDING_FORMAT_VERSION, encode_vector
+        0.6.24：任何构建失败都先落一行 ``state='failed'`` + ``last_error_code`` 的
+        ``cognitive_vector_generations``，再抛 ``CognitiveVectorGenerationFailed``（``code``
+        为同一失败码），维护 worker 不会再每 tick 收到一个未落库的 ``MemoryCorruptionError``。
+        """
 
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
@@ -2539,151 +2546,246 @@ class SQLiteHumanMemoryBackend:
             raise MemoryValidationError("short_horizon_embedder_required")
         effective_now = _timestamp(self._now() if now is None else now)
         embedder = self._short_horizon_embedder
+        lineage = embedder.lineage
         async with self._write_lock:
-            rows = await self._cognitive_vector_head_rows_unlocked()
-            manifest_hash = self._cognitive_vector_manifest_hash(rows)
-            lineage = embedder.lineage
-            async with self._db.execute(
-                "SELECT generation_id FROM cognitive_vector_generations "
-                "WHERE state='active' AND lineage_id=? AND content_hash=?",
-                (lineage.lineage_id, manifest_hash),
-            ) as cursor:
-                existing = await cursor.fetchone()
-            if existing is not None:
-                await self._load_cognitive_vector_cache_unlocked()
-                audit_id = await self._append_cognitive_vector_audit_transaction(
-                    generation_id=str(existing[0]),
-                    generation_state="active",
-                    vector_count=len(rows),
-                    details={
-                        "manifest_hash": manifest_hash,
-                        "lineage_id_hash": _opaque_hash(lineage.lineage_id),
-                        "replayed": True,
-                    },
-                    created_at=effective_now,
-                )
-                return CognitiveVectorGenerationBuildResult(
-                    str(existing[0]), len(rows), True, True, audit_id
-                )
-            if not rows:
-                audit_id = await self._append_cognitive_vector_audit_transaction(
-                    generation_id=None,
-                    generation_state="empty",
-                    vector_count=0,
-                    details={
-                        "manifest_hash": manifest_hash,
-                        "lineage_id_hash": _opaque_hash(lineage.lineage_id),
-                        "replayed": False,
-                    },
-                    created_at=effective_now,
-                )
-                return CognitiveVectorGenerationBuildResult(None, 0, False, False, audit_id)
-            texts: list[str] = []
-            for row in rows:
-                payload, _source_time = await self._cognitive_public_payload_unlocked(row)
-                text = cognitive_vector_text(str(row["memory_type"]), payload)
-                texts.append(text if text.strip() else str(row["memory_type"]))
-            vectors = await embedder.embed_batch(texts)
-            embedder.validate_vectors(vectors, expected_count=len(rows))
-            encoded_vectors = tuple(encode_vector(vector) for vector in vectors)
-            vector_hashes = tuple(
-                hashlib.sha256(encoded).hexdigest() for encoded in encoded_vectors
-            )
-            vector_manifest_hash = self._cognitive_vector_vector_manifest_hash(
-                tuple(
-                    (cognitive_vector_ref(str(row["memory_id"]), int(row["revision"])), vector_hash)
-                    for row, vector_hash in zip(rows, vector_hashes, strict=True)
-                )
-            )
-            generation_id = f"cognitive-gen:{uuid4().hex}"
-            await self._db.execute("BEGIN IMMEDIATE")
-            committed = False
+            attempt = _CognitiveVectorBuildAttempt()
             try:
-                await self._ensure_system_principal_unlocked(effective_now)
-                await self._db.execute(
-                    "INSERT INTO embedding_lineages(lineage_id,kind,provider,model,revision,"
-                    "dimension,normalized,format_version,fingerprint,created_at) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(lineage_id) DO NOTHING",
-                    (
-                        lineage.lineage_id,
-                        lineage.kind,
-                        lineage.provider,
-                        lineage.model,
-                        lineage.revision,
-                        lineage.dimension,
-                        1 if lineage.normalization == "l2" else 0,
-                        EMBEDDING_FORMAT_VERSION,
-                        lineage.format_fingerprint,
-                        effective_now,
-                    ),
+                return await self._build_cognitive_vector_generation_unlocked(
+                    embedder, attempt, effective_now
                 )
-                await self._db.execute(
-                    "INSERT INTO cognitive_vector_generations(generation_id,lineage_id,state,"
-                    "content_hash,vector_manifest_hash,created_at) VALUES(?,?,'building',?,?,?)",
-                    (
-                        generation_id,
-                        lineage.lineage_id,
-                        manifest_hash,
-                        vector_manifest_hash,
-                        effective_now,
-                    ),
-                )
-                for row, encoded_vector, vector_hash in zip(
-                    rows, encoded_vectors, vector_hashes, strict=True
-                ):
-                    await self._db.execute(
-                        "INSERT INTO cognitive_vectors(memory_id,revision,generation_id,"
-                        "embedding,embedding_hash,dimension) VALUES(?,?,?,?,?,?)",
-                        (
-                            str(row["memory_id"]),
-                            int(row["revision"]),
-                            generation_id,
-                            encoded_vector,
-                            vector_hash,
-                            lineage.dimension,
-                        ),
+            except Exception as exc:  # noqa: BLE001 - every failure is recorded with a code
+                if isinstance(exc, CognitiveVectorGenerationFailed):
+                    raise
+                failed_generation_id: str | None = None
+                with suppress(Exception):
+                    failed_generation_id = (
+                        await self._record_cognitive_vector_generation_failure_unlocked(
+                            lineage=lineage,
+                            generation_id=attempt.generation_id,
+                            manifest_hash=attempt.manifest_hash,
+                            error_code=attempt.stage,
+                            created_at=effective_now,
+                        )
                     )
-                self._fault("cognitive_vector.generation.before_activate")
-                await self._db.execute(
-                    "UPDATE cognitive_vector_generations SET state='retired' WHERE state='active'"
-                )
-                await self._db.execute(
-                    "UPDATE cognitive_vector_generations SET state='active',activated_at=? "
-                    "WHERE generation_id=? AND state='building'",
-                    (effective_now, generation_id),
-                )
-                audit_id = await self._append_cognitive_vector_audit_unlocked(
-                    generation_id=generation_id,
-                    generation_state="active",
-                    vector_count=len(rows),
-                    details={
-                        "manifest_hash": manifest_hash,
-                        "lineage_id_hash": _opaque_hash(lineage.lineage_id),
-                        "replayed": False,
-                    },
-                    created_at=effective_now,
-                )
-                for principal_id in sorted({str(row["principal_id"]) for row in rows}):
-                    await self._advance_recall_authority_unlocked(
-                        principal_id,
-                        event_kind="cognitive_vector_generation_changed",
-                        source_ref=generation_id,
-                        now=effective_now,
-                    )
-                self._fault("cognitive_vector.generation.before_commit")
-                await self._db.execute("COMMIT")
-                committed = True
-            finally:
-                if not committed:
-                    with suppress(Exception):
-                        await self._db.execute("ROLLBACK")
+                raise CognitiveVectorGenerationFailed(
+                    attempt.stage, generation_id=failed_generation_id
+                ) from exc
+
+    async def _build_cognitive_vector_generation_unlocked(
+        self,
+        embedder: Embedder,
+        attempt: _CognitiveVectorBuildAttempt,
+        effective_now: float,
+    ) -> CognitiveVectorGenerationBuildResult:
+        from simple_harness_memory.embedders.base import encode_vector
+
+        assert self._db is not None
+        lineage = embedder.lineage
+        attempt.stage = COGNITIVE_VECTOR_BUILD_HEAD_INVALID
+        rows = await self._cognitive_vector_head_rows_unlocked()
+        manifest_hash = self._cognitive_vector_manifest_hash(rows)
+        attempt.manifest_hash = manifest_hash
+        async with self._db.execute(
+            "SELECT generation_id FROM cognitive_vector_generations "
+            "WHERE state='active' AND lineage_id=? AND content_hash=?",
+            (lineage.lineage_id, manifest_hash),
+        ) as cursor:
+            existing = await cursor.fetchone()
+        if existing is not None:
             await self._load_cognitive_vector_cache_unlocked()
-            return CognitiveVectorGenerationBuildResult(
-                generation_id, len(rows), True, False, audit_id
+            attempt.stage = COGNITIVE_VECTOR_BUILD_WRITE_FAILED
+            audit_id = await self._append_cognitive_vector_audit_transaction(
+                generation_id=str(existing[0]),
+                generation_state="active",
+                vector_count=len(rows),
+                details={
+                    "manifest_hash": manifest_hash,
+                    "lineage_id_hash": _opaque_hash(lineage.lineage_id),
+                    "replayed": True,
+                },
+                created_at=effective_now,
             )
+            return CognitiveVectorGenerationBuildResult(
+                str(existing[0]), len(rows), True, True, audit_id
+            )
+        if not rows:
+            attempt.stage = COGNITIVE_VECTOR_BUILD_WRITE_FAILED
+            audit_id = await self._append_cognitive_vector_audit_transaction(
+                generation_id=None,
+                generation_state="empty",
+                vector_count=0,
+                details={
+                    "manifest_hash": manifest_hash,
+                    "lineage_id_hash": _opaque_hash(lineage.lineage_id),
+                    "replayed": False,
+                },
+                created_at=effective_now,
+            )
+            return CognitiveVectorGenerationBuildResult(None, 0, False, False, audit_id)
+        texts: list[str] = []
+        for row in rows:
+            payload, _source_time = await self._cognitive_public_payload_unlocked(row)
+            text = cognitive_vector_text(str(row["memory_type"]), payload)
+            texts.append(text if text.strip() else str(row["memory_type"]))
+        attempt.stage = COGNITIVE_VECTOR_BUILD_EMBEDDING_FAILED
+        vectors = await embedder.embed_batch(texts)
+        embedder.validate_vectors(vectors, expected_count=len(rows))
+        encoded_vectors = tuple(encode_vector(vector) for vector in vectors)
+        vector_hashes = tuple(
+            hashlib.sha256(encoded).hexdigest() for encoded in encoded_vectors
+        )
+        vector_manifest_hash = self._cognitive_vector_vector_manifest_hash(
+            tuple(
+                (cognitive_vector_ref(str(row["memory_id"]), int(row["revision"])), vector_hash)
+                for row, vector_hash in zip(rows, vector_hashes, strict=True)
+            )
+        )
+        generation_id = f"cognitive-gen:{uuid4().hex}"
+        attempt.generation_id = generation_id
+        attempt.stage = COGNITIVE_VECTOR_BUILD_WRITE_FAILED
+        await self._db.execute("BEGIN IMMEDIATE")
+        committed = False
+        try:
+            await self._ensure_system_principal_unlocked(effective_now)
+            await self._insert_cognitive_vector_lineage_unlocked(lineage, effective_now)
+            await self._db.execute(
+                "INSERT INTO cognitive_vector_generations(generation_id,lineage_id,state,"
+                "content_hash,vector_manifest_hash,created_at) VALUES(?,?,'building',?,?,?)",
+                (
+                    generation_id,
+                    lineage.lineage_id,
+                    manifest_hash,
+                    vector_manifest_hash,
+                    effective_now,
+                ),
+            )
+            for row, encoded_vector, vector_hash in zip(
+                rows, encoded_vectors, vector_hashes, strict=True
+            ):
+                await self._db.execute(
+                    "INSERT INTO cognitive_vectors(memory_id,revision,generation_id,"
+                    "embedding,embedding_hash,dimension) VALUES(?,?,?,?,?,?)",
+                    (
+                        str(row["memory_id"]),
+                        int(row["revision"]),
+                        generation_id,
+                        encoded_vector,
+                        vector_hash,
+                        lineage.dimension,
+                    ),
+                )
+            self._fault("cognitive_vector.generation.before_activate")
+            await self._db.execute(
+                "UPDATE cognitive_vector_generations SET state='retired' WHERE state='active'"
+            )
+            await self._db.execute(
+                "UPDATE cognitive_vector_generations SET state='active',activated_at=? "
+                "WHERE generation_id=? AND state='building'",
+                (effective_now, generation_id),
+            )
+            audit_id = await self._append_cognitive_vector_audit_unlocked(
+                generation_id=generation_id,
+                generation_state="active",
+                vector_count=len(rows),
+                details={
+                    "manifest_hash": manifest_hash,
+                    "lineage_id_hash": _opaque_hash(lineage.lineage_id),
+                    "replayed": False,
+                },
+                created_at=effective_now,
+            )
+            for principal_id in sorted({str(row["principal_id"]) for row in rows}):
+                await self._advance_recall_authority_unlocked(
+                    principal_id,
+                    event_kind="cognitive_vector_generation_changed",
+                    source_ref=generation_id,
+                    now=effective_now,
+                )
+            self._fault("cognitive_vector.generation.before_commit")
+            await self._db.execute("COMMIT")
+            committed = True
+        finally:
+            if not committed:
+                with suppress(Exception):
+                    await self._db.execute("ROLLBACK")
+        await self._load_cognitive_vector_cache_unlocked()
+        return CognitiveVectorGenerationBuildResult(
+            generation_id, len(rows), True, False, audit_id
+        )
+
+    async def _insert_cognitive_vector_lineage_unlocked(
+        self, lineage: EmbeddingLineage, created_at: float
+    ) -> None:
+        from simple_harness_memory.embedders.base import EMBEDDING_FORMAT_VERSION
+
+        assert self._db is not None
+        await self._db.execute(
+            "INSERT INTO embedding_lineages(lineage_id,kind,provider,model,revision,"
+            "dimension,normalized,format_version,fingerprint,created_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(lineage_id) DO NOTHING",
+            (
+                lineage.lineage_id,
+                lineage.kind,
+                lineage.provider,
+                lineage.model,
+                lineage.revision,
+                lineage.dimension,
+                1 if lineage.normalization == "l2" else 0,
+                EMBEDDING_FORMAT_VERSION,
+                lineage.format_fingerprint,
+                created_at,
+            ),
+        )
+
+    async def _record_cognitive_vector_generation_failure_unlocked(
+        self,
+        *,
+        lineage: EmbeddingLineage,
+        generation_id: str | None,
+        manifest_hash: str | None,
+        error_code: str,
+        created_at: float,
+    ) -> str:
+        """Persist one ``failed`` generation row (0.6.24) in its own transaction.
+
+        The building transaction (if any) has already been rolled back, so the id of the
+        attempted generation is reused; ``vector_manifest_hash`` is the hash of an empty
+        manifest because no vector of this attempt survived.
+        """
+
+        assert self._db is not None
+        failed_generation_id = generation_id or f"cognitive-gen:{uuid4().hex}"
+        await self._db.execute("BEGIN IMMEDIATE")
+        committed = False
+        try:
+            await self._insert_cognitive_vector_lineage_unlocked(lineage, created_at)
+            await self._db.execute(
+                "INSERT INTO cognitive_vector_generations(generation_id,lineage_id,state,"
+                "content_hash,vector_manifest_hash,last_error_code,created_at) "
+                "VALUES(?,?,'failed',?,?,?,?)",
+                (
+                    failed_generation_id,
+                    lineage.lineage_id,
+                    manifest_hash,
+                    self._cognitive_vector_vector_manifest_hash(()),
+                    error_code,
+                    created_at,
+                ),
+            )
+            await self._db.execute("COMMIT")
+            committed = True
+        finally:
+            if not committed:
+                with suppress(Exception):
+                    await self._db.execute("ROLLBACK")
+        return failed_generation_id
 
     async def _cognitive_vector_head_rows_unlocked(self) -> tuple[aiosqlite.Row, ...]:
-        """Every current head whose lifecycle/epistemic state may ever be recalled."""
+        """Every current node head whose lifecycle/epistemic state may ever be recalled.
+
+        relation 类 SEMANTIC head 被排除：它们只是 ``cognitive_relations`` 的所有者，没有
+        ``semantic_claims`` 行，也从不参与召回排序；manifest/stale 判定同样以本方法为准。
+        """
 
         assert self._db is not None
         async with self._db.execute(
@@ -2694,8 +2796,34 @@ class SQLiteHumanMemoryBackend:
         ) as cursor:
             rows = tuple(await cursor.fetchall())
         return tuple(
-            row for row in rows if self._cognitive_recall_state_allowed(row, allow_contested=True)
+            row
+            for row in rows
+            if self._cognitive_recall_state_allowed(row, allow_contested=True)
+            and not self._cognitive_semantic_head_is_relation(row)
         )
+
+    @staticmethod
+    def _cognitive_semantic_head_is_relation(row: aiosqlite.Row) -> bool:
+        """relation 类 SEMANTIC 记忆是边不是节点（HM-AC-6）：无公开 payload，不进向量世代。
+
+        与 ``_cognitive_recall_type_authority_allowed_unlocked`` 同一判定；content 不可解析
+        时 fail closed（世代构建会把它记为 ``cognitive_vector_head_invalid``）。
+        """
+
+        if str(row["memory_type"]) != "semantic":
+            return False
+        from simple_harness.runtime import SemanticRelationMemoryPayload
+
+        try:
+            content = json.loads(str(row["content_json"]))
+            if not isinstance(content, dict):
+                raise ValueError("semantic content is not an object")
+            if content.get("semantic_kind") != "relation":
+                return False
+            SemanticRelationMemoryPayload.from_json(content)
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise MemoryCorruptionError("semantic head content is invalid") from exc
+        return True
 
     @staticmethod
     def _cognitive_vector_manifest_hash(rows: tuple[aiosqlite.Row, ...]) -> str:
@@ -18594,6 +18722,17 @@ def _analysis_decisions_hash(decisions: tuple[object, ...]) -> str:
 
 def _opaque_hash(value: str) -> str:
     return hashlib.sha256(f"memory-log/v1|{value}".encode()).hexdigest()
+
+
+class _CognitiveVectorBuildAttempt:
+    """Mutable progress of one generation rebuild, read by the failure recorder (0.6.24)."""
+
+    __slots__ = ("stage", "manifest_hash", "generation_id")
+
+    def __init__(self) -> None:
+        self.stage: str = COGNITIVE_VECTOR_BUILD_HEAD_INVALID
+        self.manifest_hash: str | None = None
+        self.generation_id: str | None = None
 
 
 class _CognitiveVectorLane:

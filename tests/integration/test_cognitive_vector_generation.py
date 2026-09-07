@@ -10,6 +10,7 @@ import hashlib
 import json
 import math
 import sqlite3
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -347,3 +348,170 @@ async def test_reopen_loads_active_generation_and_tampered_vector_fails_closed(t
         connection.close()
     with pytest.raises(MemoryCorruptionError):
         await manager_with(path, ControlledEmbedder(), clock=lambda: 40.0)
+
+
+# ---------------------------------------------------------------------------
+# 0.6.24：relation 类 SEMANTIC head 是边不是节点；构建失败落 failed 行。
+# ---------------------------------------------------------------------------
+
+
+async def _relation_ids(manager) -> tuple[str, str, str]:
+    """(claim_id, procedure_id, relation_id) of the ``_applies_to_plan`` fixture."""
+
+    by_operation = {
+        op: memory_id
+        for op, memory_id in await rows(
+            manager, "SELECT operation_id,memory_id FROM cognitive_memory_revisions"
+        )
+    }
+    return by_operation["create-source"], by_operation["create-target"], by_operation["create-relation"]
+
+
+async def relation_manager(path: Path, embedder, **kwargs):
+    from tests.integration.test_cognitive_mutation_repository_v5 import _applies_to_plan
+
+    manager, envelope, span, authority = await manager_with(path, embedder, **kwargs)
+    result = await manager.apply_memory_mutation_plan(
+        principal=_principal(),
+        scope=MemoryScope.personal("actor-1"),
+        plan=_applies_to_plan(envelope, span),
+    )
+    assert result.outcome.value == "committed"
+    assert await rows(manager, "SELECT COUNT(*) FROM cognitive_relations WHERE relation_kind='applies_to'") == [(1,)]
+    assert await rows(manager, "SELECT COUNT(*) FROM cognitive_memory_heads WHERE memory_type='semantic'") == [(2,)]
+    return manager, envelope, span, authority
+
+
+@pytest.mark.asyncio
+async def test_relation_head_is_skipped_and_worker_order_succeeds(tmp_path: Path) -> None:
+    """原生 r8 缺陷复现：claim + procedure + applies_to relation 落库后，0.6.23 的世代构建对
+    relation head（memory_type=semantic、无 semantic_claims 行）抛 ``typed recall payload
+    missing``，且不落任何世代行。0.6.24：relation 被跳过，vector_count 只计非 relation head。"""
+
+    embedder = ControlledEmbedder()
+    manager, *_ = await relation_manager(tmp_path / "relation.db", embedder)
+    try:
+        claim_id, procedure_id, relation_id = await _relation_ids(manager)
+        # Host 短索引 worker 的顺序：projection → short generation → cognitive generation。
+        await manager.rebuild_short_horizon_projection(principal=_principal())
+        await manager.rebuild_short_horizon_generation()
+        built = await manager.rebuild_cognitive_vector_generation()
+        assert built.activated and not built.replayed and built.vector_count == 2
+        assert len(embedder.embedded) == 2
+        assert all("applies_to" not in text and "relation" not in text for text in embedder.embedded)
+        stored = await rows(manager, "SELECT memory_id FROM cognitive_vectors WHERE generation_id=?", built.generation_id)
+        assert sorted(item[0] for item in stored) == sorted([claim_id, procedure_id])
+        assert relation_id not in {item[0] for item in stored}
+        assert await rows(manager, "SELECT state,last_error_code FROM cognitive_vector_generations") == [("active", None)]
+        cache = manager._backend._cognitive_vector_cache
+        assert cache is not None and sorted(cache.memory_refs) == sorted([f"{claim_id}:1", f"{procedure_id}:1"])
+        # manifest / stale 判定同样排除 relation：head 未变 → replay，不是 stale。
+        head_rows = await manager._backend._cognitive_vector_head_rows_unlocked()
+        assert sorted(str(row["memory_id"]) for row in head_rows) == sorted([claim_id, procedure_id])
+        active = await rows(manager, "SELECT content_hash FROM cognitive_vector_generations WHERE state='active'")
+        assert active == [(manager._backend._cognitive_vector_manifest_hash(head_rows),)]
+        assert active[0][0] == await manager._backend._current_cognitive_vector_manifest_hash_unlocked()
+        replay = await manager.rebuild_cognitive_vector_generation()
+        assert replay.replayed and replay.generation_id == built.generation_id and replay.vector_count == 2
+        lane, degradation = await manager._backend._prepare_cognitive_vector_lane(
+            query="concise", started_monotonic=time.monotonic(), deadline_monotonic=time.monotonic() + 1.0
+        )
+        assert degradation is None and lane is not None
+        assert lane.score(relation_id, 1) is None
+        assert lane.score(claim_id, 1) is not None
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_relation_head_survives_reopen_without_stale_or_incomplete(tmp_path: Path) -> None:
+    path = tmp_path / "relation-reopen.db"
+    manager, *_ = await relation_manager(path, ControlledEmbedder())
+    built = await manager.rebuild_cognitive_vector_generation()
+    await manager.close()
+    manager, *_ = await manager_with(path, ControlledEmbedder(), clock=lambda: 30.0)
+    try:
+        cache = manager._backend._cognitive_vector_cache
+        assert cache is not None and cache.generation_id == built.generation_id and len(cache.memory_refs) == 2
+        replay = await manager.rebuild_cognitive_vector_generation()
+        assert replay.replayed and replay.generation_id == built.generation_id
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_build_failure_records_failed_generation_with_error_code(tmp_path: Path) -> None:
+    from simple_harness_memory.core.errors import CognitiveVectorGenerationFailed
+    from simple_harness_memory.features.cognitive_vector import (
+        COGNITIVE_VECTOR_BUILD_EMBEDDING_FAILED,
+        COGNITIVE_VECTOR_BUILD_HEAD_INVALID,
+        COGNITIVE_VECTOR_BUILD_WRITE_FAILED,
+    )
+
+    embedder = ControlledEmbedder()
+    manager, *_ = await manager_with(
+        tmp_path / "failed.db", embedder, operations=(("c1", "preferred_name", "小周"),)
+    )
+    backend = manager._backend
+    try:
+        # 1. 写库阶段失败（fault 注入在激活前）：building 事务回滚，落 failed 行。
+        def fault(point: str) -> None:
+            if point == "cognitive_vector.generation.before_activate":
+                raise sqlite3.OperationalError("injected")
+
+        backend._fault_injector = fault
+        with pytest.raises(CognitiveVectorGenerationFailed) as info:
+            await manager.rebuild_cognitive_vector_generation()
+        backend._fault_injector = None
+        assert info.value.code == COGNITIVE_VECTOR_BUILD_WRITE_FAILED
+        assert str(info.value) == COGNITIVE_VECTOR_BUILD_WRITE_FAILED
+        assert isinstance(info.value.__cause__, sqlite3.OperationalError)
+        generations = await rows(
+            manager, "SELECT generation_id,state,last_error_code,activated_at FROM cognitive_vector_generations"
+        )
+        assert generations == [(info.value.generation_id, "failed", COGNITIVE_VECTOR_BUILD_WRITE_FAILED, None)]
+        assert await rows(manager, "SELECT COUNT(*) FROM cognitive_vectors") == [(0,)]
+        assert await rows(manager, "SELECT COUNT(*) FROM cognitive_vector_audit") == [(0,)]
+        assert backend._cognitive_vector_cache is None
+
+        # 2. 嵌入阶段失败：embedder 抛错。
+        async def broken(texts):
+            raise RuntimeError("embedder offline")
+
+        embedder.embed_batch = broken  # type: ignore[method-assign]
+        with pytest.raises(CognitiveVectorGenerationFailed) as info:
+            await manager.rebuild_cognitive_vector_generation()
+        assert info.value.code == COGNITIVE_VECTOR_BUILD_EMBEDDING_FAILED
+        del embedder.embed_batch
+
+        # 3. head/公开 payload 阶段失败（0.6.23 的 relation 缺陷就落在这一阶段）。
+        original = backend._cognitive_public_payload_unlocked
+
+        async def missing(row):
+            raise MemoryCorruptionError("typed recall payload missing")
+
+        backend._cognitive_public_payload_unlocked = missing  # type: ignore[method-assign]
+        with pytest.raises(CognitiveVectorGenerationFailed) as info:
+            await manager.rebuild_cognitive_vector_generation()
+        backend._cognitive_public_payload_unlocked = original  # type: ignore[method-assign]
+        assert info.value.code == COGNITIVE_VECTOR_BUILD_HEAD_INVALID
+        assert isinstance(info.value.__cause__, MemoryCorruptionError)
+
+        states = await rows(
+            manager, "SELECT state,last_error_code FROM cognitive_vector_generations ORDER BY rowid"
+        )
+        assert states == [
+            ("failed", COGNITIVE_VECTOR_BUILD_WRITE_FAILED),
+            ("failed", COGNITIVE_VECTOR_BUILD_EMBEDDING_FAILED),
+            ("failed", COGNITIVE_VECTOR_BUILD_HEAD_INVALID),
+        ]
+        # 4. 故障消失后下一 tick 正常构建；failed 行保留为历史。
+        built = await manager.rebuild_cognitive_vector_generation()
+        assert built.activated and built.vector_count == 1
+        assert await rows(manager, "SELECT state,generation_id FROM cognitive_vector_generations WHERE state='active'") == [
+            ("active", built.generation_id)
+        ]
+        assert await rows(manager, "SELECT COUNT(*) FROM cognitive_vector_generations WHERE state='failed'") == [(3,)]
+    finally:
+        backend._fault_injector = None
+        await manager.close()

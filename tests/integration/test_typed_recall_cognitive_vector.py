@@ -341,3 +341,82 @@ async def test_plan_without_vector_mode_has_zero_vector_side_effects(tmp_path: P
         assert values(hit) == ["小周"] and hit.result.items[0].score == pytest.approx(0.30 / 61, rel=1e-6)
     finally:
         await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_relation_memory_never_enters_vector_lane_or_confirmation(tmp_path: Path, monkeypatch) -> None:
+    """0.6.24：relation 类 SEMANTIC 记忆是边不是节点（HM-AC-6）。世代跳过它；typed recall 的
+    vector lane 与 confirmation 门都不对它比对，也不把它作为 item/成员返回。"""
+
+    from dataclasses import replace
+
+    from simple_harness.runtime import (
+        ConflictStatus,
+        ExistingMemoryTarget,
+        MemoryMutationKind,
+        SemanticMemoryPayload,
+    )
+
+    from simple_harness_memory import MemoryScope
+    from tests.integration.test_cognitive_mutation_repository_v5 import _admitted, _operation, _span
+    from tests.integration.test_cognitive_vector_generation import _relation_ids, relation_manager
+    from tests.integration.test_typed_recall_v6 import mutation_plan
+
+    embedder = ControlledEmbedder()
+    manager, _envelope, _span_, authority = await relation_manager(tmp_path / "relation-recall.db", embedder)
+    try:
+        claim_id, procedure_id, relation_id = await _relation_ids(manager)
+        built = await manager.rebuild_cognitive_vector_generation()
+        assert built.vector_count == 2
+        scored = _scored(monkeypatch)
+        query = "回复偏好是简洁还是啰嗦"
+        assert not (set(typed_recall_query_terms(query)) & {"concise", "default"})
+        hit = await recall(manager, query, key="relation-vector")
+        assert [item.selected_item.source_ref for item in hit.result.items] == [claim_id]
+        assert values(hit) == ["concise"] and hit.degradation_codes == ()
+        assert scored == [f"{claim_id}:1"]
+        assert f"{relation_id}:1" not in scored
+        codes, body = await terminal(manager, "relation-vector")
+        assert codes == [] and body["cognitive_vector"]["used_generation_id_hash"] == sqlite_v5._opaque_hash(built.generation_id)
+
+        # contest 只针对 claim（不是 relation）：confirmation 门同样只比对 claim。
+        challenger_envelope, challenger_receipt = _admitted(evidence_id="evidence-2")
+        challenger_span = _span(challenger_envelope, challenger_receipt)
+        authority.register_admitted(challenger_envelope, challenger_receipt, challenger_span)
+        await manager.ingest_committed_evidence(challenger_envelope, challenger_receipt)
+        contest = replace(
+            _operation(
+                challenger_span,
+                operation_id="relation-contest",
+                kind=MemoryMutationKind.CONTEST,
+                target=ExistingMemoryTarget(claim_id, 1),
+                conflict_status=ConflictStatus.CONTESTED,
+            ),
+            payload=SemanticMemoryPayload("user:self", "response_style", "verbose", ("default",)),
+        )
+        base_revision = (await rows(manager, "SELECT revision FROM cognitive_apply_heads WHERE principal_id='actor-1'"))[0][0]
+        result = await manager.apply_memory_mutation_plan(
+            principal=_principal(),
+            scope=MemoryScope.personal("actor-1"),
+            plan=mutation_plan(
+                challenger_envelope, contest, base_revision=int(base_revision),
+                plan_id="relation-contest-plan", idempotency_key="relation-contest-key",
+            ),
+        )
+        assert result.outcome.value == "committed"
+        rebuilt = await manager.rebuild_cognitive_vector_generation()
+        assert rebuilt.generation_id != built.generation_id and rebuilt.vector_count == 2
+        assert relation_id not in {
+            item[0] for item in await rows(manager, "SELECT memory_id FROM cognitive_vectors WHERE generation_id=?", rebuilt.generation_id)
+        }
+        scored.clear()
+        vector = await recall(manager, query, key="relation-confirm")
+        assert vector.decision.outcome is RecallDecisionOutcome.NEEDS_USER_CONFIRMATION
+        assert vector.result.items == () and len(vector.result.confirmation_groups) == 1
+        members = vector.result.confirmation_groups[0].members
+        assert len(members) == 2 and relation_id not in {member.member.source_ref for member in members}
+        assert {member.member.source_ref for member in members} == {claim_id}
+        assert f"{relation_id}:1" not in scored and scored and all(ref != f"{relation_id}:1" for ref in scored)
+        assert vector.degradation_codes == ()
+    finally:
+        await manager.close()

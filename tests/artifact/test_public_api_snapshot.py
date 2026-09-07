@@ -232,7 +232,7 @@ def test_current_candidate_sources_and_docs_are_consistent() -> None:
     assert "simple-harness-sdk>=0.7,<0.8" in pyproject["project"]["dependencies"]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "当前 source candidate：**0.6.23**" in readme
+    assert "当前 source candidate：**0.6.24**" in readme
     assert "已发布 fallback 为 0.5.1" in readme
     assert "## [0.6.6] - 2026-09-05" in changelog
     assert "## [0.6.5] - 2026-09-05" in changelog
@@ -245,15 +245,15 @@ def test_current_candidate_sources_and_docs_are_consistent() -> None:
     assert "version=0.5.1" in (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 
 
-def test_public_api_0_6_23_keeps_0_6_19_surface() -> None:
+def test_public_api_0_6_24_keeps_0_6_19_surface() -> None:
     previous = json.loads(Path(__file__).with_name("public-api-0.6.19.json").read_text())
-    for version in ("0.6.20", "0.6.21", "0.6.22", "0.6.23"):
+    for version in ("0.6.20", "0.6.21", "0.6.22", "0.6.23", "0.6.24"):
         snapshot = json.loads(Path(__file__).with_name(f"public-api-{version}.json").read_text())
         assert snapshot["version"] == version
         assert {k: v for k, v in previous.items() if k != "version"} == {
             k: v for k, v in snapshot.items() if k != "version"
         }
-    assert simple_harness_memory.__version__ == "0.6.23"
+    assert simple_harness_memory.__version__ == "0.6.24"
     assert snapshot["root"] == sorted(simple_harness_memory.__all__)
     assert len(snapshot["root"]) == len(set(snapshot["root"]))
     assert snapshot["migrations"] == sorted(migrations.__all__)
@@ -271,3 +271,8 @@ def test_public_api_0_6_23_keeps_0_6_19_surface() -> None:
     assert "cognitive_vector_embedder" not in inspect.signature(
         simple_harness_memory.MemoryManager.build_human_memory_v7
     ).parameters
+    # 0.6.24：构建失败的有码异常不进根导出，经 core.errors 可达。
+    from simple_harness_memory.core.errors import CognitiveVectorGenerationFailed
+
+    assert issubclass(CognitiveVectorGenerationFailed, RuntimeError)
+    assert "CognitiveVectorGenerationFailed" not in snapshot["root"]

@@ -2,6 +2,8 @@
 
 向量只从 ``_cognitive_public_payload_unlocked`` 的公开 payload 生成；本模块不读库、不含任何
 非公开字段。余弦阈值是 SDK 冻结常量：低于阈值的记忆不进入 ``vector`` lane。
+relation 类 SEMANTIC 记忆（``semantic_kind == "relation"``）是图谱的边而非节点（HM-AC-6），
+没有公开 payload，不进入向量世代、manifest 与 ``vector`` lane（0.6.24）。
 """
 
 from __future__ import annotations
@@ -25,6 +27,19 @@ COGNITIVE_VECTOR_DEGRADATION_CODES = frozenset(
         COGNITIVE_VECTOR_NO_GENERATION,
         COGNITIVE_VECTOR_STALE,
         COGNITIVE_VECTOR_DEADLINE,
+    }
+)
+
+# 世代构建失败码（0.6.24）：落 ``cognitive_vector_generations.last_error_code``，并作为
+# ``CognitiveVectorGenerationFailed.code`` 抛出。按失败阶段划分：读 head/公开 payload、嵌入、写库。
+COGNITIVE_VECTOR_BUILD_HEAD_INVALID = "cognitive_vector_head_invalid"
+COGNITIVE_VECTOR_BUILD_EMBEDDING_FAILED = "cognitive_vector_embedding_failed"
+COGNITIVE_VECTOR_BUILD_WRITE_FAILED = "cognitive_vector_generation_write_failed"
+COGNITIVE_VECTOR_BUILD_ERROR_CODES = frozenset(
+    {
+        COGNITIVE_VECTOR_BUILD_HEAD_INVALID,
+        COGNITIVE_VECTOR_BUILD_EMBEDDING_FAILED,
+        COGNITIVE_VECTOR_BUILD_WRITE_FAILED,
     }
 )
 
@@ -92,6 +107,10 @@ class CognitiveVectorGenerationBuildResult:
 
 
 __all__ = (
+    "COGNITIVE_VECTOR_BUILD_EMBEDDING_FAILED",
+    "COGNITIVE_VECTOR_BUILD_ERROR_CODES",
+    "COGNITIVE_VECTOR_BUILD_HEAD_INVALID",
+    "COGNITIVE_VECTOR_BUILD_WRITE_FAILED",
     "COGNITIVE_VECTOR_DEADLINE",
     "COGNITIVE_VECTOR_DEGRADATION_CODES",
     "COGNITIVE_VECTOR_MIN_SCORE",

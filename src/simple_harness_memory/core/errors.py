@@ -110,3 +110,20 @@ class MemoryMigrationSourceBusy(MemoryMigrationError):
     """The legacy database still has an active writer."""
 
     code = "memory_migration_source_busy"
+
+
+class CognitiveVectorGenerationFailed(MemoryErrorBase):
+    """One cognitive vector generation rebuild failed (0.6.24).
+
+    ``code`` is the persisted ``cognitive_vector_generations.last_error_code``;
+    ``generation_id`` is the ``failed`` row that recorded it (``None`` only when even
+    that record could not be written). Raised instead of a bare ``MemoryCorruptionError``
+    so a maintenance worker can log a stable code rather than an unrecorded failure.
+    """
+
+    code = "cognitive_vector_generation_failed"
+
+    def __init__(self, code: str, *, generation_id: str | None) -> None:
+        super().__init__(code)
+        self.code = code
+        self.generation_id = generation_id
