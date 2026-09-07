@@ -107,8 +107,9 @@ async def test_eligible_but_not_selected_and_cognitive_never_expand(tmp_path):
         assert not denied.items[0].visible and denied.items[0].source_refs == ()
 
 
-@pytest.mark.parametrize('gate', ['actor', 'subject', 'expiry', 'disclosure', 'evidence', 'memory'])
+@pytest.mark.parametrize('gate', ['actor', 'subject', 'expiry', 'disclosure', 'evidence'])
 async def test_current_gates_deny_refs(tmp_path, gate):
+    """2026-09-07 决定：MEMORY 遗忘不再是拒绝来源引用的门禁，已移出本参数化（见下方专门测试）。"""
     async with setup(tmp_path / 'typed.db') as ((manager, _, pairs, clock, _, span), result):
         bindings = tuple(binding(result, item) for item in result.items)
         before = await sources(manager, bindings)
@@ -123,19 +124,38 @@ async def test_current_gates_deny_refs(tmp_path, gate):
             context = replace(context, generation=h.DisclosureGeneration.STALE)
         else:
             target = before.items[0].source_refs[0].evidence_id
-            kind = m.SuppressionScopeKind.EVIDENCE
-            if gate == 'memory':
-                applied = await manager.apply_memory_mutation_plan(principal=PRINCIPAL,
-                    scope=m.MemoryScope.personal(PRINCIPAL.actor_id), plan=_plan(pairs[0][0].envelope, _operation(span)))
-                view = await manager.get_memory_mutation_receipt_view(principal=PRINCIPAL, receipt_ref=applied.receipt_ref)
-                target, kind = view.operations[0].memory_id, m.SuppressionScopeKind.MEMORY
-            await _forget(manager, kind, target)
+            await _forget(manager, m.SuppressionScopeKind.EVIDENCE, target)
         observed = await sources(manager, bindings, principal=principal, context=context)
         assert any(not item.visible for item in observed.items)
         assert all(item.source_refs == () for item in observed.items if not item.visible)
-        if gate in {'evidence', 'memory'}:
+        if gate == 'evidence':
             assert any(item.visible for item in observed.items)
             assert observed.authority_epoch > before.authority_epoch
+
+
+async def test_memory_forget_keeps_typed_short_source_refs_with_evidence_control(tmp_path):
+    """2026-09-07 决定：MEMORY 遗忘不拒绝类型化短期来源引用（引用与遗忘前完全一致）；
+    同一来源的 EVIDENCE 压制仍拒绝（对照）。"""
+    async with setup(tmp_path / 'typed.db') as ((manager, _, pairs, _, _, span), result):
+        bindings = tuple(binding(result, item) for item in result.items)
+        before = await sources(manager, bindings)
+        assert all(item.visible for item in before.items)
+        applied = await manager.apply_memory_mutation_plan(principal=PRINCIPAL,
+            scope=m.MemoryScope.personal(PRINCIPAL.actor_id),
+            plan=_plan(pairs[0][0].envelope, _operation(span)))
+        view = await manager.get_memory_mutation_receipt_view(
+            principal=PRINCIPAL, receipt_ref=applied.receipt_ref)
+        await _forget(manager, m.SuppressionScopeKind.MEMORY, view.operations[0].memory_id)
+        kept = await sources(manager, bindings)
+        assert all(item.visible for item in kept.items)
+        assert [x.source_refs for x in kept.items] == [x.source_refs for x in before.items]
+        assert kept.authority_epoch > before.authority_epoch
+        await _forget(manager, m.SuppressionScopeKind.EVIDENCE,
+                      before.items[0].source_refs[0].evidence_id, key='forget-2')
+        observed = await sources(manager, bindings)
+        assert any(not item.visible for item in observed.items)
+        assert any(item.visible for item in observed.items)
+        assert all(item.source_refs == () for item in observed.items if not item.visible)
 
 
 async def test_wrong_binding_port_type_rejected(tmp_path):

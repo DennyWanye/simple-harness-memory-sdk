@@ -86,11 +86,11 @@ async def _check(manager, *bindings, context=None, principal=PRINCIPAL):
     )
 
 
-async def _forget(manager, kind, target, *, purpose=None):
+async def _forget(manager, kind, target, *, purpose=None, key="forget-1"):
     return await manager.suppress(
         principal=PRINCIPAL,
         request=m.SuppressionRequest(
-            "forget-1", PRINCIPAL.actor_id, kind, target, "user_forget", NOW, purpose=purpose
+            key, PRINCIPAL.actor_id, kind, target, "user_forget", NOW, purpose=purpose
         ),
     )
 
@@ -151,9 +151,11 @@ async def test_current_suppression_uses_canonical_short_lineage(tmp_path, scope)
 
 
 @pytest.mark.asyncio
-async def test_reverse_cognitive_memory_forget_hides_old_short_and_original_user_with_control(
+async def test_reverse_cognitive_memory_forget_keeps_old_short_and_original_user_visible(
     tmp_path,
 ):
+    """2026-09-07 决定：遗忘认知记忆不隐藏其来源的短期历史与原始 USER 证据；
+    EVIDENCE 范围压制仍会隐藏（对照）。"""
     async with _fixture(tmp_path / "history.db", policy=_classification_policy()) as (
         manager,
         result,
@@ -190,7 +192,14 @@ async def test_reverse_cognitive_memory_forget_hides_old_short_and_original_user
         assert all(x.visible for x in (await _check(manager, *bindings)).items)
         await _forget(manager, m.SuppressionScopeKind.MEMORY, view.operations[0].memory_id)
         snapshot = await _check(manager, *bindings)
-        assert [x.visible for x in snapshot.items] == [False, True, False, True]
+        assert [x.visible for x in snapshot.items] == [True, True, True, True]
+        # Control: an explicit EVIDENCE directive on the same source still hides
+        # exactly its short chunk and original user evidence, never the second pair.
+        await _forget(
+            manager, m.SuppressionScopeKind.EVIDENCE, first.envelope.evidence_id, key="forget-2"
+        )
+        hidden = await _check(manager, *bindings)
+        assert [x.visible for x in hidden.items] == [False, True, False, True]
 
 
 @pytest.mark.asyncio

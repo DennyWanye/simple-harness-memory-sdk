@@ -461,7 +461,9 @@ async def test_fresh_admission_attacks_reject_before_writes(tmp_path, attack):
     assert await counts(backend) == before
 
 
-async def test_memory_only_forget_denies_source_child_and_original_user_after_reopen(tmp_path):
+async def test_memory_only_forget_keeps_source_child_and_original_user_after_reopen(tmp_path):
+    """2026-09-07 决定：MEMORY 遗忘跨重开不隐藏原始 USER 证据及其 ASSISTANT 子证据；
+    EVIDENCE 压制仍沿血缘隐藏两者（对照）。"""
     import simple_harness as h
 
     from tests.integration.test_cognitive_mutation_repository_v5 import (
@@ -518,7 +520,7 @@ async def test_memory_only_forget_denies_source_child_and_original_user_after_re
         ),
     )
     assert all(
-        not x.visible
+        x.visible
         for x in (
             await manager.check_history_visibility(
                 principal=PRINCIPAL, disclosure_context=_disclosure(), bindings=bindings
@@ -528,6 +530,25 @@ async def test_memory_only_forget_denies_source_child_and_original_user_after_re
     await manager.close()
     reopened = await m.build_human_memory_v7(path, classification_policy=_classification_policy())
     OPEN.append(reopened.backend)
+    assert all(
+        x.visible
+        for x in (
+            await reopened.check_history_visibility(
+                principal=PRINCIPAL, disclosure_context=_disclosure(), bindings=bindings
+            )
+        ).items
+    )
+    await reopened.suppress(
+        principal=PRINCIPAL,
+        request=m.SuppressionRequest(
+            "evidence-forget",
+            "actor-1",
+            m.SuppressionScopeKind.EVIDENCE,
+            parent.evidence_id,
+            "user_forget",
+            20.0,
+        ),
+    )
     assert all(
         not x.visible
         for x in (

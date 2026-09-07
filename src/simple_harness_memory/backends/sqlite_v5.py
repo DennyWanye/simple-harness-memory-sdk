@@ -1696,7 +1696,15 @@ class SQLiteHumanMemoryBackend:
         if candidate.evidence_id is not None:
             from simple_harness_memory.backends.history_visibility import evidence_targets
 
-            targets.extend(await evidence_targets(self, candidate.subject, candidate.evidence_id))
+            # 2026-09-07 product decision (user): forgetting a cognitive memory
+            # only suppresses that memory (recall, graph, working memory). It never
+            # hides the source conversation evidence, so reverse MEMORY targets are
+            # excluded here; explicit EVIDENCE/SUBJECT/ENTITY directives still apply.
+            targets.extend(
+                target
+                for target in await evidence_targets(self, candidate.subject, candidate.evidence_id)
+                if target[0] != SuppressionScopeKind.MEMORY.value
+            )
         target_list = sorted(set(targets))
         matched: set[str] = set()
         # Keep the original SQL target filtering; large lineage does not require

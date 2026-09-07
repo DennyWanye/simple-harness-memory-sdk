@@ -117,7 +117,9 @@ async def test_more_than_256_indexed_sources_do_not_poison_one_selected_hit(tmp_
         await manager.close()
 
 
-async def test_memory_only_forget_denies_selected_source_with_unaffected_hit_control(tmp_path):
+async def test_memory_only_forget_keeps_selected_sources_with_evidence_control(tmp_path):
+    """2026-09-07 决定：MEMORY 遗忘不再拒绝短期来源引用；
+    同一来源的 EVIDENCE 压制仍精确拒绝该命中（对照）。"""
     from tests.integration.test_cognitive_mutation_repository_v5 import (
         _classification_policy,
         _operation,
@@ -145,6 +147,16 @@ async def test_memory_only_forget_denies_selected_source_with_unaffected_hit_con
         before = await _sources(manager, bindings)
         assert all(item.visible for item in before.items)
         await _forget(manager, m.SuppressionScopeKind.MEMORY, view.operations[0].memory_id)
+        kept = await _sources(manager, bindings)
+        assert all(item.visible for item in kept.items)
+        assert [x.source_refs for x in kept.items] == [x.source_refs for x in before.items]
+        assert kept.authority_epoch > before.authority_epoch
+        await _forget(
+            manager,
+            m.SuppressionScopeKind.EVIDENCE,
+            pairs[0][0].envelope.evidence_id,
+            key="forget-2",
+        )
         after = await _sources(manager, bindings)
         for previous, current in zip(before.items, after.items, strict=True):
             suppressed = previous.source_refs[0].evidence_id == pairs[0][0].envelope.evidence_id

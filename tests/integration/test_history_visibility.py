@@ -43,7 +43,10 @@ def _binding(envelope, receipt):
 
 
 @pytest.mark.asyncio
-async def test_memory_forget_denies_original_user_ordinary_paths_and_history(tmp_path):
+async def test_memory_forget_keeps_original_user_ordinary_paths_and_history(tmp_path):
+    """2026-09-07 决定：遗忘认知记忆只压制该记忆，原始 USER 证据的普通读取/投影/历史均保持可见。"""
+    from tests.integration.test_typed_recall_v6 import _context, _recall_plan
+
     backend, envelope, receipt, span, _ = await _prepared(tmp_path / "history.db")
     manager = m.MemoryManager(backend, None)
     try:
@@ -55,16 +58,23 @@ async def test_memory_forget_denies_original_user_ordinary_paths_and_history(tmp
         )
         assert before.items[0].visible
         await _forget(backend, m.SuppressionScopeKind.MEMORY, mid)
-        with pytest.raises(SuppressionDenied):
-            await backend.read_ingested_evidence(envelope.evidence_id)
-        assert envelope.evidence_id not in await backend.projection_evidence_ids("actor-1")
+        assert (await backend.read_ingested_evidence(envelope.evidence_id)).envelope == envelope
+        assert envelope.evidence_id in await backend.projection_evidence_ids("actor-1")
         after = await manager.check_history_visibility(
             principal=_principal(),
             disclosure_context=_disclosure(),
             bindings=(_binding(envelope, receipt),),
         )
-        assert not after.items[0].visible and after.items[0].reason == "history_suppressed"
+        assert after.items[0].visible and after.items[0].reason == "history_visible"
         assert after.authority_epoch > before.authority_epoch
+        # The forgotten memory itself stays denied for typed recall.
+        context = _context()
+        execution = await backend.execute_typed_recall(
+            principal=_principal(),
+            context=context,
+            plan=_recall_plan(context, idempotency_key="after-memory-forget"),
+        )
+        assert len(execution.result.items) == 0
     finally:
         await manager.close()
 
@@ -138,6 +148,8 @@ def _rebind(envelope, receipt, **changes):
 
 @pytest.mark.asyncio
 async def test_assistant_lineage_pending_and_ingested_with_unrelated_control(tmp_path):
+    """2026-09-07 决定：MEMORY 范围遗忘不隐藏派生 ASSISTANT 证据；
+    血缘隐藏改由 EVIDENCE 范围压制驱动。"""
     backend, env, receipt, span, _ = await _prepared(tmp_path / "descendants.db")
     child, child_receipt = _admitted(evidence_id="assistant")
     child_binding = _rebind(
@@ -151,7 +163,10 @@ async def test_assistant_lineage_pending_and_ingested_with_unrelated_control(tmp
         mid = await _memory(backend, env, span)
         assert (await _check(backend, child_binding)).items[0].visible
         await backend.ingest_committed_evidence(child_binding.envelope, child_binding.receipt)
-        await _forget(backend, m.SuppressionScopeKind.MEMORY, mid)
+        await _forget(backend, m.SuppressionScopeKind.MEMORY, mid, key="forget-memory")
+        kept = await _check(backend, child_binding, _binding(unrelated, unrelated_receipt))
+        assert [x.visible for x in kept.items] == [True, True]
+        await _forget(backend, m.SuppressionScopeKind.EVIDENCE, env.evidence_id)
         result = await _check(backend, child_binding, _binding(unrelated, unrelated_receipt))
         assert [x.visible for x in result.items] == [False, True]
         with pytest.raises(SuppressionDenied):
@@ -218,10 +233,12 @@ async def test_canonical_binding_subject_and_disclosure_negatives(tmp_path):
 
 @pytest.mark.asyncio
 async def test_batch_is_one_snapshot_and_recheck_observes_concurrent_forget(tmp_path, monkeypatch):
+    """2026-09-07 决定：MEMORY 遗忘不再隐藏证据，
+    快照/复核机制改用同一来源证据的 EVIDENCE 范围压制。"""
     import asyncio
 
     backend, env, receipt, span, _ = await _prepared(tmp_path / "race.db")
-    mid = await _memory(backend, env, span)
+    await _memory(backend, env, span)
     entered = asyncio.Event()
     release = asyncio.Event()
     original = backend._resolve_suppression_unlocked
@@ -242,7 +259,9 @@ async def test_batch_is_one_snapshot_and_recheck_observes_concurrent_forget(tmp_
             _check(backend, _binding(env, receipt), _binding(env, receipt))
         )
         await asyncio.wait_for(entered.wait(), 2)
-        forgetting = asyncio.create_task(_forget(backend, m.SuppressionScopeKind.MEMORY, mid))
+        forgetting = asyncio.create_task(
+            _forget(backend, m.SuppressionScopeKind.EVIDENCE, env.evidence_id)
+        )
         await asyncio.sleep(0)
         assert not forgetting.done()
         release.set()
@@ -313,11 +332,15 @@ async def test_old_recall_new_ui_request_current_source_not_old_authorization(tm
 
 
 @pytest.mark.asyncio
-async def test_correction_changes_head_old_source_denied_and_all_revision_forget(tmp_path):
+async def test_correction_changes_head_old_source_denied_and_all_revision_forget_keeps_evidence(
+    tmp_path,
+):
+    """2026-09-07 决定：遗忘经修订的记忆只拒绝该记忆召回，所有修订版本的来源证据仍保持可见。"""
     from tests.integration.test_cognitive_mutation_repository_v5 import (
         _span,
         _with_action_authorities,
     )
+    from tests.integration.test_typed_recall_v6 import _context, _recall_plan
 
     backend, env, receipt, span, authority = await _prepared(tmp_path / "correction.db")
     try:
@@ -353,18 +376,27 @@ async def test_correction_changes_head_old_source_denied_and_all_revision_forget
             ).items
         )
         await _forget(backend, m.SuppressionScopeKind.MEMORY, mid)
-        assert not any(
+        assert all(
             x.visible
             for x in (
                 await _check(backend, _binding(env, receipt), _binding(new, new_receipt))
             ).items
         )
+        context = _context(query="verbose")
+        execution = await backend.execute_typed_recall(
+            principal=_principal(),
+            context=context,
+            plan=_recall_plan(context, idempotency_key="after-revision-forget"),
+        )
+        assert len(execution.result.items) == 0
     finally:
         await backend.close()
 
 
 @pytest.mark.asyncio
 async def test_memory_forget_reopen_revoke_preserves_original_evidence_bytes(tmp_path):
+    """2026-09-07 决定：MEMORY 遗忘跨重开只拒绝该记忆，
+    原始证据字节与历史可见性始终保持；撤销后记忆恢复。"""
     from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
     from tests.integration.test_suppression_v5 import _raw_evidence_snapshot
 
@@ -379,8 +411,13 @@ async def test_memory_forget_reopen_revoke_preserves_original_evidence_bytes(tmp
         path, now=lambda: 30.0, classification_policy=_classification_policy()
     )
     await reopened.initialize()
+    memory_candidate = SuppressionCandidate("actor-1", memory_id=mid)
     try:
-        assert not (await _check(reopened, _binding(env, receipt))).items[0].visible
+        assert (await _check(reopened, _binding(env, receipt))).items[0].visible
+        denied = await reopened.resolve_suppression(
+            memory_candidate, m.OrdinaryMemoryPurpose.RECALL
+        )
+        assert denied.denied and denied.directive_ids == (directive.directive_id,)
         await reopened.revoke_suppression(
             m.SuppressionRevokeRequest(
                 "restore", "actor-1", directive.directive_id, "user_restored", 30
@@ -388,6 +425,10 @@ async def test_memory_forget_reopen_revoke_preserves_original_evidence_bytes(tmp
             principal=_principal(),
         )
         assert (await _check(reopened, _binding(env, receipt))).items[0].visible
+        restored = await reopened.resolve_suppression(
+            memory_candidate, m.OrdinaryMemoryPurpose.RECALL
+        )
+        assert not restored.denied
         assert await _raw_evidence_snapshot(reopened) == original
         assert (await reopened.read_ingested_evidence(env.evidence_id)).envelope == env
     finally:
@@ -396,6 +437,8 @@ async def test_memory_forget_reopen_revoke_preserves_original_evidence_bytes(tmp
 
 @pytest.mark.asyncio
 async def test_read_only_suppression_is_not_bypassed_by_recall_binding(tmp_path):
+    """2026-09-07 决定：READ 目的的 MEMORY 压制仍拒绝召回绑定，
+    但原始证据在 USER_REVIEW 下保持可见。"""
     backend, env, receipt, span, _ = await _prepared(tmp_path / "purpose.db")
     try:
         mid = await _memory(backend, env, span)
@@ -414,10 +457,21 @@ async def test_read_only_suppression_is_not_bypassed_by_recall_binding(tmp_path)
         )
         assert (await _check(backend, binding)).items[0].visible
         ui = replace(_disclosure(), purpose=h.DisclosurePurpose.USER_REVIEW)
-        assert (
-            not (await _check(backend, binding, _binding(env, receipt), context=ui))
-            .items[0]
-            .visible
+        mixed = await _check(backend, binding, _binding(env, receipt), context=ui)
+        assert [x.visible for x in mixed.items] == [False, True]
+        assert (await _check(backend, _binding(env, receipt), context=ui)).items[0].visible
+        # Control: an explicit READ-purpose EVIDENCE directive still hides the evidence.
+        await backend.suppress(
+            m.SuppressionRequest(
+                "read-only-evidence",
+                "actor-1",
+                m.SuppressionScopeKind.EVIDENCE,
+                env.evidence_id,
+                "user_forget",
+                20,
+                purpose=m.OrdinaryMemoryPurpose.READ,
+            ),
+            principal=_principal(),
         )
         assert not (await _check(backend, _binding(env, receipt), context=ui)).items[0].visible
     finally:
@@ -510,7 +564,9 @@ async def test_current_classification_and_bounded_input(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_memory_support_on_derived_evidence_hides_original_user_ancestor(tmp_path):
+async def test_memory_support_on_derived_evidence_keeps_original_user_ancestor_visible(tmp_path):
+    """2026-09-07 决定：遗忘基于派生证据的记忆不隐藏其 USER 祖先证据；
+    EVIDENCE 范围压制仍沿血缘隐藏（对照）。"""
     from tests.integration.test_cognitive_mutation_repository_v5 import _span
 
     backend, env, receipt, _, authority = await _prepared(tmp_path / "derived-support.db")
@@ -526,10 +582,73 @@ async def test_memory_support_on_derived_evidence_hides_original_user_ancestor(t
         await backend.ingest_committed_evidence(binding.envelope, binding.receipt)
         mid = await _memory(backend, binding.envelope, span)
         assert (await _check(backend, _binding(env, receipt))).items[0].visible
-        await _forget(backend, m.SuppressionScopeKind.MEMORY, mid)
-        assert not (await _check(backend, _binding(env, receipt))).items[0].visible
+        await _forget(backend, m.SuppressionScopeKind.MEMORY, mid, key="forget-memory")
+        kept = await _check(backend, _binding(env, receipt), binding)
+        assert [x.visible for x in kept.items] == [True, True]
+        await _forget(backend, m.SuppressionScopeKind.EVIDENCE, env.evidence_id)
+        hidden = await _check(backend, _binding(env, receipt), binding)
+        assert [x.visible for x in hidden.items] == [False, False]
     finally:
         await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_manager_memory_forget_keeps_evidence_visible_and_evidence_forget_hides_it(tmp_path):
+    """2026-09-07 决定：经公开 manager.suppress 的 MEMORY 范围遗忘只拒绝该记忆的召回/读取，
+    原始 USER 证据历史保持 history_visible；同一证据的 EVIDENCE 范围压制仍会隐藏它（对照）。"""
+    from tests.integration.test_typed_recall_v6 import _context, _recall_plan
+
+    backend, envelope, receipt, span, _ = await _prepared(tmp_path / "manager-forget.db")
+    manager = m.MemoryManager(backend, None)
+    try:
+        mid = await _memory(backend, envelope, span)
+        await manager.suppress(
+            principal=_principal(),
+            request=m.SuppressionRequest(
+                "forget-memory",
+                "actor-1",
+                m.SuppressionScopeKind.MEMORY,
+                mid,
+                "user_forget",
+                20.0,
+            ),
+        )
+        kept = await manager.check_history_visibility(
+            principal=_principal(),
+            disclosure_context=_disclosure(),
+            bindings=(_binding(envelope, receipt),),
+        )
+        assert kept.items[0].visible and kept.items[0].reason == "history_visible"
+        context = _context()
+        execution = await manager.execute_typed_recall(
+            principal=_principal(),
+            context=context,
+            plan=_recall_plan(context, idempotency_key="after-manager-memory-forget"),
+        )
+        assert len(execution.result.items) == 0
+        read = await backend.resolve_suppression(
+            SuppressionCandidate("actor-1", memory_id=mid), m.OrdinaryMemoryPurpose.READ
+        )
+        assert read.denied
+        await manager.suppress(
+            principal=_principal(),
+            request=m.SuppressionRequest(
+                "forget-evidence",
+                "actor-1",
+                m.SuppressionScopeKind.EVIDENCE,
+                envelope.evidence_id,
+                "user_forget",
+                20.0,
+            ),
+        )
+        hidden = await manager.check_history_visibility(
+            principal=_principal(),
+            disclosure_context=_disclosure(),
+            bindings=(_binding(envelope, receipt),),
+        )
+        assert not hidden.items[0].visible and hidden.items[0].reason == "history_suppressed"
+    finally:
+        await manager.close()
 
 
 @pytest.mark.asyncio
