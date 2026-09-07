@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.21] - 2026-09-07（遗忘只针对记忆候选）
+
+- 基于 0.6.20。用户 09-07 产品决定：忘记一条认知记忆只抑制该记忆（typed recall、图谱、工作记忆、记忆读取），**不再**隐藏其来源对话证据。`_resolve_suppression_snapshot_unlocked` 对 evidence 候选不再纳入反向 MEMORY 目标；EVIDENCE/SUBJECT/ENTITY 指令行为不变，撤销与原始字节保留不变（源码与测试改写随 `4bd11cc` 提交）。
+- 11 项既有测试按新口径改写（含 3 项同因回归），新增 `test_manager_memory_forget_keeps_evidence_visible_and_evidence_forget_hides_it`。无 DDL、无公共 DTO/hash 域变化。仅本地候选，未发布。
+
 ## [0.6.20] - 2026-09-07（typed recall 中文词法门修复候选）
 
 - 基于 0.6.19 源 e27003c6。typed recall 候选门与 confirmation 门的查询切词改用 `features.lexical.typed_recall_query_terms`：保留原 `\w` 词项，新增 CJK 二字组合。此前 `\w` 已匹配汉字，中文查询只按标点断成整句并要求在 payload 中逐字出现，导致中文长期记忆在无 entity/scope/时间约束时全部被 `recall_no_eligible_memory` 丢弃（Host 语料 C01-10 真实运行复现，spike 验证修复后召回命中）。
