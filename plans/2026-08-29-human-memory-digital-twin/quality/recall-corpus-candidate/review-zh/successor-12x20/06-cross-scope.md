@@ -4,7 +4,7 @@
 
 通用上下文、证据与计分边界见[总索引](/Users/denny/projects/simple-harness-memory-sdk/plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/review-zh/successor-12x20/总索引.md)。每条独立隔离数据；记录代号为设置说明，不能当作模型已获得的ref。
 
-本类继承gold：required_types=semantic,procedure；no_recall=false；privacy_allowed=true；hard_trigger=无；requires_task_scope_search=false。每条以下gold补充必需事实和禁止行为，不改变这些原类别标签。
+本类继承gold：required_types=semantic；no_recall=false；privacy_allowed=true；hard_trigger=无；requires_task_scope_search=false。required_procedure_access=procedure_discover。每条以下gold补充必需事实和禁止行为，不改变这些原类别标签。required_procedure_access是本类新增的并列标签：procedure在首次真实使用前指纹恒为UNBOUND，按设计不进入按类型召回面，因此procedure改由模型真实调用procedure_discover并取回非空候选来计分，required_types只保留semantic。
 
 ## C06-01｜中文Markdown偏好与文本整理步骤
 
@@ -156,7 +156,7 @@
 
 **provider_input（初始可见）：** 现在离线做新资料整理，按我的习惯选合适格式和可用流程。
 
-**gold（仅计分端）：** 取S/P1；active的P2因环境不适用不选，类型仍semantic+procedure。
+**gold（仅计分端）：** 取S/P1；active的P2因环境不适用不选，类型仍semantic，程序仍经procedure_discover访问。
 
 ## C06-20｜通用程序有条件分支应按当前材料选择
 

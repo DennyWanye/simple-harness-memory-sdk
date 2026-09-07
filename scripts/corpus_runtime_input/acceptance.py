@@ -37,25 +37,27 @@ class CorpusAcceptance(unittest.TestCase):
         self.assertEqual(dict(rows), c.MEMBER_SHA256)
         canonical = "".join(f"{name}\t{digest}\n" for name, digest in sorted(rows))
         self.assertEqual(c.sha256(canonical.encode()),
-                         "2a69f5712991f665eafed67d5457f7d6b8484885ab186927b57f5a7014c576d1")
+                         "45b9cb5ee14224ef370645f57475d3aea7853337fb8dc5976a30bae7652118b9")
 
     def test_02_labels_preserve_original_class_contract(self):
         expected = [
-            (["semantic"], False, True, "无", False),
-            (["semantic"], False, True, "无", False),
-            (["episode", "semantic"], False, True, "无", False),
-            (["episode", "prospective"], False, True, "无", False),
-            ([], False, True, "无", True),
-            (["semantic", "procedure"], False, True, "无", False),
-            ([], True, True, "无", False),
-            ([], True, False, "suppression", False),
-            ([], True, False, "state-eligibility", False),
-            ([], True, False, "state-eligibility", False),
-            ([], True, False, "time-eligibility", False),
-            ([], True, False, "recipient-purpose", False),
+            (["semantic"], False, True, "无", False, None),
+            (["semantic"], False, True, "无", False, None),
+            (["episode", "semantic"], False, True, "无", False, None),
+            (["episode", "prospective"], False, True, "无", False, None),
+            ([], False, True, "无", True, None),
+            # cross-scope: procedure is bound to applicability at first real use
+            # and is therefore measured as a discovery access, not a recall type.
+            (["semantic"], False, True, "无", False, "procedure_discover"),
+            ([], True, True, "无", False, None),
+            ([], True, False, "suppression", False, None),
+            ([], True, False, "state-eligibility", False, None),
+            ([], True, False, "state-eligibility", False, None),
+            ([], True, False, "time-eligibility", False, None),
+            ([], True, False, "recipient-purpose", False, None),
         ]
         keys = ("required_types", "no_recall", "privacy_allowed", "hard_trigger",
-                "requires_task_scope_search")
+                "requires_task_scope_search", "required_procedure_access")
         for case in self.cases:
             with self.subTest(case=case.case_id):
                 self.assertEqual(tuple(case.labels[k] for k in keys),

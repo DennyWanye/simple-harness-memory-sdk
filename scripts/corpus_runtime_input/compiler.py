@@ -27,15 +27,15 @@ SOURCE_REL = Path(
     "review-zh/successor-12x20"
 )
 BATCH = "successor-12x20-r4-20260906"
-BATCH_SHA256 = "2a69f5712991f665eafed67d5457f7d6b8484885ab186927b57f5a7014c576d1"
-INDEX_SHA256 = "56aaf1f52bb15222e4cbcfb693e904d0ea4b773b90e93f952aafa7bfbb228eb3"
+BATCH_SHA256 = "45b9cb5ee14224ef370645f57475d3aea7853337fb8dc5976a30bae7652118b9"
+INDEX_SHA256 = "142c3654e07a352c6b6dde559da4ee961b1342a87717f6dfb0da2844cb28a6fd"
 MEMBER_SHA256 = {
     "01-exact.md": "f40faead2d85c89d3c5b5f9d3c593a6ae28af530785c918f3681e38097fa0ac7",
     "02-semantic.md": "bd5c3a9d12553f812ba159f9f631d08f35e1b9085562d35cfb4dc99bc3cc5517",
     "03-entity.md": "ded61c11125569d49d1ab0c5e9c1d3c9a51ec25c881610b4cb2f4f8d03d50281",
     "04-time.md": "f26129a86e0d14182b4e18ea58efa289dfb6db0da20299d88af47e3d6a52ecbf",
     "05-task.md": "baac30993526a4dcbcceca8a3d957ecd536d880afff5ef50b41dbc459a41c659",
-    "06-cross-scope.md": "2fae2667c1bc24a5ab5d7d685c8e086e6c3491dc530d895ed0fd2b6d051420e1",
+    "06-cross-scope.md": "22dd6f7836b07da69c33a4a3bfe7f178cd54e4d59283d62d87f3441984a11a13",
     "07-no-match.md": "ccb071fd13ba789006d478d50d2ec80f0453dfe709985f3005f1267fd4da3009",
     "08-suppressed.md": "0904f15157bef5da768049ce777c9dfd852256b380bad1bcdefbc28143e56261",
     "09-superseded.md": "e9c23e7d436638257058cfc59b88d79f15275dd6bdc20136861a1f5350237f74",
@@ -51,7 +51,11 @@ FIELD = re.compile(r"^\*\*([a-z_]+)（([^\n]+)）：\*\*[ \t]*(.*)$", re.M)
 LABELS = re.compile(
     r"^本类(?:继承gold：|gold统一继承：)required_types=(空|[a-z,]+)；"
     r"no_recall=(true|false)；privacy_allowed=(true|false)；"
-    r"hard_trigger=([^；]+)；requires_task_scope_search=(true|false)。", re.M
+    r"hard_trigger=([^；]+)；requires_task_scope_search=(true|false)。"
+    # Optional parallel label. A type whose eligibility gate is bound at first
+    # real use (procedure) is not reachable through typed recall, so the class
+    # declares the tool access that must be observed instead of the type.
+    r"(?:required_procedure_access=([a-z_]+)。)?", re.M
 )
 NORMAL_FOOTER = (
     "本文件20条；gold是期望，不是实测结果。零查询、零披露、后台gate是否执行"
@@ -184,13 +188,15 @@ def parse_document(filename: str, text: str) -> tuple[Case, ...]:
     inherited = list(LABELS.finditer(text[:headings[0].start()]))
     if len(inherited) != 1:
         raise CorpusError(f"{filename}: expected one inherited label declaration")
-    types, no_recall, privacy, hard, task = inherited[0].groups()
+    types, no_recall, privacy, hard, task, access = inherited[0].groups()
     labels: dict[str, object] = {
         "required_types": [] if types == "空" else types.split(","),
         "no_recall": no_recall == "true",
         "privacy_allowed": privacy == "true",
         "hard_trigger": hard,
         "requires_task_scope_search": task == "true",
+        # None for every class that measures nothing beyond typed recall.
+        "required_procedure_access": access,
     }
     footer = TASK_FOOTER if number == "05" else NORMAL_FOOTER
     if not text.rstrip().endswith("\n\n" + footer):
