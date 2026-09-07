@@ -89,13 +89,19 @@ def _added_hash():
     return old._hash(PROTOCOL+'.ddl', list(schema.ddl_statements(schema.TERMINAL_DDL)))
 
 
-def inspect_root(connection):
+def inspect_root(connection, *, actual=None, meta=None):
+    """``actual``/``meta`` let an additive successor (7.4) verify the frozen 7.3 identity
+    beneath its own catalog and marker; omitted, both are read from the connection."""
     connection.row_factory = sqlite3.Row
-    actual = old._catalog(connection)
+    if actual is None:
+        actual = old._catalog(connection)
     base = catalogs().get(actual)
     if base is None:
         raise MemoryLegacySchemaUnsupported()
-    meta = {str(r[0]):str(r[1]) for r in connection.execute('SELECT key,value FROM schema_meta')}
+    if meta is None:
+        meta = {str(r[0]):str(r[1]) for r in connection.execute('SELECT key,value FROM schema_meta')}
+    else:
+        meta = dict(meta)
     if MARKER_KEY in meta:
         wire = meta.pop(MARKER_KEY)
         try:
@@ -191,7 +197,13 @@ def _fault(point):
 
 
 def _existing(connection):
-    if old._catalog(connection) in catalogs(): return inspect_root(connection)
+    from simple_harness_memory.migrations import cognitive_vector_forward as successor
+    actual = old._catalog(connection)
+    if actual in successor.catalogs():
+        # Already carried forward to the additive 7.4 successor: same 7.3 identity/marker.
+        root = successor.inspect_root(connection)
+        return _Root(root.initialization, root.catalog_id, root.marker)
+    if actual in catalogs(): return inspect_root(connection)
     return old.inspect_root(connection)
 
 
@@ -221,7 +233,8 @@ async def migrate_human_memory_v7_2_to_v7_3(db_path, *, backup_path, expected_in
         if same!=root or _existing(snapshot)!=same:
             raise MemoryIdempotencyConflict('settlement_upgrade_snapshot_conflict')
         await _validate_snapshot(snapshot,same)
-        if same.catalog_id in catalogs():
+        from simple_harness_memory.migrations import cognitive_vector_forward as successor
+        if same.catalog_id in catalogs() or same.catalog_id in successor.catalogs():
             writer.execute('ROLLBACK'); return same.marker
         columns=old._columns(snapshot); before=_preserved_root(snapshot,columns)
         if _preserved_root(writer,columns)!=before:

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.23] - 2026-09-07（长期认知记忆向量通道）
+
+- 基于 0.6.22。按 `plans/2026-08-29-human-memory-digital-twin/DECISION-2026-09-07-cognitive-vector-lane.md` 方案 A：typed recall 为长期认知记忆新增真正的 `vector` lane（RRF 权重沿用预留的 0.40）。写入侧为"世代重建"：新公共方法 `MemoryManager.rebuild_cognitive_vector_generation()` 复用 `short_horizon_embedder`（不加新 builder kwarg），对全部可召回 head 的**公开 payload** 文本（`features/cognitive_vector.py::cognitive_vector_text`）批量嵌入，manifest hash(memory_id, revision, content_hash) 相同则 replay，否则写新世代并原子激活、旧世代 retire、审计 `cognitive_vector_audit`、推进 recall authority；嵌入永不在 mutation 写锁内发生。
+- 召回侧：查询向量在取 `_write_lock` 之前、带 audit 预留的 deadline 内计算；余弦只对**已通过全部资格门**（状态/类型权限/血缘/抑制/scope/entity/时间/disclosure）的 (memory_id, revision) 计算，被抑制/遗忘的记忆永不进入向量比对；阈值为 SDK 冻结常量 `COGNITIVE_VECTOR_MIN_SCORE = 0.45`。confirmation 门同步接受 vector 命中。资格门顺序、`typed_recall_query_terms` 与既有四条 lane 的计分不变。
+- 退化码语义变更：`cognitive_vector_unavailable` 仅表示 backend 无 embedder；新增 `cognitive_vector_no_generation` / `cognitive_vector_stale` / `cognitive_vector_deadline`。全部持久化到 `typed_recall_terminals.degradation_codes_json`；命中时 generation id 的 opaque hash 写入 terminal_json `cognitive_vector.used_generation_id_hash`。
+- DDL 附加式 7.4（`backends/schema_v7_4.py`）：`cognitive_vector_generations`、`cognitive_vectors`、`cognitive_vector_audit`；7.3 DDL/checksum 冻结。7.3 库（fresh 或带 7.2→7.3 marker）打开即前向追加三表并写 `schema_meta[cognitive_vector_forward_v1]`，原初始化 receipt/meta/业务列不改写；未知 catalog/checksum fail-closed。
+- 测试：新增 `test_cognitive_vector_generation.py`、`test_typed_recall_cognitive_vector.py`、`test_memory_0623_schema_cutover.py`；改写 `test_typed_recall_v6.py::test_cognitive_vector_degradation_is_durable_not_unsupported`。公共 API 快照 `public-api-0.6.23.json` 根导出零增减。仅本地候选，未发布。Host 需同步改 `retrieval_modes` 恒含 VECTOR 与 worker 追加一次 `rebuild_cognitive_vector_generation()`。
+
 ## [0.6.22] - 2026-09-07（遗忘只针对记忆：补齐 duplicate-source 路径）
 
 - 基于 0.6.21。`_resolve_suppression_snapshot_unlocked` 仅对记忆候选调用 `duplicate_source_matches`：MEMORY 范围指令的重复来源别名仍可拒绝重学的记忆，但不再拒绝来源对话证据（原生 r6 发现 0.6.21 仍经此路径隐藏会话）。cut/proof 机制不变。

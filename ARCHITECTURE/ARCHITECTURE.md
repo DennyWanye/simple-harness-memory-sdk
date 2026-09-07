@@ -14,6 +14,17 @@
 
 最后更新：2026-09-06。Procedure后继公开prepare/read target/record的实际operation observation六项新控通过；f82c2b8仅Procedure复用source-only S1完整持久校验，Host三真实Scope路由/文件effects/完整group→公共观察由原红转绿，累计成功1/2/3与重放已验证。新四项跨源边界控未跑，完整TC-HM04、独审、installed/native未闭合。主整合Hegel e500556后统一版本，不独立build，不改M618制品；F01延期。[源码与证据边界](../plans/2026-09-06-procedure-observation-prepare/CONTRACT.md)。
 
+## 2026-09-07 0.6.23 长期认知记忆向量通道源码候选
+
+最后更新：2026-09-07。按 [裁决](../plans/2026-08-29-human-memory-digital-twin/DECISION-2026-09-07-cognitive-vector-lane.md) 方案 A 实现，仅本地候选、未发布、未构建制品、Host 未 pin。
+
+- **向量通道**：typed recall 在既有资格门（状态/类型权限/血缘/抑制/scope/entity/时间/disclosure）之后、排序之前新增认知记忆 `vector` lane，RRF 权重沿用预留的 0.40；confirmation 门同样接受 vector 命中。资格门顺序、`typed_recall_query_terms` 与 full_text/entity/task_scope/temporal 计分不变。余弦只对已通过全部门的 (memory_id, revision) 计算，被抑制/遗忘的记忆永不进入向量比对；查询向量在取 `_write_lock` 之前、带 audit 预留的 deadline 内嵌入。
+- **世代**：`MemoryManager.rebuild_cognitive_vector_generation()`（复用 `short_horizon_embedder`，无新 builder kwarg）镜像短时域世代重建：可召回 head（含 contested）→ manifest hash(memory_id, revision, content_hash) → 同 lineage 同 manifest 则 replay，否则 `embed_batch` 公开 payload 文本（`features/cognitive_vector.py::cognitive_vector_text`）→ `cognitive_vectors` → 原子激活、旧世代 retire → `cognitive_vector_audit` → recall authority `cognitive_vector_generation_changed`。嵌入永不在 mutation 写锁内发生；召回只读。缓存复用 `_ExactVectorGenerationCache`，ref 为 `memory_id:revision`。
+- **退化码**：`cognitive_vector_unavailable` 仅表示无 embedder；`cognitive_vector_no_generation`（无 active 世代）、`cognitive_vector_stale`（active 世代 manifest ≠ 当前 head manifest）、`cognitive_vector_deadline`（查询嵌入超时/向量无效）。全部落 `typed_recall_terminals.degradation_codes_json`；命中时 terminal_json 记 `cognitive_vector.used_generation_id_hash`（opaque hash）。
+- **阈值**：SDK 冻结常量 `COGNITIVE_VECTOR_MIN_SCORE = 0.45`（`features/cognitive_vector.py`），低于阈值不进候选；取值理由：双语句向量模型同义改写通常 ≥0.6、无关句通常 ≤0.3，取中点偏严以护住 C07 零召回子集，由 Host C07 回归校准。
+- **schema 7.4**（`backends/schema_v7_4.py`，`DDL = schema_v7_3.DDL + COGNITIVE_VECTOR_DDL`）：`cognitive_vector_generations` / `cognitive_vectors` / `cognitive_vector_audit`；7.3 checksum 冻结。7.3 库（fresh 或带 7.2→7.3 marker）打开即前向追加三表并写 `schema_meta[cognitive_vector_forward_v1]`（`migrations/cognitive_vector_forward.py`），原初始化 receipt/meta checksum/7.3 marker/业务列不改写；未知 catalog/checksum fail-closed。`migrate_human_memory_v7_2_to_v7_3` 视已前向的库为已完成。
+- **测试**：`test_cognitive_vector_generation.py`（7）、`test_typed_recall_cognitive_vector.py`（9，含五种 C01 FAIL 形状、抑制/disclosure 优先、阈值负控、stale/无世代/无 embedder/超时退化、confirmation、持久化、零副作用）、`test_memory_0623_schema_cutover.py`（5）；改写 `test_typed_recall_v6.py` 退化用例；公共 API 快照 `public-api-0.6.23.json` 根导出零增减。Host 需同步：`retrieval_modes` 恒含 VECTOR、short_index_worker 追加 `rebuild_cognitive_vector_generation()`、重 pin。
+
 ## 2026-09-06 M618 实际安装恢复控制
 
 最后更新：2026-09-06。主转Dirac限定接受d46bf1f/cf7c8d5及Host6b53f27c/e37c42bb，版本d8d80d5固定0.6.18。一次offline wheel SHA010b4281…，两变动包成员fixedGit/source/wheel/独有target一致；H077依赖、无Memory源码覆盖的完整cohort及Host原普通异常升级两控通过（0.11s/0.73s）。PG1723/exit0/2.408s/峰189120KiB/remaining=[]，锁释放。M617/主环境不动；制品独审与主H078组合另验，Procedure观察/适用性仍待接线。[准确制品、hash及证据](../plans/2026-09-06-analysis-retry-protocol/CANDIDATE-0.6.18.md)。

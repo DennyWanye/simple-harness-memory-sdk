@@ -7,7 +7,9 @@ from dataclasses import replace
 import pytest
 import simple_harness_memory as m
 from simple_harness_memory.backends import schema_v5 as old_schema, schema_v7_3, sqlite_v5
-from simple_harness_memory.migrations import schema_upgrade as old_upgrade, settlement_upgrade as upgrade
+from simple_harness_memory.migrations import (
+    cognitive_vector_forward as forward, schema_upgrade as old_upgrade, settlement_upgrade as upgrade,
+)
 from simple_harness_memory.core.errors import MemoryCorruptionError, MemoryValidationError, MemoryLegacySchemaUnsupported, MemoryOwnershipConflict
 from simple_harness_memory.core.operation_audit import _hash
 from tests.integration.test_prospective_outbox_source import world, revise, PRINCIPAL, SCOPE, State, Signal, _grant
@@ -23,6 +25,13 @@ async def legacy_case(tmp_path,monkeypatch):
         patch.setattr(sqlite_v5,'_DDL',old_schema.ddl_statements())
         patch.setattr(upgrade,'probe_existing_root',old_upgrade.probe_existing_root)
         patch.setattr(upgrade,'inspect_root',old_upgrade.inspect_root)
+        # 0.6.23: the backend opens through the 7.4 forward layer; a frozen 7.2 fixture
+        # bypasses it and has no cognitive vector tables to load or validate.
+        patch.setattr(forward,'probe_existing_root',old_upgrade.probe_existing_root)
+        patch.setattr(forward,'inspect_root',old_upgrade.inspect_root)
+        async def _skip(self): return None
+        patch.setattr(sqlite_v5.SQLiteHumanMemoryBackend,'_load_cognitive_vector_cache_unlocked',_skip)
+        patch.setattr(sqlite_v5.SQLiteHumanMemoryBackend,'_validate_cognitive_vector_integrity_unlocked',_skip)
         gen=world.__wrapped__(tmp_path)
         w=await anext(gen)
         try:

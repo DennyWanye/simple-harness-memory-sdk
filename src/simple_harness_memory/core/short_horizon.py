@@ -497,6 +497,10 @@ class _ExactVectorGenerationCache:
     def size_bytes(self) -> int:
         return int(self._matrix.nbytes)
 
+    @property
+    def dimension(self) -> int:
+        return int(self._matrix.shape[1])
+
     def exact_search(
         self,
         query_vector: Sequence[float],

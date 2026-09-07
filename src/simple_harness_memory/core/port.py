@@ -67,6 +67,7 @@ from simple_harness_memory.core.models import (
     Message,
 )
 from simple_harness_memory.core.prospective_settlement import RegistrationRequiredView, ProspectiveInvalidationNotRequiredReceipt
+from simple_harness_memory.features.cognitive_vector import CognitiveVectorGenerationBuildResult
 from simple_harness_memory.core.prospective_sources_v2 import ProspectiveOutboxSourceViewV2
 from simple_harness_memory.core.prospective_sources import ProspectiveOutboxSourceView
 from simple_harness_memory.core.mutation_receipts import MemoryMutationReceiptView
@@ -445,6 +446,10 @@ class CognitiveMemoryBackend(Protocol):
     async def rebuild_short_horizon_generation(
         self, *, now: float | None = None
     ) -> ShortHorizonGenerationBuildResult: ...
+
+    async def rebuild_cognitive_vector_generation(
+        self, *, now: float | None = None
+    ) -> CognitiveVectorGenerationBuildResult: ...
 
     async def recall_short_horizon(
         self,

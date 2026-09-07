@@ -48,6 +48,7 @@ from simple_harness_memory.core.identity import (
     ScopeKind,
 )
 from simple_harness_memory.core.models import Fact
+from simple_harness_memory.features.cognitive_vector import CognitiveVectorGenerationBuildResult
 from simple_harness_memory.core.prospective_settlement import RegistrationRequiredView, ProspectiveInvalidationNotRequiredReceipt
 from simple_harness_memory.core.prospective_sources_v2 import ProspectiveOutboxSourceViewV2
 from simple_harness_memory.core.prospective_sources import ProspectiveOutboxSourceView
@@ -477,6 +478,14 @@ class MemoryManager:
         self, *, now: float | None = None
     ) -> ShortHorizonGenerationBuildResult:
         operation = getattr(self._backend, "rebuild_short_horizon_generation")
+        return await operation(now=now)
+
+    async def rebuild_cognitive_vector_generation(
+        self, *, now: float | None = None
+    ) -> CognitiveVectorGenerationBuildResult:
+        """0.6.23：为长期认知记忆重建/激活向量世代（复用 ``short_horizon_embedder``）。"""
+
+        operation = getattr(self._backend, "rebuild_cognitive_vector_generation")
         return await operation(now=now)
 
     @classmethod

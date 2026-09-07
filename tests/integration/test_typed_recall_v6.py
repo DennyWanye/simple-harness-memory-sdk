@@ -803,6 +803,9 @@ async def test_reopen_recomputes_every_typed_recall_hash_and_cardinality(
 async def test_cognitive_vector_degradation_is_durable_not_unsupported(
     tmp_path: Path,
 ) -> None:
+    """0.6.23：无 embedder → ``cognitive_vector_unavailable``；有 embedder 但无世代 →
+    ``cognitive_vector_no_generation``；两者都是持久化退化，不是 unsupported。"""
+
     backend, envelope, _receipt, span, _authority = await _prepared(
         tmp_path / "vector-degrade.db", now=lambda: 20.0
     )
@@ -840,6 +843,36 @@ async def test_cognitive_vector_degradation_is_durable_not_unsupported(
             for row in await cursor.fetchall()
         )
     await backend.close()
+
+    from tests.integration.test_cognitive_vector_generation import ControlledEmbedder
+
+    with_embedder = SQLiteHumanMemoryBackend(
+        tmp_path / "vector-degrade.db",
+        now=lambda: 30.0,
+        short_horizon_embedder=ControlledEmbedder(),
+    )
+    await with_embedder.initialize()
+    try:
+        no_generation_context = _context(
+            modes=(RecallRetrievalMode.FULL_TEXT, RecallRetrievalMode.VECTOR)
+        )
+        no_generation = await with_embedder.execute_typed_recall(
+            principal=_principal(),
+            context=no_generation_context,
+            plan=_recall_plan(no_generation_context, idempotency_key="idem-vector-no-generation"),
+        )
+        assert no_generation.decision.outcome is RecallDecisionOutcome.RECALL
+        assert len(no_generation.result.items) == 1
+        assert no_generation.unsupported_capabilities == ()
+        assert no_generation.degradation_codes == ("cognitive_vector_no_generation",)
+        async with with_embedder.connection.execute(
+            "SELECT degradation_codes_json FROM typed_recall_terminals "
+            "ORDER BY created_at DESC LIMIT 1"
+        ) as cursor:
+            latest = await cursor.fetchone()
+        assert json.loads(str(latest[0])) == ["cognitive_vector_no_generation"]
+    finally:
+        await with_embedder.close()
 
 
 @pytest.mark.asyncio

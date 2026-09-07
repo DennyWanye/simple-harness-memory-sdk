@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import tomllib
 from pathlib import Path
@@ -231,7 +232,7 @@ def test_current_candidate_sources_and_docs_are_consistent() -> None:
     assert "simple-harness-sdk>=0.7,<0.8" in pyproject["project"]["dependencies"]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "当前 source candidate：**0.6.22**" in readme
+    assert "当前 source candidate：**0.6.23**" in readme
     assert "已发布 fallback 为 0.5.1" in readme
     assert "## [0.6.6] - 2026-09-05" in changelog
     assert "## [0.6.5] - 2026-09-05" in changelog
@@ -244,15 +245,15 @@ def test_current_candidate_sources_and_docs_are_consistent() -> None:
     assert "version=0.5.1" in (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 
 
-def test_public_api_0_6_22_keeps_0_6_19_surface() -> None:
+def test_public_api_0_6_23_keeps_0_6_19_surface() -> None:
     previous = json.loads(Path(__file__).with_name("public-api-0.6.19.json").read_text())
-    for version in ("0.6.20", "0.6.21", "0.6.22"):
+    for version in ("0.6.20", "0.6.21", "0.6.22", "0.6.23"):
         snapshot = json.loads(Path(__file__).with_name(f"public-api-{version}.json").read_text())
         assert snapshot["version"] == version
         assert {k: v for k, v in previous.items() if k != "version"} == {
             k: v for k, v in snapshot.items() if k != "version"
         }
-    assert simple_harness_memory.__version__ == "0.6.22"
+    assert simple_harness_memory.__version__ == "0.6.23"
     assert snapshot["root"] == sorted(simple_harness_memory.__all__)
     assert len(snapshot["root"]) == len(set(snapshot["root"]))
     assert snapshot["migrations"] == sorted(migrations.__all__)
@@ -262,3 +263,11 @@ def test_public_api_0_6_22_keeps_0_6_19_surface() -> None:
                    "record_procedure_observation"):
         assert callable(getattr(simple_harness_memory.MemoryManager, method))
     assert simple_harness_memory.PROCEDURE_OBSERVATION_RECOVERY_VERSION == 1
+    # 0.6.23：根导出零增减；新增方法只做可达性只读核对。
+    assert callable(simple_harness_memory.MemoryManager.rebuild_cognitive_vector_generation)
+    assert "short_horizon_embedder" in inspect.signature(
+        simple_harness_memory.MemoryManager.build_human_memory_v7
+    ).parameters
+    assert "cognitive_vector_embedder" not in inspect.signature(
+        simple_harness_memory.MemoryManager.build_human_memory_v7
+    ).parameters
