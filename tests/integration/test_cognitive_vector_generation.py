@@ -256,11 +256,13 @@ async def test_build_activate_replay_is_idempotent_and_embeds_public_text_only(t
         assert [item[0] for item in audits] == ["active", "active"]
         assert {item[1] for item in audits} == {built.generation_id}
         assert [json.loads(item[2])["details"]["replayed"] for item in audits] == [False, True]
+        # 0.6.28：世代激活是纯索引重建，不再推进召回权威 epoch（S3 §5.4 只认"可能改变
+        # 资格"的事件）；世代身份仍完整留在 cognitive_vector_audit 里。
         assert await rows(
             manager,
             "SELECT event_kind FROM recall_authority_events WHERE principal_id='actor-1' "
             "AND event_kind='cognitive_vector_generation_changed'",
-        ) == [("cognitive_vector_generation_changed",)]
+        ) == []
         cache = manager._backend._cognitive_vector_cache
         assert cache is not None and cache.generation_id == built.generation_id
         assert len(cache.memory_refs) == 2 and all(ref.endswith(":1") for ref in cache.memory_refs)

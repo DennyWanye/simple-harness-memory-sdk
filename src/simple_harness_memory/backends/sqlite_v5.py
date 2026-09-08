@@ -2352,12 +2352,17 @@ class SQLiteHumanMemoryBackend:
                     },
                     created_at=effective_now,
                 )
-                await self._advance_recall_authority_unlocked(
-                    principal.actor_id,
-                    event_kind="short_horizon_projection_changed",
-                    source_ref=projection_manifest_hash,
-                    now=effective_now,
-                )
+                if removed_chunk_count:
+                    # 0.6.28：只有"既有 chunk 被移除/改写"才是 S3 §5.4 说的
+                    # 「Short-Horizon source 失效」，才推进召回权威 epoch。
+                    # 纯新增（只多出 chunk、没有任何既有 chunk 消失）不会让任何
+                    # 已绑定的召回结果失去资格，因此不推进 epoch。
+                    await self._advance_recall_authority_unlocked(
+                        principal.actor_id,
+                        event_kind="short_horizon_projection_changed",
+                        source_ref=projection_manifest_hash,
+                        now=effective_now,
+                    )
                 self._fault("short_horizon.projection.before_commit")
                 await self._db.execute("COMMIT")
                 committed = True
@@ -2523,13 +2528,9 @@ class SQLiteHumanMemoryBackend:
                     },
                     created_at=effective_now,
                 )
-                for principal_id in sorted({str(row["principal_id"]) for row in rows}):
-                    await self._advance_recall_authority_unlocked(
-                        principal_id,
-                        event_kind="short_horizon_generation_changed",
-                        source_ref=generation_id,
-                        now=effective_now,
-                    )
+                # 0.6.28：世代激活只是把同一批 chunk 重新算了一遍向量，属于纯索引重建，
+                # 不改变任何一条来源的资格（S3 §5.4），因此不推进召回权威 epoch。
+                # 世代身份与 manifest 仍由 short_horizon_audit 完整留痕。
                 self._fault("short_horizon.generation.before_commit")
                 await self._db.execute("COMMIT")
                 committed = True
@@ -2821,13 +2822,8 @@ class SQLiteHumanMemoryBackend:
                     },
                     created_at=effective_now,
                 )
-                for principal_id in sorted({str(row["principal_id"]) for row in rows}):
-                    await self._advance_recall_authority_unlocked(
-                        principal_id,
-                        event_kind="cognitive_vector_generation_changed",
-                        source_ref=generation_id,
-                        now=effective_now,
-                    )
+                # 0.6.28：同上，认知向量世代激活是纯索引重建（同一批 (memory_id,revision)
+                # 重新嵌入），不改变资格，不推进召回权威 epoch；留痕在 cognitive_vector_audit。
                 self._fault("cognitive_vector.generation.before_commit")
                 await self._db.execute("COMMIT")
                 committed = True

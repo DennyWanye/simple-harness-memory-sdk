@@ -14,6 +14,16 @@
 
 最后更新：2026-09-06。Procedure后继公开prepare/read target/record的实际operation observation六项新控通过；f82c2b8仅Procedure复用source-only S1完整持久校验，Host三真实Scope路由/文件effects/完整group→公共观察由原红转绿，累计成功1/2/3与重放已验证。新四项跨源边界控未跑，完整TC-HM04、独审、installed/native未闭合。主整合Hegel e500556后统一版本，不独立build，不改M618制品；F01延期。[源码与证据边界](../plans/2026-09-06-procedure-observation-prepare/CONTRACT.md)。
 
+## 2026-09-08 0.6.28 召回权威 epoch 只跟踪"可能改变资格"的事件
+
+最后更新：2026-09-08。基于 0.6.27，仅本地候选、未发布、未构建制品、Host 未 pin。缺陷来源 HM-TO-A6 事故 F（Host 备忘 `simple_harness/plans/2026-09-08-hm-to-a6/DECISION-RECALL-AUTHORITY-STALE.md`）。
+
+- **缺陷**：工具已成功结算（`tool.effect_settled`）之后 ~160 ms，`authorize_recall_context_use` 比对已落库召回结果的 `(epoch, policy_hash)` 与当前 head，不等即抛 `RECALL_AUTHORITY_STALE`；Harness 的 `_authorize_context_use` 无 except，直接 `run.fail`。用户库一次会话累计 26 个 epoch，其中大量来自**纯索引/投影重建**车道。
+- **修复**：按 S3 slice §5.4 逐点分类 8 个 epoch 抛点。停止推进 `short_horizon_generation_changed` 与 `cognitive_vector_generation_changed`（世代激活只是把同一批内容重新嵌入，不改变资格）；`short_horizon_projection_changed` 收窄为仅当 `removed_chunk_count > 0`（移除既有 chunk 才是 §5.4 的「Short-Horizon source 失效」，纯新增不使任何已绑定结果失去资格）。保留 suppression / cleanup / procedure / prospective / cognitive mutation 五条资格车道。
+- **披露完整性不放宽**：epoch 相等性之后紧接的 `_validate_recall_context_use_sources_unlocked` 逐条重校验每个被绑定来源的 head/revision/`content_hash`/状态/有效期/privacy/attributes/type 权威/血缘抑制/disclosure（短时域另加 chunk 存在性与 `expires_at`），任一不成立以同一码拒绝。被停掉的两条向量车道只写 `*_vectors` 与世代状态表，碰不到这些字段；投影重建能造成的语义失效恰落在短时域来源的两项检查上。
+- **不改**：`recall_authority_events`/`recall_authority_heads` 的 DDL 与行形状（epoch 单调 +1、`previous_epoch` 严格衔接、`initialized` 惰性建头 0→1）、事件+CAS 事务、两处围栏判据与抛出码、世代激活审计。无 DDL 变化（7.4 checksum 不变）、根导出零增减；快照 `public-api-0.6.28.json`；新增 4 项回归测试（3 项在 0.6.27 源上失败）。
+- **仍可叠加**：Host 备忘 §7(2) 把 epoch 相等性降级为"来源重校验通过即签发 + 降级码"、§7(3) Harness SDK 为用途围栏拒绝留同 Run 有界修复路径。本次只做 §7(1)。
+
 ## 2026-09-08 0.6.27 世代重建把嵌入移出写锁；召回取锁受 deadline 约束
 
 最后更新：2026-09-08。基于 0.6.26，仅本地候选、未发布、未构建制品、Host 未 pin。诊断见 Host `simple_harness/plans/2026-09-08-hm-to-a6/DIAG-RECALL-TIMEOUT.md`（HM-TO-A6 turn 22 现场）。
