@@ -24,7 +24,16 @@ class TypedRecallDeadlineExceeded(TimeoutError):
 
     0.6.27：typed recall 的 deadline 失败一律是 ``TimeoutError``（Host 契约不变，仍映射到
     ``context_route_recall_timeout``），但 ``stage`` 让调用方能区分「在哪一段耗尽预算」——
-    目前只有 ``admit_write_lock``（等 admit 写锁超时，幂等记录尚未落库）会用到它。
+    当时只有 ``admit_write_lock``（等 admit 写锁超时，幂等记录尚未落库）会用到它。
+
+    0.6.33：入账之后的每一段都改抛本类，``stage`` 取值扩为
+    ``admit_write_lock``（唯一一个**没有**终态行的阶段，幂等记录尚未落库）、
+    ``after_admission``、``history_source_context``、``cognitive_vector_lane``、
+    ``collect_write_lock``、``collect_candidates``、``after_collect_candidates``、
+    ``collect_confirmation``、``collect_short_candidates``、``authority_expired``。
+    除 ``admit_write_lock`` 外，抛出之前一定已经落下**恰好一条** ``deadline_exceeded``
+    终态行，形状与入账阶段到期时逐字相同；``stage`` 只活在异常对象上，不进任何持久行，
+    因此公共 wire 形状与 0.6.32 逐字不变。
     """
 
     code = "DEADLINE_EXCEEDED"

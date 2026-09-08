@@ -32,6 +32,10 @@ from simple_harness_memory.backends.history_source_guard import (
     prepare_history_source_context,
 )
 from simple_harness_memory.backends.disclosure_audience import ordinary_audience_matches
+from simple_harness_memory.backends.sqlite_tx import (
+    begin_transaction,
+    rollback_transaction,
+)
 from simple_harness_memory.backends.schema_v7_4 import (
     COGNITIVE_VECTOR_TABLES,
     REQUIRED_TABLES,
@@ -711,7 +715,7 @@ class SQLiteHumanMemoryBackend:
             committed = False
             try:
                 self._fault("ingestion.before_begin")
-                await self._db.execute("BEGIN IMMEDIATE")
+                await begin_transaction(self._db)
                 begun = True
                 await check_other_mode(self, envelope, receipt, source=False)
                 self._fault("ingestion.after_begin")
@@ -1007,7 +1011,7 @@ class SQLiteHumanMemoryBackend:
             begun = False
             committed = False
             try:
-                await self._db.execute("BEGIN IMMEDIATE")
+                await begin_transaction(self._db)
                 begun = True
                 now = _timestamp(self._now())
                 await self._db.execute(
@@ -1707,7 +1711,7 @@ class SQLiteHumanMemoryBackend:
             return await self._resolve_suppression_snapshot_unlocked(
                 candidate, purpose, evaluated_at=evaluated_at,
             )
-        await self._db.execute("BEGIN")
+        await begin_transaction(self._db, "BEGIN")
         try:
             result = await self._resolve_suppression_snapshot_unlocked(
                 candidate, purpose, evaluated_at=evaluated_at,
@@ -1715,7 +1719,7 @@ class SQLiteHumanMemoryBackend:
             await self._db.execute("COMMIT")
             return result
         except BaseException:
-            await self._db.execute("ROLLBACK")
+            await rollback_transaction(self._db)
             raise
 
     async def _resolve_suppression_snapshot_unlocked(
@@ -1821,7 +1825,7 @@ class SQLiteHumanMemoryBackend:
         committed = False
         try:
             self._fault("suppression.before_begin")
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             begun = True
             self._fault("suppression.after_begin")
             await self._db.execute(
@@ -1963,7 +1967,7 @@ class SQLiteHumanMemoryBackend:
             # 0.6.30：U+001F 是分段 chunk 投影键的保留分隔符（短时域契约 §4-补 2026-09-08）。
             raise MemoryValidationError("conversation_registration_causal_group_id_reserved")
         async with self._write_lock:
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             committed = False
             try:
                 record = await self._read_ingested_record(envelope.evidence_id)
@@ -2288,7 +2292,7 @@ class SQLiteHumanMemoryBackend:
                     cast(JsonValue, [list(item) for item in desired_projection])
                 ).encode()
             ).hexdigest()
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             committed = False
             try:
                 if existing_projection == desired_projection:
@@ -2543,7 +2547,7 @@ class SQLiteHumanMemoryBackend:
                 )
             )
             generation_id = f"short-gen:{uuid4().hex}"
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             committed = False
             try:
                 await self._ensure_system_principal_unlocked(effective_now)
@@ -2883,7 +2887,7 @@ class SQLiteHumanMemoryBackend:
             generation_id = f"cognitive-gen:{uuid4().hex}"
             attempt.generation_id = generation_id
             attempt.stage = COGNITIVE_VECTOR_BUILD_WRITE_FAILED
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             committed = False
             try:
                 await self._ensure_system_principal_unlocked(effective_now)
@@ -2990,7 +2994,7 @@ class SQLiteHumanMemoryBackend:
 
         assert self._db is not None
         failed_generation_id = generation_id or f"cognitive-gen:{uuid4().hex}"
-        await self._db.execute("BEGIN IMMEDIATE")
+        await begin_transaction(self._db)
         committed = False
         try:
             await self._insert_cognitive_vector_lineage_unlocked(lineage, created_at)
@@ -3173,7 +3177,7 @@ class SQLiteHumanMemoryBackend:
 
     async def _append_cognitive_vector_audit_transaction(self, **kwargs: object) -> str:
         assert self._db is not None
-        await self._db.execute("BEGIN IMMEDIATE")
+        await begin_transaction(self._db)
         committed = False
         try:
             audit_id = await self._append_cognitive_vector_audit_unlocked(**kwargs)
@@ -3930,7 +3934,7 @@ class SQLiteHumanMemoryBackend:
         effective_now = _timestamp(self._now() if now is None else now)
         async with self._write_lock:
             await self._authorize_short_horizon_principal_unlocked(principal)
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             committed = False
             try:
                 async with self._db.execute(
@@ -4064,7 +4068,7 @@ class SQLiteHumanMemoryBackend:
             await self._persist_typed_recall_timeout(
                 request_id=request_id, attempt_id=attempt_id, now=effective_now
             )
-            raise TimeoutError("DEADLINE_EXCEEDED")
+            raise TypedRecallDeadlineExceeded("after_admission") from None
 
         unsupported = capability_rejections(plan)
         degradation_codes: list[str] = []
@@ -4114,9 +4118,9 @@ class SQLiteHumanMemoryBackend:
             )
         except TimeoutError:
             await self._persist_typed_recall_timeout(
-                request_id=request_id, attempt_id=attempt_id, now=effective_now,
+                request_id=request_id, attempt_id=attempt_id, now=effective_now
             )
-            raise TimeoutError("DEADLINE_EXCEEDED") from None
+            raise TypedRecallDeadlineExceeded("history_source_context") from None
         vector_lane: _CognitiveVectorLane | None = None
         cognitive_vector_generation_id_hash: str | None = None
         if vector_requested and self._short_horizon_embedder is not None:
@@ -4128,9 +4132,9 @@ class SQLiteHumanMemoryBackend:
                 )
             except TimeoutError:
                 await self._persist_typed_recall_timeout(
-                    request_id=request_id, attempt_id=attempt_id, now=effective_now,
+                    request_id=request_id, attempt_id=attempt_id, now=effective_now
                 )
-                raise TimeoutError("DEADLINE_EXCEEDED") from None
+                raise TypedRecallDeadlineExceeded("cognitive_vector_lane") from None
             if vector_degradation is not None:
                 degradation_codes.append(vector_degradation)
             elif vector_lane is not None:
@@ -4145,7 +4149,7 @@ class SQLiteHumanMemoryBackend:
             await self._persist_typed_recall_timeout(
                 request_id=request_id, attempt_id=attempt_id, now=effective_now
             )
-            raise TimeoutError("DEADLINE_EXCEEDED") from None
+            raise TypedRecallDeadlineExceeded("collect_write_lock") from None
 
         try:
             candidates = await asyncio.wait_for(
@@ -4163,12 +4167,12 @@ class SQLiteHumanMemoryBackend:
             await self._persist_typed_recall_timeout(
                 request_id=request_id, attempt_id=attempt_id, now=effective_now
             )
-            raise TimeoutError("DEADLINE_EXCEEDED") from None
+            raise TypedRecallDeadlineExceeded("collect_candidates") from None
         if time.monotonic() >= deadline_monotonic:
             await self._persist_typed_recall_timeout(
                 request_id=request_id, attempt_id=attempt_id, now=effective_now
             )
-            raise TimeoutError("DEADLINE_EXCEEDED")
+            raise TypedRecallDeadlineExceeded("after_collect_candidates") from None
         try:
             # 0.6.31：普通候选先于 confirmation 收集——group 的向量判据要与同类型的
             # 普通候选比"谁离查询最近"（见 DECISION-2026-09-08-conflict-short-circuit.md）。
@@ -4189,7 +4193,7 @@ class SQLiteHumanMemoryBackend:
             await self._persist_typed_recall_timeout(
                 request_id=request_id, attempt_id=attempt_id, now=effective_now
             )
-            raise TimeoutError("DEADLINE_EXCEEDED") from None
+            raise TypedRecallDeadlineExceeded("collect_confirmation") from None
         if confirmations:
             from simple_harness_memory.core.recall import build_host_confirmation_execution
 
@@ -4271,7 +4275,7 @@ class SQLiteHumanMemoryBackend:
                 await self._persist_typed_recall_timeout(
                     request_id=request_id, attempt_id=attempt_id, now=effective_now
                 )
-                raise TimeoutError("DEADLINE_EXCEEDED") from None
+                raise TypedRecallDeadlineExceeded("collect_short_candidates") from None
         candidates = (*candidates, *short_candidates)
         ranked = rank_candidates(candidates)
         selection = apply_budget(
@@ -4287,7 +4291,7 @@ class SQLiteHumanMemoryBackend:
             await self._persist_typed_recall_timeout(
                 request_id=request_id, attempt_id=attempt_id, now=effective_now
             )
-            raise TimeoutError("DEADLINE_EXCEEDED")
+            raise TypedRecallDeadlineExceeded("authority_expired") from None
         async with self._write_lock:
             epoch, policy_hash = await self._recall_authority_unlocked(principal.actor_id)
             if (epoch, policy_hash) != (collected_epoch, collected_policy_hash):
@@ -4707,7 +4711,7 @@ class SQLiteHumanMemoryBackend:
         effective_now = _timestamp(self._now() if now is None else now)
         await prepare_history_source_context(self, principal)
         async with self._write_lock:
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             committed = False
             try:
                 async with self._db.execute(
@@ -5505,7 +5509,7 @@ class SQLiteHumanMemoryBackend:
         # 0.6.27：admit 也必须在预算内取到写锁；等锁超时保持硬失败语义（幂等记录还没落库），
         # 但阶段名写进 ``TypedRecallDeadlineExceeded.stage``，Host 能区分「卡在 admit 等锁」。
         async with self._write_lock_before(deadline_monotonic, stage="admit_write_lock"):
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             committed = False
             try:
                 await self._ensure_typed_recall_principal_unlocked(principal, now)
@@ -6461,7 +6465,7 @@ class SQLiteHumanMemoryBackend:
         cognitive_vector_generation_id_hash: str | None = None,
     ) -> None:
         assert self._db is not None
-        await self._db.execute("BEGIN IMMEDIATE")
+        await begin_transaction(self._db)
         committed = False
         try:
             if time.monotonic() >= deadline_monotonic:
@@ -6609,7 +6613,7 @@ class SQLiteHumanMemoryBackend:
             self._fault("typed_recall.before_commit")
             if time.monotonic() >= deadline_monotonic:
                 await self._db.execute("ROLLBACK")
-                await self._db.execute("BEGIN IMMEDIATE")
+                await begin_transaction(self._db)
                 await self._insert_typed_recall_timeout_unlocked(
                     request_id, attempt_id, now
                 )
@@ -6627,9 +6631,17 @@ class SQLiteHumanMemoryBackend:
     async def _persist_typed_recall_timeout(
         self, *, request_id: str, attempt_id: str, now: float
     ) -> None:
+        """写下这次尝试唯一一条 deadline 终态行（任何阶段的预算耗尽都是同一形状）。"""
+
         assert self._db is not None
         async with self._write_lock:
-            await self._db.execute("BEGIN IMMEDIATE")
+            # 防御：0.6.33 之前，候选收集段被预算取消时会在连接上留下一个孤儿事务
+            # （aiosqlite 的 worker 线程照常执行已排队的 BEGIN），于是这里的 BEGIN
+            # 抛 OperationalError，终态行根本写不下去。开事务的原语已经修好，这一条
+            # 只是让「终态必然落库」这件事不依赖任何上游路径的正确性。
+            if self._db.in_transaction:
+                await rollback_transaction(self._db)
+            await begin_transaction(self._db)
             committed = False
             try:
                 await self._insert_typed_recall_timeout_unlocked(request_id, attempt_id, now)
@@ -6698,7 +6710,7 @@ class SQLiteHumanMemoryBackend:
             raise RuntimeError("human-memory v7 backend is not initialized")
         await prepare_history_source_context(self, principal)
         async with self._write_lock:
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             try:
                 now = _timestamp(self._now())
                 if allow_observation_rebase:
@@ -6794,7 +6806,7 @@ class SQLiteHumanMemoryBackend:
             previous_authority = await resolve_previous(self, previous_reference)
         await prepare_history_source_context(self, principal)
         async with self._write_lock:
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             try:
                 if allow_observation_rebase:
                     from simple_harness_memory.backends.procedure_recovery import compatible_revision
@@ -7073,7 +7085,7 @@ class SQLiteHumanMemoryBackend:
                 raise MemoryOwnershipConflict("procedure_observation_scope_differs")
             async with self._write_lock:
                 self._fault("procedure.before_begin")
-                await self._db.execute("BEGIN IMMEDIATE")
+                await begin_transaction(self._db)
                 begun = True
                 committed = False
                 try:
@@ -7359,7 +7371,7 @@ class SQLiteHumanMemoryBackend:
                 raise MemoryOwnershipConflict("prospective_signal_scope_differs")
             async with self._write_lock:
                 self._fault("prospective.before_begin")
-                await self._db.execute("BEGIN IMMEDIATE")
+                await begin_transaction(self._db)
                 committed = False
                 try:
                     self._fault("prospective.after_begin")
@@ -7684,7 +7696,7 @@ class SQLiteHumanMemoryBackend:
             committed = False
             try:
                 self._fault("mutation.before_begin")
-                await self._db.execute("BEGIN IMMEDIATE")
+                await begin_transaction(self._db)
                 begun = True
                 self._fault("mutation.after_begin")
                 try:
@@ -10390,7 +10402,7 @@ class SQLiteHumanMemoryBackend:
             rejection_json["apply_result_id"] = apply_result.result_id
             rejection_json["apply_result_hash"] = apply_result.result_hash
         rejection_hash = hashlib.sha256(canonical_json(rejection_json).encode("utf-8")).hexdigest()
-        await self._db.execute("BEGIN IMMEDIATE")
+        await begin_transaction(self._db)
         committed = False
         try:
             if apply_result is not None:
@@ -11174,7 +11186,7 @@ class SQLiteHumanMemoryBackend:
         rejection_hash = hashlib.sha256(rejection_json.encode("utf-8")).hexdigest()
         async with self._write_lock:
             try:
-                await self._db.execute("BEGIN IMMEDIATE")
+                await begin_transaction(self._db)
                 await self._db.execute(
                     f"INSERT OR IGNORE INTO {table}(rejection_id,principal_id,"
                     "authority_ref_hash,reason_code,rejection_json,rejection_hash,rejected_at) "
@@ -12003,7 +12015,7 @@ class SQLiteHumanMemoryBackend:
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
         async with self._write_lock:
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             self._fault("job.claim.after_begin")
             committed = False
             try:
@@ -12807,7 +12819,7 @@ class SQLiteHumanMemoryBackend:
         freeze_public_audit_object(result.structured_result)
         assert self._db is not None
         async with self._write_lock:
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             committed = False
             try:
                 now = _timestamp(self._now())
@@ -12957,7 +12969,7 @@ class SQLiteHumanMemoryBackend:
             raise MemoryValidationError("analysis_delivery_admission_without_receipt")
         assert self._db is not None
         async with self._write_lock:
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             committed = False
             try:
                 now = _timestamp(self._now())
@@ -13218,7 +13230,7 @@ class SQLiteHumanMemoryBackend:
         _audit_identifier(reason_code, "reason_code")
         assert self._db is not None
         async with self._write_lock:
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             committed = False
             try:
                 now = _timestamp(self._now())
@@ -13332,7 +13344,7 @@ class SQLiteHumanMemoryBackend:
         if source_principal is not None:
             await prepare_history_source_context(self, source_principal)
         async with self._write_lock:
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             committed = False
             try:
                 now = _timestamp(self._now())
@@ -13760,7 +13772,7 @@ class SQLiteHumanMemoryBackend:
             raise TypeError("claim and application must use analysis protocol types")
         assert self._db is not None
         async with self._write_lock:
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             committed = False
             try:
                 now = _timestamp(self._now())
@@ -14119,7 +14131,7 @@ class SQLiteHumanMemoryBackend:
         if self._db is None or self._receipt is None:
             raise RuntimeError("human-memory v7 backend is not initialized")
         async with self._write_lock:
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             committed = False
             try:
                 admission_purpose = "generic_audit"
@@ -14289,7 +14301,7 @@ class SQLiteHumanMemoryBackend:
         committed = False
         try:
             if manage_transaction:
-                await self._db.execute("BEGIN IMMEDIATE")
+                await begin_transaction(self._db)
                 begun = True
             await self._db.execute(
                 "INSERT INTO principals(principal_id,deployment_id,household_id,actor_id,"
@@ -14593,7 +14605,7 @@ class SQLiteHumanMemoryBackend:
                 denial = "sealed_audit_access_not_yet_valid"
             elif now >= access_receipt.expires_at:
                 denial = "sealed_audit_access_expired"
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             committed = False
             try:
                 async with self._db.execute(
@@ -14644,7 +14656,7 @@ class SQLiteHumanMemoryBackend:
             except MemoryCorruptionError:
                 with suppress(Exception):
                     await self._db.execute("ROLLBACK")
-                await self._db.execute("BEGIN IMMEDIATE")
+                await begin_transaction(self._db)
                 await self._append_manifest_access_event_unlocked(
                     access_receipt_id=access_receipt.access_receipt_id,
                     manifest_payload_hash="0" * 64,
@@ -15600,7 +15612,7 @@ class SQLiteHumanMemoryBackend:
             "reason_code": "sealed_audit_trace_granted" if denial is None else denial,
             "occurred_at": now,
         }
-        await self._db.execute("BEGIN IMMEDIATE")
+        await begin_transaction(self._db)
         committed = False
         try:
             await self._db.execute(
@@ -16017,7 +16029,7 @@ class SQLiteHumanMemoryBackend:
             begun = False
             committed = False
             try:
-                await self._db.execute("BEGIN IMMEDIATE")
+                await begin_transaction(self._db)
                 begun = True
                 await self._db.execute(
                     "INSERT INTO sealed_audit_access_receipts(access_receipt_id,decision_id,"
@@ -16075,7 +16087,7 @@ class SQLiteHumanMemoryBackend:
     ) -> None:
         assert self._db is not None
         async with self._write_lock:
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             committed = False
             try:
                 await self._append_audit_authority_event_unlocked(
@@ -16223,7 +16235,7 @@ class SQLiteHumanMemoryBackend:
                 usage = await cursor.fetchone()
             if denial is None and usage is not None and int(usage[0]) >= access_receipt.max_reads:
                 denial = "sealed_audit_access_exhausted"
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             committed = False
             try:
                 if denial is None:
@@ -16538,7 +16550,7 @@ class SQLiteHumanMemoryBackend:
         from simple_harness_memory.migrations.schema_upgrade import _catalog
 
         assert self._db is not None
-        await self._db.execute("BEGIN IMMEDIATE")
+        await begin_transaction(self._db)
         committed = False
         try:
             tables = await _async_table_names(self._db)
@@ -16583,7 +16595,7 @@ class SQLiteHumanMemoryBackend:
         """
 
         assert self._db is not None
-        await self._db.execute("BEGIN IMMEDIATE")
+        await begin_transaction(self._db)
         committed = False
         try:
             for table, column, declaration in V7_1_ADDED_COLUMNS:
@@ -16662,7 +16674,7 @@ class SQLiteHumanMemoryBackend:
         committed = False
         try:
             self._fault("before_begin")
-            await self._db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(self._db)
             begun = True
             self._fault("after_begin")
             for index, statement in enumerate(_DDL):
@@ -17016,7 +17028,7 @@ class SQLiteHumanMemoryBackend:
 
     async def _append_short_horizon_audit_transaction(self, **kwargs: object) -> str:
         assert self._db is not None
-        await self._db.execute("BEGIN IMMEDIATE")
+        await begin_transaction(self._db)
         committed = False
         try:
             audit_id = await self._append_short_horizon_audit_unlocked(**kwargs)

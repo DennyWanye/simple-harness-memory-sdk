@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 from uuid import uuid4
 
+from simple_harness_memory.backends.sqlite_tx import begin_transaction
 from simple_harness_memory.core.errors import (
     MemoryCorruptionError,
     MemoryLimitError,
@@ -752,7 +753,7 @@ async def read_operation_audit(
             await backend._authorize_short_horizon_principal_unlocked(requester)
             await backend._authorize_short_horizon_principal_unlocked(target_principal)
             db = backend.connection
-            await db.execute("BEGIN IMMEDIATE")
+            await begin_transaction(db)
             try:
                 now = float(backend._now())
                 denial = await _denial(backend, requester, target_principal, access_receipt, now)

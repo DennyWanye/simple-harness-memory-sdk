@@ -13,6 +13,10 @@ from typing import Any
 
 from simple_harness import EvidenceSourceKind
 
+from simple_harness_memory.backends.sqlite_tx import (
+    begin_transaction,
+    rollback_transaction,
+)
 from simple_harness_memory.core.errors import MemoryCorruptionError, MemoryLimitError
 from simple_harness_memory.core.evidence import validate_sanitized_evidence
 from simple_harness_memory.core.history import HistoryEvidenceBinding, history_hash
@@ -200,7 +204,7 @@ does not infer text/lineage from selected chunk formatting or add an alias table
     if authority is None:
         return
     async with backend._write_lock:
-        await backend._db.execute("BEGIN")
+        await begin_transaction(backend._db, "BEGIN")
         try:
             async with backend._db.execute(
                 "SELECT deployment_id,household_id,actor_id FROM principals WHERE principal_id=?",
@@ -239,7 +243,7 @@ does not infer text/lineage from selected chunk formatting or add an alias table
                     sources[_identity(binding)] = binding
             await backend._db.execute("COMMIT")
         except BaseException:
-            await backend._db.execute("ROLLBACK")
+            await rollback_transaction(backend._db)
             raise
     for decision, _, _ in entries:
         if decision.decision_hash in work.cuts:

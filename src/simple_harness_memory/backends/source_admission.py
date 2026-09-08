@@ -7,6 +7,7 @@ from typing import Any
 
 from simple_harness.contracts import canonical_json
 
+from simple_harness_memory.backends.sqlite_tx import begin_transaction
 from simple_harness_memory.core.errors import (
     MemoryCorruptionError,
     MemoryIdempotencyConflict,
@@ -103,7 +104,7 @@ async def admit(
         raise MemoryOwnershipConflict("evidence_source_subject_mismatch")
     db = backend.connection
     async with backend._write_lock:
-        await db.execute("BEGIN IMMEDIATE")
+        await begin_transaction(db)
         committed = False
         try:
             await backend._authorize_short_horizon_principal_unlocked(principal)
