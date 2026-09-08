@@ -232,7 +232,7 @@ def test_current_candidate_sources_and_docs_are_consistent() -> None:
     assert "simple-harness-sdk>=0.7,<0.8" in pyproject["project"]["dependencies"]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "当前 source candidate：**0.6.28**" in readme
+    assert "当前 source candidate：**0.6.29**" in readme
     assert "已发布 fallback 为 0.5.1" in readme
     assert "## [0.6.6] - 2026-09-05" in changelog
     assert "## [0.6.5] - 2026-09-05" in changelog
@@ -245,16 +245,16 @@ def test_current_candidate_sources_and_docs_are_consistent() -> None:
     assert "version=0.5.1" in (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 
 
-def test_public_api_0_6_28_keeps_0_6_19_surface() -> None:
+def test_public_api_0_6_29_keeps_0_6_19_surface() -> None:
     previous = json.loads(Path(__file__).with_name("public-api-0.6.19.json").read_text())
     for version in ("0.6.20", "0.6.21", "0.6.22", "0.6.23", "0.6.24", "0.6.25", "0.6.26",
-                    "0.6.27", "0.6.28"):
+                    "0.6.27", "0.6.28", "0.6.29"):
         snapshot = json.loads(Path(__file__).with_name(f"public-api-{version}.json").read_text())
         assert snapshot["version"] == version
         assert {k: v for k, v in previous.items() if k != "version"} == {
             k: v for k, v in snapshot.items() if k != "version"
         }
-    assert simple_harness_memory.__version__ == "0.6.28"
+    assert simple_harness_memory.__version__ == "0.6.29"
     assert snapshot["root"] == sorted(simple_harness_memory.__all__)
     assert len(snapshot["root"]) == len(set(snapshot["root"]))
     assert snapshot["migrations"] == sorted(migrations.__all__)
@@ -307,3 +307,22 @@ def test_public_api_0_6_28_keeps_0_6_19_surface() -> None:
     assert issubclass(TypedRecallDeadlineExceeded, TimeoutError)
     assert str(TypedRecallDeadlineExceeded("admit_write_lock")) == "DEADLINE_EXCEEDED"
     assert TypedRecallDeadlineExceeded("admit_write_lock").stage == "admit_write_lock"
+    # 0.6.29：用途围栏的降级码与只读视图留在 core.recall_context_use，不进根导出；
+    # 收据类型 RecallContextUseReceiptV1 属于冻结的 Harness SDK（from_json 走 _exact_keys），
+    # 因此「哪两个 epoch」只能靠既有的两条不可变行导出，不新增任何 DDL。
+    from simple_harness_memory.core.recall_context_use import (
+        RECALL_CONTEXT_USE_AUTHORITY_EPOCH_ADVANCED,
+        RECALL_CONTEXT_USE_REASON_CODES,
+        RecallContextUseAuthorityNoteV1,
+    )
+
+    assert RECALL_CONTEXT_USE_AUTHORITY_EPOCH_ADVANCED == "authority_epoch_advanced"
+    assert RECALL_CONTEXT_USE_REASON_CODES == (RECALL_CONTEXT_USE_AUTHORITY_EPOCH_ADVANCED,)
+    assert not {
+        "RECALL_CONTEXT_USE_AUTHORITY_EPOCH_ADVANCED",
+        "RECALL_CONTEXT_USE_REASON_CODES",
+        "RecallContextUseAuthorityNoteV1",
+    } & set(snapshot["root"])
+    assert callable(
+        simple_harness_memory.MemoryManager.read_recall_context_use_authority_notes
+    )

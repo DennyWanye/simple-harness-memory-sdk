@@ -14,6 +14,17 @@
 
 最后更新：2026-09-06。Procedure后继公开prepare/read target/record的实际operation observation六项新控通过；f82c2b8仅Procedure复用source-only S1完整持久校验，Host三真实Scope路由/文件effects/完整group→公共观察由原红转绿，累计成功1/2/3与重放已验证。新四项跨源边界控未跑，完整TC-HM04、独审、installed/native未闭合。主整合Hegel e500556后统一版本，不独立build，不改M618制品；F01延期。[源码与证据边界](../plans/2026-09-06-procedure-observation-prepare/CONTRACT.md)。
 
+## 2026-09-08 0.6.29 用途围栏：epoch 前进但被绑定来源未变时签发收据
+
+最后更新：2026-09-08。基于 0.6.28，仅本地候选、未发布、未构建制品、Host 未 pin。缺陷来源 HM-TO-A6 第 4 次尝试 turn 15（Host 备忘 `simple_harness/plans/2026-09-08-hm-to-a6/DECISION-RECALL-AUTHORITY-STALE.md` §7(2)）。
+
+- **缺陷**：0.6.28 掐掉索引噪声后，剩下的 epoch 车道全是真实资格事件；而每轮的异步分析车道都在该轮结束后 ~10–60 s 落库（`cognitive_memory_changed`），恰好落在**下一轮**召回结算与用途授权之间。epoch 相等性判断因此抛 `RECALL_AUTHORITY_STALE` → Host `recall_context_use_authority_stale` → 冻结的 Harness SDK 无修复路径 → `run.fail`。这是正常使用中的高频竞态，靠车道分类已消不掉。
+- **修复**：`authorize_recall_context_use` 把 epoch **相等性**改为**倒退性**判据。`policy_hash`、结果期限、epoch 倒退仍硬失败；epoch 前进交给同一把写锁、同一事务里紧接着的 `_validate_recall_context_use_sources_unlocked` 逐来源裁定，全部通过才签发收据，任一不成立仍以同一稳定码、零 payload、零收据行拒绝。`execute_typed_recall` 的工具内围栏语义不动。
+- **契约论证（S3 §5.4）**：该条款具名的 suppress/revoke/supersede/contest/classification 变化/Short-Horizon expiry 全是**作用在某条来源上**的事件，作用在本次绑定的来源上时逐来源重校验必然发现；policy change 走单独判据未放宽。收据只绑定 `item_bindings` 逐条列出的条目，而重校验正是对这批条目做的——**被授权的集合 = 模型已经看到的集合 = 被重校验的集合**。epoch 是保守快捷判据、逐来源重校验是精确判据，保留精确的、放宽保守的，披露完整性只增不减。
+- **降级码零 DDL**：`RecallContextUseReceiptV1` 属冻结的 Harness SDK（`_exact_keys`）加不了字段；两个 epoch 本来就分别落在不可变的 `recall_context_use_receipts.authority_epoch` 与 `typed_recall_results.result_json`，由 `result_id` 唯一连接。新增 `core/recall_context_use.py`（稳定码 `authority_epoch_advanced` + 有界只读视图）、只读导出 `read_recall_context_use_authority_notes`（不写行）与一行无载荷结构化日志。
+- **不改**：`_validate_recall_context_use_sources_unlocked` 一行未动、`recall_authority_events`/`recall_authority_heads` 的 DDL 与 0.6.28 的车道分类、收据构造与 `receipt_hash` 域、幂等重放、收据表 DDL 与写入列。无 DDL 变化（7.4 checksum 不变）、根导出零增减；快照 `public-api-0.6.29.json`；新增 7 项回归测试（含"无竞态路径逐字节不变"与在 0.6.28 worktree 上的对照）。
+- **Host 侧不需要读新字段**：返回类型与字段逐字不变；要统计降级，直接比对 `receipt.authority_epoch` 与手上召回结果的 `authority_epoch`。Host 备忘 §7(3)（Harness 为用途围栏拒绝留同 Run 有界修复）仍值得做——0.6.29 之后剩下的 stale 全是**正确**的拒绝，但 Harness 依然只会把它变成 `run.fail`。
+
 ## 2026-09-08 0.6.28 召回权威 epoch 只跟踪"可能改变资格"的事件
 
 最后更新：2026-09-08。基于 0.6.27，仅本地候选、未发布、未构建制品、Host 未 pin。缺陷来源 HM-TO-A6 事故 F（Host 备忘 `simple_harness/plans/2026-09-08-hm-to-a6/DECISION-RECALL-AUTHORITY-STALE.md`）。
