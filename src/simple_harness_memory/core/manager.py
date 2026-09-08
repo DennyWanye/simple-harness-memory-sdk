@@ -37,6 +37,7 @@ from simple_harness_memory.core.history import (
     HistoryRecallBinding,
     HistoryShortHorizonBinding,
     HistoryVisibilitySnapshot,
+    ProcedureApplicabilityAttestation,
 )
 from simple_harness_memory.core.history_sources import HistorySourceAuthorityPort
 from simple_harness_memory.core.identity import (
@@ -200,10 +201,24 @@ class MemoryManager:
         principal: MemoryPrincipal,
         disclosure_context: DisclosureContext,
         bindings: tuple[HistoryBinding, ...],
+        procedure_applicability: ProcedureApplicabilityAttestation | None = None,
     ) -> HistoryVisibilitySnapshot:
-        """Observe current source visibility for a Host history page/context batch."""
+        """Observe current source visibility for a Host history page/context batch.
+
+        0.6.36 (F-S1b): an offline lane with no live Run may present the applicability
+        fingerprints it recalled with, as an explicitly-provenanced
+        :class:`ProcedureApplicabilityAttestation`.  Omitted — the default, and the only
+        shape a foreground lane should ever use — the call is byte-for-byte what 0.6.35
+        did, Procedures included.  The kwarg is forwarded only when supplied so a backend
+        predating it keeps working.
+        """
+        if procedure_applicability is None:
+            return await self._backend.check_history_visibility(
+                principal=principal, disclosure_context=disclosure_context, bindings=bindings
+            )
         return await self._backend.check_history_visibility(
-            principal=principal, disclosure_context=disclosure_context, bindings=bindings
+            principal=principal, disclosure_context=disclosure_context, bindings=bindings,
+            procedure_applicability=procedure_applicability,
         )
 
     async def register_conversation_evidence(self, reference: object) -> object:

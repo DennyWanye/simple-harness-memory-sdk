@@ -232,7 +232,7 @@ def test_current_candidate_sources_and_docs_are_consistent() -> None:
     assert "simple-harness-sdk>=0.7,<0.8" in pyproject["project"]["dependencies"]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "当前 source candidate：**0.6.35**" in readme
+    assert "当前 source candidate：**0.6.36**" in readme
     assert "已发布 fallback 为 0.5.1" in readme
     assert "## [0.6.6] - 2026-09-05" in changelog
     assert "## [0.6.5] - 2026-09-05" in changelog
@@ -245,7 +245,7 @@ def test_current_candidate_sources_and_docs_are_consistent() -> None:
     assert "version=0.5.1" in (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 
 
-def test_public_api_0_6_35_keeps_0_6_19_surface() -> None:
+def test_public_api_0_6_36_extends_the_0_6_19_surface_by_exactly_three_names() -> None:
     previous = json.loads(Path(__file__).with_name("public-api-0.6.19.json").read_text())
     for version in ("0.6.20", "0.6.21", "0.6.22", "0.6.23", "0.6.24", "0.6.25", "0.6.26",
                     "0.6.27", "0.6.28", "0.6.29", "0.6.30", "0.6.31", "0.6.32",
@@ -255,7 +255,32 @@ def test_public_api_0_6_35_keeps_0_6_19_surface() -> None:
         assert {k: v for k, v in previous.items() if k != "version"} == {
             k: v for k, v in snapshot.items() if k != "version"
         }
-    assert simple_harness_memory.__version__ == "0.6.35"
+    # 0.6.36（F-S1b）是 0.6.19 以来第一次真正的公共面扩张：check_history_visibility 增加
+    # 一个可选的、带显式 provenance 的 Procedure 适用性入口。根导出只多这三个名字，
+    # removed_public_methods 与 migrations 逐字未变，且没有任何名字被拿走。
+    snapshot = json.loads(Path(__file__).with_name("public-api-0.6.36.json").read_text())
+    assert snapshot["version"] == "0.6.36"
+    assert {k: v for k, v in snapshot.items() if k not in ("version", "root")} == {
+        k: v for k, v in previous.items() if k not in ("version", "root")
+    }
+    assert snapshot["root"] == sorted(
+        [
+            *previous["root"],
+            "ProcedureApplicabilityAttestation",
+            "ProcedureApplicabilityProvenance",
+            "ProcedureApplicabilityReceipt",
+        ]
+    )
+    assert "procedure_applicability" in inspect.signature(
+        simple_harness_memory.MemoryManager.check_history_visibility
+    ).parameters
+    assert (
+        inspect.signature(
+            simple_harness_memory.MemoryManager.check_history_visibility
+        ).parameters["procedure_applicability"].default
+        is None
+    )
+    assert simple_harness_memory.__version__ == "0.6.36"
     assert snapshot["root"] == sorted(simple_harness_memory.__all__)
     assert len(snapshot["root"]) == len(set(snapshot["root"]))
     assert snapshot["migrations"] == sorted(migrations.__all__)

@@ -163,7 +163,11 @@ if TYPE_CHECKING:
         EvidenceSourceAdmissionReceipt,
         IngestedEvidenceRecord,
     )
-    from simple_harness_memory.core.history import HistoryBinding, HistoryVisibilitySnapshot
+    from simple_harness_memory.core.history import (
+        HistoryBinding,
+        HistoryVisibilitySnapshot,
+        ProcedureApplicabilityAttestation,
+    )
     from simple_harness_memory.core.history_sources import HistorySourceAuthorityPort
     from simple_harness_memory.core.identity import (
         MemoryPrincipal,
@@ -1644,11 +1648,13 @@ class SQLiteHumanMemoryBackend:
         principal: MemoryPrincipal,
         disclosure_context: DisclosureContext,
         bindings: tuple[HistoryBinding, ...],
+        procedure_applicability: ProcedureApplicabilityAttestation | None = None,
     ) -> HistoryVisibilitySnapshot:
         from simple_harness_memory.backends.history_visibility import check_history_visibility
 
         return await check_history_visibility(
-            self, principal=principal, disclosure_context=disclosure_context, bindings=bindings
+            self, principal=principal, disclosure_context=disclosure_context, bindings=bindings,
+            procedure_applicability=procedure_applicability,
         )
 
     async def resolve_typed_short_horizon_sources(

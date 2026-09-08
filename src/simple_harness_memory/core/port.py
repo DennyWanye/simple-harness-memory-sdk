@@ -48,6 +48,7 @@ from simple_harness_memory.core.history import (
     HistoryRecallBinding,
     HistoryShortHorizonBinding,
     HistoryVisibilitySnapshot,
+    ProcedureApplicabilityAttestation,
 )
 from simple_harness_memory.core.identity import (
     MemoryPrincipal,
@@ -340,7 +341,10 @@ class CognitiveMemoryBackend(Protocol):
         principal: MemoryPrincipal,
         disclosure_context: DisclosureContext,
         bindings: tuple[HistoryBinding, ...],
-    ) -> HistoryVisibilitySnapshot: ...
+        procedure_applicability: ProcedureApplicabilityAttestation | None = None,
+    ) -> HistoryVisibilitySnapshot:
+        """Observe current source visibility; an absent attestation keeps 0.6.35 behaviour."""
+        ...
 
     async def resolve_typed_short_horizon_sources(
         self, *, principal: MemoryPrincipal, disclosure_context: DisclosureContext,

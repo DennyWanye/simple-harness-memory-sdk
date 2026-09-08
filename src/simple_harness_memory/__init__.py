@@ -44,6 +44,9 @@ from simple_harness_memory.core.history import (
     HistoryProcedureDraftBinding,
     HistoryVisibilityItem,
     HistoryVisibilitySnapshot,
+    ProcedureApplicabilityAttestation,
+    ProcedureApplicabilityProvenance,
+    ProcedureApplicabilityReceipt,
 )
 from simple_harness_memory.core.history_sources import (
     HistoryForgetCutReceipt,
@@ -185,6 +188,9 @@ __all__ = [
     "ProcedureDraftPage",
     "HistoryVisibilityItem",
     "HistoryVisibilitySnapshot",
+    "ProcedureApplicabilityAttestation",
+    "ProcedureApplicabilityProvenance",
+    "ProcedureApplicabilityReceipt",
     "ShortHorizonSourceItem",
     "ShortHorizonSourceRef",
     "ShortHorizonSourceSnapshot",
@@ -287,7 +293,7 @@ __all__ = [
     "ShortHorizonRecallResult",
 ]
 
-__version__ = "0.6.35"
+__version__ = "0.6.36"
 
 from simple_harness_memory.core.procedure_discovery import ProcedureDraftCandidate, ProcedureDraftPage
 # Bounded current USER input use. Ordinary history/recall policy is unchanged.
