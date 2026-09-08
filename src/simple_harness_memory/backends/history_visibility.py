@@ -299,11 +299,32 @@ async def _recall(
     ):
         return "history_binding_mismatch", None
     item = next((x for x in result.items if x.selected_item.item_id == binding.item_id), None)
-    if item is None or item.result_item_hash != binding.item_hash:
-        return "history_binding_mismatch", None
+    revalidated = frozenset({binding.item_id})
+    if item is not None:
+        if item.result_item_hash != binding.item_hash:
+            return "history_binding_mismatch", None
+        source = item.selected_item
+    else:
+        # 0.6.31（F-O-1）：confirmation group 的成员同样是该 durable result 里已向模型披露的
+        # exact item（S3 §5.1 `RECALL_CONFIRMATION` fragment 带完整 binding），因此可以被
+        # 历史绑定。绑定按 `result_member_hash` 逐字核对；成员的重校验走同一
+        # `_validate_recall_context_use_sources_unlocked` 的 confirmation 分支（要求 group
+        # 仍 active、head 仍为 challenger、无 resolution），任一不成立即 stale。
+        member = None
+        for group in result.confirmation_groups:
+            for x in group.members:
+                if x.member.item_id == binding.item_id:
+                    member = x
+                    # §5.2 整组原子：任何一侧不可见即整组不可见，所以重校验的是整个 group。
+                    revalidated = frozenset(y.member.item_id for y in group.members)
+        if member is None or member.result_member_hash != binding.item_hash:
+            return "history_binding_mismatch", None
+        source = member.member
     # A source-expansion request is strictly short-only. Never expose cognitive
     # lineage even though ordinary history visibility also accepts cognitive items.
-    if sources is not None and item.selected_item.source_kind.value != "short_horizon":
+    if sources is not None and (
+        item is None or item.selected_item.source_kind.value != "short_horizon"
+    ):
         return "history_binding_mismatch", None
     # Existing source checker enforces head/status/type/hash/expiry/current disclosure.
     # No current procedure applicability was supplied: never reuse old runtime fingerprints.
@@ -312,7 +333,7 @@ async def _recall(
             principal_id=principal.actor_id,
             result=result,
             decision=SimpleNamespace(disclosure_context=context),
-            supplied_item_ids=frozenset({binding.item_id}),
+            supplied_item_ids=revalidated,
             procedure_applicability_fingerprints=frozenset(),
             now=now,
             suppression_purpose=_purpose(context),
@@ -328,7 +349,6 @@ async def _recall(
         tuple(x.value for x in policy.required_information_attributes),
     ):
         return "history_disclosure_denied", None
-    source = item.selected_item
     if sources is not None:
         from simple_harness_memory.backends.short_history_visibility import check_selected_chunk
 
@@ -336,7 +356,8 @@ async def _recall(
             backend, principal, context, chunk_ref=source.source_ref,
             content_hash=source.source_content_hash, now=now, sources=sources,
         )
-    if source.source_kind.value == "cognitive_memory":
+    # confirmation 成员没有 source_kind 字段：它按 §5.1 只能是认知记忆（带 exact revision）。
+    if item is None or source.source_kind.value == "cognitive_memory":
         async with backend._db.execute(
             "SELECT valid_to FROM cognitive_memory_revisions WHERE memory_id=? AND revision=?",
             (source.source_ref, source.source_revision),

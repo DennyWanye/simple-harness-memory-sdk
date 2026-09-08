@@ -23,7 +23,9 @@ from simple_harness_memory import MemoryScope, build_human_memory_v7
 from simple_harness_memory.core.errors import MemoryIdempotencyConflict, MemoryOwnershipConflict
 from tests.integration.test_typed_recall_v6 import _context, _principal, _recall_plan
 
-COLLECTORS = ("_collect_typed_recall_confirmation", "_collect_typed_recall_candidates")
+# 0.6.31：普通候选先于 confirmation 收集（group 的向量准入要与同类型普通候选比较）；
+# 本文件证明的是"拒绝路径零候选访问"，两者的先后不是契约，只是正控的观测顺序。
+COLLECTORS = ("_collect_typed_recall_candidates", "_collect_typed_recall_confirmation")
 ALL_COLLECTORS = (*COLLECTORS, "_collect_typed_recall_short_candidates")
 ADMISSION_TABLES = {
     "principals",
