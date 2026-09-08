@@ -37,6 +37,8 @@ from simple_harness_memory.core.history import (
     HistoryProcedureDraftBinding,
     HistoryVisibilityItem,
     HistoryVisibilitySnapshot,
+    ProcedureApplicabilityAttestation,
+    ProcedureApplicabilityReceipt,
     history_hash,
 )
 from simple_harness_memory.core.identity import MemoryPrincipal
@@ -281,6 +283,56 @@ def _purpose(context: DisclosureContext) -> OrdinaryMemoryPurpose:
     )
 
 
+@dataclass
+class _Applicability:
+    """One call's presented offline attestation, plus what it actually admitted.
+
+    ``admitted`` is reset by the batch loop before every binding, so the receipt names
+    exactly the bindings this attestation carried, in the caller's binding order.
+    """
+
+    fingerprints: frozenset[str]
+    admitted: bool = False
+
+
+async def _applied_procedure_applicability(
+    backend: Any, memory_id: str, revision: int, fingerprints: frozenset[str]
+) -> bool:
+    """Corroborate an offline attestation against Memory's own observation audit.
+
+    0.6.36 (F-S1b).  The presented set is caller-controlled, so on its own it would
+    degrade the Procedure applicability gate to "the caller says yes".  ``procedure_uses``
+    lives in the Host; ``procedure_observations`` is Memory's own append-only,
+    immutable-triggered record of the observations it consumed.  A Procedure endpoint is
+    therefore admitted offline only where its bound fingerprint is (a) not the unbound
+    sentinel, (b) presented by the caller, and (c) carried by at least one successful,
+    attributable observation Memory itself committed for that memory.  Set membership and
+    ``EXISTS`` are order-free, so the answer does not depend on row order or clocks.
+
+    What this does **not** re-derive is "still applicable *now*": there is no live tool
+    set off-Run.  See S3 §2-补2 for the adjudication of that trade.
+    """
+
+    from simple_harness_memory.core.lifecycle_results import UNBOUND_PROCEDURE_APPLICABILITY
+
+    async with backend._db.execute(
+        "SELECT applicability_fingerprint FROM procedure_records WHERE memory_id=? AND revision=?",
+        (memory_id, revision),
+    ) as cursor:
+        record = await cursor.fetchone()
+    if record is None:
+        return False
+    fingerprint = str(record[0])
+    if fingerprint == UNBOUND_PROCEDURE_APPLICABILITY or fingerprint not in fingerprints:
+        return False
+    async with backend._db.execute(
+        "SELECT 1 FROM procedure_observations WHERE memory_id=? AND applicability_fingerprint=? "
+        "AND outcome='success' AND attributable=1 LIMIT 1",
+        (memory_id, fingerprint),
+    ) as cursor:
+        return await cursor.fetchone() is not None
+
+
 async def _recall(
     backend: Any,
     principal: MemoryPrincipal,
@@ -288,6 +340,7 @@ async def _recall(
     binding: HistoryRecallBinding,
     now: float,
     *, sources: list[Any] | None = None,
+    applicability: _Applicability | None = None,
 ) -> tuple[str, float | None]:
     async with backend._db.execute(
         "SELECT r.result_json,r.result_hash FROM typed_recall_results r "
@@ -332,14 +385,19 @@ async def _recall(
     ):
         return "history_binding_mismatch", None
     # Existing source checker enforces head/status/type/hash/expiry/current disclosure.
-    # No current procedure applicability was supplied: never reuse old runtime fingerprints.
+    # Never reuse the old runtime fingerprints a stored RecallContext happened to carry:
+    # the only applicability admitted here is one the caller presented for THIS call, with
+    # an explicit provenance (0.6.36 / F-S1b). Absent one, the set stays empty and every
+    # Procedure source is stale exactly as it was through 0.6.35.
     try:
         await backend._validate_recall_context_use_sources_unlocked(
             principal_id=principal.actor_id,
             result=result,
             decision=SimpleNamespace(disclosure_context=context),
             supplied_item_ids=revalidated,
-            procedure_applicability_fingerprints=frozenset(),
+            procedure_applicability_fingerprints=(
+                frozenset() if applicability is None else applicability.fingerprints
+            ),
             now=now,
             suppression_purpose=_purpose(context),
         )
@@ -364,10 +422,22 @@ async def _recall(
     # confirmation 成员没有 source_kind 字段：它按 §5.1 只能是认知记忆（带 exact revision）。
     if item is None or source.source_kind.value == "cognitive_memory":
         async with backend._db.execute(
-            "SELECT valid_to FROM cognitive_memory_revisions WHERE memory_id=? AND revision=?",
+            "SELECT r.valid_to,h.memory_type FROM cognitive_memory_revisions r "
+            "JOIN cognitive_memory_heads h ON h.memory_id=r.memory_id "
+            "WHERE r.memory_id=? AND r.revision=?",
             (source.source_ref, source.source_revision),
         ) as cursor:
             row = await cursor.fetchone()
+        if row is not None and str(row[1]) == "procedure":
+            # Only an attestation can have got a Procedure this far (the gate above reads
+            # an empty set otherwise), so this is where the widening is paid for: the
+            # presented fingerprint must also be one Memory itself observed.
+            if applicability is None or not await _applied_procedure_applicability(
+                backend, source.source_ref, int(source.source_revision),
+                applicability.fingerprints,
+            ):
+                return "history_source_stale", None
+            applicability.admitted = True
     else:
         async with backend._db.execute(
             "SELECT expires_at FROM short_horizon_chunks WHERE chunk_id=?", (source.source_ref,)
@@ -383,12 +453,26 @@ async def check_history_visibility(
     principal: MemoryPrincipal,
     disclosure_context: DisclosureContext,
     bindings: tuple[HistoryBinding, ...],
+    procedure_applicability: ProcedureApplicabilityAttestation | None = None,
     _short_sources: list[tuple[Any, ...]] | None = None,
     _require_principal_binding: bool = False,
     _current_input: tuple[HistoryEvidenceBinding, str] | None = None,
 ) -> HistoryVisibilitySnapshot:
     if type(principal) is not MemoryPrincipal or type(disclosure_context) is not DisclosureContext:
         raise TypeError("history requires canonical principal and DisclosureContext")
+    if procedure_applicability is not None and (
+        type(procedure_applicability) is not ProcedureApplicabilityAttestation
+    ):
+        raise TypeError("history requires a canonical ProcedureApplicabilityAttestation")
+    if procedure_applicability is not None and _current_input is not None:
+        # The current-input entry point observes one exact request item and grants no
+        # ordinary disclosure at all; it must never become a second door for Procedures.
+        raise MemoryValidationError("history_current_input_rejects_procedure_applicability")
+    applicability = (
+        None
+        if procedure_applicability is None
+        else _Applicability(frozenset(procedure_applicability.fingerprints))
+    )
     context = DisclosureContext.from_json(disclosure_context.to_json())
     if type(bindings) is not tuple or not 1 <= len(bindings) <= 256:
         raise MemoryLimitError("history_batch_requires_1_to_256_bindings")
@@ -461,9 +545,12 @@ async def check_history_visibility(
                     "ordinary_policy": policy_hash, "input_authority_hash": _current_input[1]})
             items = []
             deadlines = []
+            admitted: list[str] = []
             work = _EvidenceWork(now)
             for binding, binding_hash in zip(bindings, hashes, strict=True):
                 deadline = None
+                if applicability is not None:
+                    applicability.admitted = False
                 sources: list[Any] | None = [] if _short_sources is not None else None
                 if context.subject != principal.actor_id:
                     reason = "history_subject_mismatch"
@@ -501,7 +588,8 @@ async def check_history_visibility(
                 else:
                     try:
                         reason, deadline = await _recall(
-                            backend, principal, context, binding, now, sources=sources)
+                            backend, principal, context, binding, now, sources=sources,
+                            applicability=applicability)
                     except MemoryLimitError:
                         if _short_sources is None:
                             raise
@@ -510,6 +598,12 @@ async def check_history_visibility(
                 items.append(
                     HistoryVisibilityItem(binding_hash, reason == "history_visible", reason)
                 )
+                if (
+                    applicability is not None
+                    and applicability.admitted
+                    and reason == "history_visible"
+                ):
+                    admitted.append(binding_hash)
                 if _short_sources is not None:
                     _short_sources.append(tuple(sources or ()))
                 if deadline is not None:
@@ -523,6 +617,11 @@ async def check_history_visibility(
                         "disclosure": context.to_json(),
                         "bindings": cast(JsonValue, hashes),
                         **({"input_authority_hash": _current_input[1]} if _current_input is not None else {}),
+                        **(
+                            {}
+                            if procedure_applicability is None
+                            else {"procedure_applicability": procedure_applicability.to_json()}
+                        ),
                     },
                 ),
                 now,
@@ -532,6 +631,16 @@ async def check_history_visibility(
                     "ordinary_policy": policy_hash, "source_proofs": proof_hashes(backend),
                 }) if proof_hashes(backend) else policy_hash,
                 tuple(items),
+                procedure_applicability=(
+                    None
+                    if procedure_applicability is None
+                    else ProcedureApplicabilityReceipt(
+                        procedure_applicability.provenance.value,
+                        procedure_applicability.attestation_hash,
+                        len(procedure_applicability.fingerprints),
+                        tuple(admitted),
+                    )
+                ),
             )
             await backend._db.execute("COMMIT")
             return snapshot

@@ -103,6 +103,63 @@ Memory 只以 RecallDecision/ContextFragment 表达，不建长期表。数字�
    放开它需要给 `check_history_visibility` 增加调用方提供适用性指纹的入口（公共 API 扩面），
    并同时裁定第 6 条那笔取舍能否作为复核依据。
 
+#### §2-补2（2026-09-09，0.6.36）离线车道的 Procedure 适用性入口（F-S1b 闭合）
+
+> 追加条款；上文 Task 2 与 §2-补 历史文本不改。裁定与验证见
+> `../DECISION-2026-09-09-analysis-lane-applicability-fingerprints.md`。
+> 本节闭合 §2-补.7 记下的 F-S1b，并**重新裁定** §2-补.6 的那笔取舍。
+
+1. **缺省即 0.6.35**：`check_history_visibility` 自身**不**提供任何 Procedure 适用性指纹——
+   一个普通的前台复核绝不能replay 某个已存 `RecallContext` 恰好带着的运行时指纹。
+   不提交 attestation 时，Procedure 来源仍恒为 `RECALL_AUTHORITY_STALE` → `history_source_stale`，
+   且快照 JSON 与 `request_hash` / `snapshot_hash` 与 0.6.35 **逐字相同**（连键都不多一个）。
+2. **唯一入口是调用方显式提交的 `ProcedureApplicabilityAttestation(provenance, fingerprints)`**。
+   `provenance` 目前只有一个成员 `applied_use_fingerprints`，其含义被钉死为：
+   **「这些指纹属于 Memory 已经消费过其观测的那些使用」，即「曾经真的用过」，
+   不承诺「此刻仍然适用」**。`fingerprints` 必须已排序、去重、1..256 条，
+   因此同一集合恒得同一 `attestation_hash`。
+3. **作用面最窄**：只参与 `HistoryRecallBinding` 的来源重校验。证据绑定、短时域绑定、
+   procedure draft 绑定一律不受影响；当前输入观察入口（`check_current_input_visibility`）
+   本身不接受这个参数，而后端在同时收到 attestation 与当前输入标记时显式拒绝，
+   报 `history_current_input_rejects_procedure_applicability`——那条入口本来就不授予
+   普通披露，不能变成 Procedure 的第二道门。
+4. **标签不被信任，必须被 Memory 自己的审计佐证**。放行一条 Procedure 来源要求三条同时成立：
+   ① 端点这一版 `procedure_records.applicability_fingerprint` 不是 unbound 哨兵；
+   ② 它在调用方提交的集合里；③ 该 memory 上**至少一条** `outcome='success'`
+   且 `attributable=1` 的 `procedure_observations` 携带**逐字相同**的指纹。
+   ② 已经把调用方钉死在 Memory 自己存的那个值上（该列只由观测提交路径写入），
+   ③ 在此之上把「被绑定过」收紧为「被一次成功且可归因的使用背书过」。
+   ③ 的匹配口径是 **memory + 指纹**，不含 revision 也不含 `qualification_epoch`——
+   一条旧 revision 的成功观测可以背书当前 head，这是有意的（复制链上指纹逐字继承）。
+   `procedure_observations` 是 Memory 自己的 append-only、不可变触发器保护、
+   且在 open 时逐字复核的审计表。
+   前台该走的门一条不少：所有权、head CAS、`conflict_status`、召回状态门
+   （Procedure 仍必须 `active`/`reinforced`）、有效时间、`content_hash`、隐私类与信息属性、
+   记忆与逐条证据的 suppression、以及整批的披露门。**一处例外照旧**：confirmation group
+   成员的状态门本来就以 `allow_contested=True` 运行（§5.2），因此一条 contested 的
+   Procedure revision 可以经 confirmation 成员绑定被报为可见；apply 时 §2-补.4 仍要求
+   `uncontested`，所以不产生新的暴露面。集合成员判定与 `EXISTS` 都与行序、时钟、并发无关，故确定。
+5. **收据**：提交了 attestation 的快照带 `procedure_applicability`
+   （`provenance` / `attestation_hash` / `fingerprint_count` /
+   **逐条命中的 binding hash**，按调用方绑定顺序），且 attestation 计入 `request_hash`。
+   「哪几条来源是因为这份 attestation 才可见」因此可被离线复核，
+   「never reuse old runtime fingerprints」对不提交的调用仍然逐字为真。
+6. **重新裁定 §2-补.6 的取舍**：离线车道放弃「此刻仍适用」这一半，**可接受**，三条理由：
+   (i) 保住的那一半被**收紧**到「成功且可归因地用过」——「提交的指纹必须等于 Memory
+   自己存的那个值」本来就由第 4 条第 ② 款保证（该列只由观测提交写入，调用方编不出来），
+   第 ③ 款在此之上把「被绑定过」升级为「被一次成功且可归因的使用背书过」；
+   (ii) 该审计链在 open 时被逐字复核，篡改则库不可开，因而「见证」这件事本身站得住；
+   (iii) 放行的只是复核这一道，端点在 apply 时仍被逐门重解析（§2-补.4），
+   Procedure 仍必须 `active`/`reinforced`。
+   **诚实记账**：一个工具后来改名 / 换签 / 被撤的 Procedure，其前台召回会消失，
+   但离线车道仍可把它作为关系端点提交，代价是可能出现一条 `applies_to` 指向
+   「当前不可用但确曾被用过」的流程。该边仍带 exact revision，
+   遗忘 / suppression / 冲突 / 状态各门照常对它生效。
+   要消掉这条残余，唯一正确的方向是让 Host 把「适用性快照」本身持久化成可离线重算的事实，
+   那是另一次立项，不在本条范围内。
+7. **F-S1 至此两条全部闭合**（§2-补.7 作废）：端点解析（0.6.35）与复核入口（0.6.36）。
+
+
 ### Task 3 — Procedure 与 Prospective 一等规则 [HM-AC-5]
 
 状态：COMPLETE。Memory 仅消费 ref-only Host authority；Procedure 使用 logical qualification epoch、v2
