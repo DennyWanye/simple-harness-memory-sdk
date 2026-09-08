@@ -136,8 +136,18 @@ async def test_five_c01_fail_shapes_hit_via_vector_lane_with_zero_lexical(tmp_pa
             assert item.score == pytest.approx(0.40 / 61, rel=1e-6)  # vector lane only, rank 1
             codes, body = await terminal(manager, f"{op}-vector")
             assert codes == []
+            # 0.6.34：审计追加本次生效下限。这五种形状的余弦都 ≥ 0.45，
+            # 相对判据被钳回冻结绝对阈值——0.6.33 的准入判定逐字不变（pin）。
             assert body["cognitive_vector"] == {
-                "used_generation_id_hash": sqlite_v5._opaque_hash(built.generation_id)
+                "used_generation_id_hash": sqlite_v5._opaque_hash(built.generation_id),
+                "admission": {
+                    "min_score": COGNITIVE_VECTOR_MIN_SCORE,
+                    "relative_floor": 0.35,
+                    "relative_ratio": 0.90,
+                    "effective_min_score": [
+                        {"memory_type": "semantic", "value": COGNITIVE_VECTOR_MIN_SCORE}
+                    ],
+                },
             }
     finally:
         await manager.close()

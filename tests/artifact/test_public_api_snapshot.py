@@ -232,7 +232,7 @@ def test_current_candidate_sources_and_docs_are_consistent() -> None:
     assert "simple-harness-sdk>=0.7,<0.8" in pyproject["project"]["dependencies"]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "当前 source candidate：**0.6.33**" in readme
+    assert "当前 source candidate：**0.6.34**" in readme
     assert "已发布 fallback 为 0.5.1" in readme
     assert "## [0.6.6] - 2026-09-05" in changelog
     assert "## [0.6.5] - 2026-09-05" in changelog
@@ -245,17 +245,17 @@ def test_current_candidate_sources_and_docs_are_consistent() -> None:
     assert "version=0.5.1" in (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 
 
-def test_public_api_0_6_33_keeps_0_6_19_surface() -> None:
+def test_public_api_0_6_34_keeps_0_6_19_surface() -> None:
     previous = json.loads(Path(__file__).with_name("public-api-0.6.19.json").read_text())
     for version in ("0.6.20", "0.6.21", "0.6.22", "0.6.23", "0.6.24", "0.6.25", "0.6.26",
                     "0.6.27", "0.6.28", "0.6.29", "0.6.30", "0.6.31", "0.6.32",
-                    "0.6.33"):
+                    "0.6.33", "0.6.34"):
         snapshot = json.loads(Path(__file__).with_name(f"public-api-{version}.json").read_text())
         assert snapshot["version"] == version
         assert {k: v for k, v in previous.items() if k != "version"} == {
             k: v for k, v in snapshot.items() if k != "version"
         }
-    assert simple_harness_memory.__version__ == "0.6.33"
+    assert simple_harness_memory.__version__ == "0.6.34"
     assert snapshot["root"] == sorted(simple_harness_memory.__all__)
     assert len(snapshot["root"]) == len(set(snapshot["root"]))
     assert snapshot["migrations"] == sorted(migrations.__all__)
@@ -421,3 +421,24 @@ def test_public_api_0_6_33_keeps_0_6_19_surface() -> None:
     assert issubclass(TypedRecallDeadlineExceeded, TimeoutError)
     assert str(TypedRecallDeadlineExceeded("collect_candidates")) == "DEADLINE_EXCEEDED"
     assert TypedRecallDeadlineExceeded("collect_candidates").stage == "collect_candidates"
+    # 0.6.34：认知向量准入改为「同型相对判据 + 绝对护栏」
+    # （DECISION-2026-09-09-vector-score-margin.md）。两个新参数与两个纯函数只经
+    # features.cognitive_vector 可达，冻结绝对阈值 0.45 未变，根导出与迁移面逐字未变，无 DDL。
+    from simple_harness_memory.features.cognitive_vector import (
+        COGNITIVE_VECTOR_MIN_SCORE,
+        COGNITIVE_VECTOR_RELATIVE_FLOOR,
+        COGNITIVE_VECTOR_RELATIVE_RATIO,
+        cognitive_vector_admits,
+        cognitive_vector_effective_min_score,
+    )
+
+    assert (COGNITIVE_VECTOR_MIN_SCORE, COGNITIVE_VECTOR_RELATIVE_FLOOR,
+            COGNITIVE_VECTOR_RELATIVE_RATIO) == (0.45, 0.35, 0.90)
+    assert callable(cognitive_vector_admits) and callable(cognitive_vector_effective_min_score)
+    assert cognitive_vector_effective_min_score(None) == COGNITIVE_VECTOR_MIN_SCORE
+    assert not {
+        "COGNITIVE_VECTOR_RELATIVE_FLOOR",
+        "COGNITIVE_VECTOR_RELATIVE_RATIO",
+        "cognitive_vector_admits",
+        "cognitive_vector_effective_min_score",
+    } & set(snapshot["root"])

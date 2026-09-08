@@ -22,6 +22,50 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 # 模型"同义改写"（通常 ≥0.6）与"无关句"（通常 ≤0.3）之间，由 Host C07 零召回子集回归校准。
 COGNITIVE_VECTOR_MIN_SCORE = 0.45
 
+# 0.6.34（DECISION-2026-09-09-vector-score-margin.md）：单一绝对阈值在中文短记忆上无余量。
+# Host 语料实测（77 例 / 79 次 typed recall / 142 条已激活认知向量，WeMM-Embedding-2B）：
+# 目标记忆（同例、命中请求类型）余弦 min=0.0601 p05=0.3048 p10=0.4109 中位 0.5738 max=0.8337；
+# 无关记忆（跨例、同请求类型）min=-0.0779 中位 0.2818 p90=0.4007 p95=0.4363 p99=0.5067 max=0.6251。
+# 两条分布**完全重叠**：不存在"在同义改写下界之下、在无关上界之上"的常数，
+# 因此阈值不能再只是一个绝对数，必须带上"同一记忆类型内谁离查询最近"的相对判据。
+#
+# 生效规则（``cognitive_vector_effective_min_score``）：
+#   effective = min(MIN_SCORE, max(RELATIVE_FLOOR, RELATIVE_RATIO * 该类型内已过资格门的最高余弦))
+# 等价于「s ≥ 0.45  或  （s ≥ 0.35 且 s ≥ 0.90 × 同类型最高分）」。两条性质是本次裁决的骨架：
+#   1. **单调放宽**：effective ≤ MIN_SCORE 恒成立，0.45 及以上的候选一律照旧准入——
+#      任何在 0.6.33 下已经进入 vector lane 的候选，在 0.6.34 下仍然进入，判定与回执不变（pin）。
+#   2. **相对参照按记忆类型分组**：模型请求多个类型时，一个类型的强匹配不得压掉另一个类型
+#      的最佳匹配（Host C06-06 正是 procedure 0.6017 压掉 semantic 0.3690 的形状）。
+# RELATIVE_FLOOR = 0.35 是"整库都不相关时不救援"的绝对护栏（无关分布中位 0.2818，
+# 0.35 高出 0.067；C06-06 目标 0.3690 恰在其上，是能覆盖该例的最大整值）。
+# RELATIVE_RATIO = 0.90 只救援"该类型内与最佳并列"的候选：语料实测目标召回
+# 83.8% → 87.2%，无关准入 3.74% → 4.01%（+0.27pp），每次召回候选数 4.82 → 5.13。
+COGNITIVE_VECTOR_RELATIVE_FLOOR = 0.35
+COGNITIVE_VECTOR_RELATIVE_RATIO = 0.90
+
+
+def cognitive_vector_effective_min_score(type_best: float | None) -> float:
+    """本次召回中某个记忆类型实际生效的余弦下限（写进 typed recall 审计）。
+
+    ``type_best`` 是该类型内**已通过全部资格门**的候选的最高余弦；没有可比候选时退回
+    冻结绝对阈值。返回值恒 ≤ ``COGNITIVE_VECTOR_MIN_SCORE``，故本规则只放宽、不收紧。
+    """
+
+    if type_best is None:
+        return COGNITIVE_VECTOR_MIN_SCORE
+    return min(
+        COGNITIVE_VECTOR_MIN_SCORE,
+        max(COGNITIVE_VECTOR_RELATIVE_FLOOR, COGNITIVE_VECTOR_RELATIVE_RATIO * float(type_best)),
+    )
+
+
+def cognitive_vector_admits(score: float | None, type_best: float | None) -> bool:
+    """该余弦是否进入 ``vector`` lane。``score`` 为 ``None``（无向量）时永远不进入。"""
+
+    if score is None:
+        return False
+    return float(score) >= cognitive_vector_effective_min_score(type_best)
+
 COGNITIVE_VECTOR_UNAVAILABLE = "cognitive_vector_unavailable"
 COGNITIVE_VECTOR_NO_GENERATION = "cognitive_vector_no_generation"
 COGNITIVE_VECTOR_STALE = "cognitive_vector_stale"
@@ -201,11 +245,15 @@ __all__ = (
     "COGNITIVE_VECTOR_DEGRADATION_CODES",
     "COGNITIVE_VECTOR_MIN_SCORE",
     "COGNITIVE_VECTOR_NO_GENERATION",
+    "COGNITIVE_VECTOR_RELATIVE_FLOOR",
+    "COGNITIVE_VECTOR_RELATIVE_RATIO",
     "COGNITIVE_VECTOR_STALE",
     "COGNITIVE_VECTOR_UNAVAILABLE",
     "COGNITIVE_TEXT_FORMAT_VERSION",
     "CognitiveVectorGenerationBuildResult",
     "cognitive_text_supplement",
+    "cognitive_vector_admits",
+    "cognitive_vector_effective_min_score",
     "cognitive_vector_ref",
     "cognitive_vector_text",
     "prospective_trigger_text",
