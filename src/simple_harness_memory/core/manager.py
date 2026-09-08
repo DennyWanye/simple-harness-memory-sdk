@@ -56,6 +56,13 @@ from simple_harness_memory.core.mutation_receipts import MemoryMutationReceiptVi
 from simple_harness_memory.core.recall_context_use import (
     RecallContextUseAuthorityNoteV1,
 )
+from simple_harness_memory.core.mutation_rejections import (
+    MemoryMutationValidationNoteV1,
+)
+from simple_harness_memory.core.recall_policy import (
+    RecallEligibilityPolicyV1,
+    RecallPolicyStateV1,
+)
 from simple_harness_memory.core.mutations import InformationClassificationPolicy
 from simple_harness_memory.core.observability import CorrelationInput, MemoryObservability
 from simple_harness_memory.core.operation_audit import (
@@ -475,6 +482,37 @@ class MemoryManager:
         operation = getattr(self._backend, "read_recall_context_use_authority_notes")
         return await operation(principal=principal, run_id=run_id, limit=limit)
 
+    async def read_recall_policy(
+        self, *, principal: MemoryPrincipal
+    ) -> RecallPolicyStateV1:
+        """只读导出本部署的召回资格策略版本与该 principal 的 durable 权威头策略（0.6.32）。"""
+
+        operation = getattr(self._backend, "read_recall_policy")
+        return await operation(principal=principal)
+
+    async def read_memory_mutation_validation_notes(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        plan_id: str | None = None,
+        limit: int = 100,
+    ) -> tuple[MemoryMutationValidationNoteV1, ...]:
+        """只读导出被 validation 精确拒绝的 plan 与其稳定 reason 码（0.6.32，无新表）。"""
+
+        operation = getattr(self._backend, "read_memory_mutation_validation_notes")
+        return await operation(principal=principal, plan_id=plan_id, limit=limit)
+
+    async def cleanup_short_horizon(
+        self, *, principal: MemoryPrincipal, now: float | None = None
+    ) -> int:
+        """删除已过五天保留期的短时域派生 chunk/vector/FTS，返回删除条数（0.6.32）。
+
+        与内部清理车道同一实现、同一 epoch 语义：按 0.6.28 的规则，只有**真的移除了
+        chunk** 才推进一次 ``short_horizon_cleanup`` 权威 epoch；零删除时 epoch 不动。
+        """
+
+        return await self._backend.cleanup_short_horizon(principal=principal, now=now)
+
     async def get_twin_graph_view(
         self, *, principal: MemoryPrincipal
     ) -> TwinGraphView:
@@ -585,6 +623,7 @@ class MemoryManager:
         allow_development_embedder: bool = False,
         supported_filter_policies: frozenset[str] | None = None,
         clock: Callable[[], float] | None = None,
+        recall_policy: RecallEligibilityPolicyV1 | int | None = None,
     ) -> MemoryManager:
         """Build the fresh-only schema-v7 backend behind the complete public facade.
 
@@ -593,6 +632,10 @@ class MemoryManager:
         ``clock`` is a trusted construction dependency shared by recall,
         paging and authorization. Omission retains the production wall clock;
         untrusted request timestamps never replace the backend clock.
+        ``recall_policy``（0.6.32）声明本部署跑的是哪一版召回资格策略；``None``
+        等价于 ``RecallEligibilityPolicyV1(1)``，``policy_hash`` 与 0.6.31 逐字相同。
+        换成更高版本会在下一次召回或用途授权时追加一条 ``recall_policy_changed``
+        权威事件，并让此前基于旧策略签发的结果绑定失去用途授权（S3 §5.4）。
         """
 
         if clock is not None and not callable(clock):
@@ -613,6 +656,8 @@ class MemoryManager:
             backend_kwargs["now"] = clock
         if supported_filter_policies is not None:
             backend_kwargs["supported_filter_policies"] = frozenset(supported_filter_policies)
+        if recall_policy is not None:
+            backend_kwargs["recall_policy"] = recall_policy
         backend = SQLiteHumanMemoryBackend(
             db_path,
             analysis_delivery_authority=analysis_delivery_authority,

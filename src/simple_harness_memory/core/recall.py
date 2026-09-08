@@ -219,6 +219,66 @@ def _validate_recall_protocol(
     raise error
 
 
+#: 冻结的 lane 名字序（与 ``RRF_WEIGHTS`` 的权重降序一致），供见证输出稳定排序。
+EXECUTED_LANE_ORDER = ("vector", "full_text", "entity", "task_scope", "temporal")
+EXECUTED_LANE_WITNESS_VERSION = 1
+
+
+@dataclass(frozen=True, slots=True)
+class TypedRecallLaneWitnessV1:
+    """一条被选中项**实际由哪些 lane 产生**的只读见证（0.6.32）。
+
+    S3 slice §5.6 规定「缺失/未请求 lane 贡献 0，不用未请求 lane fallback」，
+    Task 4 又要求 audit 保存 lane/selection scores——即 lane 归属是**控制/审计**
+    元数据。冻结的 ``TypedRecallResultItemV1`` 只暴露融合后的 ``score``，
+    公共面无法回答「这一项是词面命中的还是向量命中的」（401 矩阵 executed-lane 3 格）。
+    本见证挂在 SDK 自有的 ``TypedRecallExecution`` 上，**不进** Provider payload、
+    不进任何 decision/result/receipt/terminal 的 hash 域，因此所有 durable 字节不变。
+    """
+
+    item_id: str
+    ordinal: int
+    source_kind: str
+    memory_type: str | None
+    lanes: tuple[str, ...]
+    lane_ranks: tuple[tuple[str, int], ...]
+
+    @property
+    def matched_lane_count(self) -> int:
+        return len(self.lanes)
+
+
+def lane_witnesses(
+    selected_wire: tuple[object, ...], candidates: tuple[RecallCandidate, ...]
+) -> tuple[TypedRecallLaneWitnessV1, ...]:
+    """按冻结 lane 序为每一条被选中项构造 lane 见证。"""
+
+    witnesses: list[TypedRecallLaneWitnessV1] = []
+    for wire, candidate in zip(selected_wire, candidates, strict=True):
+        ranks = dict(candidate.lane_ranks)
+        ordered = tuple(lane for lane in EXECUTED_LANE_ORDER if lane in ranks)
+        witnesses.append(
+            TypedRecallLaneWitnessV1(
+                item_id=str(getattr(wire, "item_id")),
+                ordinal=int(getattr(wire, "ordinal")),
+                source_kind=candidate.source_kind,
+                memory_type=candidate.memory_type,
+                lanes=ordered,
+                lane_ranks=tuple((lane, ranks[lane]) for lane in ordered),
+            )
+        )
+    return tuple(witnesses)
+
+
+def executed_lanes(
+    witnesses: tuple[TypedRecallLaneWitnessV1, ...],
+) -> tuple[str, ...]:
+    """本次执行里**真的**产生了被选中项的 lane 集合（冻结序、去重）。"""
+
+    present = {lane for witness in witnesses for lane in witness.lanes}
+    return tuple(lane for lane in EXECUTED_LANE_ORDER if lane in present)
+
+
 @dataclass(frozen=True, slots=True)
 class TypedRecallExecution:
     decision: RecallDecisionV4
@@ -228,6 +288,11 @@ class TypedRecallExecution:
     replayed: bool
     unsupported_capabilities: tuple[str, ...] = ()
     degradation_codes: tuple[str, ...] = ()
+    #: 0.6.32 追加（默认空，位置式构造不变）。幂等重放不带见证——重放只复述
+    #: durable 字节，本轮没有跑过任何 lane；confirmation-only 的执行同样为空
+    #: （group 的准入按 0.6.31 是槽位级判据，不是选择 lane）。
+    item_lane_witnesses: tuple[TypedRecallLaneWitnessV1, ...] = ()
+    executed_lanes: tuple[str, ...] = ()
 
 
 def capability_rejections(plan: RecallPlan) -> tuple[str, ...]:
@@ -500,6 +565,7 @@ def build_host_execution(
     )
     result.validate_decision(decision)
     decision.validate_bindings(context, plan, current_time=evaluated_at)
+    witnesses = lane_witnesses(selected_wire, candidates)
     return TypedRecallExecution(
         decision,
         result,
@@ -508,6 +574,8 @@ def build_host_execution(
         replayed=False,
         unsupported_capabilities=unsupported_capabilities,
         degradation_codes=degradation_codes,
+        item_lane_witnesses=witnesses,
+        executed_lanes=executed_lanes(witnesses),
     )
 
 

@@ -232,7 +232,7 @@ def test_current_candidate_sources_and_docs_are_consistent() -> None:
     assert "simple-harness-sdk>=0.7,<0.8" in pyproject["project"]["dependencies"]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "当前 source candidate：**0.6.31**" in readme
+    assert "当前 source candidate：**0.6.32**" in readme
     assert "已发布 fallback 为 0.5.1" in readme
     assert "## [0.6.6] - 2026-09-05" in changelog
     assert "## [0.6.5] - 2026-09-05" in changelog
@@ -245,16 +245,16 @@ def test_current_candidate_sources_and_docs_are_consistent() -> None:
     assert "version=0.5.1" in (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 
 
-def test_public_api_0_6_31_keeps_0_6_19_surface() -> None:
+def test_public_api_0_6_32_keeps_0_6_19_surface() -> None:
     previous = json.loads(Path(__file__).with_name("public-api-0.6.19.json").read_text())
     for version in ("0.6.20", "0.6.21", "0.6.22", "0.6.23", "0.6.24", "0.6.25", "0.6.26",
-                    "0.6.27", "0.6.28", "0.6.29", "0.6.31"):
+                    "0.6.27", "0.6.28", "0.6.29", "0.6.30", "0.6.31", "0.6.32"):
         snapshot = json.loads(Path(__file__).with_name(f"public-api-{version}.json").read_text())
         assert snapshot["version"] == version
         assert {k: v for k, v in previous.items() if k != "version"} == {
             k: v for k, v in snapshot.items() if k != "version"
         }
-    assert simple_harness_memory.__version__ == "0.6.31"
+    assert simple_harness_memory.__version__ == "0.6.32"
     assert snapshot["root"] == sorted(simple_harness_memory.__all__)
     assert len(snapshot["root"]) == len(set(snapshot["root"]))
     assert snapshot["migrations"] == sorted(migrations.__all__)
@@ -336,3 +336,65 @@ def test_public_api_0_6_31_keeps_0_6_19_surface() -> None:
 
     assert CONFLICT_SLOT_TEXT_VERSION == 1 and callable(contested_slot_text)
     assert not {"CONFLICT_SLOT_TEXT_VERSION", "contested_slot_text"} & set(snapshot["root"])
+    # 0.6.32：矩阵公共见证四增量。新符号全部留在 core.* / features.*，**不进根导出**；
+    # 新增的 MemoryManager 方法与 TypedRecallExecution 的两个默认空字段是纯增量，
+    # 快照的 root/migrations/removed_public_methods 三个集合逐字未变。
+    from simple_harness_memory.core.mutation_rejections import (
+        MEMORY_MUTATION_LEGACY_CONTEST_REASON_CODE,
+        MEMORY_MUTATION_VALIDATION_REASON_CODES,
+        MemoryMutationValidationNoteV1,
+    )
+    from simple_harness_memory.core.recall import (
+        EXECUTED_LANE_ORDER,
+        EXECUTED_LANE_WITNESS_VERSION,
+        TypedRecallExecution,
+        TypedRecallLaneWitnessV1,
+    )
+    from simple_harness_memory.core.recall_policy import (
+        DEFAULT_RECALL_POLICY_VERSION,
+        RECALL_POLICY_CHANGED_EVENT_KIND,
+        RECALL_POLICY_HASH_V1,
+        RecallEligibilityPolicyV1,
+        RecallPolicyStateV1,
+        recall_policy_hash,
+    )
+
+    assert DEFAULT_RECALL_POLICY_VERSION == 1
+    assert recall_policy_hash(1) == RECALL_POLICY_HASH_V1 == (
+        "c27604aa354d34f9597a62873a2a53547df192b74c267c569fae445d23c7fc04"
+    )
+    assert RECALL_POLICY_CHANGED_EVENT_KIND == "recall_policy_changed"
+    assert len(MEMORY_MUTATION_VALIDATION_REASON_CODES) == 6
+    assert MEMORY_MUTATION_LEGACY_CONTEST_REASON_CODE == "mutation_contest_rejected"
+    assert EXECUTED_LANE_WITNESS_VERSION == 1
+    assert EXECUTED_LANE_ORDER == ("vector", "full_text", "entity", "task_scope", "temporal")
+    assert not {
+        "DEFAULT_RECALL_POLICY_VERSION",
+        "EXECUTED_LANE_ORDER",
+        "EXECUTED_LANE_WITNESS_VERSION",
+        "MEMORY_MUTATION_VALIDATION_REASON_CODES",
+        "RECALL_POLICY_CHANGED_EVENT_KIND",
+        "RECALL_POLICY_HASH_V1",
+        "MemoryMutationValidationNoteV1",
+        "RecallEligibilityPolicyV1",
+        "RecallPolicyStateV1",
+        "TypedRecallLaneWitnessV1",
+    } & set(snapshot["root"])
+    # TypedRecallExecution **是**根导出（0.6.19 起），两个新字段带默认值、排在末尾，
+    # 位置式构造与既有 7 参形状逐字不变（与 0.6.30 给 ShortHorizonProjectionBuildResult
+    # 追加 split_group_count/truncated_group_count 同一纪律）。
+    assert "TypedRecallExecution" in snapshot["root"]
+    assert tuple(TypedRecallExecution.__dataclass_fields__)[7:] == (
+        "item_lane_witnesses",
+        "executed_lanes",
+    )
+    for method in (
+        "cleanup_short_horizon",
+        "read_recall_policy",
+        "read_memory_mutation_validation_notes",
+    ):
+        assert callable(getattr(simple_harness_memory.MemoryManager, method))
+    assert "recall_policy" in inspect.signature(
+        simple_harness_memory.MemoryManager.build_human_memory_v7
+    ).parameters
+    assert RecallEligibilityPolicyV1().policy_id == "typed-recall-eligibility/v1"

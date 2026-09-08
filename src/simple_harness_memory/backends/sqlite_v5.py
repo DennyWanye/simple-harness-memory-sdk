@@ -66,6 +66,24 @@ from simple_harness_memory.core.recall_context_use import (
     RECALL_CONTEXT_USE_AUTHORITY_EPOCH_ADVANCED,
     RecallContextUseAuthorityNoteV1,
 )
+from simple_harness_memory.core.mutation_rejections import (
+    MEMORY_MUTATION_VALIDATION_REASON_CODES,
+    MemoryMutationValidationNoteV1,
+    specific_validation_reason_code,
+)
+from simple_harness_memory.core.recall_policy import (
+    DEFAULT_RECALL_POLICY_VERSION as _DEFAULT_RECALL_POLICY_VERSION,
+)
+from simple_harness_memory.core.recall_policy import (
+    RECALL_POLICY_CHANGED_EVENT_KIND,
+    RECALL_POLICY_HASH_V1 as _RECALL_POLICY_HASH_V1,
+    RecallEligibilityPolicyV1,
+    RecallPolicyStateV1,
+    coerce_recall_policy,
+)
+from simple_harness_memory.core.recall_policy import (
+    recall_policy_hash as _recall_policy_hash,
+)
 from simple_harness_memory.core.errors import (
     CognitiveVectorGenerationFailed,
     MemoryCorruptionError,
@@ -297,22 +315,10 @@ logger = structlog.get_logger("simple_harness_memory.backends.sqlite_v5")
 COGNITIVE_VECTOR_LOCK_RESERVE_S = 0.200
 COGNITIVE_VECTOR_AUDIT_RESERVE_S = 0.050
 _DEFAULT_FILTER_POLICIES = frozenset({"credential-filter/v1"})
-_RECALL_POLICY_HASH = hashlib.sha256(
-    canonical_json(
-        {
-            "policy": "typed-recall-eligibility/v1",
-            "schema": 6,
-            "rrf_k": 60,
-            "weights": {
-                "vector": 0.40,
-                "full_text": 0.30,
-                "entity": 0.15,
-                "task_scope": 0.10,
-                "temporal": 0.05,
-            },
-        }
-    ).encode("utf-8")
-).hexdigest()
+# 0.6.32：策略版本成为显式部署字段（``core.recall_policy``）。默认 v1 的 canonical
+# payload 与 0.6.31 常量逐字相同，因此默认部署的 policy_hash 字节不变。
+_RECALL_POLICY_HASH = _recall_policy_hash(_DEFAULT_RECALL_POLICY_VERSION)
+assert _RECALL_POLICY_HASH == _RECALL_POLICY_HASH_V1
 _AUDIT_IDENTIFIER_CREDENTIAL_PATTERNS = (
     re.compile(r"(?i)\bbearer\s+[a-z0-9._~+/=-]{8,}"),
     re.compile(r"\b(?:sk|key|tsk)-?[A-Za-z0-9_-]{8,}"),
@@ -395,7 +401,11 @@ class SQLiteHumanMemoryBackend:
         prospective_signal_authority: ProspectiveSignalAuthorityPort | None = None,
         short_horizon_embedder: Embedder | None = None,
         audit_access_authority: AuditAccessAuthorityPort | None = None,
+        recall_policy: RecallEligibilityPolicyV1 | int | None = None,
     ) -> None:
+        # 0.6.32：召回资格策略版本是显式部署字段；``None`` 保持 0.6.31 的常量语义。
+        self._recall_policy = coerce_recall_policy(recall_policy)
+        self._recall_policy_hash = self._recall_policy.policy_hash
         self._db_path = Path(db_path)
         self._fault_injector = fault_injector
         self._now = now
@@ -4783,8 +4793,12 @@ class SQLiteHumanMemoryBackend:
                 # 0.6.29：policy version、结果期限与"权威倒退"仍然硬失败；单纯的 epoch 前进
                 # 不再直接拒绝，而是交给下面同一把写锁、同一事务里的逐来源重校验裁定
                 # （见 plans/.../DECISION-2026-09-08-context-use-fence.md）。
+                # 0.6.32：判据同时对**本部署配置的**策略版本 fail-closed——权威头的对齐
+                # 是一次带审计的写（下一次召回的 ``_ensure_recall_authority_unlocked``），
+                # 但「旧策略签发的结果不得再被使用」必须在这里就成立，不能等那次写。
                 if (
                     policy_hash != result.policy_hash
+                    or self._recall_policy_hash != result.policy_hash
                     or effective_now >= result.authority_expires_at
                     or epoch < result.authority_epoch
                 ):
@@ -6211,6 +6225,8 @@ class SQLiteHumanMemoryBackend:
             "SELECT 1 FROM recall_authority_heads WHERE principal_id=?", (principal_id,)
         ) as cursor:
             if await cursor.fetchone() is not None:
+                # 0.6.32：已有权威头时对齐策略版本（策略未变则完全没有写入）。
+                await self._reconcile_recall_policy_unlocked(principal_id, now)
                 return
         event_id = _stable_id("recall-authority-event", principal_id, "1")
         payload: dict[str, JsonValue] = {
@@ -6220,7 +6236,7 @@ class SQLiteHumanMemoryBackend:
             "authority_epoch": 1,
             "event_kind": "initialized",
             "source_ref_hash": hashlib.sha256(b"fresh-v6").hexdigest(),
-            "policy_hash": _RECALL_POLICY_HASH,
+            "policy_hash": self._recall_policy_hash,
             "created_at": now,
         }
         event_hash = hashlib.sha256(canonical_json(payload).encode()).hexdigest()
@@ -6235,7 +6251,7 @@ class SQLiteHumanMemoryBackend:
                 1,
                 "initialized",
                 payload["source_ref_hash"],
-                _RECALL_POLICY_HASH,
+                self._recall_policy_hash,
                 canonical_json(payload),
                 event_hash,
                 now,
@@ -6244,7 +6260,7 @@ class SQLiteHumanMemoryBackend:
         await self._db.execute(
             "INSERT INTO recall_authority_heads(principal_id,authority_epoch,policy_hash,"
             "updated_at) VALUES(?,?,?,?)",
-            (principal_id, 1, _RECALL_POLICY_HASH, now),
+            (principal_id, 1, self._recall_policy_hash, now),
         )
 
     async def _recall_authority_unlocked(self, principal_id: str) -> tuple[int, str]:
@@ -6258,6 +6274,115 @@ class SQLiteHumanMemoryBackend:
         if row is None:
             raise MemoryCorruptionError("recall authority head missing")
         return int(row[0]), str(row[1])
+
+    async def _reconcile_recall_policy_unlocked(
+        self, principal_id: str, now: float
+    ) -> None:
+        """0.6.32：把权威头对齐到本部署配置的召回策略版本。
+
+        策略未变（默认部署恒定如此）时**一行不写**，事件表、头行、epoch 全部字节不变。
+        策略真的变了才追加一条 ``recall_policy_changed`` 事件并 CAS 头行——这正是
+        S3 slice §5.4 明列的 policy version 车道；此后凡是绑定了旧 ``policy_hash``
+        的召回结果，其用途授权都会在 ``authorize_recall_context_use`` 的硬判据上失败。
+        调用方须持 ``_write_lock`` 且已 ``BEGIN``。
+        """
+
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT authority_epoch,policy_hash FROM recall_authority_heads "
+            "WHERE principal_id=?",
+            (principal_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            return
+        previous_epoch, previous_policy_hash = int(row[0]), str(row[1])
+        if previous_policy_hash == self._recall_policy_hash:
+            return
+        authority_epoch = previous_epoch + 1
+        event_id = _stable_id(
+            "recall-authority-event",
+            principal_id,
+            str(authority_epoch),
+            self._recall_policy_hash,
+        )
+        payload: dict[str, JsonValue] = {
+            "event_id": event_id,
+            "principal_id": principal_id,
+            "previous_epoch": previous_epoch,
+            "authority_epoch": authority_epoch,
+            "event_kind": RECALL_POLICY_CHANGED_EVENT_KIND,
+            "source_ref_hash": _opaque_hash(self._recall_policy.policy_id),
+            "policy_hash": self._recall_policy_hash,
+            "previous_policy_hash": previous_policy_hash,
+            "created_at": now,
+        }
+        event_json = canonical_json(payload)
+        await self._db.execute(
+            "INSERT INTO recall_authority_events(event_id,principal_id,previous_epoch,"
+            "authority_epoch,event_kind,source_ref_hash,policy_hash,event_json,event_hash,"
+            "created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (
+                event_id,
+                principal_id,
+                previous_epoch,
+                authority_epoch,
+                RECALL_POLICY_CHANGED_EVENT_KIND,
+                payload["source_ref_hash"],
+                self._recall_policy_hash,
+                event_json,
+                hashlib.sha256(event_json.encode()).hexdigest(),
+                now,
+            ),
+        )
+        cursor_update = await self._db.execute(
+            "UPDATE recall_authority_heads SET authority_epoch=?,policy_hash=?,updated_at=? "
+            "WHERE principal_id=? AND authority_epoch=? AND policy_hash=?",
+            (
+                authority_epoch,
+                self._recall_policy_hash,
+                now,
+                principal_id,
+                previous_epoch,
+                previous_policy_hash,
+            ),
+        )
+        if cursor_update.rowcount != 1:
+            raise MemoryWriterConflict("recall_authority_head_cas_conflict")
+        logger.info(
+            "typed_recall.policy.changed",
+            subject_hash=_opaque_hash(principal_id),
+            previous_authority_epoch=previous_epoch,
+            authority_epoch=authority_epoch,
+            policy_version=self._recall_policy.policy_version,
+        )
+
+    async def read_recall_policy(
+        self, *, principal: MemoryPrincipal
+    ) -> RecallPolicyStateV1:
+        """只读导出「配置策略」与「durable 权威头策略」的对照（0.6.32，无新表）。"""
+
+        from simple_harness_memory.core.identity import MemoryPrincipal
+
+        if type(principal) is not MemoryPrincipal:
+            raise TypeError("principal must use MemoryPrincipal")
+        if self._db is None:
+            raise RuntimeError("human-memory v7 backend is not initialized")
+        async with self._db.execute(
+            "SELECT authority_epoch,policy_hash FROM recall_authority_heads "
+            "WHERE principal_id=?",
+            (principal.actor_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            raise MemoryValidationError("recall_policy_authority_head_missing")
+        return RecallPolicyStateV1(
+            policy_version=self._recall_policy.policy_version,
+            policy_id=self._recall_policy.policy_id,
+            policy_hash=self._recall_policy_hash,
+            authority_epoch=int(row[0]),
+            authority_policy_hash=str(row[1]),
+        )
 
     async def _advance_recall_authority_unlocked(
         self,
@@ -6285,7 +6410,7 @@ class SQLiteHumanMemoryBackend:
             "authority_epoch": authority_epoch,
             "event_kind": event_kind,
             "source_ref_hash": _opaque_hash(source_ref),
-            "policy_hash": _RECALL_POLICY_HASH,
+            "policy_hash": self._recall_policy_hash,
             "previous_policy_hash": previous_policy_hash,
             "created_at": now,
         }
@@ -6302,7 +6427,7 @@ class SQLiteHumanMemoryBackend:
                 authority_epoch,
                 event_kind,
                 payload["source_ref_hash"],
-                _RECALL_POLICY_HASH,
+                self._recall_policy_hash,
                 event_json,
                 event_hash,
                 now,
@@ -6313,7 +6438,7 @@ class SQLiteHumanMemoryBackend:
             "WHERE principal_id=? AND authority_epoch=? AND policy_hash=?",
             (
                 authority_epoch,
-                _RECALL_POLICY_HASH,
+                self._recall_policy_hash,
                 now,
                 principal_id,
                 previous_epoch,
@@ -6322,7 +6447,7 @@ class SQLiteHumanMemoryBackend:
         )
         if cursor.rowcount != 1:
             raise MemoryWriterConflict("recall_authority_head_cas_conflict")
-        return authority_epoch, _RECALL_POLICY_HASH
+        return authority_epoch, self._recall_policy_hash
 
     async def _persist_typed_recall_terminal_unlocked(
         self,
@@ -10208,17 +10333,17 @@ class SQLiteHumanMemoryBackend:
         elif getattr(exc, "code", None) == "memory_suppressed":
             reason_code = "mutation_suppression_rejected"
         elif type(exc) is MemoryValidationError:
-            reason_code = {
+            # 0.6.32：contest 家族改为**一一对应**的稳定码（`core.mutation_rejections`）。
+            # 0.6.31 把其中四种压成 ``mutation_contest_rejected``、另外两种落到与 contest
+            # 无关的 ``mutation_epistemic_or_validation_rejected``，公共面无法区分。
+            # 其余映射与默认泛化码逐字未动。
+            reason_code = specific_validation_reason_code(str(exc)) or {
                 "classification_policy_required": "mutation_classification_policy_missing",
                 "evidence_authority_required": "mutation_evidence_authority_missing",
                 "evidence_authority_rejected": "mutation_evidence_authority_rejected",
                 "action_authority_required": "mutation_action_authority_required",
                 "action_authority_rejected": "mutation_action_authority_rejected",
                 "action_authority_replayed": "mutation_action_authority_replayed",
-                "mutation_contest_exact_slot_required": "mutation_contest_rejected",
-                "mutation_contest_exact_target_required": "mutation_contest_rejected",
-                "mutation_contest_lifecycle_must_be_unchanged": ("mutation_contest_rejected"),
-                "mutation_contest_requires_contested_state": ("mutation_contest_rejected"),
             }.get(str(exc), "mutation_epistemic_or_validation_rejected")
         else:
             if isinstance(exc, MemoryErrorBase):
@@ -10300,6 +10425,76 @@ class SQLiteHumanMemoryBackend:
             if not committed:
                 with suppress(Exception):
                     await self._db.execute("ROLLBACK")
+
+    async def read_memory_mutation_validation_notes(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        plan_id: str | None = None,
+        limit: int = 100,
+    ) -> tuple[MemoryMutationValidationNoteV1, ...]:
+        """只读导出被 validation 精确拒绝的 plan（0.6.32，无新表、无 DDL）。
+
+        冻结的 ``MemoryMutationApplyReasonCode`` 只能给出 ``VALIDATION_REJECTED``；
+        本方法从不可变的 ``memory_mutation_rejection_audits`` 行给出稳定的精确码，
+        并逐行重算 ``rejection_hash`` 核对（不一致即判损坏）。
+        """
+
+        from simple_harness_memory.core.identity import MemoryPrincipal
+
+        if type(principal) is not MemoryPrincipal:
+            raise TypeError("principal must use MemoryPrincipal")
+        if plan_id is not None and (not isinstance(plan_id, str) or not plan_id.strip()):
+            raise MemoryValidationError("memory_mutation_plan_id_invalid")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise MemoryValidationError("memory_mutation_validation_limit_invalid")
+        if self._db is None:
+            raise RuntimeError("human-memory v7 backend is not initialized")
+        async with self._db.execute(
+            "SELECT rejection_id,plan_id,plan_hash,idempotency_key,base_revision,"
+            "reason_code,rejection_json,rejection_hash,rejected_at "
+            "FROM memory_mutation_rejection_audits WHERE principal_id=? "
+            "AND reason_code IN ({placeholders}) "
+            "ORDER BY rejected_at,rejection_id".format(
+                placeholders=",".join("?" * len(MEMORY_MUTATION_VALIDATION_REASON_CODES))
+            ),
+            (principal.actor_id, *MEMORY_MUTATION_VALIDATION_REASON_CODES),
+        ) as cursor:
+            rows = tuple(await cursor.fetchall())
+        notes: list[MemoryMutationValidationNoteV1] = []
+        for row in rows:
+            if plan_id is not None and str(row["plan_id"]) != plan_id:
+                continue
+            body = str(row["rejection_json"])
+            if (
+                hashlib.sha256(body.encode("utf-8")).hexdigest()
+                != str(row["rejection_hash"])
+            ):
+                raise MemoryCorruptionError("mutation rejection audit body differs")
+            payload = json.loads(body)
+            if not isinstance(payload, dict) or payload.get("reason_code") != str(
+                row["reason_code"]
+            ):
+                raise MemoryCorruptionError("mutation rejection audit body differs")
+            apply_result_id = payload.get("apply_result_id")
+            apply_result_hash = payload.get("apply_result_hash")
+            notes.append(
+                MemoryMutationValidationNoteV1(
+                    str(row["rejection_id"]),
+                    str(row["rejection_hash"]),
+                    str(row["plan_id"]),
+                    str(row["plan_hash"]),
+                    str(row["idempotency_key"]),
+                    int(row["base_revision"]),
+                    str(row["reason_code"]),
+                    None if apply_result_id is None else str(apply_result_id),
+                    None if apply_result_hash is None else str(apply_result_hash),
+                    float(row["rejected_at"]),
+                )
+            )
+            if len(notes) >= limit:
+                break
+        return tuple(notes)
 
     async def _insert_mutation_apply_result_unlocked(
         self,
