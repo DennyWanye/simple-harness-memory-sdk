@@ -450,11 +450,18 @@ class ShortHorizonProjectionBuildResult:
 
 @dataclass(frozen=True, slots=True)
 class ShortHorizonGenerationBuildResult:
+    """One durable generation build attempt.
+
+    0.6.27：``audit_id`` 可为 ``None``，``cas_miss`` 为 True 表示嵌入期间 chunk 清单变了、
+    本次不激活（审计表只记录激活，故不落审计行）；下一 tick 会以新清单重建。
+    """
+
     generation_id: str | None
     vector_count: int
     activated: bool
     replayed: bool
-    audit_id: str
+    audit_id: str | None
+    cas_miss: bool = False
 
 
 class _ExactVectorGenerationCache:

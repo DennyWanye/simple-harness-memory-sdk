@@ -14,8 +14,8 @@ import secrets
 import sqlite3
 import threading
 import time
-from collections.abc import Callable, Mapping
-from contextlib import suppress
+from collections.abc import AsyncIterator, Callable, Mapping
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -71,6 +71,7 @@ from simple_harness_memory.core.errors import (
     MemoryOwnershipConflict,
     MemoryValidationError,
     MemoryWriterConflict,
+    TypedRecallDeadlineExceeded,
 )
 
 if TYPE_CHECKING:
@@ -286,6 +287,10 @@ PROSPECTIVE_SIGNAL_FAULT_POINTS = (
     "prospective.after_commit",
 )
 logger = structlog.get_logger("simple_harness_memory.backends.sqlite_v5")
+# 0.6.27 前台召回预算的两段冻结预留（秒）：等写锁最多花到 deadline - LOCK_RESERVE，
+# 查询嵌入最多花到 deadline - AUDIT_RESERVE；两者用尽都只退化到词面 lane。
+COGNITIVE_VECTOR_LOCK_RESERVE_S = 0.200
+COGNITIVE_VECTOR_AUDIT_RESERVE_S = 0.050
 _DEFAULT_FILTER_POLICIES = frozenset({"credential-filter/v1"})
 _RECALL_POLICY_HASH = hashlib.sha256(
     canonical_json(
@@ -2368,7 +2373,13 @@ class SQLiteHumanMemoryBackend:
     async def rebuild_short_horizon_generation(
         self, *, now: float | None = None
     ) -> ShortHorizonGenerationBuildResult:
-        """Build and atomically activate the repository's exact durable vector generation."""
+        """Build and atomically activate the repository's exact durable vector generation.
+
+        0.6.27 三段式：① 持写锁读 chunk 清单、算 manifest、判 replay/空集 → ② **释放写锁**做
+        ``embed_batch`` → ③ 重新取写锁，对 manifest 做乐观 CAS（比对哈希，变了就本次不激活并返回
+        ``cas_miss``），未变则写向量表、原子激活、retire 旧世代、落审计。嵌入永远不在写锁内发生，
+        见 ``DECISION-2026-09-07-cognitive-vector-lane.md`` §4.2「不在 mutation 写锁内嵌入」。
+        """
 
         from simple_harness_memory.core.short_horizon import ShortHorizonGenerationBuildResult
         from simple_harness_memory.embedders.base import EMBEDDING_FORMAT_VERSION, encode_vector
@@ -2379,39 +2390,19 @@ class SQLiteHumanMemoryBackend:
             raise MemoryValidationError("short_horizon_embedder_required")
         effective_now = _timestamp(self._now() if now is None else now)
         embedder = self._short_horizon_embedder
+        lineage = embedder.lineage
+        # ① 持锁读清单、判 replay / 空集。
         async with self._write_lock:
-            async with self._db.execute(
-                "SELECT chunk_id,principal_id,public_text,content_hash "
-                "FROM short_horizon_chunks "
-                "ORDER BY chunk_id"
-            ) as cursor:
-                rows = tuple(await cursor.fetchall())
+            rows = await self._short_horizon_chunk_rows_unlocked()
             manifest_hash = self._short_horizon_manifest_hash(rows)
-            lineage = embedder.lineage
-            async with self._db.execute(
-                "SELECT generation_id FROM short_horizon_generations "
-                "WHERE state='active' AND lineage_id=? AND content_hash=?",
-                (lineage.lineage_id, manifest_hash),
-            ) as cursor:
-                existing = await cursor.fetchone()
-            if existing is not None:
-                await self._load_short_horizon_cache_unlocked()
-                audit_id = await self._append_short_horizon_audit_transaction(
-                    principal_id="system",
-                    event_kind="generation_activated",
-                    generation_id=str(existing[0]),
-                    generation_state="active",
-                    vector_count=len(rows),
-                    details={
-                        "chunk_manifest_hash": manifest_hash,
-                        "lineage_id_hash": _opaque_hash(lineage.lineage_id),
-                        "replayed": True,
-                    },
-                    created_at=effective_now,
-                )
-                return ShortHorizonGenerationBuildResult(
-                    str(existing[0]), len(rows), True, True, audit_id
-                )
+            replay = await self._short_horizon_generation_replay_unlocked(
+                lineage=lineage,
+                manifest_hash=manifest_hash,
+                row_count=len(rows),
+                created_at=effective_now,
+            )
+            if replay is not None:
+                return replay
             if not rows:
                 audit_id = await self._append_short_horizon_audit_transaction(
                     principal_id="system",
@@ -2425,12 +2416,38 @@ class SQLiteHumanMemoryBackend:
                     created_at=effective_now,
                 )
                 return ShortHorizonGenerationBuildResult(None, 0, False, False, audit_id)
-            vectors = await embedder.embed_batch([str(row["public_text"]) for row in rows])
-            embedder.validate_vectors(vectors, expected_count=len(rows))
-            encoded_vectors = tuple(encode_vector(vector) for vector in vectors)
-            vector_hashes = tuple(
-                hashlib.sha256(encoded).hexdigest() for encoded in encoded_vectors
+            texts = [str(row["public_text"]) for row in rows]
+        # ② 无锁嵌入：整批模型调用与写锁完全解耦，慢嵌入不再霸占前台召回要用的同一把锁。
+        vectors = await embedder.embed_batch(texts)
+        embedder.validate_vectors(vectors, expected_count=len(rows))
+        encoded_vectors = tuple(encode_vector(vector) for vector in vectors)
+        vector_hashes = tuple(
+            hashlib.sha256(encoded).hexdigest() for encoded in encoded_vectors
+        )
+        # ③ 重新取锁 + 乐观 CAS。
+        async with self._write_lock:
+            current_rows = await self._short_horizon_chunk_rows_unlocked()
+            current_manifest_hash = self._short_horizon_manifest_hash(current_rows)
+            if current_manifest_hash != manifest_hash:
+                # 嵌入期间清单变了：本次不激活，也不写审计（审计只记录激活）。
+                logger.info(
+                    "short_horizon.generation.cas_miss",
+                    embedded_manifest_hash=manifest_hash,
+                    observed_manifest_hash=current_manifest_hash,
+                    vector_count=len(rows),
+                )
+                return ShortHorizonGenerationBuildResult(
+                    None, len(rows), False, False, None, True
+                )
+            replay = await self._short_horizon_generation_replay_unlocked(
+                lineage=lineage,
+                manifest_hash=manifest_hash,
+                row_count=len(rows),
+                created_at=effective_now,
             )
+            if replay is not None:
+                return replay
+            rows = current_rows
             vector_manifest_hash = self._short_horizon_vector_manifest_hash(
                 tuple(
                     (str(row["chunk_id"]), vector_hash)
@@ -2525,6 +2542,56 @@ class SQLiteHumanMemoryBackend:
                 generation_id, len(rows), True, False, audit_id
             )
 
+    async def _short_horizon_chunk_rows_unlocked(self) -> tuple[aiosqlite.Row, ...]:
+        """The exact chunk manifest the durable generation is built from."""
+
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT chunk_id,principal_id,public_text,content_hash "
+            "FROM short_horizon_chunks "
+            "ORDER BY chunk_id"
+        ) as cursor:
+            return tuple(await cursor.fetchall())
+
+    async def _short_horizon_generation_replay_unlocked(
+        self,
+        *,
+        lineage: EmbeddingLineage,
+        manifest_hash: str,
+        row_count: int,
+        created_at: float,
+    ) -> ShortHorizonGenerationBuildResult | None:
+        """Return the idempotent replay result when this manifest is already active."""
+
+        from simple_harness_memory.core.short_horizon import ShortHorizonGenerationBuildResult
+
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT generation_id FROM short_horizon_generations "
+            "WHERE state='active' AND lineage_id=? AND content_hash=?",
+            (lineage.lineage_id, manifest_hash),
+        ) as cursor:
+            existing = await cursor.fetchone()
+        if existing is None:
+            return None
+        await self._load_short_horizon_cache_unlocked()
+        audit_id = await self._append_short_horizon_audit_transaction(
+            principal_id="system",
+            event_kind="generation_activated",
+            generation_id=str(existing[0]),
+            generation_state="active",
+            vector_count=row_count,
+            details={
+                "chunk_manifest_hash": manifest_hash,
+                "lineage_id_hash": _opaque_hash(lineage.lineage_id),
+                "replayed": True,
+            },
+            created_at=created_at,
+        )
+        return ShortHorizonGenerationBuildResult(
+            str(existing[0]), row_count, True, True, audit_id
+        )
+
     async def rebuild_cognitive_vector_generation(
         self, *, now: float | None = None
     ) -> CognitiveVectorGenerationBuildResult:
@@ -2541,6 +2608,10 @@ class SQLiteHumanMemoryBackend:
         0.6.24：任何构建失败都先落一行 ``state='failed'`` + ``last_error_code`` 的
         ``cognitive_vector_generations``，再抛 ``CognitiveVectorGenerationFailed``（``code``
         为同一失败码），维护 worker 不会再每 tick 收到一个未落库的 ``MemoryCorruptionError``。
+
+        0.6.27：改为三段式——① 持写锁读 head、渲染文本、判 replay/空集 → ② **释放写锁**做
+        ``embed_batch`` → ③ 重新取写锁做 manifest 乐观 CAS，未变才写表并原子激活；CAS 落空是
+        「本次不激活」（``cas_miss=True``）而不是错误。失败世代行仍在（重新取到的）写锁内落库。
         """
 
         if self._db is None or self._receipt is None:
@@ -2550,17 +2621,18 @@ class SQLiteHumanMemoryBackend:
         effective_now = _timestamp(self._now() if now is None else now)
         embedder = self._short_horizon_embedder
         lineage = embedder.lineage
-        async with self._write_lock:
-            attempt = _CognitiveVectorBuildAttempt()
-            try:
-                return await self._build_cognitive_vector_generation_unlocked(
-                    embedder, attempt, effective_now
-                )
-            except Exception as exc:  # noqa: BLE001 - every failure is recorded with a code
-                if isinstance(exc, CognitiveVectorGenerationFailed):
-                    raise
-                failed_generation_id: str | None = None
-                with suppress(Exception):
+        attempt = _CognitiveVectorBuildAttempt()
+        try:
+            return await self._build_cognitive_vector_generation_phased(
+                embedder, attempt, effective_now
+            )
+        except Exception as exc:  # noqa: BLE001 - every failure is recorded with a code
+            if isinstance(exc, CognitiveVectorGenerationFailed):
+                raise
+            failed_generation_id: str | None = None
+            with suppress(Exception):
+                # 嵌入阶段不持锁，失败世代行要重新取锁才能落库。
+                async with self._write_lock:
                     failed_generation_id = (
                         await self._record_cognitive_vector_generation_failure_unlocked(
                             lineage=lineage,
@@ -2570,11 +2642,48 @@ class SQLiteHumanMemoryBackend:
                             created_at=effective_now,
                         )
                     )
-                raise CognitiveVectorGenerationFailed(
-                    attempt.stage, generation_id=failed_generation_id
-                ) from exc
+            raise CognitiveVectorGenerationFailed(
+                attempt.stage, generation_id=failed_generation_id
+            ) from exc
 
-    async def _build_cognitive_vector_generation_unlocked(
+    async def _cognitive_vector_generation_replay_unlocked(
+        self,
+        *,
+        lineage: EmbeddingLineage,
+        manifest_hash: str,
+        row_count: int,
+        created_at: float,
+        attempt: _CognitiveVectorBuildAttempt,
+    ) -> CognitiveVectorGenerationBuildResult | None:
+        """Return the idempotent replay result when this manifest is already active."""
+
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT generation_id FROM cognitive_vector_generations "
+            "WHERE state='active' AND lineage_id=? AND content_hash=?",
+            (lineage.lineage_id, manifest_hash),
+        ) as cursor:
+            existing = await cursor.fetchone()
+        if existing is None:
+            return None
+        await self._load_cognitive_vector_cache_unlocked()
+        attempt.stage = COGNITIVE_VECTOR_BUILD_WRITE_FAILED
+        audit_id = await self._append_cognitive_vector_audit_transaction(
+            generation_id=str(existing[0]),
+            generation_state="active",
+            vector_count=row_count,
+            details={
+                "manifest_hash": manifest_hash,
+                "lineage_id_hash": _opaque_hash(lineage.lineage_id),
+                "replayed": True,
+            },
+            created_at=created_at,
+        )
+        return CognitiveVectorGenerationBuildResult(
+            str(existing[0]), row_count, True, True, audit_id
+        )
+
+    async def _build_cognitive_vector_generation_phased(
         self,
         embedder: Embedder,
         attempt: _CognitiveVectorBuildAttempt,
@@ -2584,52 +2693,41 @@ class SQLiteHumanMemoryBackend:
 
         assert self._db is not None
         lineage = embedder.lineage
-        attempt.stage = COGNITIVE_VECTOR_BUILD_HEAD_INVALID
-        rows = await self._cognitive_vector_head_rows_unlocked()
-        manifest_hash = self._cognitive_vector_manifest_hash(rows)
-        attempt.manifest_hash = manifest_hash
-        async with self._db.execute(
-            "SELECT generation_id FROM cognitive_vector_generations "
-            "WHERE state='active' AND lineage_id=? AND content_hash=?",
-            (lineage.lineage_id, manifest_hash),
-        ) as cursor:
-            existing = await cursor.fetchone()
-        if existing is not None:
-            await self._load_cognitive_vector_cache_unlocked()
-            attempt.stage = COGNITIVE_VECTOR_BUILD_WRITE_FAILED
-            audit_id = await self._append_cognitive_vector_audit_transaction(
-                generation_id=str(existing[0]),
-                generation_state="active",
-                vector_count=len(rows),
-                details={
-                    "manifest_hash": manifest_hash,
-                    "lineage_id_hash": _opaque_hash(lineage.lineage_id),
-                    "replayed": True,
-                },
+        # ① 持锁读 head 清单 + 渲染公开文本。
+        async with self._write_lock:
+            attempt.stage = COGNITIVE_VECTOR_BUILD_HEAD_INVALID
+            rows = await self._cognitive_vector_head_rows_unlocked()
+            manifest_hash = self._cognitive_vector_manifest_hash(rows)
+            attempt.manifest_hash = manifest_hash
+            replay = await self._cognitive_vector_generation_replay_unlocked(
+                lineage=lineage,
+                manifest_hash=manifest_hash,
+                row_count=len(rows),
                 created_at=effective_now,
+                attempt=attempt,
             )
-            return CognitiveVectorGenerationBuildResult(
-                str(existing[0]), len(rows), True, True, audit_id
-            )
-        if not rows:
-            attempt.stage = COGNITIVE_VECTOR_BUILD_WRITE_FAILED
-            audit_id = await self._append_cognitive_vector_audit_transaction(
-                generation_id=None,
-                generation_state="empty",
-                vector_count=0,
-                details={
-                    "manifest_hash": manifest_hash,
-                    "lineage_id_hash": _opaque_hash(lineage.lineage_id),
-                    "replayed": False,
-                },
-                created_at=effective_now,
-            )
-            return CognitiveVectorGenerationBuildResult(None, 0, False, False, audit_id)
-        texts: list[str] = []
-        for row in rows:
-            payload, _source_time = await self._cognitive_public_payload_unlocked(row)
-            text = cognitive_vector_text(str(row["memory_type"]), payload)
-            texts.append(text if text.strip() else str(row["memory_type"]))
+            if replay is not None:
+                return replay
+            if not rows:
+                attempt.stage = COGNITIVE_VECTOR_BUILD_WRITE_FAILED
+                audit_id = await self._append_cognitive_vector_audit_transaction(
+                    generation_id=None,
+                    generation_state="empty",
+                    vector_count=0,
+                    details={
+                        "manifest_hash": manifest_hash,
+                        "lineage_id_hash": _opaque_hash(lineage.lineage_id),
+                        "replayed": False,
+                    },
+                    created_at=effective_now,
+                )
+                return CognitiveVectorGenerationBuildResult(None, 0, False, False, audit_id)
+            texts: list[str] = []
+            for row in rows:
+                payload, _source_time = await self._cognitive_public_payload_unlocked(row)
+                text = cognitive_vector_text(str(row["memory_type"]), payload)
+                texts.append(text if text.strip() else str(row["memory_type"]))
+        # ② 无锁嵌入。
         attempt.stage = COGNITIVE_VECTOR_BUILD_EMBEDDING_FAILED
         vectors = await embedder.embed_batch(texts)
         embedder.validate_vectors(vectors, expected_count=len(rows))
@@ -2637,84 +2735,110 @@ class SQLiteHumanMemoryBackend:
         vector_hashes = tuple(
             hashlib.sha256(encoded).hexdigest() for encoded in encoded_vectors
         )
-        vector_manifest_hash = self._cognitive_vector_vector_manifest_hash(
-            tuple(
-                (cognitive_vector_ref(str(row["memory_id"]), int(row["revision"])), vector_hash)
-                for row, vector_hash in zip(rows, vector_hashes, strict=True)
+        # ③ 重新取锁 + 乐观 CAS。
+        async with self._write_lock:
+            attempt.stage = COGNITIVE_VECTOR_BUILD_HEAD_INVALID
+            current_rows = await self._cognitive_vector_head_rows_unlocked()
+            current_manifest_hash = self._cognitive_vector_manifest_hash(current_rows)
+            if current_manifest_hash != manifest_hash:
+                # 嵌入期间 head 清单变了：本次不激活，也不写审计（审计只记录激活）。
+                logger.info(
+                    "cognitive_vector.generation.cas_miss",
+                    embedded_manifest_hash=manifest_hash,
+                    observed_manifest_hash=current_manifest_hash,
+                    vector_count=len(rows),
+                )
+                return CognitiveVectorGenerationBuildResult(
+                    None, len(rows), False, False, None, True
+                )
+            replay = await self._cognitive_vector_generation_replay_unlocked(
+                lineage=lineage,
+                manifest_hash=manifest_hash,
+                row_count=len(rows),
+                created_at=effective_now,
+                attempt=attempt,
             )
-        )
-        generation_id = f"cognitive-gen:{uuid4().hex}"
-        attempt.generation_id = generation_id
-        attempt.stage = COGNITIVE_VECTOR_BUILD_WRITE_FAILED
-        await self._db.execute("BEGIN IMMEDIATE")
-        committed = False
-        try:
-            await self._ensure_system_principal_unlocked(effective_now)
-            await self._insert_cognitive_vector_lineage_unlocked(lineage, effective_now)
-            await self._db.execute(
-                "INSERT INTO cognitive_vector_generations(generation_id,lineage_id,state,"
-                "content_hash,vector_manifest_hash,created_at) VALUES(?,?,'building',?,?,?)",
-                (
-                    generation_id,
-                    lineage.lineage_id,
-                    manifest_hash,
-                    vector_manifest_hash,
-                    effective_now,
-                ),
+            if replay is not None:
+                return replay
+            rows = current_rows
+            vector_manifest_hash = self._cognitive_vector_vector_manifest_hash(
+                tuple(
+                    (cognitive_vector_ref(str(row["memory_id"]), int(row["revision"])), vector_hash)
+                    for row, vector_hash in zip(rows, vector_hashes, strict=True)
+                )
             )
-            for row, encoded_vector, vector_hash in zip(
-                rows, encoded_vectors, vector_hashes, strict=True
-            ):
+            generation_id = f"cognitive-gen:{uuid4().hex}"
+            attempt.generation_id = generation_id
+            attempt.stage = COGNITIVE_VECTOR_BUILD_WRITE_FAILED
+            await self._db.execute("BEGIN IMMEDIATE")
+            committed = False
+            try:
+                await self._ensure_system_principal_unlocked(effective_now)
+                await self._insert_cognitive_vector_lineage_unlocked(lineage, effective_now)
                 await self._db.execute(
-                    "INSERT INTO cognitive_vectors(memory_id,revision,generation_id,"
-                    "embedding,embedding_hash,dimension) VALUES(?,?,?,?,?,?)",
+                    "INSERT INTO cognitive_vector_generations(generation_id,lineage_id,state,"
+                    "content_hash,vector_manifest_hash,created_at) VALUES(?,?,'building',?,?,?)",
                     (
-                        str(row["memory_id"]),
-                        int(row["revision"]),
                         generation_id,
-                        encoded_vector,
-                        vector_hash,
-                        lineage.dimension,
+                        lineage.lineage_id,
+                        manifest_hash,
+                        vector_manifest_hash,
+                        effective_now,
                     ),
                 )
-            self._fault("cognitive_vector.generation.before_activate")
-            await self._db.execute(
-                "UPDATE cognitive_vector_generations SET state='retired' WHERE state='active'"
-            )
-            await self._db.execute(
-                "UPDATE cognitive_vector_generations SET state='active',activated_at=? "
-                "WHERE generation_id=? AND state='building'",
-                (effective_now, generation_id),
-            )
-            audit_id = await self._append_cognitive_vector_audit_unlocked(
-                generation_id=generation_id,
-                generation_state="active",
-                vector_count=len(rows),
-                details={
-                    "manifest_hash": manifest_hash,
-                    "lineage_id_hash": _opaque_hash(lineage.lineage_id),
-                    "replayed": False,
-                },
-                created_at=effective_now,
-            )
-            for principal_id in sorted({str(row["principal_id"]) for row in rows}):
-                await self._advance_recall_authority_unlocked(
-                    principal_id,
-                    event_kind="cognitive_vector_generation_changed",
-                    source_ref=generation_id,
-                    now=effective_now,
+                for row, encoded_vector, vector_hash in zip(
+                    rows, encoded_vectors, vector_hashes, strict=True
+                ):
+                    await self._db.execute(
+                        "INSERT INTO cognitive_vectors(memory_id,revision,generation_id,"
+                        "embedding,embedding_hash,dimension) VALUES(?,?,?,?,?,?)",
+                        (
+                            str(row["memory_id"]),
+                            int(row["revision"]),
+                            generation_id,
+                            encoded_vector,
+                            vector_hash,
+                            lineage.dimension,
+                        ),
+                    )
+                self._fault("cognitive_vector.generation.before_activate")
+                await self._db.execute(
+                    "UPDATE cognitive_vector_generations SET state='retired' WHERE state='active'"
                 )
-            self._fault("cognitive_vector.generation.before_commit")
-            await self._db.execute("COMMIT")
-            committed = True
-        finally:
-            if not committed:
-                with suppress(Exception):
-                    await self._db.execute("ROLLBACK")
-        await self._load_cognitive_vector_cache_unlocked()
-        return CognitiveVectorGenerationBuildResult(
-            generation_id, len(rows), True, False, audit_id
-        )
+                await self._db.execute(
+                    "UPDATE cognitive_vector_generations SET state='active',activated_at=? "
+                    "WHERE generation_id=? AND state='building'",
+                    (effective_now, generation_id),
+                )
+                audit_id = await self._append_cognitive_vector_audit_unlocked(
+                    generation_id=generation_id,
+                    generation_state="active",
+                    vector_count=len(rows),
+                    details={
+                        "manifest_hash": manifest_hash,
+                        "lineage_id_hash": _opaque_hash(lineage.lineage_id),
+                        "replayed": False,
+                    },
+                    created_at=effective_now,
+                )
+                for principal_id in sorted({str(row["principal_id"]) for row in rows}):
+                    await self._advance_recall_authority_unlocked(
+                        principal_id,
+                        event_kind="cognitive_vector_generation_changed",
+                        source_ref=generation_id,
+                        now=effective_now,
+                    )
+                self._fault("cognitive_vector.generation.before_commit")
+                await self._db.execute("COMMIT")
+                committed = True
+            finally:
+                if not committed:
+                    with suppress(Exception):
+                        await self._db.execute("ROLLBACK")
+            await self._load_cognitive_vector_cache_unlocked()
+            return CognitiveVectorGenerationBuildResult(
+                generation_id, len(rows), True, False, audit_id
+            )
 
     async def _insert_cognitive_vector_lineage_unlocked(
         self, lineage: EmbeddingLineage, created_at: float
@@ -2997,6 +3121,32 @@ class SQLiteHumanMemoryBackend:
         )
         return audit_id
 
+    @asynccontextmanager
+    async def _write_lock_before(
+        self, deadline_monotonic: float, *, stage: str | None = None
+    ) -> AsyncIterator[None]:
+        """Acquire ``_write_lock`` without ever outliving the caller deadline (0.6.27).
+
+        前台召回路径上的取锁必须受同一个 recall deadline 约束：一个长时间持锁的后台写入
+        （例如世代重建）不得把召回拖到预算之外再抛超时。等锁超时抛 ``TimeoutError``
+        （给了 ``stage`` 就抛 ``TypedRecallDeadlineExceeded``，便于与 with 体内的超时区分），
+        由调用方决定是硬失败（admit）还是退化（向量 lane）。
+        """
+
+        remaining = deadline_monotonic - time.monotonic()
+        try:
+            if remaining <= 0:
+                raise TimeoutError
+            await asyncio.wait_for(self._write_lock.acquire(), timeout=remaining)
+        except TimeoutError:
+            if stage is None:
+                raise
+            raise TypedRecallDeadlineExceeded(stage) from None
+        try:
+            yield
+        finally:
+            self._write_lock.release()
+
     async def _prepare_cognitive_vector_lane(
         self,
         *,
@@ -3012,23 +3162,33 @@ class SQLiteHumanMemoryBackend:
         embedder = self._short_horizon_embedder
         if embedder is None:
             return None, COGNITIVE_VECTOR_UNAVAILABLE
-        async with self._write_lock:
-            if time.monotonic() >= deadline_monotonic:
-                raise TimeoutError
-            active = await self._active_cognitive_vector_generation_unlocked()
-            if active is None:
-                return None, COGNITIVE_VECTOR_NO_GENERATION
-            cache = self._cognitive_vector_cache
-            current_manifest = await self._current_cognitive_vector_manifest_hash_unlocked()
-            if (
-                str(active["content_hash"]) != current_manifest
-                or not isinstance(cache, _ExactVectorGenerationCache)
-                or cache.generation_id != str(active["generation_id"])
-            ):
-                return None, COGNITIVE_VECTOR_STALE
         # Keep a bounded reserve for the immutable terminal/audit work, as the
         # short-horizon lane does; a slow embedder degrades, never fails, recall.
-        audit_reserve = min(0.050, max(0.001, (deadline_monotonic - started_monotonic) * 0.25))
+        budget = deadline_monotonic - started_monotonic
+        audit_reserve = min(COGNITIVE_VECTOR_AUDIT_RESERVE_S, max(0.001, budget * 0.25))
+        # 0.6.27：等写锁也受预算约束，并且预留出词面 lane + 终态写入的时间（实测 DB 侧
+        # 全流程 24–31 ms，这里留 200 ms 上限＝6–8 倍余量），因此一把被后台写入短暂持有的
+        # 写锁只会让向量 lane 退化，不会把整次召回拖死在 admit 之后。
+        lock_reserve = min(COGNITIVE_VECTOR_LOCK_RESERVE_S, max(0.005, budget * 0.25))
+        lock_deadline = deadline_monotonic - lock_reserve
+        if lock_deadline <= time.monotonic():
+            return None, COGNITIVE_VECTOR_DEADLINE
+        try:
+            async with self._write_lock_before(lock_deadline):
+                active = await self._active_cognitive_vector_generation_unlocked()
+                if active is None:
+                    return None, COGNITIVE_VECTOR_NO_GENERATION
+                cache = self._cognitive_vector_cache
+                current_manifest = await self._current_cognitive_vector_manifest_hash_unlocked()
+                if (
+                    str(active["content_hash"]) != current_manifest
+                    or not isinstance(cache, _ExactVectorGenerationCache)
+                    or cache.generation_id != str(active["generation_id"])
+                ):
+                    return None, COGNITIVE_VECTOR_STALE
+        except TimeoutError:
+            # 等锁超时：退化到词面 lane，绝不让召回失败（决策文档「冷态只退化不失败」）。
+            return None, COGNITIVE_VECTOR_DEADLINE
         remaining = deadline_monotonic - time.monotonic() - audit_reserve
         if remaining <= 0:
             return None, COGNITIVE_VECTOR_DEADLINE
@@ -3772,7 +3932,15 @@ class SQLiteHumanMemoryBackend:
                 plan=plan,
                 request_digest=digest,
                 now=effective_now,
+                deadline_monotonic=deadline_monotonic,
             )
+        except TypedRecallDeadlineExceeded as admit_timeout:
+            # 等 admit 写锁超时：没有任何幂等记录落库，因此按 pre-candidate 拒绝上报。
+            _attach_pre_candidate_rejection(
+                admit_timeout, invocation_id=invocation_id, stage=admit_timeout.stage,
+                request_digest=digest, context_digest=context_digest, plan_digest=plan_digest,
+            )
+            raise
         except MemoryIdempotencyConflict as conflict_error:
             # _admit can also commit a timeout or report corruption/storage
             # failures. Only this exact pre-candidate conflict earns a witness.
@@ -3859,10 +4027,17 @@ class SQLiteHumanMemoryBackend:
                 degradation_codes.append(vector_degradation)
             elif vector_lane is not None:
                 cognitive_vector_generation_id_hash = _opaque_hash(vector_lane.generation_id)
-        async with self._write_lock:
-            collected_epoch, collected_policy_hash = await self._recall_authority_unlocked(
-                principal.actor_id
+        try:
+            # 0.6.27：这一段同样在前台预算内，等锁不得越过 deadline。
+            async with self._write_lock_before(deadline_monotonic):
+                collected_epoch, collected_policy_hash = await self._recall_authority_unlocked(
+                    principal.actor_id
+                )
+        except TimeoutError:
+            await self._persist_typed_recall_timeout(
+                request_id=request_id, attempt_id=attempt_id, now=effective_now
             )
+            raise TimeoutError("DEADLINE_EXCEEDED") from None
 
         try:
             confirmations = await asyncio.wait_for(
@@ -4070,9 +4245,7 @@ class SQLiteHumanMemoryBackend:
         )
         if degradation == "DEADLINE_EXCEEDED":
             raise TimeoutError
-        async with self._write_lock:
-            if time.monotonic() >= deadline_monotonic:
-                raise TimeoutError
+        async with self._write_lock_before(deadline_monotonic):
             async with self._db.execute(
                 "SELECT audit_json FROM short_horizon_audit WHERE audit_id=?",
                 (result.audit_id,),
@@ -5044,13 +5217,16 @@ class SQLiteHumanMemoryBackend:
         plan: RecallPlan,
         request_digest: str,
         now: float,
+        deadline_monotonic: float,
     ) -> tuple[TypedRecallExecution | None, str, str]:
         from simple_harness.runtime import RecallDecisionV4, TypedRecallResultV1
 
         from simple_harness_memory.core.recall import TypedRecallExecution
 
         assert self._db is not None
-        async with self._write_lock:
+        # 0.6.27：admit 也必须在预算内取到写锁；等锁超时保持硬失败语义（幂等记录还没落库），
+        # 但阶段名写进 ``TypedRecallDeadlineExceeded.stage``，Host 能区分「卡在 admit 等锁」。
+        async with self._write_lock_before(deadline_monotonic, stage="admit_write_lock"):
             await self._db.execute("BEGIN IMMEDIATE")
             committed = False
             try:

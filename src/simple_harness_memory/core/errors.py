@@ -19,6 +19,21 @@ class EmbeddingError(RuntimeError):
     """Embedding generation failed (network / timeout / dimension mismatch)."""
 
 
+class TypedRecallDeadlineExceeded(TimeoutError):
+    """``TimeoutError("DEADLINE_EXCEEDED")`` that names the stage where the budget ran out.
+
+    0.6.27：typed recall 的 deadline 失败一律是 ``TimeoutError``（Host 契约不变，仍映射到
+    ``context_route_recall_timeout``），但 ``stage`` 让调用方能区分「在哪一段耗尽预算」——
+    目前只有 ``admit_write_lock``（等 admit 写锁超时，幂等记录尚未落库）会用到它。
+    """
+
+    code = "DEADLINE_EXCEEDED"
+
+    def __init__(self, stage: str) -> None:
+        super().__init__("DEADLINE_EXCEEDED")
+        self.stage = stage
+
+
 class MemoryErrorBase(RuntimeError):
     """Base class for stable, content-free SDK failures."""
 

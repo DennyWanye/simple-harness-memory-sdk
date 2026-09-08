@@ -14,6 +14,16 @@
 
 最后更新：2026-09-06。Procedure后继公开prepare/read target/record的实际operation observation六项新控通过；f82c2b8仅Procedure复用source-only S1完整持久校验，Host三真实Scope路由/文件effects/完整group→公共观察由原红转绿，累计成功1/2/3与重放已验证。新四项跨源边界控未跑，完整TC-HM04、独审、installed/native未闭合。主整合Hegel e500556后统一版本，不独立build，不改M618制品；F01延期。[源码与证据边界](../plans/2026-09-06-procedure-observation-prepare/CONTRACT.md)。
 
+## 2026-09-08 0.6.27 世代重建把嵌入移出写锁；召回取锁受 deadline 约束
+
+最后更新：2026-09-08。基于 0.6.26，仅本地候选、未发布、未构建制品、Host 未 pin。诊断见 Host `simple_harness/plans/2026-09-08-hm-to-a6/DIAG-RECALL-TIMEOUT.md`（HM-TO-A6 turn 22 现场）。
+
+- **缺陷**：`rebuild_short_horizon_generation` 与 `rebuild_cognitive_vector_generation` 在 `_write_lock` 内 `await embedder.embed_batch(...)`。真实 WeMM 每条 200 ms 且无批处理覆写，6 条 chunk 合计 45.7 s，而 Host 维护 tick 超时 5 s：世代永远激活不了、manifest 永远对不上、下一 tick 全额重试，形成活锁（写锁占空比约 65%）。前台 typed recall 的 `_admit_typed_recall_request` 与 `_prepare_cognitive_vector_lane` 取同一把锁又没有 deadline，拿到锁的第一件事就是 `raise TimeoutError` —— 五次失败的 `typed_recall_terminals` 全是 `candidate_query_started=0`，一条候选都没扫过。该实现与本 SDK 决策文档 `DECISION-2026-09-07-cognitive-vector-lane.md` §4.1/§4.2/§4.4 的三条不变量全部相反。
+- **修复（三段式重建）**：① 持写锁读行 + 算 manifest hash + 判 replay/空集（认知侧含公开 payload 文本渲染）→ ② 释放写锁做 `embed_batch` → ③ 重新取写锁做 manifest 乐观 CAS，未变才写向量表、原子激活、旧世代 retire、落审计。CAS 落空返回 `cas_miss=True` / `activated=False` / `audit_id=None` 并记结构化日志，**不写审计行**（两张审计表的 `event_kind` 只有 `generation_activated`，认知侧 `generation_state` 还有 `CHECK IN ('active','empty')`；把未激活记成激活会污染防篡改记录并逼出无谓 DDL 变更），下一 tick 以新清单重建。
+- **修复（召回取锁）**：新增 `_write_lock_before(deadline, *, stage=None)`。向量 lane 的等锁额外预留 `COGNITIVE_VECTOR_LOCK_RESERVE_S = 0.200`（DB 侧实测全流程 24–31 ms，6–8 倍余量），超时**退化**为 `cognitive_vector_deadline` 并把余下预算留给词面 lane 与终态写入；`_admit` 保持硬失败但抛 `TypedRecallDeadlineExceeded(stage='admit_write_lock')`（`TimeoutError` 子类、`str()` 仍是 `DEADLINE_EXCEEDED`，Host 映射逐字不变）。
+- **不改**：幂等/replay 判据、generation id 形状、空集分支、`COGNITIVE_TEXT_FORMAT_VERSION` 并入 manifest、0.6.24 的 `failed` 行与 `CognitiveVectorGenerationFailed`、资格门与 lane 计分。无 DDL 变化（7.4 checksum 不变）、根导出零增减；快照 `public-api-0.6.27.json`；新增 7 项回归测试（含 0.6.26 上以 `DEADLINE_EXCEEDED` 失败的活锁复现）。
+- **Host 侧仍需配套**：`WeMMEmbedder` 缺 `embed_batch` 覆写、短时域 chunk 文本无长度上限、`PrimaryShortIndexWorker` 无退避/断路、`deadline_ms=1000` 偏紧、一次 recall 超时不应杀死整个 Run。
+
 ## 2026-09-08 0.6.26 Prospective 触发条件的自然语言渲染（词面 + 向量同源）
 
 最后更新：2026-09-08。基于 0.6.25，仅本地候选、未发布、未构建制品、Host 未 pin。语料 run-01f C04 实证。

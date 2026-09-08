@@ -100,3 +100,62 @@
 - 不在 mutation 内联嵌入；不在召回时补写向量（召回必须只读）。
 - 不改 `typed_recall_query_terms` 与四条既有 lane 的计分；不改资格门顺序。
 - 不处理 F03 循环本身（用户已延期），但预期 A 落地后 C01-06/17 类循环自然消失，建议 F03 复评时以 A 后的 trace 为基线。
+
+---
+
+## 5. 2026-09-08 追加：0.6.27 把 §4.1/§4.2/§4.4 的三条不变量真正实现
+
+本备忘 §4.1 写下「**不在 mutation 写锁内嵌入**」、§4.2 写下「查询向量在**取 `_write_lock` 之前**算」、
+§4.4 写下「冷态**只退化不失败**」。0.6.23–0.6.26 的实现三条全部反了，HM-TO-A6 turn 22 把代价暴露出来。
+
+### 5.1 实证与根因（Host `plans/2026-09-08-hm-to-a6/DIAG-RECALL-TIMEOUT.md`）
+
+- `rebuild_short_horizon_generation`（`sqlite_v5.py` 0.6.26 的 :2382 取锁 / :2428 锁内 `embed_batch`）与
+  `rebuild_cognitive_vector_generation`（:2553 / :2634）**在写锁内做嵌入**。
+- 真实 WeMM 热态 200 ms/条、未覆写 `embed_batch`（基类是串行 N 次模型调用），6 条 chunk 合计 **45.7 s**；
+  Host `PrimaryShortIndexWorker.operation_timeout = 5.0 s` → 世代永不激活 → manifest 永不匹配 →
+  下一 tick 全额重试：**活锁**，每 ~7.7 s 出现一段 ≥5 s 的写锁占用（占空比约 65%）。
+- 前台 typed recall 的 `_admit_typed_recall_request`（:5053）与 `_prepare_cognitive_vector_lane`（:3015）
+  取同一把写锁且**都没有 deadline**：落进那 65% 里就必然在拿到锁的第一行抛 `DEADLINE_EXCEEDED`。
+  现场 5 条终态全是 `terminal_kind='deadline_exceeded'`、`candidate_query_started=0`——
+  向量/词面扫描、排序、预算裁剪一步都没执行。离线重放证明 DB 侧只要 24–31 ms（预算的 2–3%）。
+
+### 5.2 裁决（无需征询：本备忘的不变量已经给出答案）
+
+1. **世代重建三段式**（短时域与认知同型，§4.1 的直译）：
+   ① 持写锁读行 + 算 manifest hash + 判 replay/空集（认知侧连公开 payload 文本渲染也在锁内完成，
+   保证被嵌入的文本与 manifest 同一快照）→ ② **释放写锁**做 `embed_batch` →
+   ③ 重新取写锁做 **manifest 乐观 CAS**：未变才写向量表、原子激活、旧世代 retire、落审计。
+   嵌入期间若出现同 lineage 同 manifest 的 active 世代，按 replay 返回，不重复激活。
+2. **CAS 落空 = 本次不激活，不是错误**（§4.1「CAS 失败必须是『本次不激活』而不是错误」）：
+   两个 BuildResult 追加 `cas_miss: bool = False`，`audit_id` 放宽为 `str | None`；落空时返回
+   `(None, len(rows), False, False, None, True)` 并记 `*.generation.cas_miss` 结构化日志。
+   **不写审计行**——两张审计表的 `event_kind` 只有 `generation_activated`，
+   `cognitive_vector_audit.generation_state` 更是 `CHECK IN ('active','empty')`；
+   把「没有激活」记成一次激活会污染防篡改的激活记录，且会为一条运维信息逼出 7.5 DDL。
+   世代表同样不留 `building` 残行（整个写入在一个事务里，CAS 在事务之前判定）。
+3. **召回取锁受同一 deadline 约束**（§4.2 的补全）：新增
+   `_write_lock_before(deadline, *, stage=None)` = `asyncio.wait_for(lock.acquire(), remaining)`。
+   - **向量 lane 等锁超时 → 退化**（§4.4「冷态只退化不失败」）：复用既有码 `cognitive_vector_deadline`，
+     并且等锁只花到 `deadline - COGNITIVE_VECTOR_LOCK_RESERVE_S`（**0.200 s**，实测 DB 侧全流程
+     24–31 ms 的 6–8 倍余量），把剩下的预算留给词面 lane 与终态写入——否则「退化」名存实亡：
+     等锁把预算耗光之后词面 lane 也没时间跑。查询嵌入沿用 `COGNITIVE_VECTOR_AUDIT_RESERVE_S = 0.050`。
+   - **admit 等锁超时 → 硬失败**（它必须先落幂等记录，等不到锁就没有任何可重放的记录），
+     但抛新的 `TypedRecallDeadlineExceeded(stage='admit_write_lock')`：`TimeoutError` 子类、
+     `str()` 仍是 `DEADLINE_EXCEEDED`，Host 到 `context_route_recall_timeout` 的映射逐字不变，
+     只是多了阶段名与 pre-candidate rejection receipt，便于区分「卡在 admit 等锁」与其他超时。
+     该异常留在 `core.errors`，**不进根导出**（照 0.6.24 `CognitiveVectorGenerationFailed` 先例，
+     0.6.19 公共面冻结）。
+   - `collected_epoch` 读取与 `_collect_typed_recall_short_candidates` 的取锁一并纳入同一预算；
+     写终态的两处取锁**不设上限**——终态必须落库。
+4. **不改**：schema（7.4 checksum 不变）、幂等与 replay 判据、generation id 形状、空集分支、
+   `COGNITIVE_TEXT_FORMAT_VERSION` 并入 manifest、0.6.24 的 `state='failed'` + `last_error_code` 行
+   （嵌入在锁外失败时改为重新取锁后落库）、资格门顺序与五条 lane 计分。
+
+### 5.3 边界：本次修不了的部分仍在 Host
+
+SDK 侧修复只保证「慢嵌入不再霸占写锁、召回不再被写锁拖死」。**世代仍然激活不了**——
+7 条 chunk × 300 ms 依旧超过 5 s 的 tick 超时。要让世代真正跟上，Host 必须同时：
+`WeMMEmbedder` 覆写 `embed_batch`（一次 `model.encode(texts)`）、给 chunk `public_text` 设长度上限、
+`PrimaryShortIndexWorker` 超时后指数退避与断路、`deadline_ms` 1000 → 2000、
+`context_route_recall_timeout` 不再让 Run 因一次记忆抖动而死。
