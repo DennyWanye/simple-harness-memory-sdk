@@ -16,7 +16,7 @@ import threading
 import time
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote
@@ -57,10 +57,14 @@ from simple_harness_memory.features.cognitive_vector import (
     COGNITIVE_VECTOR_DEADLINE,
     COGNITIVE_VECTOR_MIN_SCORE,
     COGNITIVE_VECTOR_NO_GENERATION,
+    COGNITIVE_VECTOR_RELATIVE_FLOOR,
+    COGNITIVE_VECTOR_RELATIVE_RATIO,
     COGNITIVE_VECTOR_STALE,
     COGNITIVE_VECTOR_UNAVAILABLE,
     CognitiveVectorGenerationBuildResult,
     cognitive_text_supplement,
+    cognitive_vector_admits,
+    cognitive_vector_effective_min_score,
     cognitive_vector_ref,
     cognitive_vector_text,
 )
@@ -4123,6 +4127,8 @@ class SQLiteHumanMemoryBackend:
             raise TypedRecallDeadlineExceeded("history_source_context") from None
         vector_lane: _CognitiveVectorLane | None = None
         cognitive_vector_generation_id_hash: str | None = None
+        # 0.6.34：阈值不再是单一冻结常量，本次每个请求类型实际生效的下限必须可审计。
+        cognitive_vector_admission: dict[str, float] = {}
         if vector_requested and self._short_horizon_embedder is not None:
             try:
                 vector_lane, vector_degradation = await self._prepare_cognitive_vector_lane(
@@ -4160,6 +4166,7 @@ class SQLiteHumanMemoryBackend:
                     now=effective_now,
                     deadline_monotonic=deadline_monotonic,
                     vector_lane=vector_lane,
+                    vector_admission=cognitive_vector_admission,
                 ),
                 timeout=max(0.0, deadline_monotonic - time.monotonic()),
             )
@@ -4254,6 +4261,7 @@ class SQLiteHumanMemoryBackend:
                         now=effective_now,
                         deadline_monotonic=deadline_monotonic,
                         cognitive_vector_generation_id_hash=cognitive_vector_generation_id_hash,
+                        cognitive_vector_admission=cognitive_vector_admission,
                     )
                 return execution
 
@@ -4330,6 +4338,7 @@ class SQLiteHumanMemoryBackend:
                 now=effective_now,
                 deadline_monotonic=deadline_monotonic,
                 cognitive_vector_generation_id_hash=cognitive_vector_generation_id_hash,
+                cognitive_vector_admission=cognitive_vector_admission,
             )
         return execution
 
@@ -5314,17 +5323,15 @@ class SQLiteHumanMemoryBackend:
                         break
                     # Every eligibility gate above has passed: only now may the
                     # vector lane compare this (memory_id, revision).
-                    vector_score = (
+                    # 0.6.34：准入判定推迟到两名成员都过完资格门之后——相对参照是
+                    # 「同一记忆类型内已过资格门的最高余弦」（含同类型普通候选）。
+                    raw_member_score = (
                         None
                         if vector_lane is None
                         else vector_lane.score(str(row["memory_id"]), int(row["revision"]))
                     )
+                    vector_score = None if raw_member_score is None else float(raw_member_score)
                     lane_names: list[str] = []
-                    if vector_score is not None and vector_score >= COGNITIVE_VECTOR_MIN_SCORE:
-                        lane_names.append("vector")
-                        group_lane_scores["vector"] = max(
-                            group_lane_scores.get("vector", 0.0), float(vector_score)
-                        )
                     if entity_match:
                         lane_names.append("entity")
                         group_lane_scores["entity"] = 1.0
@@ -5361,6 +5368,25 @@ class SQLiteHumanMemoryBackend:
                     )
                 if not complete or len(staged) != 2:
                     continue
+                # 0.6.34：成员的 ``vector`` lane 在此统一判定。相对参照 = 两名成员与同类型
+                # 普通候选的最高余弦；``lane_names`` 里 vector 仍排在 entity 之前（次序不变）。
+                group_ordinary_best = best_ordinary_vector(memory_type)
+                group_type_best: float | None = None
+                for item in staged:
+                    if item[7] is not None and (
+                        group_type_best is None or item[7] > group_type_best
+                    ):
+                        group_type_best = float(item[7])
+                if group_ordinary_best is not None and (
+                    group_type_best is None or group_ordinary_best > group_type_best
+                ):
+                    group_type_best = float(group_ordinary_best)
+                for item in staged:
+                    if cognitive_vector_admits(item[7], group_type_best):
+                        item[6].insert(0, "vector")
+                        group_lane_scores["vector"] = max(
+                            group_lane_scores.get("vector", 0.0), float(cast(float, item[7]))
+                        )
                 # 0.6.31 槽位级准入（两名成员都已通过全部资格门）。
                 slot_text = contested_slot_text(
                     memory_type, staged[0][1], staged[1][1]
@@ -5374,12 +5400,12 @@ class SQLiteHumanMemoryBackend:
                     (
                         float(item[7])
                         for item in staged
-                        if item[7] is not None and item[7] >= COGNITIVE_VECTOR_MIN_SCORE
+                        if item[7] is not None and "vector" in item[6]
                     ),
                     default=None,
                 )
                 if member_vector_best is not None:
-                    ordinary_best = best_ordinary_vector(memory_type)
+                    ordinary_best = group_ordinary_best
                     vector_admits = ordinary_best is None or member_vector_best >= ordinary_best
                 if not (lexical_admits or vector_admits):
                     continue
@@ -5656,7 +5682,22 @@ class SQLiteHumanMemoryBackend:
         now: float,
         deadline_monotonic: float,
         vector_lane: _CognitiveVectorLane | None = None,
+        vector_admission: dict[str, float] | None = None,
     ) -> tuple[RecallCandidate, ...]:
+        """Collect ordinary cognitive candidates that passed every eligibility gate.
+
+        0.6.34（DECISION-2026-09-09-vector-score-margin.md）：``vector`` lane 的准入
+        由「单一冻结阈值」改为「同一记忆类型内的相对判据 + 绝对护栏」——
+        ``cognitive_vector_effective_min_score``。相对参照必须是**该类型内已过全部资格门**
+        的最高余弦，所以余弦要先全量算完再统一判定：本方法因此分两趟，
+        第一趟只过资格门并暂存四条既有 lane 的原始分与余弦，第二趟才决定 ``vector`` 是否成立。
+        资格门顺序、四条既有 lane 的计分、lane_ranks 的排列次序一字不变；
+        ``effective`` 恒 ≤ ``COGNITIVE_VECTOR_MIN_SCORE``，故 0.6.33 已准入者判定不变。
+
+        ``vector_admission`` 若给出，则按 ``memory_type -> effective_min_score`` 回填本次
+        实际生效的下限，由调用方写进 typed recall 审计（阈值动态化后必须可审计）。
+        """
+
         from simple_harness_memory.core.recall import RecallCandidate
         from simple_harness_memory.core.suppression import (
             OrdinaryMemoryPurpose,
@@ -5667,6 +5708,10 @@ class SQLiteHumanMemoryBackend:
         requested_types = tuple(item.value for item in plan.requested_memory_types)
         candidates: list[RecallCandidate] = []
         lane_scores: dict[tuple[tuple[object, ...], str], float] = {}
+        # 第一趟的暂存：(候选, 非 vector lane 的有序分值, 余弦)。余弦为 None 表示无向量。
+        staged_ordinary: list[
+            tuple[RecallCandidate, list[tuple[str, float]], float | None]
+        ] = []
         async with self._write_lock:
             if time.monotonic() >= deadline_monotonic:
                 raise TimeoutError
@@ -5767,12 +5812,12 @@ class SQLiteHumanMemoryBackend:
                     and lexical_score
                 ):
                     lane_values.append(("full_text", float(lexical_score)))
+                vector_score: float | None = None
                 if vector_lane is not None:
                     # Only a candidate that passed every gate above is compared;
                     # suppressed/forgotten memories never reach the vector lane.
-                    vector_score = vector_lane.score(str(row["memory_id"]), int(row["revision"]))
-                    if vector_score is not None and vector_score >= COGNITIVE_VECTOR_MIN_SCORE:
-                        lane_values.append(("vector", float(vector_score)))
+                    raw_score = vector_lane.score(str(row["memory_id"]), int(row["revision"]))
+                    vector_score = None if raw_score is None else float(raw_score)
                 entity_score = int(entity_match)
                 if entity_score:
                     lane_values.append(("entity", float(entity_score)))
@@ -5786,7 +5831,7 @@ class SQLiteHumanMemoryBackend:
                     lane_values.append(
                         ("temporal", 1.0 / (1.0 + abs(source_time - anchor)))
                     )
-                if not lane_values:
+                if not lane_values and vector_score is None:
                     continue
                 candidate = RecallCandidate(
                         source_kind="cognitive_memory",
@@ -5806,14 +5851,36 @@ class SQLiteHumanMemoryBackend:
                             if row["valid_to"] is None
                             else min(context.expires_at, float(row["valid_to"]))
                         ),
-                        lane_ranks=tuple((name, 1) for name, _score in lane_values),
+                        lane_ranks=(),
+                )
+                staged_ordinary.append((candidate, lane_values, vector_score))
+            # 第二趟：``vector`` 的生效下限按记忆类型取「该类型内已过资格门的最高余弦」。
+            type_best: dict[str, float] = {}
+            for candidate, _lanes, score in staged_ordinary:
+                if score is None:
+                    continue
+                candidate_type = str(candidate.memory_type)
+                if score > type_best.get(candidate_type, float("-inf")):
+                    type_best[candidate_type] = score
+            if vector_admission is not None and vector_lane is not None:
+                for requested_type in requested_types:
+                    vector_admission[requested_type] = cognitive_vector_effective_min_score(
+                        type_best.get(requested_type)
+                    )
+            for candidate, lanes, score in staged_ordinary:
+                candidate_type = str(candidate.memory_type)
+                if cognitive_vector_admits(score, type_best.get(candidate_type)):
+                    # lane_ranks 的排列次序与 0.6.33 逐字一致：full_text 之后、entity 之前。
+                    insert_at = 1 if lanes and lanes[0][0] == "full_text" else 0
+                    lanes.insert(insert_at, ("vector", float(cast(float, score))))
+                if not lanes:
+                    continue
+                candidate = replace(
+                    candidate, lane_ranks=tuple((name, 1) for name, _score in lanes)
                 )
                 candidates.append(candidate)
                 lane_scores.update(
-                    {
-                        (candidate.exact_key, lane): score
-                        for lane, score in lane_values
-                    }
+                    {(candidate.exact_key, lane): lane_score for lane, lane_score in lanes}
                 )
         # Assign deterministic per-lane ranks after every eligibility gate.
         ranked_lanes: dict[str, dict[tuple[object, ...], int]] = {}
@@ -6463,6 +6530,7 @@ class SQLiteHumanMemoryBackend:
         now: float,
         deadline_monotonic: float,
         cognitive_vector_generation_id_hash: str | None = None,
+        cognitive_vector_admission: Mapping[str, float] | None = None,
     ) -> None:
         assert self._db is not None
         await begin_transaction(self._db)
@@ -6582,9 +6650,22 @@ class SQLiteHumanMemoryBackend:
             }
             if cognitive_vector_generation_id_hash is not None:
                 # Mirrors the short-horizon ``vector_lane/used_generation_id_hash`` audit.
-                terminal_json["cognitive_vector"] = {
+                cognitive_vector_json: dict[str, JsonValue] = {
                     "used_generation_id_hash": cognitive_vector_generation_id_hash,
                 }
+                if cognitive_vector_admission:
+                    # 0.6.34：阈值动态化后，把「本次每个请求类型实际生效的余弦下限」与
+                    # 两个冻结参数一起落审计，回执才解释得清一条记忆为什么进/不进 vector lane。
+                    cognitive_vector_json["admission"] = {
+                        "min_score": COGNITIVE_VECTOR_MIN_SCORE,
+                        "relative_floor": COGNITIVE_VECTOR_RELATIVE_FLOOR,
+                        "relative_ratio": COGNITIVE_VECTOR_RELATIVE_RATIO,
+                        "effective_min_score": [
+                            {"memory_type": memory_type, "value": value}
+                            for memory_type, value in sorted(cognitive_vector_admission.items())
+                        ],
+                    }
+                terminal_json["cognitive_vector"] = cognitive_vector_json
             terminal_hash = hashlib.sha256(canonical_json(terminal_json).encode()).hexdigest()
             await self._db.execute(
                 "INSERT INTO typed_recall_terminals(request_id,attempt_id,terminal_kind,"
