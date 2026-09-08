@@ -19,6 +19,16 @@
 - **契约面**：无 DDL 变化（7.4 checksum 不变）、根导出零增减；快照 `public-api-0.6.30.json`；新增 15 项测试（8 单元 + 7 集成，含 0.6.29 字面值对照与遗留形状升级路径）；全量失败集合与 main 基线逐条相同。文档化测试命令 `uv run --frozen --group dev pytest -q` 修复（`uv.lock` 的 `simple-harness-sdk` 目录改回 `../simple-harness-sdk`，依赖版本零变化）。
 - **Host 侧**：现有 `projected_chunk_count == 1` 断言因夹具文本很短仍成立，但生产逻辑不得假设一组一条；`WeMMEmbedder.embed_batch` 分组阈值可按段长重标定；维护实测常量在 0.6.30 后只对新 chunk 计成本。SDK 后续：世代构建部分进度（8 段抬到 16 的前提）、认知向量世代同样沿用向量。
 
+## 2026-09-08 0.6.31 一个未决 conflict group 不再短路整条 typed-recall 车道
+
+最后更新：2026-09-08。基于 0.6.29（0.6.30 由另一分支并行，版本序合并时统一），仅本地候选、未发布、未构建制品、Host 未 pin。缺陷来源 HM-TO-A6 run4 事件 O（Host 备忘 `simple_harness/plans/2026-09-08-hm-to-a6/DECISION-CONTESTED-DISCLOSURE.md` §7 F-O-3 / F-O-1）。
+
+- **缺陷**：一个 contested head 的 group 成员靠共享的 `subject_entity`/`qualifiers` 被任何同主题查询词面命中，而 `execute_typed_recall` 只要 confirmation 非空就整次短路成 `needs_user_confirmation` + `items=()`，与争议槽位无关的记忆全部召不回（run4 重放：「校对结果存到哪里」0 item）。
+- **裁决**（`plans/2026-08-29-human-memory-digital-twin/DECISION-2026-09-08-conflict-short-circuit.md`）：S3 §5.3 只约束 contested 候选的载体，契约不要求整次扣住；但冻结的 Harness `RecallDecisionV4` 一次只能带 items 或 groups 之一。因此 group 的准入收窄为**槽位级相关**：词面只看 `contested_slot_text`（两名成员取值不同的字段 + semantic `predicate`）；向量要求争议记忆是同类型里离查询最近的匹配；entity/task_scope/temporal 只过滤与排序。准入后的原子 carrier、预算、写锁内重校验、终态、幂等与 0.6.27–0.6.29 的锁/epoch 判据一字不动。
+- **F-O-1**：`history_visibility._recall` 接受 confirmation 成员的 `HistoryRecallBinding`（按 `result_member_hash` 核对，整组重校验，一侧不可见即整组 stale）。
+- **不改**：无 DDL 变化（7.4 checksum 不变）、根导出零增减、Harness v4 wire 形状不变；无冲突库五类 hash 与 0.6.29 逐字节相同（钉死字面值）。快照 `public-api-0.6.31.json`；新增 6 项回归测试。
+- **Host 侧**：`project_contested_confirmation` 不需要改形状；空 fragments + 无 conflict_notice 不再意味着"库里没有争议"，只说明本轮查询与争议槽位无关。
+
 ## 2026-09-08 0.6.29 用途围栏：epoch 前进但被绑定来源未变时签发收据
 
 最后更新：2026-09-08。基于 0.6.28，仅本地候选、未发布、未构建制品、Host 未 pin。缺陷来源 HM-TO-A6 第 4 次尝试 turn 15（Host 备忘 `simple_harness/plans/2026-09-08-hm-to-a6/DECISION-RECALL-AUTHORITY-STALE.md` §7(2)）。

@@ -60,6 +60,7 @@ from simple_harness_memory.features.cognitive_vector import (
     cognitive_vector_ref,
     cognitive_vector_text,
 )
+from simple_harness_memory.features.conflict_slot import contested_slot_text
 from simple_harness_memory.features.lexical import typed_recall_query_terms
 from simple_harness_memory.core.recall_context_use import (
     RECALL_CONTEXT_USE_AUTHORITY_EPOCH_ADVANCED,
@@ -4137,6 +4138,31 @@ class SQLiteHumanMemoryBackend:
             raise TimeoutError("DEADLINE_EXCEEDED") from None
 
         try:
+            candidates = await asyncio.wait_for(
+                self._collect_typed_recall_candidates(
+                    principal=principal,
+                    context=context,
+                    plan=plan,
+                    now=effective_now,
+                    deadline_monotonic=deadline_monotonic,
+                    vector_lane=vector_lane,
+                ),
+                timeout=max(0.0, deadline_monotonic - time.monotonic()),
+            )
+        except TimeoutError:
+            await self._persist_typed_recall_timeout(
+                request_id=request_id, attempt_id=attempt_id, now=effective_now
+            )
+            raise TimeoutError("DEADLINE_EXCEEDED") from None
+        if time.monotonic() >= deadline_monotonic:
+            await self._persist_typed_recall_timeout(
+                request_id=request_id, attempt_id=attempt_id, now=effective_now
+            )
+            raise TimeoutError("DEADLINE_EXCEEDED")
+        try:
+            # 0.6.31：普通候选先于 confirmation 收集——group 的向量判据要与同类型的
+            # 普通候选比"谁离查询最近"（见 DECISION-2026-09-08-conflict-short-circuit.md）。
+            # 两段仍在同一 deadline 预算内；普通候选的收集本就是 fall-through 路径必做的。
             confirmations = await asyncio.wait_for(
                 self._collect_typed_recall_confirmation(
                     principal=principal,
@@ -4145,6 +4171,7 @@ class SQLiteHumanMemoryBackend:
                     now=effective_now,
                     deadline_monotonic=deadline_monotonic,
                     vector_lane=vector_lane,
+                    ordinary_candidates=candidates,
                 ),
                 timeout=max(0.0, deadline_monotonic - time.monotonic()),
             )
@@ -4216,28 +4243,6 @@ class SQLiteHumanMemoryBackend:
                     )
                 return execution
 
-        try:
-            candidates = await asyncio.wait_for(
-                self._collect_typed_recall_candidates(
-                    principal=principal,
-                    context=context,
-                    plan=plan,
-                    now=effective_now,
-                    deadline_monotonic=deadline_monotonic,
-                    vector_lane=vector_lane,
-                ),
-                timeout=max(0.0, deadline_monotonic - time.monotonic()),
-            )
-        except TimeoutError:
-            await self._persist_typed_recall_timeout(
-                request_id=request_id, attempt_id=attempt_id, now=effective_now
-            )
-            raise TimeoutError("DEADLINE_EXCEEDED") from None
-        if time.monotonic() >= deadline_monotonic:
-            await self._persist_typed_recall_timeout(
-                request_id=request_id, attempt_id=attempt_id, now=effective_now
-            )
-            raise TimeoutError("DEADLINE_EXCEEDED")
         short_candidates: tuple[RecallCandidate, ...] = ()
         if plan.include_short_horizon:
             try:
@@ -5097,7 +5102,26 @@ class SQLiteHumanMemoryBackend:
         now: float,
         deadline_monotonic: float,
         vector_lane: _CognitiveVectorLane | None = None,
+        ordinary_candidates: tuple[RecallCandidate, ...] = (),
     ) -> tuple[RecallConfirmationCandidate, ...]:
+        """Collect active conflict groups that are relevant to the *contested slot*.
+
+        0.6.31（DECISION-2026-09-08-conflict-short-circuit.md）：冻结的 Harness
+        ``RecallDecisionV4`` 一次只能携带 ``selected_items`` 或 ``confirmation_groups``
+        之一，所以 group 一旦入选就会把同一轮的普通候选整体扣住。契约 S3 §5.3 只要求
+        contested 候选"只能走完整 group confirmation"，从未把 group 排在普通候选之前。
+        因此 group 的准入不再是"任一 lane 命中"，而是**槽位级**相关：
+
+        - 词面：查询词命中 ``contested_slot_text``（两名成员取值不同的公开字段 +
+          semantic 的 ``predicate``），不再看与兄弟记忆共享的 ``subject_entity``/``qualifiers``；
+        - 向量：成员余弦 ≥ 冻结阈值，且**不低于**同类型任一普通候选的向量分
+          （争议记忆是查询在该类型里最近的语义匹配）；
+        - entity / task_scope / temporal 仍是过滤与排序 lane，但不单独准入 group。
+
+        资格门（principal / head / lifecycle / 有效期 / 类型权威 / 血缘 / 抑制 /
+        disclosure / entity / 时间窗）与 §5.2 的整组原子性一字不变。
+        """
+
         from simple_harness_memory.core.recall import (
             RRF_WEIGHTS,
             RecallCandidate,
@@ -5113,6 +5137,30 @@ class SQLiteHumanMemoryBackend:
         found: list[
             tuple[RecallConfirmationCandidate, str, dict[str, float], float]
         ] = []
+        full_text_requested = any(mode.value == "full_text" for mode in plan.retrieval_modes)
+        query_terms = typed_recall_query_terms(plan.query)
+        ordinary_vector_best: dict[str, float | None] = {}
+
+        def best_ordinary_vector(memory_type: str) -> float | None:
+            # 同类型普通候选里已进入 vector lane（≥ 阈值）者的最高余弦；懒计算、每类型一次。
+            if memory_type in ordinary_vector_best:
+                return ordinary_vector_best[memory_type]
+            best: float | None = None
+            if vector_lane is not None:
+                for candidate in ordinary_candidates:
+                    if (
+                        candidate.source_kind != "cognitive_memory"
+                        or candidate.memory_type != memory_type
+                        or candidate.source_revision is None
+                        or "vector" not in dict(candidate.lane_ranks)
+                    ):
+                        continue
+                    score = vector_lane.score(candidate.source_ref, int(candidate.source_revision))
+                    if score is not None and (best is None or score > best):
+                        best = float(score)
+            ordinary_vector_best[memory_type] = best
+            return best
+
         async with self._write_lock:
             if time.monotonic() >= deadline_monotonic:
                 raise TimeoutError
@@ -5143,8 +5191,20 @@ class SQLiteHumanMemoryBackend:
                     member_rows = tuple(await cursor.fetchall())
                 if len(member_rows) != 2 or str(member_rows[0]["memory_type"]) not in requested:
                     continue
-                members: list[RecallCandidate] = []
-                group_has_requested_lane = False
+                memory_type = str(member_rows[0]["memory_type"])
+                # 每名成员先过全部资格门；槽位级准入在两名成员都通过之后才判定。
+                staged: list[
+                    tuple[
+                        aiosqlite.Row,
+                        dict[str, JsonValue],
+                        float,
+                        tuple[str, ...],
+                        str,
+                        tuple[str, ...],
+                        list[str],
+                        float | None,
+                    ]
+                ] = []
                 group_lane_scores: dict[str, float] = {}
                 group_source_time = 0.0
                 complete = True
@@ -5207,14 +5267,6 @@ class SQLiteHumanMemoryBackend:
                     else:
                         time_start = time_end = source_time
                     attrs = tuple(json.loads(str(row["information_attributes_json"])))
-                    # 0.6.26：词面门与向量通道共用同一段确定性渲染（prospective 触发条件）。
-                    supplement = cognitive_text_supplement(str(row["memory_type"]), payload)
-                    payload_text = "\n".join(
-                        part for part in (canonical_json(payload), supplement) if part
-                    ).casefold()
-                    query_terms = typed_recall_query_terms(plan.query)
-                    lexical_score = sum(payload_text.count(term) for term in query_terms)
-                    query_match = lexical_score > 0
                     entity_match = bool(plan.entity_constraints) and (
                         self._cognitive_typed_entity_match(
                             str(row["memory_type"]), payload, plan.entity_constraints
@@ -5255,14 +5307,6 @@ class SQLiteHumanMemoryBackend:
                         group_lane_scores["vector"] = max(
                             group_lane_scores.get("vector", 0.0), float(vector_score)
                         )
-                    if query_match and any(
-                        mode.value == "full_text" for mode in plan.retrieval_modes
-                    ):
-                        lane_names.append("full_text")
-                        group_lane_scores["full_text"] = max(
-                            group_lane_scores.get("full_text", 0.0),
-                            float(lexical_score),
-                        )
                     if entity_match:
                         lane_names.append("entity")
                         group_lane_scores["entity"] = 1.0
@@ -5284,8 +5328,50 @@ class SQLiteHumanMemoryBackend:
                         group_lane_scores["temporal"] = max(
                             group_lane_scores.get("temporal", 0.0), temporal_score
                         )
-                    group_has_requested_lane = group_has_requested_lane or bool(lane_names)
                     group_source_time = max(group_source_time, source_time)
+                    staged.append(
+                        (
+                            row,
+                            payload,
+                            source_time,
+                            scopes,
+                            evidence_hash,
+                            attrs,
+                            lane_names,
+                            vector_score,
+                        )
+                    )
+                if not complete or len(staged) != 2:
+                    continue
+                # 0.6.31 槽位级准入（两名成员都已通过全部资格门）。
+                slot_text = contested_slot_text(
+                    memory_type, staged[0][1], staged[1][1]
+                ).casefold()
+                slot_score = (
+                    sum(slot_text.count(term) for term in query_terms) if slot_text else 0
+                )
+                lexical_admits = full_text_requested and slot_score > 0
+                vector_admits = False
+                member_vector_best = max(
+                    (
+                        float(item[7])
+                        for item in staged
+                        if item[7] is not None and item[7] >= COGNITIVE_VECTOR_MIN_SCORE
+                    ),
+                    default=None,
+                )
+                if member_vector_best is not None:
+                    ordinary_best = best_ordinary_vector(memory_type)
+                    vector_admits = ordinary_best is None or member_vector_best >= ordinary_best
+                if not (lexical_admits or vector_admits):
+                    continue
+                if lexical_admits:
+                    group_lane_scores["full_text"] = float(slot_score)
+                members: list[RecallCandidate] = []
+                for row, payload, source_time, scopes, evidence_hash, attrs, lane_names, _ in staged:
+                    lanes = list(lane_names)
+                    if lexical_admits:
+                        lanes.append("full_text")
                     members.append(
                         RecallCandidate(
                             "cognitive_memory",
@@ -5305,22 +5391,21 @@ class SQLiteHumanMemoryBackend:
                                 if row["valid_to"] is None
                                 else min(context.expires_at, float(row["valid_to"]))
                             ),
-                            tuple((lane, 1) for lane in lane_names),
+                            tuple((lane, 1) for lane in lanes),
                         )
                     )
-                if complete and len(members) == 2 and group_has_requested_lane:
-                    found.append(
-                        (
-                            RecallConfirmationCandidate(
+                found.append(
+                    (
+                        RecallConfirmationCandidate(
                             str(group["group_id"]),
                             str(group["group_hash"]),
                             tuple(members),
-                            ),
-                            str(member_rows[0]["memory_type"]),
-                            group_lane_scores,
-                            group_source_time,
-                        )
+                        ),
+                        memory_type,
+                        group_lane_scores,
+                        group_source_time,
                     )
+                )
         lane_cap_items = min(128, max(32, 8 * plan.budget.max_items))
         lane_cap_groups = max(1, lane_cap_items // 2)
         lane_ranks: dict[str, dict[str, int]] = {}
