@@ -12,7 +12,12 @@ from simple_harness.contracts import JsonValue, canonical_json
 from simple_harness_memory.core.errors import MemoryCorruptionError, MemoryLimitError
 from simple_harness_memory.core.history import HistoryShortHorizonBinding
 from simple_harness_memory.core.identity import MemoryPrincipal
-from simple_harness_memory.core.short_horizon import SHORT_HORIZON_RETENTION_SECONDS
+from simple_harness_memory.core.short_horizon import (
+    SHORT_HORIZON_RETENTION_SECONDS,
+    ShortHorizonIndexError,
+    resolve_short_horizon_projection_row,
+    short_horizon_segment_payload_fields,
+)
 from simple_harness_memory.core.suppression import SuppressionCandidate
 
 
@@ -165,9 +170,19 @@ async def check_selected_chunk(
         or row["stored_hash"] != row["linked_hash"]
         or row["subject"] != chunk["subject"]
         or row["primary_conversation_id"] != chunk["primary_conversation_id"]
-        or row["causal_group_id"] != chunk["causal_group_id"]
         for row in rows
     ):
+        return stale
+    # 0.6.30：分段 chunk 的 causal_group_id 列是投影键 ``id\x1fk/K``；按键重推该段内容，
+    # 0.6.29 遗留的整组单行在下次重建前仍可见（与 _validate_short_horizon_integrity 同规则）。
+    try:
+        derived = resolve_short_horizon_projection_row(
+            str(chunk["causal_group_id"]),
+            [(str(row["role"]), str(row["public_text"])) for row in rows],
+        )
+    except ShortHorizonIndexError:
+        return stale
+    if any(row["causal_group_id"] != derived.causal_group_id for row in rows):
         return stale
     if not backend._short_horizon_group_is_complete(rows):
         return stale
@@ -183,7 +198,7 @@ async def check_selected_chunk(
             return denied
     # Rebind the derived chunk to its complete canonical group. This also detects
     # losing a dependency while retaining otherwise valid text/hash columns.
-    content = "\n".join(f"{row['role']}: {row['public_text']}" for row in rows)
+    content = derived.content
     refs = sorted({str(row["classification_authority_ref"]) for row in rows})
     attrs = sorted({x for row in rows for x in json.loads(str(row["information_attributes_json"]))})
     rank = {"public": 0, "personal": 1, "sensitive": 2, "restricted": 3}
@@ -192,12 +207,13 @@ async def check_selected_chunk(
     payload: dict[str, JsonValue] = dict(
         subject=str(chunk["subject"]),
         primary_conversation_id=str(chunk["primary_conversation_id"]),
-        causal_group_id=str(chunk["causal_group_id"]),
+        causal_group_id=derived.causal_group_id,
         registration_hashes=[str(row["registration_hash"]) for row in rows],
         content_hash=_sha(content),
         effective_privacy_class=privacy,
         information_attributes=attrs,
         classification_authority_refs=cast(JsonValue, refs),
+        **short_horizon_segment_payload_fields(derived.segment_ordinal, derived.segment_count),
     )
     if (
         "short:" + _sha(canonical_json(payload)) != chunk_ref

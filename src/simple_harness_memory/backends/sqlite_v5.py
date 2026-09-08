@@ -1944,6 +1944,13 @@ class SQLiteHumanMemoryBackend:
         admission = registration.admission_receipt
         metadata_receipt = registration.metadata_receipt
         registered_at = _timestamp(self._now())
+        from simple_harness_memory.core.short_horizon import (
+            SHORT_HORIZON_PROJECTION_KEY_SEPARATOR,
+        )
+
+        if SHORT_HORIZON_PROJECTION_KEY_SEPARATOR in metadata.causal_group_id:
+            # 0.6.30：U+001F 是分段 chunk 投影键的保留分隔符（短时域契约 §4-补 2026-09-08）。
+            raise MemoryValidationError("conversation_registration_causal_group_id_reserved")
         async with self._write_lock:
             await self._db.execute("BEGIN IMMEDIATE")
             committed = False
@@ -2070,6 +2077,9 @@ class SQLiteHumanMemoryBackend:
             RECENT_CAUSAL_GROUP_LIMIT,
             SHORT_HORIZON_RETENTION_SECONDS,
             ShortHorizonProjectionBuildResult,
+            short_horizon_projection_key,
+            short_horizon_segment_payload_fields,
+            split_short_horizon_content,
         )
         from simple_harness_memory.core.suppression import (
             OrdinaryMemoryPurpose,
@@ -2141,6 +2151,8 @@ class SQLiteHumanMemoryBackend:
                     for _, group_id in sorted(values, reverse=True)[:RECENT_CAUSAL_GROUP_LIMIT]
                 )
             projection: list[dict[str, object]] = []
+            split_group_count = 0
+            truncated_group_count = 0
             privacy_rank = {"public": 0, "personal": 1, "sensitive": 2, "restricted": 3}
             for key, items in complete_groups.items():
                 if key in recent:
@@ -2170,8 +2182,15 @@ class SQLiteHumanMemoryBackend:
                         break
                 if suppressed:
                     continue
-                content = "\n".join(f"{item['role']}: {item['public_text']}" for item in items)
-                content_hash = hashlib.sha256(content.encode()).hexdigest()
+                # 0.6.30：一个因果组按 SHORT_HORIZON_CHUNK_MAX_CHARS 确定性切段；未切段的组
+                # 的 payload/chunk_id 与 0.6.29 逐字相同（segment 字段只在 K>1 时进入 payload）。
+                split = split_short_horizon_content(
+                    [(str(item["role"]), str(item["public_text"])) for item in items]
+                )
+                if split.segment_count > 1:
+                    split_group_count += 1
+                if split.truncated:
+                    truncated_group_count += 1
                 aggregate_privacy = max(
                     (str(item["effective_privacy_class"]) for item in items),
                     key=privacy_rank.__getitem__,
@@ -2186,32 +2205,44 @@ class SQLiteHumanMemoryBackend:
                 classification_refs = sorted(
                     {str(item["classification_authority_ref"]) for item in items}
                 )
-                chunk_payload = {
-                    "subject": principal.actor_id,
-                    "primary_conversation_id": key[1],
-                    "causal_group_id": key[2],
-                    "registration_hashes": [str(item["registration_hash"]) for item in items],
-                    "content_hash": content_hash,
-                    "effective_privacy_class": aggregate_privacy,
-                    "information_attributes": attributes,
-                    "classification_authority_refs": classification_refs,
-                }
-                projection.append(
-                    {
-                        "chunk_id": "short:"
-                        + hashlib.sha256(
-                            canonical_json(cast(JsonValue, chunk_payload)).encode()
-                        ).hexdigest(),
-                        "items": items,
-                        "content": content,
+                for segment_ordinal, content in enumerate(split.segments, start=1):
+                    content_hash = hashlib.sha256(content.encode()).hexdigest()
+                    chunk_payload = {
+                        "subject": principal.actor_id,
+                        "primary_conversation_id": key[1],
+                        "causal_group_id": key[2],
+                        "registration_hashes": [
+                            str(item["registration_hash"]) for item in items
+                        ],
                         "content_hash": content_hash,
-                        "occurred_at": occurred_at,
-                        "expires_at": expires_at,
-                        "privacy": PrivacyClass(aggregate_privacy).value,
-                        "attributes": [InformationAttribute(value).value for value in attributes],
-                        "classification_refs": classification_refs,
+                        "effective_privacy_class": aggregate_privacy,
+                        "information_attributes": attributes,
+                        "classification_authority_refs": classification_refs,
+                        **short_horizon_segment_payload_fields(
+                            segment_ordinal, split.segment_count
+                        ),
                     }
-                )
+                    projection.append(
+                        {
+                            "chunk_id": "short:"
+                            + hashlib.sha256(
+                                canonical_json(cast(JsonValue, chunk_payload)).encode()
+                            ).hexdigest(),
+                            "projection_key": short_horizon_projection_key(
+                                key[2], segment_ordinal, split.segment_count
+                            ),
+                            "items": items,
+                            "content": content,
+                            "content_hash": content_hash,
+                            "occurred_at": occurred_at,
+                            "expires_at": expires_at,
+                            "privacy": PrivacyClass(aggregate_privacy).value,
+                            "attributes": [
+                                InformationAttribute(value).value for value in attributes
+                            ],
+                            "classification_refs": classification_refs,
+                        }
+                    )
             async with self._db.execute(
                 "SELECT chunk_id,content_hash FROM short_horizon_chunks "
                 "WHERE principal_id=? ORDER BY chunk_id",
@@ -2260,17 +2291,29 @@ class SQLiteHumanMemoryBackend:
                             "chunk_manifest_hash": projection_manifest_hash,
                             "removed_chunk_count": 0,
                             "replayed": True,
+                            "split_group_count": split_group_count,
+                            "truncated_group_count": truncated_group_count,
                         },
                         created_at=effective_now,
                     )
                     await self._db.execute("COMMIT")
                     committed = True
-                    return ShortHorizonProjectionBuildResult(len(projection), 0, audit_id)
-                await self._db.execute(
-                    "DELETE FROM short_horizon_chunks WHERE principal_id=?",
-                    (principal.actor_id,),
-                )
+                    return ShortHorizonProjectionBuildResult(
+                        len(projection), 0, audit_id, split_group_count, truncated_group_count
+                    )
+                # 0.6.30：增量重建——chunk 行按 chunk_id 内容寻址、同 id 必同内容与同派生列，
+                # 只删除目标清单里不再存在的 id、只插入新出现的 id；未变化的 chunk 连同它的
+                # FTS 镜像、血缘行与 active 世代向量原样保留（世代重建据此只嵌入新 chunk）。
+                existing_ids = {chunk_id for chunk_id, _ in existing_projection}
+                desired_ids = {chunk_id for chunk_id, _ in desired_projection}
+                for removed_id in sorted(existing_ids - desired_ids):
+                    await self._db.execute(
+                        "DELETE FROM short_horizon_chunks WHERE principal_id=? AND chunk_id=?",
+                        (principal.actor_id, removed_id),
+                    )
                 for projection_item in projection:
+                    if str(projection_item["chunk_id"]) in existing_ids:
+                        continue
                     projection_items = cast(tuple[aiosqlite.Row, ...], projection_item["items"])
                     first = projection_items[0]
                     await self._db.execute(
@@ -2285,7 +2328,7 @@ class SQLiteHumanMemoryBackend:
                             principal.actor_id,
                             principal.actor_id,
                             first["primary_conversation_id"],
-                            first["causal_group_id"],
+                            projection_item["projection_key"],
                             first["causal_group_sequence"],
                             canonical_json(
                                 cast(JsonValue, [str(row["role"]) for row in projection_items])
@@ -2353,6 +2396,8 @@ class SQLiteHumanMemoryBackend:
                         "chunk_manifest_hash": projection_manifest_hash,
                         "removed_chunk_count": removed_chunk_count,
                         "replayed": False,
+                        "split_group_count": split_group_count,
+                        "truncated_group_count": truncated_group_count,
                     },
                     created_at=effective_now,
                 )
@@ -2361,6 +2406,8 @@ class SQLiteHumanMemoryBackend:
                     # 「Short-Horizon source 失效」，才推进召回权威 epoch。
                     # 纯新增（只多出 chunk、没有任何既有 chunk 消失）不会让任何
                     # 已绑定的召回结果失去资格，因此不推进 epoch。
+                    # 0.6.30：把 0.6.29 遗留的单条超长 chunk 切成多段也走这里——旧
+                    # chunk_id 真的消失，绑定它的结果真的失效，推进一次是正确的。
                     await self._advance_recall_authority_unlocked(
                         principal.actor_id,
                         event_kind="short_horizon_projection_changed",
@@ -2372,7 +2419,11 @@ class SQLiteHumanMemoryBackend:
                 committed = True
                 self._short_horizon_cache = None
                 return ShortHorizonProjectionBuildResult(
-                    len(projection), removed_chunk_count, audit_id
+                    len(projection),
+                    removed_chunk_count,
+                    audit_id,
+                    split_group_count,
+                    truncated_group_count,
                 )
             finally:
                 if not committed:
@@ -2400,7 +2451,7 @@ class SQLiteHumanMemoryBackend:
         effective_now = _timestamp(self._now() if now is None else now)
         embedder = self._short_horizon_embedder
         lineage = embedder.lineage
-        # ① 持锁读清单、判 replay / 空集。
+        # ① 持锁读清单、判 replay / 空集；同时读出当前 active 世代里同 lineage 的向量。
         async with self._write_lock:
             rows = await self._short_horizon_chunk_rows_unlocked()
             manifest_hash = self._short_horizon_manifest_hash(rows)
@@ -2425,14 +2476,31 @@ class SQLiteHumanMemoryBackend:
                     created_at=effective_now,
                 )
                 return ShortHorizonGenerationBuildResult(None, 0, False, False, audit_id)
-            texts = [str(row["public_text"]) for row in rows]
+            reusable = await self._reusable_short_horizon_vectors_unlocked(lineage)
+            pending = [row for row in rows if str(row["chunk_id"]) not in reusable]
+            texts = [str(row["public_text"]) for row in pending]
         # ② 无锁嵌入：整批模型调用与写锁完全解耦，慢嵌入不再霸占前台召回要用的同一把锁。
-        vectors = await embedder.embed_batch(texts)
-        embedder.validate_vectors(vectors, expected_count=len(rows))
-        encoded_vectors = tuple(encode_vector(vector) for vector in vectors)
+        # 0.6.30：chunk_id 是内容寻址的，同 lineage 下同 chunk_id 的向量是同一个纯函数值，
+        # 直接沿用 active 世代已有的向量字节；只嵌入清单里新出现的 chunk。
+        if texts:
+            vectors = await embedder.embed_batch(texts)
+            embedder.validate_vectors(vectors, expected_count=len(pending))
+        else:
+            vectors = []
+        fresh = {
+            str(row["chunk_id"]): encode_vector(vector)
+            for row, vector in zip(pending, vectors, strict=True)
+        }
+        encoded_vectors = tuple(
+            fresh[str(row["chunk_id"])]
+            if str(row["chunk_id"]) in fresh
+            else reusable[str(row["chunk_id"])]
+            for row in rows
+        )
         vector_hashes = tuple(
             hashlib.sha256(encoded).hexdigest() for encoded in encoded_vectors
         )
+        reused_vector_count = len(rows) - len(pending)
         # ③ 重新取锁 + 乐观 CAS。
         async with self._write_lock:
             current_rows = await self._short_horizon_chunk_rows_unlocked()
@@ -2529,6 +2597,8 @@ class SQLiteHumanMemoryBackend:
                         "chunk_manifest_hash": manifest_hash,
                         "lineage_id_hash": _opaque_hash(lineage.lineage_id),
                         "replayed": False,
+                        "embedded_count": len(pending),
+                        "reused_vector_count": reused_vector_count,
                     },
                     created_at=effective_now,
                 )
@@ -2557,6 +2627,33 @@ class SQLiteHumanMemoryBackend:
             "ORDER BY chunk_id"
         ) as cursor:
             return tuple(await cursor.fetchall())
+
+    async def _reusable_short_horizon_vectors_unlocked(
+        self, lineage: EmbeddingLineage
+    ) -> dict[str, bytes]:
+        """Active-generation vectors of this lineage keyed by content-addressed chunk_id.
+
+        Only rows whose stored hash/dimension still verify are offered for reuse; anything
+        else is simply re-embedded (fail-closed toward recomputation, never toward trust).
+        """
+
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT v.chunk_id,v.embedding,v.embedding_hash,v.dimension "
+            "FROM short_horizon_vectors v JOIN short_horizon_generations g "
+            "ON g.generation_id=v.generation_id WHERE g.state='active' AND g.lineage_id=?",
+            (lineage.lineage_id,),
+        ) as cursor:
+            rows = tuple(await cursor.fetchall())
+        reusable: dict[str, bytes] = {}
+        for row in rows:
+            encoded = bytes(row["embedding"])
+            if (
+                int(row["dimension"]) == lineage.dimension
+                and hashlib.sha256(encoded).hexdigest() == str(row["embedding_hash"])
+            ):
+                reusable[str(row["chunk_id"])] = encoded
+        return reusable
 
     async def _short_horizon_generation_replay_unlocked(
         self,
@@ -17486,7 +17583,12 @@ class SQLiteHumanMemoryBackend:
             PrivacyClass,
         )
 
-        from simple_harness_memory.core.short_horizon import SHORT_HORIZON_RETENTION_SECONDS
+        from simple_harness_memory.core.short_horizon import (
+            SHORT_HORIZON_RETENTION_SECONDS,
+            ShortHorizonIndexError,
+            resolve_short_horizon_projection_row,
+            short_horizon_segment_payload_fields,
+        )
 
         assert self._db is not None
 
@@ -17671,6 +17773,10 @@ class SQLiteHumanMemoryBackend:
         if fts_rows != expected_fts_rows:
             raise MemoryCorruptionError("short horizon FTS mirror differs")
         privacy_rank = {"public": 0, "personal": 1, "sensitive": 2, "restricted": 3}
+        # 0.6.30：同一因果组的分段 chunk 以 (group, segment_ordinal) 去重；0.6.29 遗留的
+        # 单条超长 chunk（裸键、整组内容）只在它是该组唯一一行时被接受，下次重建会替换它。
+        seen_segments: dict[tuple[str, str, str], set[int]] = {}
+        legacy_groups: set[tuple[str, str, str]] = set()
         for chunk in chunks:
             async with self._db.execute(
                 "SELECT r.*,e.evidence_id AS chunk_evidence_id,"
@@ -17685,10 +17791,17 @@ class SQLiteHumanMemoryBackend:
                 items = tuple(await cursor.fetchall())
             if not items:
                 raise MemoryCorruptionError("short horizon chunk has no evidence")
+            try:
+                derived = resolve_short_horizon_projection_row(
+                    str(chunk["causal_group_id"]),
+                    [(str(row["role"]), str(row["public_text"])) for row in items],
+                )
+            except ShortHorizonIndexError as exc:
+                raise MemoryCorruptionError("short horizon chunk projection differs") from exc
             group_key = (
                 str(chunk["subject"]),
                 str(chunk["primary_conversation_id"]),
-                str(chunk["causal_group_id"]),
+                derived.causal_group_id,
             )
             expected_group = registrations_by_group.get(group_key)
             if (
@@ -17698,7 +17811,15 @@ class SQLiteHumanMemoryBackend:
                 != {str(row["registration_id"]) for row in expected_group}
             ):
                 raise MemoryCorruptionError("short horizon chunk causal group differs")
-            content = "\n".join(f"{row['role']}: {row['public_text']}" for row in items)
+            ordinals = seen_segments.setdefault(group_key, set())
+            if derived.legacy_unsplit:
+                legacy_groups.add(group_key)
+            if derived.segment_ordinal in ordinals or (
+                group_key in legacy_groups and (ordinals or not derived.legacy_unsplit)
+            ):
+                raise MemoryCorruptionError("short horizon chunk projection differs")
+            ordinals.add(derived.segment_ordinal)
+            content = derived.content
             content_hash = hashlib.sha256(content.encode()).hexdigest()
             privacy = max(
                 (str(row["effective_privacy_class"]) for row in items),
@@ -17732,12 +17853,15 @@ class SQLiteHumanMemoryBackend:
             payload = {
                 "subject": str(chunk["subject"]),
                 "primary_conversation_id": str(chunk["primary_conversation_id"]),
-                "causal_group_id": str(chunk["causal_group_id"]),
+                "causal_group_id": derived.causal_group_id,
                 "registration_hashes": [str(row["registration_hash"]) for row in items],
                 "content_hash": content_hash,
                 "effective_privacy_class": privacy,
                 "information_attributes": attributes,
                 "classification_authority_refs": classification_refs,
+                **short_horizon_segment_payload_fields(
+                    derived.segment_ordinal, derived.segment_count
+                ),
             }
             expected_chunk_id = (
                 "short:" + hashlib.sha256(canonical_json(cast(Any, payload)).encode()).hexdigest()

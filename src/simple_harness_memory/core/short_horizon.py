@@ -37,6 +37,16 @@ from simple_harness.runtime import (
 RECENT_CAUSAL_GROUP_LIMIT = 10
 SHORT_HORIZON_RETENTION_SECONDS = 5 * 24 * 60 * 60
 SHORT_HORIZON_HARD_DEADLINE_MS = 2_000
+# 0.6.30（DECISION-2026-09-08-short-horizon-chunk-cap.md）：一条 chunk 的渲染内容
+# （``role: public_text`` 行以 ``\n`` 连接）最多 2 048 个码点；超过的因果组按注册边界 →
+# 段落 → 句子 → 空白 → 硬切（永不切在码点中间）确定性地切成多条内容寻址 chunk，
+# 每因果组最多投影 8 段，之后的尾部不投影（审计记 ``truncated_group_count``）。
+SHORT_HORIZON_CHUNK_MAX_CHARS = 2_048
+SHORT_HORIZON_CHUNK_MAX_SEGMENTS = 8
+# 分段 chunk 在 ``short_horizon_chunks.causal_group_id`` 列存的是投影键
+# ``<causal_group_id>\x1f<k>/<K>``（未分段的组仍存裸 Host id，行形状与 0.6.29 逐字相同）；
+# Host 注册的 ``causal_group_id`` 因此不得包含 U+001F（注册时 fail-closed）。
+SHORT_HORIZON_PROJECTION_KEY_SEPARATOR = "\x1f"
 
 
 class ShortHorizonDegradationCode(StrEnum):
@@ -87,6 +97,192 @@ def _finite_non_negative(value: float, name: str) -> float:
     if value < 0:
         raise ShortHorizonIndexError(f"{name} must be finite and non-negative")
     return float(value)
+
+
+def render_short_horizon_line(role: str, public_text: str) -> str:
+    """The exact projected line for one registration item; frozen since S3 Task 4."""
+
+    return f"{role}: {public_text}"
+
+
+_PARAGRAPH_BOUNDARIES = frozenset("\n")
+_SENTENCE_BOUNDARIES = frozenset("。！？!?")
+
+
+def _preferred_cut(window: str, limit: int) -> int:
+    """Cut position (1..limit) inside ``window`` preferring paragraph, sentence, whitespace.
+
+    A boundary is only taken when the piece before it keeps at least half of the limit,
+    so a stray newline near the start cannot produce a tiny fragment. Positions are
+    Python ``str`` indices, i.e. Unicode code points: a cut can never land inside one.
+    """
+
+    floor = max(1, limit // 2)
+    for is_boundary in (
+        _PARAGRAPH_BOUNDARIES.__contains__,
+        _SENTENCE_BOUNDARIES.__contains__,
+        str.isspace,
+    ):
+        for index in range(limit - 1, floor - 2, -1):
+            if is_boundary(window[index]):
+                return index + 1
+    return limit
+
+
+def _split_text(text: str, limit: int) -> list[str]:
+    """Partition ``text`` into pieces of at most ``limit`` code points (concatenation is exact)."""
+
+    pieces: list[str] = []
+    rest = text
+    while len(rest) > limit:
+        cut = _preferred_cut(rest[:limit], limit)
+        pieces.append(rest[:cut])
+        rest = rest[cut:]
+    pieces.append(rest)
+    return pieces
+
+
+@dataclass(frozen=True, slots=True)
+class ShortHorizonSplit:
+    """Deterministic segmentation of one complete causal group's rendered content."""
+
+    segments: tuple[str, ...]
+    truncated: bool
+
+    @property
+    def segment_count(self) -> int:
+        return len(self.segments)
+
+
+def split_short_horizon_content(
+    lines: Sequence[tuple[str, str]],
+    *,
+    max_chars: int | None = None,
+    max_segments: int | None = None,
+) -> ShortHorizonSplit:
+    """Split ``(role, public_text)`` lines into chunk contents of at most ``max_chars`` code points.
+
+    Invariants (pinned by tests): a group whose full rendering fits in ``max_chars`` yields
+    exactly one segment equal to that rendering (so pre-0.6.30 chunk ids are unchanged);
+    whole registration lines are packed first; an over-long line is cut at paragraph,
+    then sentence, then whitespace boundaries, else hard-cut, never inside a code point;
+    pieces of one line concatenate back to the original text; at most ``max_segments``
+    segments are kept and ``truncated`` reports a dropped tail. Pure and process-independent.
+    """
+
+    # Defaults resolve at call time so the frozen constants stay the single authority.
+    if max_chars is None:
+        max_chars = SHORT_HORIZON_CHUNK_MAX_CHARS
+    if max_segments is None:
+        max_segments = SHORT_HORIZON_CHUNK_MAX_SEGMENTS
+    if isinstance(max_chars, bool) or not isinstance(max_chars, int) or max_chars < 1:
+        raise ShortHorizonIndexError("max_chars must be a positive integer")
+    if isinstance(max_segments, bool) or not isinstance(max_segments, int) or max_segments < 1:
+        raise ShortHorizonIndexError("max_segments must be a positive integer")
+    segments: list[str] = []
+    current: list[str] = []
+    current_length = 0
+
+    def emit(line: str) -> None:
+        nonlocal current, current_length
+        if current and current_length + 1 + len(line) > max_chars:
+            segments.append("\n".join(current))
+            current = []
+            current_length = 0
+        current.append(line)
+        current_length = len(line) if current_length == 0 else current_length + 1 + len(line)
+
+    for role, public_text in lines:
+        line = render_short_horizon_line(role, public_text)
+        if len(line) <= max_chars:
+            emit(line)
+            continue
+        prefix_length = len(line) - len(public_text)
+        for piece in _split_text(public_text, max(1, max_chars - prefix_length)):
+            emit(render_short_horizon_line(role, piece))
+    if current:
+        segments.append("\n".join(current))
+    truncated = len(segments) > max_segments
+    return ShortHorizonSplit(tuple(segments[:max_segments]), truncated)
+
+
+def short_horizon_projection_key(
+    causal_group_id: str, segment_ordinal: int, segment_count: int
+) -> str:
+    """Projection-table key: the bare Host id when unsplit, else ``id\x1fk/K``."""
+
+    if segment_count == 1:
+        return causal_group_id
+    return (
+        f"{causal_group_id}{SHORT_HORIZON_PROJECTION_KEY_SEPARATOR}"
+        f"{segment_ordinal}/{segment_count}"
+    )
+
+
+def parse_short_horizon_projection_key(key: str) -> tuple[str, int, int]:
+    """Inverse of :func:`short_horizon_projection_key`; malformed keys fail closed."""
+
+    causal_group_id, separator, suffix = key.rpartition(SHORT_HORIZON_PROJECTION_KEY_SEPARATOR)
+    if not separator:
+        return key, 1, 1
+    ordinal_text, slash, count_text = suffix.partition("/")
+    if (
+        not causal_group_id
+        or not slash
+        or not ordinal_text.isdigit()
+        or not count_text.isdigit()
+        or SHORT_HORIZON_PROJECTION_KEY_SEPARATOR in causal_group_id
+    ):
+        raise ShortHorizonIndexError("short-horizon projection key is malformed")
+    ordinal, count = int(ordinal_text), int(count_text)
+    if count < 2 or not 1 <= ordinal <= count:
+        raise ShortHorizonIndexError("short-horizon projection key is malformed")
+    return causal_group_id, ordinal, count
+
+
+def short_horizon_segment_payload_fields(
+    segment_ordinal: int, segment_count: int
+) -> dict[str, int]:
+    """Extra ``chunk_id`` payload keys for split chunks; empty for unsplit groups (id stable)."""
+
+    if segment_count == 1:
+        return {}
+    return {"segment_ordinal": segment_ordinal, "segment_count": segment_count}
+
+
+@dataclass(frozen=True, slots=True)
+class ShortHorizonProjectionRow:
+    """What one stored chunk row must contain, re-derived from its complete causal group."""
+
+    causal_group_id: str
+    segment_ordinal: int
+    segment_count: int
+    content: str
+    legacy_unsplit: bool
+
+
+def resolve_short_horizon_projection_row(
+    projection_key: str, lines: Sequence[tuple[str, str]]
+) -> ShortHorizonProjectionRow:
+    """Re-derive the expected content of a stored chunk row from its projection key.
+
+    A bare key over a group that now splits is the pre-0.6.30 single-row shape: it stays
+    valid (``legacy_unsplit=True``) until the next projection rebuild replaces it, so an
+    upgraded database opens without being declared corrupt. Any other mismatch raises.
+    """
+
+    causal_group_id, ordinal, count = parse_short_horizon_projection_key(projection_key)
+    split = split_short_horizon_content(lines)
+    if count == 1:
+        if split.segment_count == 1:
+            return ShortHorizonProjectionRow(causal_group_id, 1, 1, split.segments[0], False)
+        legacy = "\n".join(render_short_horizon_line(role, text) for role, text in lines)
+        return ShortHorizonProjectionRow(causal_group_id, 1, 1, legacy, True)
+    if split.segment_count != count:
+        raise ShortHorizonIndexError("short-horizon projection key segment count differs")
+    return ShortHorizonProjectionRow(
+        causal_group_id, ordinal, count, split.segments[ordinal - 1], False
+    )
 
 
 def resolve_authorized_public_text(
@@ -208,6 +404,8 @@ class ShortHorizonChunk:
     effective_privacy_class: PrivacyClass
     information_attributes: tuple[InformationAttribute, ...]
     classification_authority_refs: tuple[str, ...]
+    segment_ordinal: int = 1
+    segment_count: int = 1
 
     @property
     def byte_estimate(self) -> int:
@@ -317,8 +515,9 @@ async def build_short_horizon_chunks(
         expires_at = occurred_at + retention_seconds
         if occurred_at > now or now > expires_at:
             continue
-        content = "\n".join(f"{item.metadata.role.value}: {item.public_text}" for item in items)
-        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        split = split_short_horizon_content(
+            [(item.metadata.role.value, item.public_text) for item in items]
+        )
         privacy_rank = {
             PrivacyClass.PUBLIC: 0,
             PrivacyClass.PERSONAL: 1,
@@ -344,24 +543,27 @@ async def build_short_horizon_chunks(
         classification_authority_refs = tuple(
             sorted({cast(str, item.metadata.classification_authority_ref) for item in items})
         )
-        payload = {
-            "subject": metadata.subject,
-            "primary_conversation_id": metadata.primary_conversation_id,
-            "causal_group_id": metadata.causal_group_id,
-            "causal_group_sequence": metadata.causal_group_sequence,
-            "registration_hashes": [item.registration.registration_hash for item in items],
-            "content_hash": content_hash,
-        }
-        chunk_hash = hashlib.sha256(
-            json.dumps(
-                payload,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            ).encode("utf-8")
-        ).hexdigest()
-        chunks.append(
-            ShortHorizonChunk(
+        for segment_index, content in enumerate(split.segments, start=1):
+            content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            payload = {
+                "subject": metadata.subject,
+                "primary_conversation_id": metadata.primary_conversation_id,
+                "causal_group_id": metadata.causal_group_id,
+                "causal_group_sequence": metadata.causal_group_sequence,
+                "registration_hashes": [item.registration.registration_hash for item in items],
+                "content_hash": content_hash,
+                **short_horizon_segment_payload_fields(segment_index, split.segment_count),
+            }
+            chunk_hash = hashlib.sha256(
+                json.dumps(
+                    payload,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode("utf-8")
+            ).hexdigest()
+            chunks.append(
+              ShortHorizonChunk(
                 chunk_ref=f"short:{chunk_hash}",
                 content_hash=content_hash,
                 subject=metadata.subject,
@@ -396,8 +598,10 @@ async def build_short_horizon_chunks(
                 effective_privacy_class=effective_privacy_class,
                 information_attributes=information_attributes,
                 classification_authority_refs=classification_authority_refs,
+                segment_ordinal=segment_index,
+                segment_count=split.segment_count,
+              )
             )
-        )
     return tuple(
         sorted(
             chunks,
@@ -405,6 +609,7 @@ async def build_short_horizon_chunks(
                 item.subject,
                 item.primary_conversation_id,
                 item.causal_group_sequence,
+                item.segment_ordinal,
                 item.chunk_ref,
             ),
         )
@@ -443,9 +648,14 @@ class ShortHorizonRecallResult:
 
 @dataclass(frozen=True, slots=True)
 class ShortHorizonProjectionBuildResult:
+    """0.6.30：``split_group_count`` 为本次被切成多段的因果组数，``truncated_group_count``
+    为超过 ``SHORT_HORIZON_CHUNK_MAX_SEGMENTS`` 而丢弃尾段的因果组数（带默认值，位置构造不变）。"""
+
     projected_chunk_count: int
     removed_chunk_count: int
     audit_id: str
+    split_group_count: int = 0
+    truncated_group_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -550,16 +760,27 @@ class _ExactVectorGenerationCache:
 
 __all__ = (
     "RECENT_CAUSAL_GROUP_LIMIT",
+    "SHORT_HORIZON_CHUNK_MAX_CHARS",
+    "SHORT_HORIZON_CHUNK_MAX_SEGMENTS",
     "SHORT_HORIZON_HARD_DEADLINE_MS",
+    "SHORT_HORIZON_PROJECTION_KEY_SEPARATOR",
     "SHORT_HORIZON_RETENTION_SECONDS",
     "ShortHorizonChunk",
     "ShortHorizonDegradationCode",
     "ShortHorizonIndexError",
     "ShortHorizonProjectionAuthorityPort",
     "ShortHorizonProjectionBuildResult",
+    "ShortHorizonProjectionRow",
     "ShortHorizonGenerationBuildResult",
     "ShortHorizonRecallHit",
     "ShortHorizonRecallResult",
+    "ShortHorizonSplit",
     "build_short_horizon_chunks",
+    "parse_short_horizon_projection_key",
+    "render_short_horizon_line",
     "resolve_authorized_public_text",
+    "resolve_short_horizon_projection_row",
+    "short_horizon_projection_key",
+    "short_horizon_segment_payload_fields",
+    "split_short_horizon_content",
 )

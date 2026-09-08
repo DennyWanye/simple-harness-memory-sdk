@@ -14,6 +14,17 @@
 
 最后更新：2026-09-06。Procedure后继公开prepare/read target/record的实际operation observation六项新控通过；f82c2b8仅Procedure复用source-only S1完整持久校验，Host三真实Scope路由/文件effects/完整group→公共观察由原红转绿，累计成功1/2/3与重放已验证。新四项跨源边界控未跑，完整TC-HM04、独审、installed/native未闭合。主整合Hegel e500556后统一版本，不独立build，不改M618制品；F01延期。[源码与证据边界](../plans/2026-09-06-procedure-observation-prepare/CONTRACT.md)。
 
+## 2026-09-08 0.6.30 短时域 chunk 长度上限：超长因果组确定性切段；世代重建只嵌入新 chunk
+
+最后更新：2026-09-08。基于 0.6.29，仅本地候选、未发布、未构建制品、Host 未 pin。缺陷来源 HM-TO-A6 turn 22（Host 备忘 `simple_harness/plans/2026-09-08-hm-to-a6/DECISION-RECALL-TIMEOUT-HOST-SIDE.md` §2：单条 29 778 字符 chunk 嵌入 23.9 s；Host 因 `public_text_hash` 绑定无法限长，chunk 边界归 SDK；S3/S5 无长度条款）。裁定 `plans/2026-08-29-human-memory-digital-twin/DECISION-2026-09-08-short-horizon-chunk-cap.md`，契约 S3 Task 4 §4-补。
+
+- **契约**：一条 chunk 渲染内容 ≤ `SHORT_HORIZON_CHUNK_MAX_CHARS = 2 048` 码点；超长完整因果组按注册边界整行装箱 → 段落 → 句子 → 空白 → 硬切（切点落在窗口后半段、永不切码点、拼接逐字还原）确定性切成 K 条内容寻址 chunk；每组最多 `SHORT_HORIZON_CHUNK_MAX_SEGMENTS = 8` 段，尾部不投影并审计 `truncated_group_count`；每段血缘 = 整组，抑制/过期/分页/召回/可见性对分段透明；Host 不得假设"一组一条"。
+- **id 稳定 + 零 DDL**：未分段组的 `chunk_id` payload 与 0.6.29 逐字相同（segment 字段只在 K>1 进入 payload；测试钉死 0.6.29 源算出的字面值）。`UNIQUE (principal_id, primary_conversation_id, causal_group_id)` 不改：分段 chunk 在该列存投影键 `<id>\x1f<k>/<K>`，读路径经 `core.short_horizon.parse_short_horizon_projection_key`/`resolve_short_horizon_projection_row` 重推，注册拒绝含 U+001F 的 `causal_group_id`。schema 7.5（放宽 UNIQUE + segment 列）推迟到下一次不可避免的 DDL 切换。
+- **升级与 epoch**：0.6.29 遗留的单条超长行打开不判损坏（裸键行接受 0.6.29 形状且须为该组唯一一行），下次投影重建以分段替换——既有 `chunk_id` 移除，按 0.6.28 车道恰好推进一次 `short_horizon_projection_changed`；新超长组首次投影为 K 段是纯新增，不推进。
+- **增量投影 + 向量沿用**：投影重建只删清单里消失的 id、只插新出现的 id；世代重建沿用 active 世代（同 lineage、hash/维度校验通过）里同 `chunk_id` 的向量字节，只对新 chunk 调 `embed_batch`，审计 `embedded_count/reused_vector_count`。世代身份、manifest、CAS、replay、失败语义（0.6.27）与"世代激活不推进 epoch"（0.6.28）不变。
+- **契约面**：无 DDL 变化（7.4 checksum 不变）、根导出零增减；快照 `public-api-0.6.30.json`；新增 15 项测试（8 单元 + 7 集成，含 0.6.29 字面值对照与遗留形状升级路径）；全量失败集合与 main 基线逐条相同。文档化测试命令 `uv run --frozen --group dev pytest -q` 修复（`uv.lock` 的 `simple-harness-sdk` 目录改回 `../simple-harness-sdk`，依赖版本零变化）。
+- **Host 侧**：现有 `projected_chunk_count == 1` 断言因夹具文本很短仍成立，但生产逻辑不得假设一组一条；`WeMMEmbedder.embed_batch` 分组阈值可按段长重标定；维护实测常量在 0.6.30 后只对新 chunk 计成本。SDK 后续：世代构建部分进度（8 段抬到 16 的前提）、认知向量世代同样沿用向量。
+
 ## 2026-09-08 0.6.29 用途围栏：epoch 前进但被绑定来源未变时签发收据
 
 最后更新：2026-09-08。基于 0.6.28，仅本地候选、未发布、未构建制品、Host 未 pin。缺陷来源 HM-TO-A6 第 4 次尝试 turn 15（Host 备忘 `simple_harness/plans/2026-09-08-hm-to-a6/DECISION-RECALL-AUTHORITY-STALE.md` §7(2)）。
