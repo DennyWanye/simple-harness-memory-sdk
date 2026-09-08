@@ -10925,14 +10925,43 @@ class SQLiteHumanMemoryBackend:
                 evidence_rows = tuple(await cursor.fetchall())
             if not evidence_rows:
                 raise MemoryCorruptionError("relation endpoint evidence is missing")
+            # 分类决定只在 mutation apply 上产生（唯一写入点）。生命周期推进
+            # （Procedure 观测提交 / Prospective 信号提交）走
+            # ``_copy_cognitive_revision_unlocked``：它逐字复制 content/content_hash/
+            # effective_privacy_class/information_attributes_json，只改 lifecycle_state，
+            # 从不重跑分类策略，因此这些 revision 上没有自己的分类行。管辖这一版的决定
+            # 就是血缘上最近的已分类祖先，且它必须仍然逐字描述这一版——否则是真损坏。
             async with db.execute(
-                "SELECT decision_hash FROM cognitive_classification_decisions "
-                "WHERE memory_id=? AND memory_revision=?",
-                (memory_id, revision),
+                "SELECT d.decision_hash,d.memory_revision,d.effective_privacy_class,"
+                "d.effective_attributes_json,r.content_hash "
+                "FROM cognitive_classification_decisions d "
+                "JOIN cognitive_memory_revisions r ON r.memory_id=d.memory_id "
+                "AND r.revision=d.memory_revision WHERE d.memory_id=? "
+                "AND d.memory_revision=(SELECT MAX(memory_revision) "
+                "FROM cognitive_classification_decisions "
+                "WHERE memory_id=? AND memory_revision<=?)",
+                (memory_id, memory_id, revision),
             ) as cursor:
                 classification_rows = tuple(await cursor.fetchall())
             if len(classification_rows) != 1 or not str(classification_rows[0][0]):
                 raise MemoryCorruptionError("relation endpoint classification is missing")
+            classification_row = classification_rows[0]
+            # 管辖这一版的决定必须仍然逐字描述这一版。决定行的 effective_* 两列被
+            # ``decision_hash`` 锚定（收据复核逐字重算 ``decision_json``），而 revision 行
+            # 的对应两列在写入时取自同一个 ``classification`` 对象，健康库上恒等；
+            # 这一条对 exact revision 与继承祖先两条路径同样成立。
+            if str(classification_row["effective_privacy_class"]) != str(
+                row["effective_privacy_class"]
+            ) or str(classification_row["effective_attributes_json"]) != str(
+                row["information_attributes_json"]
+            ):
+                raise MemoryCorruptionError("relation endpoint classification differs")
+            # 继承路径还要证明这一版确实是那条已分类 revision 的复制后代：复制函数逐字
+            # 搬运 content_json/content_hash，内容一旦分叉就不再由那条决定管辖。
+            if int(classification_row["memory_revision"]) != revision and str(
+                classification_row["content_hash"]
+            ) != str(row["content_hash"]):
+                raise MemoryCorruptionError("relation endpoint classification lineage differs")
             if str(row["effective_privacy_class"]) == "restricted":
                 raise MemoryValidationError("relation_endpoint_classification_not_disclosable")
             entity_ids = self._mutation_entity_ids_from_content_json(content_json)

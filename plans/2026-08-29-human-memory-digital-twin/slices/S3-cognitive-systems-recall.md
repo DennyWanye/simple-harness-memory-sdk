@@ -58,6 +58,51 @@ Memory 只以 RecallDecision/ContextFragment 表达，不建长期表。数字�
 - 每项 accepted/rejected 与 before/after state 在同事务记 decision；任何非法项不留下半 supersede/孤立 edge。
 - 验证：五类 LLM 载荷变异、无 evidence/inference-as-fact、混合 batch 部分非法时全计划或逐操作既定原子策略。
 
+#### §2-补（2026-09-09，0.6.35）关系端点解析，与生命周期推进版本的分类归属
+
+> 追加条款；上文 Task 2 历史文本不改。裁定与验证见
+> `../DECISION-2026-09-09-procedure-relation-endpoint-classification.md`；缺陷来源
+> Host 事件 S 备忘 `simple_harness/plans/2026-09-08-hm-to-a6/DECISION-S-RELATION-KEYERROR.md`
+> §3「坑二」/ §8 F-S1（P0）。本节同时补上 Task 2 从未写过的**关系端点解析**口径。
+
+1. **「任何 classification authority 缺失整批拒绝」（上文 Task 2）的适用范围**是 mutation *operation*：
+   每一个 operation 必须在同事务内产生并持久化恰好一条 `cognitive_classification_decisions`。
+   它**不**要求「每一条 `cognitive_memory_revisions` 行都有自己的分类决定」。
+   `cognitive_memory_revisions` 只有两个写入点：mutation apply（受本条约束）与
+   `_copy_cognitive_revision_unlocked`——后者服务于**生命周期推进**（Procedure 观测提交、
+   Prospective 信号提交），逐字复制 `content_json` / `content_hash` /
+   `effective_privacy_class` / `information_attributes_json` / 有效时间 / 证据 span /
+   task-scope origin，只改 `lifecycle_state` 与 plan/operation 标识，**从不重跑分类策略**；
+   被分类的三样东西一个字节都没变，本来也不需要重跑。该表 append-only（不可变触发器 + 无 `UPDATE` 写入点），
+   且每条 revision 由唯一一个 operation 或唯一一次复制产生，因此至多一条分类决定指向同一 revision。
+2. **管辖某一版的分类决定 = 血缘上最近的已分类祖先**：对 `(memory_id, revision)`，
+   取 `memory_revision <= revision` 中最大的那条分类决定。链是连续的（每次推进都是
+   `base_revision + 1` 且以 head CAS 收口），因此「最大的已分类 revision」与「复制链上最近的已分类祖先」
+   恒等。**一条已分类祖先都没有 = 损坏**，`MemoryCorruptionError`，整批拒绝（上文 Task 2 的口径不变）。
+3. **继承必须自证仍然成立**，两条：① 管辖决定的 `effective_privacy_class` /
+   `effective_attributes_json`（被 `decision_hash` 锚定、收据复核逐字重算）必须与该 revision 行的
+   `effective_privacy_class` / `information_attributes_json` 相等——对 exact revision 与继承祖先
+   两条路径同样成立；② 当管辖决定不在这一版上时，该 revision 与祖先 revision 的 `content_hash` 必须相等，
+   即它确实是那条已分类 revision 的复制后代。任一不成立即 `MemoryCorruptionError`，不得继承。
+4. **关系端点解析（`semantic_relation` 的 `ExistingMemoryTarget` / `CreatedByOperationTarget`）**
+   在 apply 时逐个端点重解析，顺序固定：所有权 → head CAS（端点必须是当前 head 的 exact revision）→
+   `conflict_status` 必须 `uncontested` → 召回状态门（Procedure 必须 `active`/`reinforced`）→
+   有效时间 → canonical `content_json` 与 `content_hash` 复算 → typed payload 行存在 →
+   证据 span 非空 → 上述 §2-补.2/3 的分类归属 → `restricted` 不可披露 →
+   记忆与逐条证据的 suppression。source 端必须是 semantic claim（非 relation），
+   target 端必须是 procedure 或 prospective；自环拒绝。
+5. **端点的隐私类与信息属性是关系记忆自身分类的下界**（与 `target` 同一条单调合并规则），
+   并逐端点记入该关系 operation 的 `decision_json.relation_endpoints`
+   （role / memory_id / revision / memory_type / privacy_class / information_attributes / content_hash）。
+6. **离线车道口径（F-S2）**：分析车道构造 `RecallContext` 时用的是分析 run 的 `run_id`，
+   而 Procedure 适用性指纹来自另一组事实（持久化的、已被 SDK 消费的 use）。SDK 只把该字段当集合用，
+   因此今天自洽；但「这个 run 的**当前**适用性」这一字段名对离线车道不准确，
+   离线调用方提供的是「曾经被真实用过的指纹」，不承诺此刻仍然适用。
+7. **尚未闭合（F-S1b）**：`check_history_visibility` 目前对 Procedure 恒定判 `RECALL_AUTHORITY_STALE`
+   （硬编码空指纹集合），因此本节的端点解析虽已可用，Host 的复核路径仍会打掉整批。
+   放开它需要给 `check_history_visibility` 增加调用方提供适用性指纹的入口（公共 API 扩面），
+   并同时裁定第 6 条那笔取舍能否作为复核依据。
+
 ### Task 3 — Procedure 与 Prospective 一等规则 [HM-AC-5]
 
 状态：COMPLETE。Memory 仅消费 ref-only Host authority；Procedure 使用 logical qualification epoch、v2

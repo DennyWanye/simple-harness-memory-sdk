@@ -8,6 +8,18 @@
 
 > 2026-09-07 转主干开发：main 已并入 `feat/human-memory-procedure-current-input-successor`（0.6.19 源）。下方 09-06 两路状态段为合并时的并集，各自描述当时状态，不互相覆盖。
 
+## 2026-09-09 0.6.35 关系端点的分类决定由血缘上最近的已分类祖先承担
+
+最后更新：2026-09-09。基于 0.6.34，仅本地候选、未发布、未构建制品、Host 未 pin。缺陷来源 Host 事件 S 备忘 `simple_harness/plans/2026-09-08-hm-to-a6/DECISION-S-RELATION-KEYERROR.md` §3 坑二 / §8 F-S1（P0）。裁定 [`DECISION-2026-09-09-procedure-relation-endpoint-classification.md`](../plans/2026-08-29-human-memory-digital-twin/DECISION-2026-09-09-procedure-relation-endpoint-classification.md)。
+
+- **缺陷**：分析协议 v8 允许 `semantic_relation` 用 `ExistingMemoryTarget` 指向已有记忆。Procedure 端点必须先走满三次独立成功观测进 `active`，而观测提交走 `_copy_cognitive_revision_unlocked`——它逐字复制 content/`content_hash`/`effective_privacy_class`/`information_attributes_json`，只改 `lifecycle_state`，**从不重跑分类策略**，因此这些 revision 上没有自己的 `cognitive_classification_decisions` 行。`_resolve_semantic_relation_payload_unlocked` 在 head revision 上直接查这张表，于是对每一条**真的可用**的 Procedure 端点抛 `MemoryCorruptionError('relation endpoint classification is missing')`，**整批分析死掉**（连同批的 episode 一起丢）。Host 因此在下发前按名扣下所有 Procedure 端点（`sdk_procedure_endpoint_unresolvable`），验收 A6-6 的 Procedure 形态在 0.6.34 上不可达。
+- **契约**：`plans/2026-08-29-human-memory-digital-twin/slices/S3-cognitive-systems-recall.md` 新增 `§2-补（2026-09-09，0.6.35）`——Task 2「任何 classification authority 缺失整批拒绝」的适用范围是 mutation **operation** 而非每条 revision；祖先归属规则与两条继承自证条件；**关系端点解析的完整门序**（此前从未入契约）；端点隐私类/属性作为关系记忆分类的下界；F-S2 离线车道口径；F-S1b 未闭合。
+- **不变量**：`cognitive_memory_revisions` 只有两个写入点——mutation apply（必配一条分类决定）与 `_copy_cognitive_revision_unlocked`（生命周期推进，Procedure 观测提交 / Prospective 信号提交，逐字复制内容与分类结果）。因此「每条 revision 都必须有自己的分类行」从来不是本仓的不变量；真正的不变量是**管辖某一版的分类决定 = 血缘上最近的已分类祖先，且该决定必须仍然逐字描述这一版**。
+- **修法**（只改读、不改写、零 DDL）：端点解析改查 `memory_revision <= 端点 revision` 的最大已分类 revision，三条判据——① 恰好一行且 `decision_hash` 非空，否则语句逐字不变的 `'…classification is missing'`（一条已分类祖先都没有仍是真损坏）；② **管辖决定必须仍然逐字描述这一版**：决定行的 `effective_privacy_class` / `effective_attributes_json`（被 `decision_hash` 锚定、收据复核逐字重算）必须等于端点 revision 行的对应两列，exact 与继承两条路径都查，否则新增码 `'relation endpoint classification differs'`；③ 继承路径再要求祖先与端点两版 `content_hash` 相等，否则新增码 `'relation endpoint classification lineage differs'`。②③ 是 0.6.34 完全没有的两道校验；同时诚实记账：被接受的端点 revision 集合确实变大了（这正是修复目的）。
+- **不改**：DDL（7.4 checksum 不变，**已有库不需要迁移或重建世代**，且降级安全：不写新行不加新列）、观测/信号提交路径（不补写任何分类行，审计形状零变化）、端点解析的其余各门（所有权/CAS/conflict/状态/时间/内容哈希/typed payload/证据/restricted/suppression）与其顺序、`cognitive_relations` 与 twin graph 投影、根导出零增减。快照 `public-api-0.6.35.json` 除 `version` 外与 0.6.19 起逐字相同。
+- **测试**：新增 `tests/integration/test_procedure_relation_endpoint.py` **6 项**（事故现场 + 落 1 行 `cognitive_relations` + twin graph 边两端都在节点集合 + reopen 逐字相同；typed recall 命中的 exact revision 与**落库的那条边**一致；整条分类链摘掉仍 `missing` 且那样的库重开即 fail closed；属性漂移 → `classification differs`；内容自洽分叉 → `lineage differs`；**Prospective 同形**走同一条继承路径并落边）。除守卫用例外 5 项在基线 `36dac46` 上红。全量失败集合与基线**逐条相同**（63 项既有环境失败，`diff` 为空），1638 → **1644** passed / 8 skipped；`ruff` 709。独立评审（opus，只读）1 条 MUST-FIX（契约未落地）+ 8 条 NIT 全部处置，逐条见裁决备忘 §8.1。
+- **Host 侧**：F-S1 只解除了一半。端点解析这一半已修；`check_history_visibility` 对 Procedure 永远 `RECALL_AUTHORITY_STALE`（`backends/history_visibility.py` 写死 `procedure_applicability_fingerprints=frozenset()`）那一半**未动**，因此 Host 的 `sdk_procedure_endpoint_unresolvable` 扣留**暂不能解除**，详见备忘 §6。
+
 ## 2026-09-08 0.6.30 短时域 chunk 长度上限：超长因果组确定性切段；世代重建只嵌入新 chunk
 
 最后更新：2026-09-08。基于 0.6.29，仅本地候选、未发布、未构建制品、Host 未 pin。缺陷来源 HM-TO-A6 turn 22（Host 备忘 `simple_harness/plans/2026-09-08-hm-to-a6/DECISION-RECALL-TIMEOUT-HOST-SIDE.md` §2：单条 29 778 字符 chunk 嵌入 23.9 s；Host 因 `public_text_hash` 绑定无法限长，chunk 边界归 SDK；S3/S5 无长度条款）。裁定 `plans/2026-08-29-human-memory-digital-twin/DECISION-2026-09-08-short-horizon-chunk-cap.md`，契约 S3 Task 4 §4-补。
