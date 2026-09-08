@@ -179,14 +179,23 @@ async def test_standalone_and_typed_short_duplicates_stay_visible_after_memory_o
             principal=PRINCIPAL, disclosure_context=_disclosure(), bindings=typed_bindings,
         )
         assert all(item.visible for item in typed_current.items)
-        # Any new directive advances the recall authority epoch, so a fresh attempt on the
-        # old result is stale even though its sources remain visible; the exact receipt
-        # replay is historical acknowledgement, not current-use authorization.
-        with pytest.raises(m.MemoryValidationError, match="RECALL_AUTHORITY_STALE"):
-            await manager.authorize_recall_context_use(
-                principal=PRINCIPAL,
-                request=replace(old_use_request, provider_attempt_id="short-use-after"),
-            )
+        # 0.6.29：新指令仍然推进召回权威 epoch，但它作用在一条**认知记忆**上，与本次绑定的
+        # short-horizon 来源无关；用途围栏改由逐来源重校验裁定，因此新的 provider attempt
+        # 得到一张带**当前** epoch 的收据，而不再是 RECALL_AUTHORITY_STALE
+        # （见 plans/2026-08-29-human-memory-digital-twin/
+        #   DECISION-2026-09-08-context-use-fence.md）。
+        # 只要被绑定来源真的失效，这道围栏仍然以同一稳定码拒绝——本文件下方
+        # EVIDENCE 作用域的对照用例即是。
+        fresh_use_receipt = await manager.authorize_recall_context_use(
+            principal=PRINCIPAL,
+            request=replace(old_use_request, provider_attempt_id="short-use-after"),
+        )
+        assert fresh_use_receipt.authority_epoch > old_use_receipt.authority_epoch
+        notes = await manager.read_recall_context_use_authority_notes(principal=PRINCIPAL)
+        assert [note.provider_attempt_id for note in notes] == ["short-use-after"]
+        assert notes[0].reason_code == "authority_epoch_advanced"
+        assert notes[0].bound_authority_epoch == old_use_receipt.authority_epoch
+        assert notes[0].authority_epoch == fresh_use_receipt.authority_epoch
         assert old_use_receipt == await manager.authorize_recall_context_use(
             principal=PRINCIPAL, request=old_use_request,
         )

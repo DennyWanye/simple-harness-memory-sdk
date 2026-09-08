@@ -61,6 +61,10 @@ from simple_harness_memory.features.cognitive_vector import (
     cognitive_vector_text,
 )
 from simple_harness_memory.features.lexical import typed_recall_query_terms
+from simple_harness_memory.core.recall_context_use import (
+    RECALL_CONTEXT_USE_AUTHORITY_EPOCH_ADVANCED,
+    RecallContextUseAuthorityNoteV1,
+)
 from simple_harness_memory.core.errors import (
     CognitiveVectorGenerationFailed,
     MemoryCorruptionError,
@@ -4674,12 +4678,16 @@ class SQLiteHumanMemoryBackend:
                 epoch, policy_hash = await self._recall_authority_unlocked(
                     principal.actor_id
                 )
+                # 0.6.29：policy version、结果期限与"权威倒退"仍然硬失败；单纯的 epoch 前进
+                # 不再直接拒绝，而是交给下面同一把写锁、同一事务里的逐来源重校验裁定
+                # （见 plans/.../DECISION-2026-09-08-context-use-fence.md）。
                 if (
-                    epoch != result.authority_epoch
-                    or policy_hash != result.policy_hash
+                    policy_hash != result.policy_hash
                     or effective_now >= result.authority_expires_at
+                    or epoch < result.authority_epoch
                 ):
                     raise MemoryValidationError("RECALL_AUTHORITY_STALE")
+                authority_epoch_advanced = epoch != result.authority_epoch
                 expected = {
                     item.selected_item.item_id: item.result_item_hash
                     for item in result.items
@@ -4761,11 +4769,89 @@ class SQLiteHumanMemoryBackend:
                 self._fault("typed_recall.context_use.before_commit")
                 await self._db.execute("COMMIT")
                 committed = True
+                if authority_epoch_advanced:
+                    # 无载荷：只记稳定降级码与两个 epoch，绝不记 query/召回内容/source ref。
+                    logger.info(
+                        "typed_recall.context_use.authority_epoch_advanced",
+                        reason_code=RECALL_CONTEXT_USE_AUTHORITY_EPOCH_ADVANCED,
+                        subject_hash=_opaque_hash(principal.actor_id),
+                        bound_authority_epoch=result.authority_epoch,
+                        authority_epoch=epoch,
+                        bound_source_count=len(supplied),
+                    )
                 return receipt
             finally:
                 if not committed:
                     with suppress(Exception):
                         await self._db.execute("ROLLBACK")
+
+    async def read_recall_context_use_authority_notes(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        run_id: str | None = None,
+        limit: int = 100,
+    ) -> tuple[RecallContextUseAuthorityNoteV1, ...]:
+        """列出「绑定 epoch 之后权威 epoch 已前进」的已签发用途收据（只读、无新表）。
+
+        两个 epoch 分别来自不可变的 ``recall_context_use_receipts.authority_epoch`` 与
+        ``typed_recall_results.result_json``；本方法只做导出，不写任何行。
+        """
+
+        from simple_harness_memory.core.identity import MemoryPrincipal
+
+        if type(principal) is not MemoryPrincipal:
+            raise TypeError("principal must use MemoryPrincipal")
+        if run_id is not None and (not isinstance(run_id, str) or not run_id.strip()):
+            raise MemoryValidationError("recall_context_use_run_id_invalid")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise MemoryValidationError("recall_context_use_limit_invalid")
+        if self._db is None:
+            raise RuntimeError("human-memory v7 backend is not initialized")
+        async with self._db.execute(
+            "SELECT c.receipt_json,c.receipt_hash,c.authority_epoch,c.policy_hash,"
+            "c.authorized_at,r.result_json "
+            "FROM recall_context_use_receipts c "
+            "JOIN typed_recall_results r "
+            "ON r.result_id=json_extract(c.receipt_json,'$.result_id') "
+            "WHERE c.principal_id=? ORDER BY c.authorized_at,c.receipt_id",
+            (principal.actor_id,),
+        ) as cursor:
+            rows = tuple(await cursor.fetchall())
+        notes: list[RecallContextUseAuthorityNoteV1] = []
+        for row in rows:
+            receipt_payload = json.loads(str(row["receipt_json"]))
+            result_payload = json.loads(str(row["result_json"]))
+            if not isinstance(receipt_payload, dict) or not isinstance(result_payload, dict):
+                raise MemoryCorruptionError("recall context-use body differs")
+            bound_epoch = result_payload.get("authority_epoch")
+            current_epoch = int(row["authority_epoch"])
+            if not isinstance(bound_epoch, int) or isinstance(bound_epoch, bool):
+                raise MemoryCorruptionError("typed recall result authority epoch differs")
+            if current_epoch <= bound_epoch:
+                continue
+            if run_id is not None and receipt_payload.get("run_id") != run_id:
+                continue
+            notes.append(
+                RecallContextUseAuthorityNoteV1(
+                    str(receipt_payload["receipt_id"]),
+                    str(row["receipt_hash"]),
+                    str(receipt_payload["subject"]),
+                    str(receipt_payload["run_id"]),
+                    str(receipt_payload["turn_id"]),
+                    str(receipt_payload["provider_attempt_id"]),
+                    str(receipt_payload["result_id"]),
+                    str(receipt_payload["result_hash"]),
+                    RECALL_CONTEXT_USE_AUTHORITY_EPOCH_ADVANCED,
+                    bound_epoch,
+                    current_epoch,
+                    str(row["policy_hash"]),
+                    float(row["authorized_at"]),
+                )
+            )
+            if len(notes) >= limit:
+                break
+        return tuple(notes)
 
     async def _validate_recall_context_use_sources_unlocked(
         self,

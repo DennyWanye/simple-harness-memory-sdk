@@ -53,6 +53,9 @@ from simple_harness_memory.core.prospective_settlement import RegistrationRequir
 from simple_harness_memory.core.prospective_sources_v2 import ProspectiveOutboxSourceViewV2
 from simple_harness_memory.core.prospective_sources import ProspectiveOutboxSourceView
 from simple_harness_memory.core.mutation_receipts import MemoryMutationReceiptView
+from simple_harness_memory.core.recall_context_use import (
+    RecallContextUseAuthorityNoteV1,
+)
 from simple_harness_memory.core.mutations import InformationClassificationPolicy
 from simple_harness_memory.core.observability import CorrelationInput, MemoryObservability
 from simple_harness_memory.core.operation_audit import (
@@ -459,6 +462,18 @@ class MemoryManager:
     ) -> RecallContextUseReceiptV1:
         operation = getattr(self._backend, "authorize_recall_context_use")
         return await operation(principal=principal, request=request, now=now)
+
+    async def read_recall_context_use_authority_notes(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        run_id: str | None = None,
+        limit: int = 100,
+    ) -> tuple[RecallContextUseAuthorityNoteV1, ...]:
+        """只读导出「权威 epoch 前进后仍放行」的用途授权（0.6.29，无新表）。"""
+
+        operation = getattr(self._backend, "read_recall_context_use_authority_notes")
+        return await operation(principal=principal, run_id=run_id, limit=limit)
 
     async def get_twin_graph_view(
         self, *, principal: MemoryPrincipal
