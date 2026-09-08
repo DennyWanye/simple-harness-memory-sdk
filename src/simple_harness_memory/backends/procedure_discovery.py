@@ -12,6 +12,10 @@ from simple_harness_memory.core.procedure_discovery import (
     DISCOVERABLE_LIFECYCLE_STATES, ProcedureDraftCandidate, ProcedureDraftPage)
 from simple_harness_memory.features.lexical import typed_recall_query_terms
 from simple_harness_memory.backends.history_source_guard import history_source_operation, prepare_history_source_context
+from simple_harness_memory.backends.sqlite_tx import (
+    begin_transaction,
+    rollback_transaction,
+)
 
 
 def self_context(backend, principal, context):
@@ -108,7 +112,7 @@ async def discover(backend, *, principal, scope, disclosure_context, query, afte
         raise RuntimeError("human-memory v7 backend is not initialized")
     await prepare_history_source_context(backend,principal)
     async with backend._write_lock:
-        await backend._db.execute("BEGIN")
+        await begin_transaction(backend._db, "BEGIN")
         try:
             await backend._authorize_short_horizon_principal_unlocked(principal)
             now=float(backend._now())
@@ -153,5 +157,5 @@ async def discover(backend, *, principal, scope, disclosure_context, query, afte
             await backend._db.execute("COMMIT")
             return result
         except BaseException:
-            await backend._db.execute("ROLLBACK")
+            await rollback_transaction(backend._db)
             raise

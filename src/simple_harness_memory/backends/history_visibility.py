@@ -16,6 +16,11 @@ from typing import Any, cast
 from simple_harness import DisclosureContext, TypedRecallResultV1
 from simple_harness.contracts import JsonValue
 
+from simple_harness_memory.backends.sqlite_tx import (
+    begin_transaction,
+    rollback_transaction,
+)
+
 from simple_harness_memory.backends.history_source_guard import (
     denial_reason,
     history_source_operation,
@@ -420,7 +425,7 @@ async def check_history_visibility(
         raise RuntimeError("human-memory v7 backend is not initialized")
     await prepare_history_source_context(backend, principal, pending=tuple(batch.values()))
     async with backend._write_lock:
-        await backend._db.execute("BEGIN")
+        await begin_transaction(backend._db, "BEGIN")
         try:
             async with backend._db.execute(
                 "SELECT deployment_id,household_id,actor_id FROM principals WHERE principal_id=?",
@@ -531,7 +536,7 @@ async def check_history_visibility(
             await backend._db.execute("COMMIT")
             return snapshot
         except BaseException:
-            await backend._db.execute("ROLLBACK")
+            await rollback_transaction(backend._db)
             raise
 
 

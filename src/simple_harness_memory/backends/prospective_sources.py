@@ -10,6 +10,7 @@ from simple_harness.runtime import (
     ProspectiveLifecycleState,
 )
 from simple_harness_memory.core.errors import MemoryCorruptionError, MemoryLimitError, MemoryOwnershipConflict, MemoryValidationError
+from simple_harness_memory.backends.sqlite_tx import begin_transaction
 from simple_harness_memory.core.identity import MemoryPrincipal, MemoryScope
 from simple_harness_memory.core.mutation_receipts import _digest, _identifier
 from simple_harness_memory.core.prospective_sources import ProspectiveOutboxSourceView
@@ -173,7 +174,7 @@ async def read_prospective_outbox_source(backend, *, principal, outbox_id, paylo
             db.row_factory = aiosqlite.Row
             await db.set_progress_handler(progress, 1000)
             try:
-                await db.execute("BEGIN")
+                await begin_transaction(db, "BEGIN")
                 return await _read(backend, db, principal, outbox_id, payload_hash)
             except MemoryValidationError:
                 raise
