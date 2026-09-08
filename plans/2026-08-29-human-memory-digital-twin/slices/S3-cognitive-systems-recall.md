@@ -110,6 +110,48 @@ gate 仍归 S3 最终验收，未在本 Task 宣称 PASS。
   `e3d39fdf68ded5c4af94b7c7ca04587b724b46643d1ea6fd2ccecb0003e039d5`。其
   `label_source=AI_DRAFT_UNREVIEWED`、`quality_gate=NOT_RUN/BLOCKED`，只完成结构与分层准备，尚未构成质量证据。
 
+#### §4-补（2026-09-08，0.6.30）短时域 chunk 长度上限与确定性切段
+
+> 追加条款；上文 Task 4 历史文本不改。裁定与验证见
+> `../DECISION-2026-09-08-short-horizon-chunk-cap.md`；缺陷来源 HM-TO-A6 turn 22
+> （Host 备忘 `simple_harness/plans/2026-09-08-hm-to-a6/DECISION-RECALL-TIMEOUT-HOST-SIDE.md` §2：
+> 单条 29 778 字符 chunk 嵌入 23.9 s，Host 因 `public_text_hash` 绑定无法限长，chunk 边界归 SDK）。
+
+1. 一条短时域 chunk 的内容（`role: public_text` 行以 `\n` 连接后的渲染文本）最多
+   `SHORT_HORIZON_CHUNK_MAX_CHARS = 2 048` 个 Unicode 码点。渲染文本不超过上限的完整因果组仍然是
+   **一组一条**，其 `chunk_id`/`content_hash`/投影行与 0.6.29 逐字相同。
+2. 超过上限的完整因果组由 SDK 按以下确定性规则切成 K 条内容寻址 chunk：先按注册（item）边界整行装箱；
+   单行超过上限时依次优先在段落（`\n`）、句子（`。！？!?`）、空白处切分，且切点必须落在窗口后半段
+   （不产生小于上限一半的碎片），否则在上限处硬切；切分只在码点边界发生，永不切开一个码点；一条注册
+   被切出的各段拼接回去逐字等于原 `public_text`。
+3. 每个因果组最多投影 `SHORT_HORIZON_CHUNK_MAX_SEGMENTS = 8` 段；之后的尾部**不投影**（原始证据与注册
+   不受影响），审计 `projection_rebuilt.details.truncated_group_count` 与
+   `ShortHorizonProjectionBuildResult.truncated_group_count` 记录被截断的组数；`split_group_count`
+   记录被切段的组数。
+4. 分段 chunk 的 `chunk_id` payload 在 0.6.29 的域上追加 `segment_ordinal=k` 与 `segment_count=K`
+   （K=1 时不出现，保证旧 id 稳定）；投影表 `causal_group_id` 列存投影键 `<causal_group_id>\x1f<k>/<K>`；
+   Host 注册的 `causal_group_id` 不得包含 U+001F，含有者注册即拒绝
+   （`conversation_registration_causal_group_id_reserved`）。
+5. 每一段的血缘（`short_horizon_chunk_evidence`）都是**整个因果组**的全部注册；任一证据被抑制则该组全部段
+   一起消失（"部分上下文绝不可见"不变）；`occurred_at/expires_at`、privacy/attributes/classification refs、
+   roles/task/entity/source refs 都按组聚合、各段相同；过期、清理、分页、召回、历史可见性一律按 chunk 行
+   处理，对分段透明。
+6. 升级：0.6.29 写出的"一组一条"超长 chunk 行在 0.6.30 打开时**不是损坏**（一致性校验与历史可见性对裸键行
+   接受 0.6.29 形状，且要求它是该组唯一一行），下一次投影重建以分段替换它。该替换是既有 `chunk_id` 的移除，
+   按 0.6.28 车道（§5.4「Short-Horizon source 失效」）恰好推进一次召回权威 epoch
+   （`short_horizon_projection_changed`），绑定旧 chunk 的召回结果由此正确失效；绑定其他来源的结果按
+   0.6.29 逐来源重校验照常放行。
+7. 投影重建改为**增量**：只删除目标清单里不再存在的 `chunk_id`、只插入新出现的 `chunk_id`，未变化的 chunk
+   连同 FTS 镜像、血缘行与 active 世代向量原样保留；世代重建沿用 active 世代（同 lineage、hash/维度校验
+   通过）里同 `chunk_id` 的向量字节，只对新 chunk 调用 `embed_batch`，审计
+   `generation_activated.details.embedded_count/reused_vector_count`。世代身份、manifest、CAS、replay、
+   空集与失败语义（0.6.27）逐字不变；沿用向量仍属纯索引重建，不推进 epoch（0.6.28 第 3 项）。
+8. Host 侧不得假设"一个因果组一条 chunk"：`projected_chunk_count` 可大于完整因果组数；Host 只通过
+   `chunk_ref`/`content_hash` 绑定来源，不解析投影键。
+9. 无 DDL 变化（7.4 checksum 不变）。放宽 `short_horizon_chunks` 的
+   `UNIQUE (principal_id, primary_conversation_id, causal_group_id)` 并加 segment 列（schema 7.5）
+   推迟到下一次不可避免的 DDL 切换，届时投影键编码退役。
+
 ### Task 5 — Typed RecallPlan 与资格门 [HM-AC-4/7/8]
 
 `a2-006` corrected architecture 已获用户批准（消息 SHA-256：

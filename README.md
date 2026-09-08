@@ -7,7 +7,7 @@
 
 认知记忆 SDK，为运行时 consumer 提供独立、product-neutral 的持久记忆系统。
 
-当前 source candidate：**0.6.29**（Python 3.11–3.13；尚未发布；已发布 fallback 为 0.5.1）。
+当前 source candidate：**0.6.30**（Python 3.11–3.13；尚未发布；已发布 fallback 为 0.5.1）。
 
 **原始证据 + 五类长期记忆系统 + 跨系统过程 + 认知投影；工作记忆由 Host Context 承担。**
 
@@ -35,6 +35,18 @@ extras 与功能的对应关系（与 `pyproject.toml` 的 `[project.optional-de
 | `harness`    | `simple-harness-sdk>=0.7,<0.8` | Harness 主模型提交严格结构化 analysis；Memory 验证、审计并应用 |
 | `dev`        | `pytest` 等                     | 开发 / 测试 |
 | `all`        | 上述三个运行时 extra            | 完整功能 |
+
+### 开发与测试
+
+```bash
+uv sync --frozen --group dev          # 首次；离线可用（依赖已在 uv 缓存中时）
+uv run --frozen --group dev pytest -q
+```
+
+前提：`simple-harness-sdk` 以路径依赖解析（`pyproject.toml` `[tool.uv.sources]` →
+`../simple-harness-sdk`），本仓库的兄弟目录里必须有该仓库。0.6.30 修正了 `uv.lock` 曾钉住不存在的
+`../simple-harness-sdk-memory-program` 的问题（CHANGELOG 0.6.30）；改动 `pyproject.toml` 后请用
+`uv lock --check` 复核锁文件与源路径一致。
 
 ## 快速上手
 

@@ -136,3 +136,18 @@ closure→terminal evidence→Memory outbox。UI 只需现有 chat 可驱动，�
 
 - 五路 route、no-recall/recall、TaskScope effect、closure、outbox、Context budgets 生产链全部有 primary evidence。
 - 冻结路由质量与 latency/token 指标达到 HM-AC-8；达不到时 BLOCKED，不以 deterministic fake 代替真实 provider。
+
+## 追加（2026-09-08，Memory SDK 0.6.30）短时域 chunk 长度上限对 Host 的约束
+
+> 追加条款；上文历史文本不改。契约正文见 `S3-cognitive-systems-recall.md` §4-补（2026-09-08），
+> 裁定见 `../DECISION-2026-09-08-short-horizon-chunk-cap.md`。
+
+- 短时域 chunk 边界归 SDK：一条 chunk ≤ 2 048 码点，超长因果组被确定性切成 ≤ 8 条内容寻址 chunk。
+  Host **不得**假设"一个因果组一条 chunk"（`projected_chunk_count` 可大于完整因果组数），只通过
+  `chunk_ref`/`content_hash` 绑定来源；`short_horizon_chunks.causal_group_id` 是 SDK 私有投影键，Host 不读、不解析。
+- Host 注册进 Memory 的 `causal_group_id` 不得包含 U+001F，否则注册被以
+  `conversation_registration_causal_group_id_reserved` 拒绝。
+- Host 侧 `WeMMEmbedder.embed_batch` 的分组阈值（`_BATCH_MAX_PADDED_CHARS`）可按"段 ≤ 2 048 码点"
+  重新标定；维护 tick 的实测常量（`SHORT_INDEX_MEASURED_GENERATION_EMBED_MS`）在 0.6.30 之后只对
+  **新出现**的 chunk 计成本（世代重建沿用未变化 chunk 的向量）。
+
