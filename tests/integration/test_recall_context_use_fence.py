@@ -14,8 +14,13 @@ epoch 相等性判断抛 ``RECALL_AUTHORITY_STALE``，Host 映射为
    → 照常签发收据，并留下稳定降级码 ``authority_epoch_advanced`` 与两个 epoch；
 2. 同样的竞态下只要**被绑定来源**真的失效（取代 / 压制）→ 仍以 ``RECALL_AUTHORITY_STALE``
    拒绝、零 payload、不写任何收据行；
-3. policy version 变化、结果期限过期、权威 epoch 倒退仍然硬失败；
+3. policy version 变化与权威 epoch 倒退仍然硬失败；
 4. 无竞态路径的收据 ``receipt_hash`` 与 ``receipt_json`` 与 0.6.28 逐字节相同。
+
+0.6.38（DECISION-2026-09-09-lease-degradation-and-incumbent-vectors.md）：第 3 条里的
+「结果期限过期」被移出硬失败，降级为 ``authority_lease_expired``（本模块 ① 因此按新政策
+改写，是本轮唯一一处被有意反转的既有断言；租约那一支的完整正/负控见
+``test_recall_context_use_lease.py``）。
 """
 
 from __future__ import annotations
@@ -31,6 +36,7 @@ from simple_harness_memory.core.errors import MemoryValidationError
 from simple_harness_memory.core.identity import MemoryScope
 from simple_harness_memory.core.recall_context_use import (
     RECALL_CONTEXT_USE_AUTHORITY_EPOCH_ADVANCED,
+    RECALL_CONTEXT_USE_AUTHORITY_LEASE_EXPIRED,
     RecallContextUseAuthorityNoteV1,
 )
 from simple_harness_memory.core.suppression import (
@@ -294,13 +300,16 @@ async def test_same_race_but_superseded_bound_source_still_fences(tmp_path: Path
 
 
 @pytest.mark.asyncio
-async def test_policy_change_expiry_and_epoch_regression_still_fence(
+async def test_policy_change_and_epoch_regression_still_fence(
     tmp_path: Path,
 ) -> None:
-    """epoch 之外的三条判据一分未放宽：policy version、结果期限、权威倒退。
+    """epoch 之外的两条硬判据一分未放宽：policy version、权威倒退。
 
     权威读取被替身接管（不篡改 ``recall_authority_heads``，那会破坏事件链的完整性校验），
     这样测的正是 0.6.29 新分支本身的判据顺序。
+
+    0.6.38：原 ① 的「结果期限过期 → 拒」改为「结果期限过期 + 来源全通过 → 签发收据 +
+    ``authority_lease_expired`` 说明」，其余三条逐字保留。
     """
 
     backend, envelope, span = await _prepared_with_embedder(
@@ -322,13 +331,21 @@ async def test_policy_change_expiry_and_epoch_regression_still_fence(
     authority_value = [(bound_epoch, bound_policy)]
     backend._recall_authority_unlocked = _authority  # type: ignore[method-assign]
 
-    # ① 结果期限过期（epoch 一致也要拒）。
-    with pytest.raises(MemoryValidationError, match="^RECALL_AUTHORITY_STALE$"):
-        await backend.authorize_recall_context_use(
-            principal=_principal(),
-            request=_use_request(execution, context, item, "provider-attempt-expired"),
-            now=execution.result.authority_expires_at,
-        )
+    # ① 结果期限过期（0.6.38）：epoch 一致、来源全通过 → 签发收据并留下租约到期说明。
+    lease_receipt = await backend.authorize_recall_context_use(
+        principal=_principal(),
+        request=_use_request(execution, context, item, "provider-attempt-expired"),
+        now=execution.result.authority_expires_at,
+    )
+    assert lease_receipt.authority_epoch == bound_epoch
+    lease_notes = await backend.read_recall_context_use_authority_notes(
+        principal=_principal()
+    )
+    assert [note.reason_code for note in lease_notes] == [
+        RECALL_CONTEXT_USE_AUTHORITY_LEASE_EXPIRED
+    ]
+    assert lease_notes[0].bound_authority_expires_at == execution.result.authority_expires_at
+    assert lease_notes[0].bound_authority_epoch == lease_notes[0].authority_epoch
 
     # ② policy version 变化：即便来源全部完好，也绝不放行。
     authority_value[0] = (bound_epoch + 1, "b" * 64)
@@ -347,9 +364,10 @@ async def test_policy_change_expiry_and_epoch_regression_still_fence(
             request=_use_request(execution, context, item, "provider-attempt-regress"),
             now=20.0,
         )
-    assert await _receipt_rows(backend) == []
+    # ②③ 一行收据都没有多写：库里只有 ① 那张。
+    assert await _receipt_rows(backend) == [(lease_receipt.receipt_id, bound_epoch)]
 
-    # ④ 只有「epoch 前进 + policy 不变 + 未过期 + 来源全通过」才放行。
+    # ④ 「epoch 前进 + policy 不变 + 来源全通过」照常放行。
     authority_value[0] = (bound_epoch + 1, bound_policy)
     receipt = await backend.authorize_recall_context_use(
         principal=_principal(),

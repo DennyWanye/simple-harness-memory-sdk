@@ -57,6 +57,7 @@ from simple_harness_memory.features.cognitive_vector import (
     COGNITIVE_VECTOR_DEADLINE,
     COGNITIVE_VECTOR_MIN_SCORE,
     COGNITIVE_VECTOR_NO_GENERATION,
+    COGNITIVE_VECTOR_PARTIAL,
     COGNITIVE_VECTOR_RELATIVE_FLOOR,
     COGNITIVE_VECTOR_RELATIVE_RATIO,
     COGNITIVE_VECTOR_STALE,
@@ -72,6 +73,7 @@ from simple_harness_memory.features.conflict_slot import contested_admission_tex
 from simple_harness_memory.features.lexical import typed_recall_query_terms
 from simple_harness_memory.core.recall_context_use import (
     RECALL_CONTEXT_USE_AUTHORITY_EPOCH_ADVANCED,
+    RECALL_CONTEXT_USE_AUTHORITY_LEASE_EXPIRED,
     RecallContextUseAuthorityNoteV1,
 )
 from simple_harness_memory.core.mutation_rejections import (
@@ -3030,10 +3032,23 @@ class SQLiteHumanMemoryBackend:
         return failed_generation_id
 
     async def _cognitive_vector_head_rows_unlocked(self) -> tuple[aiosqlite.Row, ...]:
-        """Every current node head whose lifecycle/epistemic state may ever be recalled.
+        """Every revision that may ever be scored by the cognitive ``vector`` lane.
+
+        = 全部当前 head revision **∪** 未裁决冲突组的 incumbent revision（0.6.38 / F-V-2a）。
+
+        0.6.23–0.6.37 只取 ``r.revision = h.current_revision``，于是世代永远只覆盖 head 的
+        当前 revision，而未裁决冲突组的 incumbent 成员按定义是**上一版**——它因此永远拿不到
+        向量分，group 的向量准入只可能由 challenger 单方面贡献，与 S3 §5.2「整组同进同出」
+        的对称性矛盾。incumbent 是 ``_collect_typed_recall_confirmation`` 会真的打分的
+        (memory_id, revision)（``vector_lane.score`` 逐成员调用），把它纳入世代不放宽任何
+        候选面：``_CognitiveVectorLane.score`` 只对已过全部资格门的那一个 ref 精确查表。
 
         relation 类 SEMANTIC head 被排除：它们只是 ``cognitive_relations`` 的所有者，没有
         ``semantic_claims`` 行，也从不参与召回排序；manifest/stale 判定同样以本方法为准。
+
+        次序固定为 ``(memory_id, revision)``。库里没有未裁决冲突组时，每条记忆恰好一行，
+        因而与 0.6.37 的 ``ORDER BY h.memory_id`` 逐字同序、manifest hash 一个字节不变
+        （= 这类库升级到 0.6.38 不触发任何世代重建）。
         """
 
         assert self._db is not None
@@ -3043,13 +3058,26 @@ class SQLiteHumanMemoryBackend:
             "ON r.memory_id=h.memory_id AND r.revision=h.current_revision "
             "ORDER BY h.memory_id"
         ) as cursor:
-            rows = tuple(await cursor.fetchall())
-        return tuple(
-            row
-            for row in rows
-            if self._cognitive_recall_state_allowed(row, allow_contested=True)
-            and not self._cognitive_semantic_head_is_relation(row)
-        )
+            head_rows = tuple(await cursor.fetchall())
+        # 未裁决冲突组的 incumbent：取组条件与 ``_collect_typed_recall_confirmation`` 一致
+        # （head 当前 revision 必须就是 challenger，且没有 resolution 行）。
+        async with self._db.execute(
+            "SELECT r.*,h.memory_type AS memory_type FROM cognitive_conflict_groups g "
+            "JOIN cognitive_memory_heads h ON h.memory_id=g.memory_id "
+            "JOIN cognitive_memory_revisions r "
+            "ON r.memory_id=g.memory_id AND r.revision=g.incumbent_revision "
+            "LEFT JOIN cognitive_conflict_resolutions x ON x.group_id=g.group_id "
+            "WHERE h.current_revision=g.challenger_revision AND x.group_id IS NULL"
+        ) as cursor:
+            incumbent_rows = tuple(await cursor.fetchall())
+        merged: dict[tuple[str, int], aiosqlite.Row] = {}
+        for row in (*head_rows, *incumbent_rows):
+            if not self._cognitive_recall_state_allowed(
+                row, allow_contested=True
+            ) or self._cognitive_semantic_head_is_relation(row):
+                continue
+            merged.setdefault((str(row["memory_id"]), int(row["revision"])), row)
+        return tuple(merged[key] for key in sorted(merged))
 
     @staticmethod
     def _cognitive_semantic_head_is_relation(row: aiosqlite.Row) -> bool:
@@ -3110,6 +3138,34 @@ class SQLiteHumanMemoryBackend:
             await self._cognitive_vector_head_rows_unlocked()
         )
 
+    async def _cognitive_vector_generation_manifest_hash_unlocked(
+        self, generation_id: str
+    ) -> str | None:
+        """世代的**自证** manifest：按它自己的 (memory_id, revision) 重算（0.6.38，零 DDL）。
+
+        ``cognitive_memory_revisions`` 是只追加、行内不可变的，因此对一个固定的
+        ``generation_id``，本函数的结果只随 ``COGNITIVE_TEXT_FORMAT_VERSION`` 变化。
+        它与入库的 ``cognitive_vector_generations.content_hash`` 相等，等价于同时证明：
+        ① 该世代是用**当前**渲染格式版本嵌入的；② 它覆盖的每条 revision 的 ``content_hash``
+        一字未变。这两条正是「这些向量还能不能用」的全部条件——与「它是否覆盖了当前的
+        全部 head」无关，后者只决定覆盖率（``cognitive_vector_partial``）。
+        任一 revision 行缺失（不可能，除非损坏）时返回 ``None``。
+        """
+
+        assert self._db is not None
+        async with self._db.execute(
+            "SELECT v.memory_id AS memory_id,v.revision AS revision,"
+            "r.content_hash AS content_hash FROM cognitive_vectors v "
+            "LEFT JOIN cognitive_memory_revisions r "
+            "ON r.memory_id=v.memory_id AND r.revision=v.revision "
+            "WHERE v.generation_id=? ORDER BY v.memory_id,v.revision",
+            (generation_id,),
+        ) as cursor:
+            rows = tuple(await cursor.fetchall())
+        if not rows or any(row["content_hash"] is None for row in rows):
+            return None
+        return self._cognitive_vector_manifest_hash(rows)
+
     async def _active_cognitive_vector_generation_unlocked(self) -> aiosqlite.Row | None:
         assert self._db is not None
         async with self._db.execute(
@@ -3130,8 +3186,14 @@ class SQLiteHumanMemoryBackend:
         if generation is None:
             self._cognitive_vector_cache = None
             return
-        head_rows = await self._cognitive_vector_head_rows_unlocked()
-        if str(generation["content_hash"]) != self._cognitive_vector_manifest_hash(head_rows):
+        # 0.6.38：世代是否可用**只**由它的自证 manifest 决定，不再要求它覆盖当前全部 head。
+        # 覆盖率的差异是 ``_prepare_cognitive_vector_lane`` 的 ``cognitive_vector_partial``，
+        # 不是「整代不可信」。渲染格式版本变化仍然逐字命中这里（自证 manifest 含版本号）。
+        if str(generation["content_hash"]) != (
+            await self._cognitive_vector_generation_manifest_hash_unlocked(
+                str(generation["generation_id"])
+            )
+        ):
             self._cognitive_vector_cache = None
             return
         async with self._db.execute(
@@ -3140,13 +3202,10 @@ class SQLiteHumanMemoryBackend:
             (generation["generation_id"],),
         ) as cursor:
             rows = tuple(await cursor.fetchall())
-        expected_refs = [
-            cognitive_vector_ref(str(row["memory_id"]), int(row["revision"])) for row in head_rows
-        ]
         actual_refs = [
             cognitive_vector_ref(str(row["memory_id"]), int(row["revision"])) for row in rows
         ]
-        if not rows or sorted(actual_refs) != sorted(expected_refs):
+        if not rows:
             raise MemoryCorruptionError("active cognitive vector generation is incomplete")
         dimension = int(generation["dimension"])
         if any(int(row["dimension"]) != dimension for row in rows):
@@ -3295,19 +3354,28 @@ class SQLiteHumanMemoryBackend:
         lock_deadline = deadline_monotonic - lock_reserve
         if lock_deadline <= time.monotonic():
             return None, COGNITIVE_VECTOR_DEADLINE
+        partial = False
         try:
             async with self._write_lock_before(lock_deadline):
                 active = await self._active_cognitive_vector_generation_unlocked()
                 if active is None:
                     return None, COGNITIVE_VECTOR_NO_GENERATION
                 cache = self._cognitive_vector_cache
-                current_manifest = await self._current_cognitive_vector_manifest_hash_unlocked()
                 if (
-                    str(active["content_hash"]) != current_manifest
-                    or not isinstance(cache, _ExactVectorGenerationCache)
+                    not isinstance(cache, _ExactVectorGenerationCache)
                     or cache.generation_id != str(active["generation_id"])
                 ):
+                    # 缓存没跟上 active 世代（含自证 manifest 不成立 → 缓存被置空，
+                    # 例如渲染格式版本变了）：整代不可信，退化。
                     return None, COGNITIVE_VECTOR_STALE
+                # 0.6.38（F-V-2b）：head 清单与世代清单不一致**不再**让整条车道退化。
+                # 世代自证已在装载缓存时成立（渲染格式与每条 revision 的 content_hash 未变），
+                # 因此它覆盖到的 (memory_id, revision) 上的向量仍然逐字有效；没覆盖到的
+                # 那些 ref 只是查不到分（``score`` 返回 ``None``），与「本来就没有向量」同形。
+                # 以前一条记忆修订就让**整库**的认知向量车道 stale 到下一次世代激活为止
+                # （HM-TO-A6 实测 3.4–15.2 s，而争议轮恰好紧随修订）。
+                current_manifest = await self._current_cognitive_vector_manifest_hash_unlocked()
+                partial = str(active["content_hash"]) != current_manifest
         except TimeoutError:
             # 等锁超时：退化到词面 lane，绝不让召回失败（决策文档「冷态只退化不失败」）。
             return None, COGNITIVE_VECTOR_DEADLINE
@@ -3334,7 +3402,7 @@ class SQLiteHumanMemoryBackend:
             _CognitiveVectorLane(
                 [float(value) for value in query_vector], cache, deadline_monotonic
             ),
-            None,
+            COGNITIVE_VECTOR_PARTIAL if partial else None,
         )
 
     async def recall_short_horizon(
@@ -4149,7 +4217,9 @@ class SQLiteHumanMemoryBackend:
                 raise TypedRecallDeadlineExceeded("cognitive_vector_lane") from None
             if vector_degradation is not None:
                 degradation_codes.append(vector_degradation)
-            elif vector_lane is not None:
+            # 0.6.38：``cognitive_vector_partial`` 是「车道可用但覆盖不全」，与其余四个
+            # 「车道不可用」的退化码不同，此时仍然有世代在服务本次召回，世代 hash 必须落审计。
+            if vector_lane is not None:
                 cognitive_vector_generation_id_hash = _opaque_hash(vector_lane.generation_id)
         try:
             # 0.6.27：这一段同样在前台预算内，等锁不得越过 deadline。
@@ -4809,20 +4879,30 @@ class SQLiteHumanMemoryBackend:
                 epoch, policy_hash = await self._recall_authority_unlocked(
                     principal.actor_id
                 )
-                # 0.6.29：policy version、结果期限与"权威倒退"仍然硬失败；单纯的 epoch 前进
+                # 0.6.29：policy version 与"权威倒退"仍然硬失败；单纯的 epoch 前进
                 # 不再直接拒绝，而是交给下面同一把写锁、同一事务里的逐来源重校验裁定
                 # （见 plans/.../DECISION-2026-09-08-context-use-fence.md）。
                 # 0.6.32：判据同时对**本部署配置的**策略版本 fail-closed——权威头的对齐
                 # 是一次带审计的写（下一次召回的 ``_ensure_recall_authority_unlocked``），
                 # 但「旧策略签发的结果不得再被使用」必须在这里就成立，不能等那次写。
+                # 0.6.38：``effective_now >= result.authority_expires_at``（租约到期）从这一
+                # 组硬失败判据里移出，降级为 ``authority_lease_expired``——见
+                # plans/.../DECISION-2026-09-09-lease-degradation-and-incumbent-vectors.md §3。
+                # 依据：``authority_expires_at`` = min(RecallContext.expires_at, 每条被绑定
+                # 来源自己的期限)，而后者在下面的逐来源重校验里被逐条独立重新执行
+                # （认知记忆走 ``_cognitive_recall_valid_at(row, now)``，短时域 chunk 走
+                # ``now >= row["expires_at"]``）。因此租约唯一多挡住的是 Host 那个 60 秒的
+                # **召回上下文期限**——它只能杀掉"跑超过一分钟的正常回合"，挡不住任何一条
+                # 真的失效了的来源。任一来源真的变了/被抑制/被降级披露时，重校验照旧
+                # fail closed 抛 RECALL_AUTHORITY_STALE。
                 if (
                     policy_hash != result.policy_hash
                     or self._recall_policy_hash != result.policy_hash
-                    or effective_now >= result.authority_expires_at
                     or epoch < result.authority_epoch
                 ):
                     raise MemoryValidationError("RECALL_AUTHORITY_STALE")
                 authority_epoch_advanced = epoch != result.authority_epoch
+                authority_lease_expired = effective_now >= result.authority_expires_at
                 expected = {
                     item.selected_item.item_id: item.result_item_hash
                     for item in result.items
@@ -4850,16 +4930,34 @@ class SQLiteHumanMemoryBackend:
                         raise MemoryValidationError(
                             "typed_recall_confirmation_group_must_be_complete"
                         )
-                await self._validate_recall_context_use_sources_unlocked(
-                    principal_id=principal.actor_id,
-                    result=result,
-                    decision=decision,
-                    supplied_item_ids=frozenset(supplied),
-                    procedure_applicability_fingerprints=frozenset(
-                        stored_context.procedure_applicability_fingerprints
-                    ),
-                    now=effective_now,
+                earliest_source_expiry = (
+                    await self._validate_recall_context_use_sources_unlocked(
+                        principal_id=principal.actor_id,
+                        result=result,
+                        decision=decision,
+                        supplied_item_ids=frozenset(supplied),
+                        procedure_applicability_fingerprints=frozenset(
+                            stored_context.procedure_applicability_fingerprints
+                        ),
+                        now=effective_now,
+                    )
                 )
+                # 0.6.38：租约到期那一支必须**续发**一段租约——冻结的
+                # ``RecallContextUseReceiptV1`` 要求 ``expires_at > authorized_at``，
+                # 一张"已过期的收据"在契约上不可构造。续发的长度逐字等于 Host 当初给这次
+                # 结果的租约长度（``authority_expires_at - evaluated_at``），起点改为本次
+                # 授权时刻；上界是刚刚重新读到的**来源自己**的最早期限，因此续租永远不会
+                # 让模型用到一条已经过期的来源。未到期那一支一个字节不变（收据 hash 逐字同）。
+                receipt_expires_at = result.authority_expires_at
+                if authority_lease_expired:
+                    receipt_expires_at = effective_now + (
+                        result.authority_expires_at - result.evaluated_at
+                    )
+                    if earliest_source_expiry is not None:
+                        receipt_expires_at = min(receipt_expires_at, earliest_source_expiry)
+                    if receipt_expires_at <= effective_now:
+                        # 到不了：逐来源重校验已经保证每条来源的期限都严格晚于 now。
+                        raise MemoryValidationError("RECALL_AUTHORITY_STALE")
                 receipt = RecallContextUseReceiptV1(
                     _stable_id(
                         "recall-context-use-receipt",
@@ -4880,7 +4978,7 @@ class SQLiteHumanMemoryBackend:
                     epoch,
                     policy_hash,
                     effective_now,
-                    result.authority_expires_at,
+                    receipt_expires_at,
                 )
                 await self._db.execute(
                     "INSERT INTO recall_context_use_receipts(receipt_id,principal_id,"
@@ -4914,6 +5012,16 @@ class SQLiteHumanMemoryBackend:
                         authority_epoch=epoch,
                         bound_source_count=len(supplied),
                     )
+                if authority_lease_expired:
+                    # 同上，无载荷：只记稳定降级码、两个时刻与被绑定来源条数。
+                    logger.info(
+                        "typed_recall.context_use.authority_lease_expired",
+                        reason_code=RECALL_CONTEXT_USE_AUTHORITY_LEASE_EXPIRED,
+                        subject_hash=_opaque_hash(principal.actor_id),
+                        authority_expires_at=result.authority_expires_at,
+                        authorized_at=effective_now,
+                        bound_source_count=len(supplied),
+                    )
                 return receipt
             finally:
                 if not committed:
@@ -4927,10 +5035,12 @@ class SQLiteHumanMemoryBackend:
         run_id: str | None = None,
         limit: int = 100,
     ) -> tuple[RecallContextUseAuthorityNoteV1, ...]:
-        """列出「绑定 epoch 之后权威 epoch 已前进」的已签发用途收据（只读、无新表）。
+        """列出已签发用途收据上的权威降级说明（只读、无新表）。
 
         两个 epoch 分别来自不可变的 ``recall_context_use_receipts.authority_epoch`` 与
-        ``typed_recall_results.result_json``；本方法只做导出，不写任何行。
+        ``typed_recall_results.result_json``；0.6.38 起「租约到期后签发」同样从不可变行
+        导出——同一行的 ``authorized_at`` 与 ``expires_at``。本方法只做导出，不写任何行。
+        一张收据可同时导出两条说明，次序固定为 epoch 前进在前、租约到期在后。
         """
 
         from simple_harness_memory.core.identity import MemoryPrincipal
@@ -4945,7 +5055,7 @@ class SQLiteHumanMemoryBackend:
             raise RuntimeError("human-memory v7 backend is not initialized")
         async with self._db.execute(
             "SELECT c.receipt_json,c.receipt_hash,c.authority_epoch,c.policy_hash,"
-            "c.authorized_at,r.result_json "
+            "c.authorized_at,c.expires_at,r.result_json "
             "FROM recall_context_use_receipts c "
             "JOIN typed_recall_results r "
             "ON r.result_id=json_extract(c.receipt_json,'$.result_id') "
@@ -4963,29 +5073,49 @@ class SQLiteHumanMemoryBackend:
             current_epoch = int(row["authority_epoch"])
             if not isinstance(bound_epoch, int) or isinstance(bound_epoch, bool):
                 raise MemoryCorruptionError("typed recall result authority epoch differs")
-            if current_epoch <= bound_epoch:
+            authorized_at = float(row["authorized_at"])
+            bound_expires_at = result_payload.get("authority_expires_at")
+            if isinstance(bound_expires_at, bool) or not isinstance(
+                bound_expires_at, (int, float)
+            ):
+                raise MemoryCorruptionError("typed recall result authority expiry differs")
+            bound_expires_at = float(bound_expires_at)
+            # 0.6.38：同一张收据最多导出两条说明，次序固定（epoch 前进 → 租约到期）。
+            # 「租约到期后签发」同样只由两条不可变行导出：收据行的 ``authorized_at``
+            # 与被绑定结果 ``result_json`` 里的 ``authority_expires_at``——与 epoch 那一对
+            # 严格同形。收据行自己的 ``expires_at`` 是**续发**的新租约，不参与判定。
+            reasons: list[tuple[str, float | None]] = []
+            if current_epoch > bound_epoch:
+                reasons.append((RECALL_CONTEXT_USE_AUTHORITY_EPOCH_ADVANCED, None))
+            if authorized_at >= bound_expires_at:
+                reasons.append(
+                    (RECALL_CONTEXT_USE_AUTHORITY_LEASE_EXPIRED, bound_expires_at)
+                )
+            if not reasons:
                 continue
             if run_id is not None and receipt_payload.get("run_id") != run_id:
                 continue
-            notes.append(
-                RecallContextUseAuthorityNoteV1(
-                    str(receipt_payload["receipt_id"]),
-                    str(row["receipt_hash"]),
-                    str(receipt_payload["subject"]),
-                    str(receipt_payload["run_id"]),
-                    str(receipt_payload["turn_id"]),
-                    str(receipt_payload["provider_attempt_id"]),
-                    str(receipt_payload["result_id"]),
-                    str(receipt_payload["result_hash"]),
-                    RECALL_CONTEXT_USE_AUTHORITY_EPOCH_ADVANCED,
-                    bound_epoch,
-                    current_epoch,
-                    str(row["policy_hash"]),
-                    float(row["authorized_at"]),
+            for reason_code, note_expires_at in reasons:
+                notes.append(
+                    RecallContextUseAuthorityNoteV1(
+                        str(receipt_payload["receipt_id"]),
+                        str(row["receipt_hash"]),
+                        str(receipt_payload["subject"]),
+                        str(receipt_payload["run_id"]),
+                        str(receipt_payload["turn_id"]),
+                        str(receipt_payload["provider_attempt_id"]),
+                        str(receipt_payload["result_id"]),
+                        str(receipt_payload["result_hash"]),
+                        reason_code,
+                        bound_epoch,
+                        current_epoch,
+                        str(row["policy_hash"]),
+                        authorized_at,
+                        note_expires_at,
+                    )
                 )
-            )
-            if len(notes) >= limit:
-                break
+                if len(notes) >= limit:
+                    return tuple(notes)
         return tuple(notes)
 
     async def _validate_recall_context_use_sources_unlocked(
@@ -4998,8 +5128,14 @@ class SQLiteHumanMemoryBackend:
         procedure_applicability_fingerprints: frozenset[str],
         now: float,
         suppression_purpose: OrdinaryMemoryPurpose | None = None,
-    ) -> None:
-        """Re-evaluate every bound durable source under the suppression transaction."""
+    ) -> float | None:
+        """Re-evaluate every bound durable source under the suppression transaction.
+
+        0.6.38 起额外返回**当下重新读到的**每条被绑定来源期限里最早的那个
+        （认知记忆的 ``valid_to`` / 短时域 chunk 的 ``expires_at``；全部无上界时返回
+        ``None``）。这是租约降级续发新租约时的硬上界——见 ``authorize_recall_context_use``。
+        返回值不影响任何既有调用方（召回路径忽略它），判据一条未改。
+        """
 
         from simple_harness_memory.core.suppression import (
             OrdinaryMemoryPurpose,
@@ -5008,6 +5144,15 @@ class SQLiteHumanMemoryBackend:
 
         purpose = suppression_purpose or OrdinaryMemoryPurpose.RECALL
         assert self._db is not None
+        earliest_source_expiry: float | None = None
+
+        def _note_expiry(value: object) -> None:
+            nonlocal earliest_source_expiry
+            if value is None:
+                return
+            bound_at = float(cast(float, value))
+            if earliest_source_expiry is None or bound_at < earliest_source_expiry:
+                earliest_source_expiry = bound_at
         bound: list[tuple[Any, Any, bool]] = [
             (item.selected_item, item, False)
             for item in result.items
@@ -5088,6 +5233,8 @@ class SQLiteHumanMemoryBackend:
                     tuple(item.value for item in typed_item.information_attributes),
                 ):
                     raise MemoryValidationError("RECALL_AUTHORITY_STALE")
+                # 该来源自己的期限：``_cognitive_recall_valid_at`` 刚刚已判定 now < valid_to。
+                _note_expiry(row["valid_to"])
                 continue
             async with self._db.execute(
                 "SELECT * FROM short_horizon_chunks WHERE chunk_id=? AND principal_id=?",
@@ -5125,6 +5272,9 @@ class SQLiteHumanMemoryBackend:
                     )
                 ).denied:
                     raise MemoryValidationError("RECALL_AUTHORITY_STALE")
+            # 短时域 chunk 的 TTL：上面刚判定过 now < expires_at。
+            _note_expiry(row["expires_at"])
+        return earliest_source_expiry
 
     async def _collect_typed_recall_confirmation(
         self,

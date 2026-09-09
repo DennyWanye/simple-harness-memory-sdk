@@ -168,7 +168,8 @@ async def test_vector_lane_admits_group_only_as_nearest_match(tmp_path: Path) ->
     )
     try:
         built = await manager.rebuild_cognitive_vector_generation()
-        assert built.vector_count == 2  # challenger head + 无关 head
+        # 0.6.38（F-V-2a）：incumbent + challenger + 无关 head。0.6.37 只有后两条。
+        assert built.vector_count == 3
         # 查询同时落在两条轴上：无关记忆 cos=1.0，challenger（只在轴 6）cos≈0.707 ≥ 阈值但不是最近。
         nearer_elsewhere = await _recall(manager, "收尾要简洁点", key="v-elsewhere", modes=BOTH)
         assert nearer_elsewhere.decision.outcome is RecallDecisionOutcome.RECALL

@@ -293,7 +293,7 @@ __all__ = [
     "ShortHorizonRecallResult",
 ]
 
-__version__ = "0.6.37"
+__version__ = "0.6.38"
 
 from simple_harness_memory.core.procedure_discovery import ProcedureDraftCandidate, ProcedureDraftPage
 # Bounded current USER input use. Ordinary history/recall policy is unchanged.
