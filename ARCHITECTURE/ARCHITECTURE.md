@@ -1,3 +1,21 @@
+# Memory SDK 架构状态总表
+
+最后更新：**2026-09-09 22:05**。下表是本仓当前状态的唯一总表；其下按时间倒序的"最后更新 / ## 版本"段落是历史记录，各自描述当时状态，不互相覆盖、不回改。
+
+| 项 | 当前值 |
+|---|---|
+| 当前版本 | **0.6.38**（`src/simple_harness_memory/__init__.py::__version__`） |
+| Host 钉版 | **0.6.38**（`simple_harness/backend/pyproject.toml`、`sdk_adapters/sdk_candidate.py::SDK_MEMORY_VERSION`） |
+| 公共面 | `public-api-0.6.38.json` 除 `version` 外与 0.6.37 逐字相同；0.6.19 以来唯一一次根导出扩张是 0.6.36（+3 个名字） |
+| DDL | 7.4 checksum 自 0.6.34 起未变（0.6.35/0.6.36/0.6.37/0.6.38 均零 DDL） |
+| 测试 | 1673 passed / 8 skipped；`ruff check src tests` 709；全量失败集合与 main 基线逐条相同（63 项既有环境失败） |
+| 今日版本序列 | 0.6.34 向量分数同型相对 margin → 0.6.35 关系端点分类取血缘上最近的已分类祖先 → 0.6.36 离线车道可提交 Procedure 适用性指纹证明 → 0.6.37 冲突组词法准入基底扩到 head 的 `subject_entity`/`qualifiers` → **0.6.38** 租约到期降级为 `authority_lease_expired`（续发租约）、未裁决冲突组 incumbent 进向量世代、世代自证 manifest 与 `cognitive_vector_partial` |
+| 降级记账 | 0.6.37 读**有未裁决冲突组且已重建过世代**的 0.6.38 库会开库失败（`active cognitive vector generation is incomplete`），回退需先重建一代；其余版本对间降级安全 |
+| 人类记忆数字孪生计划 | 7 个发布单元 / 51 Task / 8 条 MUST AC；V0·S1·S2·S4 完成，S3·S5 代码与契约完成待整跑复验，S6 2 ✅ / 4 🟡 / 2 🔶；AC 1 ✅ / 7 🟡，无红。总表见 [`plans/2026-08-29-human-memory-digital-twin/PROGRESS-2026-09-07.md`](../plans/2026-08-29-human-memory-digital-twin/PROGRESS-2026-09-07.md) 一~三节 |
+| 今日 Host 侧验收 | HM-TO-A6 第 12 次整跑 14/1/3（第 13 次已启动）；Manual 模式旅程 run6 12/0/4；两轮完整流程旅程 flow1 全通过、重启段事件 AK 阻塞；240 语料三阈值首次全部达标（多提 10.7% / required 100% / 隐私 0）；401 矩阵 run-16 PASS 382 / FAIL 0 / BLOCKED 19 |
+
+---
+
 最后更新：2026-09-07。0.6.19 clean源e27003c一次离线制品和Host H079/M619/S0313安装组合1PASS0.86s通过，版本元数据3控通过，旧106导出全保留+12；生产安装origin经实际vendor安装纠正后验证通过。全部资源组清空，原生/240质量仍未验。[候选与制品](../plans/2026-09-07-procedure-current-input/CANDIDATE.md)。
 
 最后更新：2026-09-07。共同Procedure/current-input组合已在Host80764c13/Memorya15c7be通过1个新增真实公共控制并独审接受，source overlay非installed；0.6.19版本与118项公共导出快照准备，旧M618 106项全保留，版本检查/制品待验。[候选边界](../plans/2026-09-07-procedure-current-input/CANDIDATE.md)。
