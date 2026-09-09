@@ -74,7 +74,7 @@ async def _write_v7_3_database(path: Path, monkeypatch) -> schema_v7_3.Initializ
 
 
 def test_0_6_23_pins_additive_schema_v7_4_and_freezes_v7_3() -> None:
-    assert __version__ == "0.6.36"  # 0.6.24–0.6.36 不改 7.4 checksum
+    assert __version__ == "0.6.37"  # 0.6.24–0.6.37 不改 7.4 checksum
     assert schema_v7_3.SCHEMA_CHECKSUM == SCHEMA_CHECKSUM_V7_3
     assert schema_v7_4.SCHEMA_CHECKSUM == SCHEMA_CHECKSUM_V7_4 != SCHEMA_CHECKSUM_V7_3
     assert schema_v7_4.SCHEMA_CHECKSUM_V7_3 == SCHEMA_CHECKSUM_V7_3

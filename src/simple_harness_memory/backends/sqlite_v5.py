@@ -68,7 +68,7 @@ from simple_harness_memory.features.cognitive_vector import (
     cognitive_vector_ref,
     cognitive_vector_text,
 )
-from simple_harness_memory.features.conflict_slot import contested_slot_text
+from simple_harness_memory.features.conflict_slot import contested_admission_text
 from simple_harness_memory.features.lexical import typed_recall_query_terms
 from simple_harness_memory.core.recall_context_use import (
     RECALL_CONTEXT_USE_AUTHORITY_EPOCH_ADVANCED,
@@ -5145,8 +5145,12 @@ class SQLiteHumanMemoryBackend:
         contested 候选"只能走完整 group confirmation"，从未把 group 排在普通候选之前。
         因此 group 的准入不再是"任一 lane 命中"，而是**槽位级**相关：
 
-        - 词面：查询词命中 ``contested_slot_text``（两名成员取值不同的公开字段 +
-          semantic 的 ``predicate``），不再看与兄弟记忆共享的 ``subject_entity``/``qualifiers``；
+        - 词面：查询词命中 ``contested_admission_text``（0.6.37 / F-V-2）——两名成员取值
+          不同的公开字段 + semantic 的 ``predicate``（``contested_slot_text``），**并上**该
+          group 所属 head 当前 revision 的 ``subject_entity``/``qualifiers``。0.6.31 曾把后两
+          者一并拿掉以防**兄弟记忆**互相污染；一个 group 只有一个 head，不存在兄弟，收窄在
+          这里没有收益，却让"槽位文本无 CJK + head 无向量世代"的中文提问永远准入不了
+          （HM-TO-A6 事件 V）。**普通 item 车道的词面准入不变**；
         - 向量：成员余弦 ≥ 冻结阈值，且**不低于**同类型任一普通候选的向量分
           （争议记忆是查询在该类型里最近的语义匹配）；
         - entity / task_scope / temporal 仍是过滤与排序 lane，但不单独准入 group。
@@ -5394,8 +5398,19 @@ class SQLiteHumanMemoryBackend:
                             group_lane_scores.get("vector", 0.0), float(cast(float, item[7]))
                         )
                 # 0.6.31 槽位级准入（两名成员都已通过全部资格门）。
-                slot_text = contested_slot_text(
-                    memory_type, staged[0][1], staged[1][1]
+                # 0.6.37（F-V-2）：准入基底 = 槽位文本 ∪ 该 group 所属 head 当前 revision 的
+                # subject_entity / qualifiers。head 即 challenger 那一版（本方法的取组查询
+                # 以 h.current_revision=g.challenger_revision 为前提）；取的是**公开** payload，
+                # 已过隐私门与抑制门，故扩展的是"算不算相关"，不是"披露什么"。
+                head_payload: dict[str, JsonValue] | None = None
+                for item in staged:
+                    if int(item[0]["revision"]) == int(group["challenger_revision"]):
+                        head_payload = item[1]
+                slot_text = contested_admission_text(
+                    memory_type,
+                    staged[0][1],
+                    staged[1][1],
+                    head_payload=head_payload,
                 ).casefold()
                 slot_score = (
                     sum(slot_text.count(term) for term in query_terms) if slot_text else 0
