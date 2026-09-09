@@ -12,8 +12,10 @@ predicate；向量要求争议记忆是同类型里离查询最近的语义匹�
 只过滤与排序，不单独准入。
 
 本模块钉死：
-① 争议槽位 + 无关查询（只命中共享的 subject/qualifiers）→ 普通 items 照常返回、
-   无 group、不标 truncated；
+① 争议槽位 + 兄弟记忆自己的词面 → 普通 items 照常返回、无 group、不标 truncated；
+   （0.6.37 / F-V-2 把 head 自己的 subject/qualifiers 重新纳入 group 准入基底，
+   故 "default"/"user:self" 这两条查询改为 confirmation-only，见本文件 ① 与
+   `DECISION-2026-09-09-contested-group-admission-basis.md`）；
 ② 争议槽位 + 相关查询（predicate / incumbent 值 / challenger 值）→ confirmation-only（items 为空）；
 ③ 向量 lane：争议记忆不是最近匹配 → items；是最近匹配 → confirmation（词面零命中）；
 ④ confirmation 成员可作为 `HistoryRecallBinding` 通过历史可见性；hash 篡改 → mismatch；
@@ -92,14 +94,23 @@ def _predicates(execution) -> list[str]:
 
 
 @pytest.mark.asyncio
-async def test_unrelated_query_returns_items_and_withholds_group(tmp_path: Path) -> None:
-    """① run4 原型：只命中共享 subject/qualifiers 的查询不再被 group 黑洞。"""
+async def test_sibling_text_returns_items_and_head_text_admits_the_group(tmp_path: Path) -> None:
+    """① F-O-3 的一半保留、另一半被 0.6.37 有意反转。
+
+    保留（run4 原型的要害）：**兄弟记忆自己的**词面（`reply_closing` 与它的取值）
+    永远不会把 group 拉进来，因此与争议槽位无关的记忆照常作为普通 item 返回。
+
+    反转（0.6.37 / F-V-2，`DECISION-2026-09-09-contested-group-admission-basis.md`）：
+    group 所属 **head 自己的** `subject_entity`/`qualifiers` 重新成为词面准入基底，
+    所以 "default" / "user:self" 这两条查询回到 confirmation-only。这是本轮明知的代价：
+    槽位文本可能一个 CJK 字符都没有（run9 的 `{"object_value":["Python 3.13","3.12"]}`），
+    那时 head 的 qualifiers 才是用户真会说出口的那几个字。
+    """
 
     manager, _ = await _contested_store(tmp_path / "unrelated.db")
     try:
-        # 0.6.29 及以前：qualifiers "default" 同时命中 group 两名成员 → confirmation-only。
-        for key, query in (("q-default", "default"), ("q-subject", "user:self"),
-                           ("q-closing", "reply_closing")):
+        for key, query in (("q-closing", "reply_closing"),
+                           ("q-closing-value", "还有什么可以帮你")):
             execution = await _recall(manager, query, key=key)
             assert execution.decision.outcome is RecallDecisionOutcome.RECALL, (key, query)
             assert _predicates(execution) == ["reply_closing"], (key, query)
@@ -109,8 +120,14 @@ async def test_unrelated_query_returns_items_and_withholds_group(tmp_path: Path)
             assert execution.result.truncated is False
             assert RecallReasonCode.NEEDS_USER_CONFIRMATION not in execution.result.reason_codes
             assert execution.candidate_query_count == 1
-        # 争议 head 本身从不作为普通 item 出现。
-        assert "response_style" not in _predicates(execution)
+            # 争议 head 本身从不作为普通 item 出现。
+            assert "response_style" not in _predicates(execution)
+        # head 自己的 qualifiers / subject_entity：0.6.31 不准入，0.6.37 准入。
+        for key, query in (("q-default", "default"), ("q-subject", "user:self")):
+            head_text = await _recall(manager, query, key=key)
+            assert head_text.decision.outcome is RecallDecisionOutcome.NEEDS_USER_CONFIRMATION, key
+            assert head_text.result.items == () and head_text.decision.selected_items == ()
+            assert len(head_text.result.confirmation_groups) == 1, key
         # 完全无关的查询仍是 NO_RECALL（group 也不会被"顺带"披露）。
         nothing = await _recall(manager, "nothing-matches-anything", key="q-none")
         assert nothing.decision.outcome is RecallDecisionOutcome.NO_RECALL

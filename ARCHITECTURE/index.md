@@ -8,6 +8,20 @@
 
 > 2026-09-07 转主干开发：main 已并入 `feat/human-memory-procedure-current-input-successor`（0.6.19 源）。下方 09-06 两路状态段为合并时的并集，各自描述当时状态，不互相覆盖。
 
+## 2026-09-09 0.6.37 冲突组的词面准入基底扩展到 head 的 subject_entity/qualifiers（F-V-2）
+
+最后更新：2026-09-09。基于 0.6.36，仅本地候选、未发布、未构建制品、Host 未 pin。缺陷来源 Host 事件 V 备忘 `simple_harness/plans/2026-09-08-hm-to-a6/DECISION-V-CONTEST-NOTICE.md` §4.4 / §6 **F-V-2**（评审升级为 HM-TO-A6 **A6-8 / NC-4 的阻断项**）。裁定 [`DECISION-2026-09-09-contested-group-admission-basis.md`](../plans/2026-08-29-human-memory-digital-twin/DECISION-2026-09-09-contested-group-admission-basis.md)。
+
+- **缺陷**：run9 里 `proofreading_script_python_version` 的争议组，其槽位文本逐字是 `{"object_value":["Python 3.13","3.12"]}` 与 `{"predicate":"proofreading_script_python_version"}`——**一个 CJK 字符都没有**。0.6.31 起冲突组的词面准入只看这段文本，于是 T22 的纯中文用户原句「那你现在按哪个版本执行这套校对流程？」零命中、`confirmation_groups=0`，未裁决的冲突值以「刚才对话里的事实」形态直达模型（A6-8 / NC-4 FAIL）。Host 侧只能保证「每条会执行的路由都去问 Memory」，「问了能不能得到答案」在 SDK。
+- **契约**：`slices/S3-cognitive-systems-recall.md` 新增 `§5.3-补（2026-09-09，0.6.37）`——§5.3 从未规定 group 凭什么算相关，本轮把基底补写成条款：基底 = `contested_slot_text` ∪ head 当前 revision 的 `subject_entity`/`qualifiers`；只对冲突组生效；无向量世代时同样生效；不放宽任何披露判据；并写下已知代价。
+- **修法**：`features/conflict_slot.py` 新增 `contested_admission_text` / `contested_head_context_text` / `CONTESTED_HEAD_CONTEXT_FIELDS` / `CONFLICT_ADMISSION_TEXT_VERSION`（均不进根导出，纯函数、只读公开 payload、不进任何 hash 域）；`sqlite_v5.py::_collect_typed_recall_confirmation` 在**两名成员都过完资格门之后**取 `revision == challenger_revision` 的公开 payload 作 `head_payload`。普通 item 车道、向量准入、排序权重、预算、DDL 一字未动。
+- **0.6.31 的要害保留、代价诚实记账**：污染方向是「**兄弟记忆的**词面把 group 拉进来」，而本轮扩展的是「**group 自己 head 的**词面」，兄弟记忆的谓词/取值仍永远不准入 group。代价：查询命中 head 自己的 `subject_entity`/`qualifiers` 时该轮变成 confirmation-only，同轮普通 items 被扣住（F-O-3 抱怨的形状在这一格回归）。裁定「不让模型拿未裁决的争议值去执行」优先于「同轮多返回几条无关记忆」，已写进 §5.3-补.6。
+- **证据库离线重放**（时钟钉 `1788905502.0`，剔除晚于 T22 的遗忘指令 `suppression-directive-1dba5ee…`）：T22 用户原句 `recall`/items=3/**0 组** → `needs_user_confirmation`/items=0/**1 组**；负控「今天天气不错，随便聊聊」两侧均 0 组；两条正控（模型转述、谓词查询）两侧均 1 组。Host 的验收信号 `contested_probe_admitted` 因此从 `model_query` 翻成 `user_turn`。
+- **顺带查清（Host 备忘 (a)/(b)）**：(a) 「head 无向量世代」不准确——r2 的向量在更正后 3.38 s 就激活，争议后 15.19 s 又建了含 r3 的新世代，T22 时它已就位 51.4 s；真正成立的是**世代永远只覆盖 head 的当前 revision**，故冲突组的 incumbent 成员永远拿不到向量分。世代重建**不受召回 deadline 约束**（召回只退化不构建，构建在 Host 维护 tick 上）；记账：head 一变，**整库**向量车道 stale 到下一次激活为止（实测 3.4–15.2 s）。(b) 短路发生在**准入之后**：group 没被准入时这一轮「没有组」，泄露方向从未被破坏（contested head 永不作为普通 item 下发），被破坏的是条款背后的目的「依赖该值的任务必须要求确认」——本轮让**这个组**可达，且不放宽任何披露判据（逐组判定；§5.2 整组原子性与隐私门仍优先）。
+- **不改**：DDL 与 7.4 checksum；公共面零增减（`public-api-0.6.37.json` 除 `version` 外与 0.6.36 逐字相同）；**降级安全**——准入基底不落库、不进 manifest 与 hash 域，0.6.36 读 0.6.37 用过的库看到的字节完全一样。
+- **测试**：新增 `tests/integration/test_typed_recall_contested_group_admission.py` **8 项**（证据形状：槽位文本无 CJK、无向量世代、未裁决的冲突组、中文查询；含负控、两条正控、兄弟词面不准入、无冲突库普通车道不变、成员被遗忘则整组扣下、纯函数 fail closed）——基线 `b1f9492` 上 ① 与 ④ 逐条失败。`test_typed_recall_conflict_short_circuit.py` ① 按新政策改写（唯一一处被有意反转的既有断言）。全量失败集合与基线**逐条相同**（63 项既有环境失败，`diff` 为空），1653 → **1661** passed / 8 skipped。
+- **Host 侧**：不需要配合改动；但应知道代价——命中争议 head 主题的那一轮，`memory_standalone` 会从「若干 fragments」变成「confirmation-only、零 fragments」。仅本地候选（分支 `m0637`），未发布、未构建制品、未合 main、Host 未 pin。
+
 ## 2026-09-09 0.6.36 离线车道可以提交自己召回时所用的 Procedure 适用性指纹（F-S1b）
 
 最后更新：2026-09-09。基于 0.6.35，仅本地候选、未发布、未构建制品、Host 未 pin。缺陷来源 0.6.35 裁决备忘 §6 第 2 条 / §9 **F-S1b（P0）**，再往上是 Host 事件 S 备忘 `simple_harness/plans/2026-09-08-hm-to-a6/DECISION-S-RELATION-KEYERROR.md` §3「坑一」/ §4.4 / §7。裁定 [`DECISION-2026-09-09-analysis-lane-applicability-fingerprints.md`](../plans/2026-08-29-human-memory-digital-twin/DECISION-2026-09-09-analysis-lane-applicability-fingerprints.md)。

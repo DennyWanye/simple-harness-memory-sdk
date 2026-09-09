@@ -232,7 +232,7 @@ def test_current_candidate_sources_and_docs_are_consistent() -> None:
     assert "simple-harness-sdk>=0.7,<0.8" in pyproject["project"]["dependencies"]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "当前 source candidate：**0.6.36**" in readme
+    assert "当前 source candidate：**0.6.37**" in readme
     assert "已发布 fallback 为 0.5.1" in readme
     assert "## [0.6.6] - 2026-09-05" in changelog
     assert "## [0.6.5] - 2026-09-05" in changelog
@@ -245,7 +245,7 @@ def test_current_candidate_sources_and_docs_are_consistent() -> None:
     assert "version=0.5.1" in (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 
 
-def test_public_api_0_6_36_extends_the_0_6_19_surface_by_exactly_three_names() -> None:
+def test_public_api_0_6_37_keeps_the_0_6_36_surface() -> None:
     previous = json.loads(Path(__file__).with_name("public-api-0.6.19.json").read_text())
     for version in ("0.6.20", "0.6.21", "0.6.22", "0.6.23", "0.6.24", "0.6.25", "0.6.26",
                     "0.6.27", "0.6.28", "0.6.29", "0.6.30", "0.6.31", "0.6.32",
@@ -280,7 +280,31 @@ def test_public_api_0_6_36_extends_the_0_6_19_surface_by_exactly_three_names() -
         ).parameters["procedure_applicability"].default
         is None
     )
-    assert simple_harness_memory.__version__ == "0.6.36"
+    # 0.6.37（F-V-2）只改冲突组的词面准入基底，公共面零增减：0.6.37 快照除 version 外
+    # 与 0.6.36 逐字相同，新符号（contested_admission_text 等）留在 features.conflict_slot。
+    current = json.loads(Path(__file__).with_name("public-api-0.6.37.json").read_text())
+    assert current["version"] == "0.6.37"
+    assert {k: v for k, v in current.items() if k != "version"} == {
+        k: v for k, v in snapshot.items() if k != "version"
+    }
+    from simple_harness_memory.features.conflict_slot import (
+        CONFLICT_ADMISSION_TEXT_VERSION,
+        CONTESTED_HEAD_CONTEXT_FIELDS,
+        contested_admission_text,
+        contested_head_context_text,
+    )
+
+    assert CONFLICT_ADMISSION_TEXT_VERSION == 1
+    assert CONTESTED_HEAD_CONTEXT_FIELDS == ("subject_entity", "qualifiers")
+    assert callable(contested_admission_text) and callable(contested_head_context_text)
+    assert not {
+        "CONFLICT_ADMISSION_TEXT_VERSION",
+        "CONTESTED_HEAD_CONTEXT_FIELDS",
+        "contested_admission_text",
+        "contested_head_context_text",
+    } & set(current["root"])
+    snapshot = current
+    assert simple_harness_memory.__version__ == "0.6.37"
     assert snapshot["root"] == sorted(simple_harness_memory.__all__)
     assert len(snapshot["root"]) == len(set(snapshot["root"]))
     assert snapshot["migrations"] == sorted(migrations.__all__)

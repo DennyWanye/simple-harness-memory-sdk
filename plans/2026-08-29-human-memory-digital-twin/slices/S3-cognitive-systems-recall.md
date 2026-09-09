@@ -318,6 +318,35 @@ gate 仍归 S3 最终验收，未在本 Task 宣称 PASS。
   occurred interval overlap，Semantic 用 valid interval/revision time，Procedure 用 latest qualifying evidence time，
   Prospective 用 next trigger/last transition，Short-Horizon 用 occurred_at。
 
+#### §5.3-补（2026-09-09，0.6.37）冲突组的词面准入基底（F-V-2）
+
+> 追加条款；上文 §5.3 历史文本不改。裁定与验证见
+> `../DECISION-2026-09-09-contested-group-admission-basis.md`。
+> 缺陷来源：Host 事件 V 备忘 `simple_harness/plans/2026-09-08-hm-to-a6/
+> DECISION-V-CONTEST-NOTICE.md` §4.4 / §6 **F-V-2（A6-8 / NC-4 的阻断项）**。
+
+1. §5.3 只规定「contested 只能走完整 group confirmation」，**从未规定 group 凭什么
+   算相关**。0.6.31 把词面判据收窄到「两名成员取值不同的公开字段 + semantic 的
+   `predicate`」（`contested_slot_text`）时，这条基底就是**未被契约写下的默认**。
+   本节把它补写为契约条款，避免再有一次「按未写下的默认执行」。
+2. **冲突组的词面准入基底 = `contested_slot_text` ∪ 该 group 所属 head **当前
+   revision** 的 `subject_entity` 与 `qualifiers` 文本**（`contested_admission_text`）。
+   group 只有一个 head，因此这里读的就是 challenger 那一版的公开 payload
+   （`cognitive_memory_heads.current_revision = cognitive_conflict_groups.challenger_revision`
+   是 group 仍 active 的前提，见 §5.2）。
+3. **只对冲突组生效**：普通 item 车道的词面准入不变。0.6.31 的收窄针对的是**兄弟记忆**
+   共享 `subject_entity`/`qualifiers` 时互相污染；一个 group 只有一个 head，兄弟记忆
+   **自己的**词面永远不准入 group（这一半必须保留）。
+4. **无向量世代时同样生效**：head 没有可用向量（或整条向量车道退化）时词面是唯一车道，
+   本条基底不得因此收窄——否则「争议值不得被拿去执行」在纯中文提问上不成立。
+5. **不放宽任何披露判据**：准入基底只读**公开** payload，且在两名成员都通过全部资格门
+   之后才判定。§5.2 的整组原子性、隐私门、抑制门一字不变——任一成员不可见，整组连同
+   「存在冲突」这件事一起扣下，contested head **也不会**退化成普通 item。
+6. **已知代价（有意接受）**：查询命中 head 自己的 `subject_entity`/`qualifiers` 时，
+   该轮按 §5.1 的 `RecallDecisionV4` 二选一规则变成 confirmation-only，同轮的普通 items
+   被扣住（事件 O / F-O-3 曾抱怨的形状，在**这一格**回归）。裁定：「不让模型拿争议值去
+   执行」优先于「同轮多返回几条无关记忆」。
+
 #### 5.4 即时 suppression 与最终 Context 使用
 
 - 新增 append-only `recall_authority_events` + CAS `recall_authority_heads(principal, epoch, policy_hash)`。任何可能改变资格的
