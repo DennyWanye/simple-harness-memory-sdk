@@ -347,6 +347,32 @@ gate 仍归 S3 最终验收，未在本 Task 宣称 PASS。
    被扣住（事件 O / F-O-3 曾抱怨的形状，在**这一格**回归）。裁定：「不让模型拿争议值去
    执行」优先于「同轮多返回几条无关记忆」。
 
+#### §5.3-补2（2026-09-09，0.6.38）冲突组的向量对称与世代覆盖率（F-V-2a / F-V-2b）
+
+> 追加条款；上文 §5.3 与 §5.3-补历史文本不改。裁定同上一节的备忘。
+
+1. **认知向量世代的覆盖集** = 全部当前 head revision **∪** 未裁决冲突组的 incumbent
+   revision（取组条件与 §5.2 的 group 判定逐字一致：head 当前 revision 即 challenger，
+   且无 resolution 行）。0.6.23–0.6.37 只覆盖当前 revision，因此 group 的 incumbent
+   成员永远拿不到向量分，向量准入只可能由 challenger 单方贡献——与 §5.2「整组同进同出」
+   不对称。**候选面不变**：`vector` lane 只对已通过全部资格门的那一个
+   (memory_id, revision) 精确查表，incumbent 进世代不让它成为普通候选。
+2. **没有未裁决冲突组的库，manifest 一个字节不变**（每条记忆恰好一行、同序），
+   因此升级到 0.6.38 不触发任何世代重建；有未裁决冲突组时，下一次维护 tick 的那一代
+   多嵌入的条数 = 未裁决组数。
+3. **世代可用性与覆盖率分开判定**。可用性 = 该世代按它**自己**的
+   (memory_id, revision) 重算的 manifest 与入库的 `content_hash` 逐字相等
+   （`cognitive_memory_revisions` 行内不可变，故这等价于「渲染格式版本与每条 revision
+   的内容都没变」）；不成立仍是 `cognitive_vector_stale`，整代不用。
+   覆盖率 = 该世代是否覆盖当前的全部可召回 revision；不覆盖时车道**照常可用**，
+   只对它覆盖到的 revision 打分，本次召回记 `cognitive_vector_partial`。
+4. 0.6.23–0.6.37 里「head 清单一变整库退化」是把上面两件事混成一条判据的结果：
+   任何一次修订都让**整库**的认知向量车道 stale 到下一次世代激活为止
+   （HM-TO-A6 实测 3.4 s / 15.2 s），而争议轮恰好紧随修订。本条把它收窄到
+   「这条记忆这一版没有向量」，与「本来就没有向量」同形。
+5. `cognitive_vector_partial` 是**车道仍在服务本次召回**的降级码：与其余四个
+   「车道不可用」的码不同，本次召回的世代 hash 照常落 typed recall 审计。
+
 #### 5.4 即时 suppression 与最终 Context 使用
 
 - 新增 append-only `recall_authority_events` + CAS `recall_authority_heads(principal, epoch, policy_hash)`。任何可能改变资格的
@@ -362,6 +388,37 @@ gate 仍归 S3 最终验收，未在本 Task 宣称 PASS。
 - 并发线性化固定：suppression 先 commit，则授权返回 `RECALL_AUTHORITY_STALE` 且零 payload；Context-use receipt 先 commit，
   则仅该 exact immutable snapshot/attempt 可完成一次，随后 suppression 使所有新 attempt 失效。此边界同时覆盖 suppress、
   revoke、supersede、contest、classification/policy change、Short-Horizon expiry/cleanup，不承诺撤回已经发给 provider 的字节。
+
+#### §5.4-补（2026-09-09，0.6.38）租约到期是降级，不是 stale（F-AA-2）
+
+> 追加条款；上文 §5.4 历史文本不改。裁定与验证见
+> `../DECISION-2026-09-09-lease-degradation-and-incumbent-vectors.md`。
+> 缺陷来源：Host 事件 AA 备忘 `simple_harness/plans/2026-09-08-hm-to-a6/
+> DECISION-AA-AUTHORITY-STALE-RECOLLECT.md` §2 / §9(2)（HM-TO-A6 T18）。
+
+1. §5.4 规定「结果 expiry 不晚于 RecallContext expiry 与所选 source 最早 expiry」，
+   这条**不变**：`TypedRecallResultV1.authority_expires_at` 仍按原样计算并落库。
+   本节只规定 `authorize_recall_context_use` 在**用途授权时**如何对待它。
+2. **判据**：`effective_now >= result.authority_expires_at` 本身不再拒绝。policy version
+   变化、本部署配置的策略版本不符、权威 epoch 倒退仍然硬失败；随后的逐来源重校验
+   （§5.4 第二段具名的那一整套）一字不变，任一被绑定来源真的变了/被抑制/被降级披露
+   仍以 `RECALL_AUTHORITY_STALE`、零 payload、零收据行拒绝。
+3. **理由**：`authority_expires_at = min(RecallContext.expires_at, 每条被绑定来源自己的
+   期限)`，而后者在同一把写锁、同一事务的逐来源重校验里被**逐条独立重新执行**
+   （认知记忆 `valid_from <= now < valid_to`，Short-Horizon chunk `now < expires_at`）。
+   租约唯一多挡住的是调用方那个召回上下文期限——它挡不住任何一条真的失效了的来源，
+   只能杀掉「跑得比该期限久的正常回合」。
+4. **续租**：租约到期而全部判据通过时签发的收据，其 `expires_at` = 本次授权时刻 +
+   被绑定结果原本的租约长度（`authority_expires_at - evaluated_at`），且**不得晚于**
+   本次重校验重新读到的来源最早期限。冻结的 `RecallContextUseReceiptV1` 要求
+   `expires_at > authorized_at`，「已过期的收据」在契约上不可构造。
+5. **降级说明**：稳定码 `authority_lease_expired`，与 `authority_epoch_advanced` 同形，
+   **零 DDL**——由不可变的 `recall_context_use_receipts.authorized_at` 与被绑定结果
+   `result_json` 的 `authority_expires_at` 严格导出（**不是**收据行自己那个续发的
+   `expires_at`）。一张收据可同时导出两条说明，次序固定为 epoch 前进在前。
+6. **不在本节范围**：`page_typed_recall_result` 的 `typed_recall_result_expired` 仍按
+   原样使用 `authority_expires_at` 硬失败——分页是把旧结果的字节**重新取出**，不是
+   对已下发字节的用途授权，两者的时限语义不同。
 
 #### 5.5 replay、失败恢复与 unsupported 能力
 

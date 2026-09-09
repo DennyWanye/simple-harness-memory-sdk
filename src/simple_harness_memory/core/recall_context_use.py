@@ -12,6 +12,20 @@
 因此「本次用途授权是在 epoch 前进之后签发的」是一个**由两条不可变行严格导出**的事实，
 比再存一份可能与之矛盾的冗余标记更强。本模块只提供稳定码与只读视图，不进根导出
 （沿用 0.6.20–0.6.28「根导出零增减」的纪律）。
+
+0.6.38（DECISION-2026-09-09-lease-degradation-and-incumbent-vectors.md）新增第二个同形状的
+稳定码 ``authority_lease_expired``：召回结果的 ``authority_expires_at`` 到期本身不再硬失败，
+逐来源重校验全通过时照常签发收据。它同样**零 DDL**，且与 epoch 那一对严格同形：
+
+* 「本次授权发生的时刻」落在不可变的 ``recall_context_use_receipts.authorized_at``；
+* 「被绑定结果的租约」落在不可变的 ``typed_recall_results.result_json`` 的
+  ``authority_expires_at``；两行仍由 ``result_id`` 唯一连接。
+
+故「本次授权发生在租约到期之后」也是由不可变行严格导出的事实。
+**注意**：收据行自己的 ``expires_at`` 在这一支是**续发**的新租约（冻结的
+``RecallContextUseReceiptV1`` 要求 ``expires_at > authorized_at``，一张"已过期的收据"
+在契约上不可构造），因此它不参与该事实的导出。
+一张收据可能同时导出两条说明（epoch 前进 **且** 租约到期），此时按上述固定次序各出一条。
 """
 
 from __future__ import annotations
@@ -24,7 +38,11 @@ from simple_harness.contracts import JsonValue
 from simple_harness_memory.core.errors import MemoryValidationError
 
 RECALL_CONTEXT_USE_AUTHORITY_EPOCH_ADVANCED = "authority_epoch_advanced"
-RECALL_CONTEXT_USE_REASON_CODES = (RECALL_CONTEXT_USE_AUTHORITY_EPOCH_ADVANCED,)
+RECALL_CONTEXT_USE_AUTHORITY_LEASE_EXPIRED = "authority_lease_expired"
+RECALL_CONTEXT_USE_REASON_CODES = (
+    RECALL_CONTEXT_USE_AUTHORITY_EPOCH_ADVANCED,
+    RECALL_CONTEXT_USE_AUTHORITY_LEASE_EXPIRED,
+)
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -69,6 +87,10 @@ class RecallContextUseAuthorityNoteV1:
     authority_epoch: int
     policy_hash: str
     authorized_at: float
+    # 0.6.38：仅 ``authority_lease_expired`` 使用，逐字取自不可变的
+    # ``typed_recall_results.result_json`` 的 ``authority_expires_at``（= 被绑定时的租约，
+    # 不是收据续发的那个）。``authority_epoch_advanced`` 的说明恒为 ``None``（与租约无关）。
+    bound_authority_expires_at: float | None = None
 
     def __post_init__(self) -> None:
         for value, name in (
@@ -90,7 +112,12 @@ class RecallContextUseAuthorityNoteV1:
             raise MemoryValidationError("recall_context_use_reason_code_invalid")
         _epoch(self.bound_authority_epoch, "recall_context_use_bound_authority_epoch")
         _epoch(self.authority_epoch, "recall_context_use_authority_epoch")
-        if self.authority_epoch <= self.bound_authority_epoch:
+        # ``authority_epoch_advanced`` 要求 epoch 真的前进；``authority_lease_expired``
+        # 的 epoch 可以相等（它恰恰是"epoch 没动、只是租约到期"的那一格），但永不倒退。
+        lease_expired = self.reason_code == RECALL_CONTEXT_USE_AUTHORITY_LEASE_EXPIRED
+        if self.authority_epoch < self.bound_authority_epoch or (
+            not lease_expired and self.authority_epoch == self.bound_authority_epoch
+        ):
             raise MemoryValidationError("recall_context_use_authority_epoch_invalid")
         if (
             isinstance(self.authorized_at, bool)
@@ -99,6 +126,21 @@ class RecallContextUseAuthorityNoteV1:
         ):
             raise MemoryValidationError("recall_context_use_authorized_at_invalid")
         object.__setattr__(self, "authorized_at", float(self.authorized_at))
+        if lease_expired:
+            if (
+                isinstance(self.bound_authority_expires_at, bool)
+                or not isinstance(self.bound_authority_expires_at, (int, float))
+                or self.bound_authority_expires_at < 0
+                or self.authorized_at < float(self.bound_authority_expires_at)
+            ):
+                raise MemoryValidationError("recall_context_use_bound_authority_expires_at_invalid")
+            object.__setattr__(
+                self,
+                "bound_authority_expires_at",
+                float(self.bound_authority_expires_at),
+            )
+        elif self.bound_authority_expires_at is not None:
+            raise MemoryValidationError("recall_context_use_bound_authority_expires_at_invalid")
 
     def to_json(self) -> dict[str, JsonValue]:
         return {
@@ -115,11 +157,13 @@ class RecallContextUseAuthorityNoteV1:
             "authority_epoch": self.authority_epoch,
             "policy_hash": self.policy_hash,
             "authorized_at": self.authorized_at,
+            "bound_authority_expires_at": self.bound_authority_expires_at,
         }
 
 
 __all__ = (
     "RECALL_CONTEXT_USE_AUTHORITY_EPOCH_ADVANCED",
+    "RECALL_CONTEXT_USE_AUTHORITY_LEASE_EXPIRED",
     "RECALL_CONTEXT_USE_REASON_CODES",
     "RecallContextUseAuthorityNoteV1",
 )

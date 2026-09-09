@@ -3,6 +3,14 @@
 覆盖：五种 C01 FAIL 形状（同义中文查询 / 英文 predicate + 纯值 payload）在词面 0 下经 vector 命中；
 抑制优先；disclosure 拒绝优先；阈值负控；stale / 无世代 / 无 embedder / 查询嵌入超时退化且词面照常；
 confirmation 门接受 vector 命中；退化码与世代 hash 持久化；未请求 vector 零副作用。
+
+0.6.38（DECISION-2026-09-09-lease-degradation-and-incumbent-vectors.md）：
+- F-V-2a——未裁决冲突组的 incumbent 也进世代，``test_confirmation_gate_accepts_vector_hit``
+  与 relation 用例的世代条数因此各 +1（本轮被有意反转的既有断言）；
+- F-V-2b——「head 清单变了」不再让整条车道 stale，改报 ``cognitive_vector_partial``
+  且世代继续服务它覆盖到的记忆（原 ``test_stale_generation_degrades_and_lexical_lane_continues``
+  改写为 ``test_partial_generation_keeps_covered_memories_scorable``），
+  整代不可信的那一支由 ``test_text_format_bump_still_degrades_the_whole_lane`` 负控。
 """
 
 from __future__ import annotations
@@ -36,6 +44,7 @@ from simple_harness_memory.features.cognitive_vector import (
     COGNITIVE_VECTOR_DEADLINE,
     COGNITIVE_VECTOR_MIN_SCORE,
     COGNITIVE_VECTOR_NO_GENERATION,
+    COGNITIVE_VECTOR_PARTIAL,
     COGNITIVE_VECTOR_STALE,
     COGNITIVE_VECTOR_UNAVAILABLE,
 )
@@ -234,25 +243,61 @@ async def test_cosine_below_frozen_threshold_is_not_a_candidate(tmp_path: Path) 
 
 
 @pytest.mark.asyncio
-async def test_stale_generation_degrades_and_lexical_lane_continues(tmp_path: Path) -> None:
+async def test_partial_generation_keeps_covered_memories_scorable(tmp_path: Path) -> None:
+    """0.6.38（F-V-2b）：新记忆落库后，**旧记忆**的向量车道继续可用，只报 partial。
+
+    0.6.23–0.6.37 的行为是「head 清单一变 → 整库 stale 到下一次世代激活为止」，
+    HM-TO-A6 实测那个窗口是 3.4–15.2 s，而争议轮恰好紧随修订。
+    """
+
     embedder = ControlledEmbedder()
     manager, _envelope, _span, authority = await manager_with(
         tmp_path / "stale.db", embedder, operations=(("c06", "preferred_name", "小周"),)
     )
     try:
-        await manager.rebuild_cognitive_vector_generation()
+        built = await manager.rebuild_cognitive_vector_generation()
         await add_memory(manager, authority, evidence_id="evidence-2", operation=("c17", "email_draft_length", "最多两段"))
-        stale = await recall(manager, "小周 的称呼", key="stale")
-        assert values(stale) == ["小周"]  # lexical hit survives
-        assert stale.degradation_codes == (COGNITIVE_VECTOR_STALE,)
+        partial = await recall(manager, "小周 的称呼", key="stale")
+        assert values(partial) == ["小周"]  # lexical hit survives
+        assert partial.degradation_codes == (COGNITIVE_VECTOR_PARTIAL,)
         codes, body = await terminal(manager, "stale")
-        assert codes == [COGNITIVE_VECTOR_STALE] and "cognitive_vector" not in body
+        # 车道仍在服务本次召回：世代 hash 必须落审计（stale 那一支不落）。
+        assert codes == [COGNITIVE_VECTOR_PARTIAL]
+        assert body["cognitive_vector"]["used_generation_id_hash"] == sqlite_v5._opaque_hash(
+            built.generation_id
+        )
+        # 世代没覆盖到的那条记忆只是拿不到向量分，与"本来就没有向量"同形。
         semantic_only = await recall(manager, "通知段落格式", key="stale-semantic")
         assert semantic_only.result.items == ()
-        assert semantic_only.degradation_codes == (COGNITIVE_VECTOR_STALE,)
+        assert semantic_only.degradation_codes == (COGNITIVE_VECTOR_PARTIAL,)
         await manager.rebuild_cognitive_vector_generation()
         fresh = await recall(manager, "通知段落格式", key="fresh-semantic")
         assert values(fresh) == ["最多两段"] and fresh.degradation_codes == ()
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_text_format_bump_still_degrades_the_whole_lane(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """负控：世代**自证不成立**（渲染格式版本变了）时仍然整代 stale，一条向量都不用。"""
+
+    embedder = ControlledEmbedder()
+    manager, *_ = await manager_with(
+        tmp_path / "format-bump.db", embedder, operations=(("c06", "preferred_name", "小周"),)
+    )
+    try:
+        await manager.rebuild_cognitive_vector_generation()
+        ok = await recall(manager, "小周 的称呼", key="format-ok")
+        assert ok.degradation_codes == ()
+        monkeypatch.setattr(sqlite_v5, "COGNITIVE_TEXT_FORMAT_VERSION", 999)
+        await manager._backend._load_cognitive_vector_cache_unlocked()
+        stale = await recall(manager, "小周 的称呼", key="format-bump")
+        assert values(stale) == ["小周"]  # 词面照常
+        assert stale.degradation_codes == (COGNITIVE_VECTOR_STALE,)
+        codes, body = await terminal(manager, "format-bump")
+        assert codes == [COGNITIVE_VECTOR_STALE] and "cognitive_vector" not in body
     finally:
         await manager.close()
 
@@ -318,7 +363,16 @@ async def test_confirmation_gate_accepts_vector_hit(tmp_path: Path) -> None:
     try:
         await _contest_semantic(manager._backend, authority)
         built = await manager.rebuild_cognitive_vector_generation()
-        assert built.vector_count == 1
+        # 0.6.38（F-V-2a）：未裁决冲突组的两名成员都进世代——0.6.37 只有 challenger（1 条）。
+        assert built.vector_count == 2
+        assert sorted(
+            int(item[0])
+            for item in await rows(
+                manager,
+                "SELECT revision FROM cognitive_vectors WHERE generation_id=?",
+                built.generation_id,
+            )
+        ) == [1, 2]
         query = "回复偏好是简洁还是啰嗦"
         lexical = await recall(manager, query, key="confirm-lexical", modes=LEXICAL_ONLY)
         assert lexical.result.confirmation_groups == () and lexical.result.items == ()
@@ -415,7 +469,8 @@ async def test_relation_memory_never_enters_vector_lane_or_confirmation(tmp_path
         )
         assert result.outcome.value == "committed"
         rebuilt = await manager.rebuild_cognitive_vector_generation()
-        assert rebuilt.generation_id != built.generation_id and rebuilt.vector_count == 2
+        # 0.6.38：claim 的两名冲突成员各一条向量（relation 仍然一条都没有）。
+        assert rebuilt.generation_id != built.generation_id and rebuilt.vector_count == 3
         assert relation_id not in {
             item[0] for item in await rows(manager, "SELECT memory_id FROM cognitive_vectors WHERE generation_id=?", rebuilt.generation_id)
         }

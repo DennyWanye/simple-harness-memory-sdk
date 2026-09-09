@@ -70,12 +70,19 @@ COGNITIVE_VECTOR_UNAVAILABLE = "cognitive_vector_unavailable"
 COGNITIVE_VECTOR_NO_GENERATION = "cognitive_vector_no_generation"
 COGNITIVE_VECTOR_STALE = "cognitive_vector_stale"
 COGNITIVE_VECTOR_DEADLINE = "cognitive_vector_deadline"
+# 0.6.38（F-V-2b）：active 世代**自证成立**（按它自己的 (memory_id, revision) 重算的 manifest
+# 与入库的 content_hash 逐字相等，因而渲染格式版本与每条 revision 的 content_hash 都没变），
+# 只是不再覆盖当前的全部可召回 revision。此时向量车道**照常可用**，只对世代覆盖到的那些
+# revision 打分；``cognitive_vector_stale`` 收窄为「整代不可信」。见
+# plans/.../DECISION-2026-09-09-lease-degradation-and-incumbent-vectors.md §4。
+COGNITIVE_VECTOR_PARTIAL = "cognitive_vector_partial"
 COGNITIVE_VECTOR_DEGRADATION_CODES = frozenset(
     {
         COGNITIVE_VECTOR_UNAVAILABLE,
         COGNITIVE_VECTOR_NO_GENERATION,
         COGNITIVE_VECTOR_STALE,
         COGNITIVE_VECTOR_DEADLINE,
+        COGNITIVE_VECTOR_PARTIAL,
     }
 )
 

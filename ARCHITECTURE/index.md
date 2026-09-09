@@ -8,6 +8,18 @@
 
 > 2026-09-07 转主干开发：main 已并入 `feat/human-memory-procedure-current-input-successor`（0.6.19 源）。下方 09-06 两路状态段为合并时的并集，各自描述当时状态，不互相覆盖。
 
+## 2026-09-09 0.6.38 租约到期是降级；冲突组 incumbent 进向量世代；世代覆盖率与可用性分开判（F-AA-2 / F-V-2a / F-V-2b）
+
+最后更新：2026-09-09。基于 0.6.37，仅本地候选、未发布、未构建制品、Host 未 pin。缺陷来源 Host 事件 AA 备忘 `simple_harness/plans/2026-09-08-hm-to-a6/DECISION-AA-AUTHORITY-STALE-RECOLLECT.md` §2 / §9(2)（**F-AA-2**，HM-TO-A6 T18）与本仓 0.6.37 备忘 §5.1 / §8（**F-V-2a / F-V-2b**）。裁定 [`DECISION-2026-09-09-lease-degradation-and-incumbent-vectors.md`](../plans/2026-08-29-human-memory-digital-twin/DECISION-2026-09-09-lease-degradation-and-incumbent-vectors.md)。
+
+- **F-AA-2**：T18 一轮 12 次 provider 请求，第 12 次比 `authority_expires_at` 晚 4.96 s → `RECALL_AUTHORITY_STALE` → `run.fail`，而 7 条被绑定来源逐条未变。租约上游是 Host 的 `RecallContext.expires_at = moment + 60`——召回上下文期限被当成整轮用途租约。**修法**：该判据降级为稳定码 `authority_lease_expired`，照常签发收据。依据是结构性的：`authority_expires_at = min(上下文期限, 每条来源自己的期限)`，后者在同一事务的逐来源重校验里被逐条独立重新执行，租约挡不住任何一条真的失效了的来源。policy version / 策略版本 / epoch 倒退仍硬失败，重校验一字未动。
+- **续租**：冻结的 `RecallContextUseReceiptV1` 要求 `expires_at > authorized_at`，故这一支续发一段租约（长度 = 结果原本的租约长度，起点 = 授权时刻，上界 = 重校验重新读到的来源最早期限）。租约未到期那一支收据逐字节不变。降级说明仍零 DDL，但导出对是 `recall_context_use_receipts.authorized_at` ↔ 结果 `result_json.authority_expires_at`（**不是**收据自己那个续发的 `expires_at`）。
+- **F-V-2a**：认知向量世代覆盖集 = 全部当前 head revision **∪ 未裁决冲突组的 incumbent revision**（取组条件与 confirmation 取组查询逐字一致）。此前世代只覆盖当前 revision，冲突组的 incumbent 永远拿不到向量分。候选面不变（`vector` lane 只对已过全部资格门的那一个 ref 精确查表）；无未裁决冲突组的库 manifest 一个字节不变，升级不触发世代重建。
+- **F-V-2b**：世代的**可用性**（自证 manifest = 按它自己的 `(memory_id, revision)` 重算 == 入库 `content_hash`，等价于「渲染格式版本与每条 revision 内容未变」，靠 `cognitive_memory_revisions` 行内不可变成立）与**覆盖率**（是否覆盖当前全部可召回 revision）分开判。覆盖不全时车道照常可用、只对覆盖到的 revision 打分，记新降级码 `cognitive_vector_partial`；`cognitive_vector_stale` 收窄为「整代不可信」。此前任何一次 head 修订都让**整库**的认知向量车道 stale 到下一次世代激活为止（run9 实测 3.38 s / 15.19 s），而争议轮恰好紧随修订。
+- **契约**：`slices/S3-cognitive-systems-recall.md` 新增 `§5.4-补`（租约六条）与 `§5.3-补2`（向量五条）。**不改** DDL 与 7.4 checksum、写路径、世代构建三段式与 CAS、0.6.34 相对阈值、排序权重与预算、hash 域；`page_typed_recall_result` 的时限有意保留。**降级记账**：0.6.37 读一个有未裁决冲突组且已重建过世代的 0.6.38 库会开库失败（`active cognitive vector generation is incomplete`），回退需先重建一代。
+- **公共面零增减**（`public-api-0.6.38.json` 除 version 外与 0.6.37 逐字相同）；新增 12 项用例（租约 7 / 向量 4 / 整代 stale 负控 1，基线上各 3 项红），有意反转既有断言 5 处；全量失败集合与 main 基线逐条相同（63 项既有环境失败，diff 为空），1661 → 1673 passed / 8 skipped。
+- **Host 侧不需要配合改动**：事件 AA 的重采机制从「常态」退化成「兜底」，建议保留但不必再触发；`RecallContext.expires_at` 的语义可重新定义；看板应把 `cognitive_vector_partial`（非故障）与 `cognitive_vector_stale`（整代不可信）分开计数。
+
 ## 2026-09-09 0.6.37 冲突组的词面准入基底扩展到 head 的 subject_entity/qualifiers（F-V-2）
 
 最后更新：2026-09-09。基于 0.6.36，仅本地候选、未发布、未构建制品、Host 未 pin。缺陷来源 Host 事件 V 备忘 `simple_harness/plans/2026-09-08-hm-to-a6/DECISION-V-CONTEST-NOTICE.md` §4.4 / §6 **F-V-2**（评审升级为 HM-TO-A6 **A6-8 / NC-4 的阻断项**）。裁定 [`DECISION-2026-09-09-contested-group-admission-basis.md`](../plans/2026-08-29-human-memory-digital-twin/DECISION-2026-09-09-contested-group-admission-basis.md)。

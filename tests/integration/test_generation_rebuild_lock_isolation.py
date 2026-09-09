@@ -26,7 +26,7 @@ from simple_harness_memory.backends import sqlite_v5
 from simple_harness_memory.core.errors import TypedRecallDeadlineExceeded
 from simple_harness_memory.features.cognitive_vector import (
     COGNITIVE_VECTOR_DEADLINE,
-    COGNITIVE_VECTOR_STALE,
+    COGNITIVE_VECTOR_PARTIAL,
 )
 from tests.integration.test_cognitive_vector_generation import (
     ControlledEmbedder,
@@ -122,8 +122,9 @@ async def test_slow_rebuild_never_blocks_typed_recall(tmp_path: Path) -> None:
         elapsed = time.monotonic() - started
         assert values(execution) == ["小周"]  # 词面 lane 照常出结果
         assert elapsed < 1.0, elapsed  # 没有被写锁拖到预算之外
-        # 世代因为 head 变化本来就 stale，退化码是 stale 而不是任何超时。
-        assert execution.degradation_codes == (COGNITIVE_VECTOR_STALE,)
+        # 世代因为 head 变化只覆盖了旧清单，退化码是 partial（0.6.38：不再是整代 stale），
+        # 而不是任何超时——这一条才是本用例要与 ``cognitive_vector_deadline`` 区分开的。
+        assert execution.degradation_codes == (COGNITIVE_VECTOR_PARTIAL,)
         assert await tick == "worker_timeout"  # 1 s 的 worker 超时确实兜不住 2.1 s 的嵌入
         # 被取消的一次重建没有留下任何半成品世代。
         assert await rows(
